@@ -59,6 +59,10 @@ RUN npm install -g brunch@1.7.13
 WORKDIR /tmp
 RUN git clone https://github.com/apache/ambari.git
 WORKDIR /tmp/ambari
+
+#Replace git protocol request with https (To resolve EMC network issue)
+RUN git config --global url."https://".insteadOf git://
+
 RUN mvn versions:set -DnewVersion=1.6.1.0
 RUN mvn -B clean install package rpm:rpm -DskipTests -DnewVersion=1.6.1.0 -Dpython.ver="python >= 2.6" -Preplaceurl
 
