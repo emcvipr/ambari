@@ -24,10 +24,14 @@
       <reponame>PHD</reponame>
     </repo>
     <repo>
-  	  
       <baseurl>http://localhost/PHD-UTILS</baseurl>
       <repoid>PHD-UTILS-1.0</repoid>
       <reponame>PHD-UTILS</reponame>
+    </repo>
+    <repo>
+      <baseurl>http://localhost/VIPRFS</baseurl>
+      <repoid>VIPRFS-2.1.1.0</repoid>
+      <reponame>VIPRFS</reponame>
     </repo>
   </os>
 </reposinfo>
