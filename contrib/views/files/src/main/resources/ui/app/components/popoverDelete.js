@@ -37,14 +37,12 @@ App.PopoverDeleteComponent = Em.Component.extend({
     if (!this.$()) {
       return;
     }
-    if (!this.$().is(e.target)
-        && this.$().has(e.target).length === 0
-        && $('.popover').has(e.target).length === 0) {
+    if (!this.$().is(e.target) && this.$().has(e.target).length === 0 && $('.popover').has(e.target).length === 0) {
           this.set('popover.isVisible',false);
     }
   },
   willClearRender:function () {
     this.get('popover').$element.off('click');
     $('body').off('click.popover');
-  },
+  }
 });

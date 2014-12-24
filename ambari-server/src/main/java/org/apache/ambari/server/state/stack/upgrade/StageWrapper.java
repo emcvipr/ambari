@@ -40,7 +40,7 @@ public class StageWrapper {
     this(type, text, Arrays.asList(tasks));
   }
 
-  private StageWrapper(Type type, String text, List<TaskWrapper> tasks) {
+  public StageWrapper(Type type, String text, List<TaskWrapper> tasks) {
     this.type = type;
     this.text = text;
     this.tasks = tasks;
@@ -103,12 +103,9 @@ public class StageWrapper {
    * Indicates the type of wrapper.
    */
   public enum Type {
-    MANUAL,
+    SERVER_SIDE_ACTION,
     RESTART,
     RU_TASKS,
     SERVICE_CHECK
   }
-
-
-
 }

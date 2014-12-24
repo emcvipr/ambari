@@ -29,6 +29,9 @@ import java.io.File;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 
+import static org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile.HOSTNAME;
+import static org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile.KEYTAB_FILE_PATH;
+
 /**
  * CreateKeytabFilesServerAction is a ServerAction implementation that creates keytab files as
  * instructed.
@@ -73,9 +76,9 @@ public class CreateKeytabFilesServerAction extends KerberosServerAction {
    * {@link org.apache.ambari.server.serveraction.kerberos.KerberosOperationHandler} to generate
    * the keytab file. To help avoid filename collisions and to build a structure that is easy to
    * discover, each keytab file is stored in host-specific
-   * ({@link org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFileReader#HOSTNAME})
+   * ({@link org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile#HOSTNAME})
    * directory using the SHA1 hash of its destination file path
-   * ({@link org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFileReader#KEYTAB_FILE_PATH})
+   * ({@link org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile#KEYTAB_FILE_PATH})
    * <p/>
    * <pre>
    *   data_directory
@@ -112,44 +115,44 @@ public class CreateKeytabFilesServerAction extends KerberosServerAction {
         commandReport = createCommandReport(1, HostRoleStatus.FAILED, "{}", "", message);
       } else {
         Map<String, String> principalPasswordMap = getPrincipalPasswordMap(requestSharedDataContext);
+        Map<String, Integer> principalKeyNumberMap = getPrincipalKeyNumberMap(requestSharedDataContext);
 
-        if (principalPasswordMap != null) {
-          String host = identityRecord.get(KerberosActionDataFileBuilder.HOSTNAME);
-          String keytabFilePath = identityRecord.get(KerberosActionDataFileBuilder.KEYTAB_FILE_PATH);
+        String host = identityRecord.get(HOSTNAME);
+        String keytabFilePath = identityRecord.get(KEYTAB_FILE_PATH);
 
-          if ((host != null) && !host.isEmpty() && (keytabFilePath != null) && !keytabFilePath.isEmpty()) {
-            // Look up the current evaluatedPrincipal's password.
-            // If found create th keytab file, else skip it.
-            String password = principalPasswordMap.get(evaluatedPrincipal);
+        if ((host != null) && !host.isEmpty() && (keytabFilePath != null) && !keytabFilePath.isEmpty()) {
+          // Look up the current evaluatedPrincipal's password.
+          // If found create th keytab file, else skip it.
+          String password = principalPasswordMap.get(evaluatedPrincipal);
 
-            if (password == null) {
-              String message = String.format("Failed to create keytab file for %s, missing password", evaluatedPrincipal);
-              LOG.error(message);
-              commandReport = createCommandReport(1, HostRoleStatus.FAILED, "{}", "", message);
-            } else {
-              // Determine where to store the keytab file.  It should go into a host-specific
-              // directory under the previously determined data directory.
-              File hostDirectory = new File(getDataDirectoryPath(), host);
+          if (password == null) {
+            String message = String.format("Failed to create keytab file for %s, missing password", evaluatedPrincipal);
+            LOG.error(message);
+            commandReport = createCommandReport(1, HostRoleStatus.FAILED, "{}", "", message);
+          } else {
+            // Determine where to store the keytab file.  It should go into a host-specific
+            // directory under the previously determined data directory.
+            File hostDirectory = new File(getDataDirectoryPath(), host);
 
-              // Ensure the host directory exists...
-              if (hostDirectory.exists() || hostDirectory.mkdirs()) {
-                File keytabFile = new File(hostDirectory, DigestUtils.sha1Hex(keytabFilePath));
+            // Ensure the host directory exists...
+            if (hostDirectory.exists() || hostDirectory.mkdirs()) {
+              File keytabFile = new File(hostDirectory, DigestUtils.sha1Hex(keytabFilePath));
+              Integer keyNumber = principalKeyNumberMap.get(evaluatedPrincipal);
 
-                if (operationHandler.createKeytabFile(evaluatedPrincipal, password, keytabFile)) {
-                  LOG.debug("Successfully created keytab file for {} at {}",
-                      evaluatedPrincipal, keytabFile.getAbsolutePath());
-                } else {
-                  String message = String.format("Failed to create keytab file for %s at %s",
-                      evaluatedPrincipal, keytabFile.getAbsolutePath());
-                  LOG.error(message);
-                  commandReport = createCommandReport(1, HostRoleStatus.FAILED, "{}", "", message);
-                }
+              if (operationHandler.createKeytabFile(evaluatedPrincipal, password, keyNumber, keytabFile)) {
+                LOG.debug("Successfully created keytab file for {} at {}",
+                    evaluatedPrincipal, keytabFile.getAbsolutePath());
               } else {
-                String message = String.format("Failed to create keytab file for %s, the container directory does not exist: %s",
-                    evaluatedPrincipal, hostDirectory.getAbsolutePath());
+                String message = String.format("Failed to create keytab file for %s at %s",
+                    evaluatedPrincipal, keytabFile.getAbsolutePath());
                 LOG.error(message);
                 commandReport = createCommandReport(1, HostRoleStatus.FAILED, "{}", "", message);
               }
+            } else {
+              String message = String.format("Failed to create keytab file for %s, the container directory does not exist: %s",
+                  evaluatedPrincipal, hostDirectory.getAbsolutePath());
+              LOG.error(message);
+              commandReport = createCommandReport(1, HostRoleStatus.FAILED, "{}", "", message);
             }
           }
         }

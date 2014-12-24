@@ -171,10 +171,16 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
     return value;
   },
 
+  /**
+   * Sort by host_name by default
+   * @method getSortProps
+   * @returns {{value: 'asc|desc', name: string, type: 'SORT'}[]}
+   */
   getSortProps: function () {
-    // sort by host_name by default
-    if (App.db.getSortingStatuses(this.get('name')) && App.db.getSortingStatuses(this.get('name')).length === 0) {
-      App.db.setSortingStatuses(this.get('name'), {
+    var controllerName = this.get('name'),
+      db = App.db.getSortingStatuses(controllerName);
+    if (db && db.everyProperty('status', 'sorting')) {
+      App.db.setSortingStatuses(controllerName, {
         name: 'hostName',
         status: 'sorting_asc'
       });
@@ -184,6 +190,7 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
 
   /**
    * get query parameters computed from filter properties, sort properties and custom properties of view
+   * @param {boolean} [skipNonFilterProperties]
    * @return {Array}
    * @method getQueryParameters
    */
@@ -301,7 +308,7 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
       'UNHEALTHY': data.Clusters.health_report['Host/host_status/UNHEALTHY'],
       'ALERT': data.Clusters.health_report['Host/host_status/ALERT'],
       'UNKNOWN': data.Clusters.health_report['Host/host_status/UNKNOWN'],
-      'health-status-WITH-ALERTS': (data.alerts_summary) ? data.alerts_summary.CRITICAL + data.alerts_summary.WARNING : 0,
+      'health-status-WITH-ALERTS': (data.alerts_summary_hosts) ? data.alerts_summary_hosts.CRITICAL + data.alerts_summary_hosts.WARNING : 0,
       'health-status-RESTART': data.Clusters.health_report['Host/stale_config'],
       'health-status-PASSIVE_STATE': data.Clusters.health_report['Host/maintenance_state'],
       'TOTAL': data.Clusters.total_hosts

@@ -83,6 +83,12 @@ def setup_users():
   set_uid(params.smoke_user, params.smoke_user_dirs)
 
   if params.has_hbase_masters:
+    Directory (params.hbase_tmp_dir,
+               owner = params.hbase_user,
+               mode=0775,
+               recursive = True,
+               recursive_permission = True
+    )
     set_uid(params.hbase_user, params.hbase_user_dirs)
     
 def set_uid(user, user_dirs):
@@ -94,32 +100,33 @@ def set_uid(user, user_dirs):
   File(format("{tmp_dir}/changeUid.sh"),
        content=StaticFile("changeToSecureUid.sh"),
        mode=0555)
-  Execute(format("{tmp_dir}/changeUid.sh {user} {user_dirs} 2>/dev/null"),
+  Execute(format("{tmp_dir}/changeUid.sh {user} {user_dirs}"),
           not_if = format("test $(id -u {user}) -gt 1000"))
     
 def setup_hadoop_env():
   import params
-  if params.has_namenode:
+  stackversion = params.stack_version_unformatted
+  if params.has_namenode or stackversion.find('Gluster') >= 0:
     if params.security_enabled:
       tc_owner = "root"
     else:
       tc_owner = params.hdfs_user
 
-    Directory(params.hadoop_root_dir,
-              mode=0755
-    )
     Directory(params.hadoop_dir,
               mode=0755
     )
-    Directory(params.hadoop_data_dir,
-              owner=params.hdfs_user,
+    if stackversion.find('Gluster') >= 0:
+        Directory(params.hadoop_conf_empty_dir,
+              recursive=True,
+              owner="root",
               group=params.user_group
-    )
-    Directory(params.hadoop_conf_empty_dir,
+        )
+    else:
+        Directory(params.hadoop_conf_empty_dir,
               recursive=True,
               owner=tc_owner,
               group=params.user_group
-    )
+        )
     Link(params.hadoop_conf_dir,
          to=params.hadoop_conf_empty_dir,
          not_if=format("ls {hadoop_conf_dir}")

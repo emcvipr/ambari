@@ -28,11 +28,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.Role;
+import org.apache.ambari.server.RoleCommand;
 import org.apache.ambari.server.StaticallyInject;
 import org.apache.ambari.server.actionmanager.ActionManager;
 import org.apache.ambari.server.actionmanager.HostRoleCommand;
@@ -60,14 +61,20 @@ import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.orm.entities.UpgradeEntity;
 import org.apache.ambari.server.orm.entities.UpgradeGroupEntity;
 import org.apache.ambari.server.orm.entities.UpgradeItemEntity;
+import org.apache.ambari.server.stack.MasterHostResolver;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.ConfigHelper;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.UpgradeHelper;
 import org.apache.ambari.server.state.UpgradeHelper.UpgradeGroupHolder;
 import org.apache.ambari.server.state.stack.UpgradePack;
+import org.apache.ambari.server.state.stack.upgrade.ConfigureTask;
+import org.apache.ambari.server.state.stack.upgrade.ManualTask;
+import org.apache.ambari.server.state.stack.upgrade.ServerSideActionTask;
 import org.apache.ambari.server.state.stack.upgrade.StageWrapper;
+import org.apache.ambari.server.state.stack.upgrade.Task;
 import org.apache.ambari.server.state.stack.upgrade.TaskWrapper;
+import org.apache.ambari.server.state.svccomphost.ServiceComponentHostServerActionEvent;
 import org.apache.ambari.server.utils.StageUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -307,43 +314,39 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
   }
 
   /**
-   * Inject variables into the list of {@link org.apache.ambari.server.orm.entities.UpgradeItemEntity} items, whose
+   * Inject variables into the {@link org.apache.ambari.server.orm.entities.UpgradeItemEntity}, whose
    * tasks may use strings like {{configType/propertyName}} that need to be retrieved from the properties.
    * @param configHelper Configuration Helper
    * @param cluster Cluster
-   * @param items Collection of items whose tasks will be injected.
-   * @return Return the collection of items with the injected properties.
+   * @param upgradeItem the item whose tasks will be injected.
    */
-  private List<UpgradeItemEntity> injectVariables(ConfigHelper configHelper, Cluster cluster, List<UpgradeItemEntity> items) {
+  private void injectVariables(ConfigHelper configHelper, Cluster cluster, UpgradeItemEntity upgradeItem) {
     final String regexp = "(\\{\\{.*?\\}\\})";
 
-    for (UpgradeItemEntity upgradeItem : items) {
-      String task = upgradeItem.getTasks();
-      if (task != null && !task.isEmpty()) {
-        Matcher m = Pattern.compile(regexp).matcher(task);
-        while(m.find()) {
-          String origVar = m.group(1);
-          String formattedVar = origVar.substring(2, origVar.length() - 2).trim();
+    String task = upgradeItem.getTasks();
+    if (task != null && !task.isEmpty()) {
+      Matcher m = Pattern.compile(regexp).matcher(task);
+      while(m.find()) {
+        String origVar = m.group(1);
+        String formattedVar = origVar.substring(2, origVar.length() - 2).trim();
 
-          int posConfigFile = formattedVar.indexOf("/");
-          if (posConfigFile > 0) {
-            String configType = formattedVar.substring(0, posConfigFile);
-            String propertyName = formattedVar.substring(posConfigFile + 1, formattedVar.length());
-            try {
-              // TODO, some properties use 0.0.0.0 to indicate the current host.
-              // Right now, ru_execute_tasks.py is responsible for replacing 0.0.0.0 with the hostname.
+        int posConfigFile = formattedVar.indexOf("/");
+        if (posConfigFile > 0) {
+          String configType = formattedVar.substring(0, posConfigFile);
+          String propertyName = formattedVar.substring(posConfigFile + 1, formattedVar.length());
+          try {
+            // TODO, some properties use 0.0.0.0 to indicate the current host.
+            // Right now, ru_execute_tasks.py is responsible for replacing 0.0.0.0 with the hostname.
 
-              String configValue = configHelper.getPropertyValueFromStackDefinitions(cluster, configType, propertyName);
-              task = task.replace(origVar, configValue);
-            } catch (Exception err) {
-              LOG.error(String.format("Exception trying to retrieve property %s/%s. Error: %s", configType, propertyName, err.getMessage()));
-            }
+            String configValue = configHelper.getPropertyValueFromStackDefinitions(cluster, configType, propertyName);
+            task = task.replace(origVar, configValue);
+          } catch (Exception err) {
+            LOG.error(String.format("Exception trying to retrieve property %s/%s. Error: %s", configType, propertyName, err.getMessage()));
           }
         }
-        upgradeItem.setTasks(task);
       }
+      upgradeItem.setTasks(task);
     }
-    return items;
   }
 
   private UpgradeEntity createUpgrade(UpgradePack pack, Map<String, Object> requestMap)
@@ -358,8 +361,14 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     Cluster cluster = getManagementController().getClusters().getCluster(clusterName);
     ConfigHelper configHelper = getManagementController().getConfigHelper();
 
+    MasterHostResolver mhr = new MasterHostResolver(cluster);
     UpgradeHelper helper = new UpgradeHelper();
-    List<UpgradeGroupHolder> groups = helper.createUpgrade(cluster, pack);
+
+    List<UpgradeGroupHolder> groups = helper.createUpgrade(cluster, mhr, pack);
+    if (groups.isEmpty()) {
+      throw new AmbariException("There are no upgrade groupings available");
+    }
+
     List<UpgradeGroupEntity> groupEntities = new ArrayList<UpgradeGroupEntity>();
 
     final String version = (String) requestMap.get(UPGRADE_VERSION);
@@ -373,17 +382,38 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
       List<UpgradeItemEntity> itemEntities = new ArrayList<UpgradeItemEntity>();
 
       for (StageWrapper wrapper : group.items) {
-        UpgradeItemEntity itemEntity = new UpgradeItemEntity();
-        itemEntity.setText(wrapper.getText());
-        itemEntity.setTasks(wrapper.getTasksJson());
-        itemEntity.setHosts(wrapper.getHostsJson());
-        itemEntities.add(itemEntity);
+        if (wrapper.getType() == StageWrapper.Type.SERVER_SIDE_ACTION) {
+          // !!! each stage is guaranteed to be of one type.  but because there
+          // is a bug that prevents one stage with multiple tasks assigned for the same host,
+          // break them out into individual stages.
 
-        // upgrade items match a stage
-        createStage(cluster, req, version, itemEntity, wrapper);
+          for (TaskWrapper taskWrapper : wrapper.getTasks()) {
+            for (Task task : taskWrapper.getTasks()) {
+              UpgradeItemEntity itemEntity = new UpgradeItemEntity();
+              itemEntity.setText(wrapper.getText());
+              itemEntity.setTasks(wrapper.getTasksJson());
+              itemEntity.setHosts(wrapper.getHostsJson());
+              itemEntities.add(itemEntity);
+
+              injectVariables(configHelper, cluster, itemEntity);
+
+              makeServerSideStage(cluster, req, version, itemEntity, (ServerSideActionTask) task);
+            }
+          }
+        } else {
+          UpgradeItemEntity itemEntity = new UpgradeItemEntity();
+          itemEntity.setText(wrapper.getText());
+          itemEntity.setTasks(wrapper.getTasksJson());
+          itemEntity.setHosts(wrapper.getHostsJson());
+          itemEntities.add(itemEntity);
+
+          injectVariables(configHelper, cluster, itemEntity);
+
+          // upgrade items match a stage
+          createStage(cluster, req, version, itemEntity, wrapper);
+        }
+
       }
-
-      itemEntities = injectVariables(configHelper, cluster, itemEntities);
 
       groupEntity.setItems(itemEntities);
 
@@ -430,6 +460,8 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
       case SERVICE_CHECK:
         makeServiceCheckStage(cluster, request, version, entity, wrapper);
         break;
+      default:
+        break;
     }
 
   }
@@ -437,9 +469,15 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
   private void makeActionStage(Cluster cluster, RequestStageContainer request, final String version,
       UpgradeItemEntity entity, StageWrapper wrapper) throws AmbariException {
 
+    if (0 == wrapper.getHosts().size()) {
+      throw new AmbariException(
+          String.format("Cannot create action for '%s' with no hosts", wrapper.getText()));
+    }
+
     // add each host to this stage
     RequestResourceFilter filter = new RequestResourceFilter("", "",
         new ArrayList<String>(wrapper.getHosts()));
+
 
     Map<String, String> params = new HashMap<String, String>();
     params.put("tasks", entity.getTasks());
@@ -576,4 +614,68 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     request.addStages(Collections.singletonList(stage));
   }
 
+  private void makeServerSideStage(Cluster cluster, RequestStageContainer request, String version,
+      UpgradeItemEntity entity, ServerSideActionTask task) throws AmbariException {
+
+    Map<String, String> commandParams = new HashMap<String, String>();
+    commandParams.put("clusterName", cluster.getClusterName());
+    commandParams.put("version", version);
+
+    String itemText = entity.getText();
+    switch (task.getType()) {
+      case MANUAL: {
+        itemText = ((ManualTask) task).message;
+        break;
+      }
+      case CONFIGURE: {
+        ConfigureTask ct = (ConfigureTask) task;
+        commandParams.put("type", ct.configType);
+        commandParams.put("key", ct.key);
+        commandParams.put("value", ct.value);
+        itemText = String.format("Updating config %s/%s to %s", ct.configType, ct.key, ct.value);
+        break;
+      }
+      default:
+        break;
+    }
+
+    entity.setText(itemText);
+
+    ActionExecutionContext actionContext = new ActionExecutionContext(
+        cluster.getClusterName(), Role.AMBARI_SERVER_ACTION.toString(),
+        Collections.<RequestResourceFilter>emptyList(),
+        commandParams);
+    actionContext.setTimeout(Short.valueOf((short)-1));
+
+    ExecuteCommandJson jsons = commandExecutionHelper.get().getCommandJson(
+        actionContext, cluster);
+
+    Stage stage = stageFactory.get().createNew(request.getId().longValue(),
+        "/tmp/ambari",
+        cluster.getClusterName(),
+        cluster.getClusterId(),
+        entity.getText(),
+        jsons.getClusterHostInfo(),
+        jsons.getCommandParamsForStage(),
+        jsons.getHostParamsForStage());
+
+    long stageId = request.getLastStageId() + 1;
+    if (0L == stageId) {
+      stageId = 1L;
+    }
+    stage.setStageId(stageId);
+    entity.setStageId(Long.valueOf(stageId));
+
+    // !!! hack hack hack
+    String host = cluster.getAllHostsDesiredConfigs().keySet().iterator().next();
+
+    stage.addServerActionCommand(task.getImplementationClass(),
+        Role.AMBARI_SERVER_ACTION,
+        RoleCommand.EXECUTE,
+        cluster.getClusterName(), host,
+        new ServiceComponentHostServerActionEvent(StageUtils.getHostName(), System.currentTimeMillis()),
+        commandParams, null, 1200);
+
+    request.addStages(Collections.singletonList(stage));
+  }
 }

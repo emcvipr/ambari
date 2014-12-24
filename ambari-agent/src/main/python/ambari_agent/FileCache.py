@@ -39,6 +39,7 @@ class FileCache():
   """
 
   STACKS_CACHE_DIRECTORY="stacks"
+  COMMON_SERVICES_DIRECTORY="common-services"
   CUSTOM_ACTIONS_CACHE_DIRECTORY="custom_actions"
   HOST_SCRIPTS_CACHE_DIRECTORY="host_scripts"
   HASH_SUM_FILE=".hash"
@@ -67,8 +68,7 @@ class FileCache():
     Returns a base directory for service
     """
     service_subpath = command['commandParams']['service_package_folder']
-    subpath = os.path.join(self.STACKS_CACHE_DIRECTORY, service_subpath)
-    return self.provide_directory(self.cache_dir, subpath,
+    return self.provide_directory(self.cache_dir, service_subpath,
                                   server_url_prefix)
 
 

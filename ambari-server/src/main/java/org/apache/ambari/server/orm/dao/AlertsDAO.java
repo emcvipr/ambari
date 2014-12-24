@@ -340,6 +340,68 @@ public class AlertsDAO {
   }
 
   /**
+   * Retrieve the summary alert information for all hosts. This is different
+   * from {@link #findCurrentCounts(long, String, String)} since this will
+   * return only alerts related to hosts and those values will be the total
+   * number of hosts affected, not the total number of alerts.
+   *
+   * @param clusterId
+   *          the cluster id
+   * @return the summary DTO for host alerts.
+   */
+  @RequiresSession
+  public AlertHostSummaryDTO findCurrentHostCounts(long clusterId) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("SELECT MAX(CASE WHEN history.alertState = :criticalState THEN 3 WHEN history.alertState = :warningState THEN 2 WHEN history.alertState = :unknownState THEN 1 ELSE 0 END) ");
+    sb.append("FROM AlertCurrentEntity alert JOIN alert.alertHistory history ");
+    sb.append("WHERE history.clusterId = :clusterId AND history.hostName IS NOT NULL GROUP BY history.hostName");
+
+    // use Number here since some databases like MySQL return Long and some
+    // return Integer and we don't want a class cast exception
+    TypedQuery<Number> query = entityManagerProvider.get().createQuery(
+        sb.toString(), Number.class);
+
+    query.setParameter("clusterId", Long.valueOf(clusterId));
+    query.setParameter("criticalState", AlertState.CRITICAL);
+    query.setParameter("warningState", AlertState.WARNING);
+    query.setParameter("unknownState", AlertState.UNKNOWN);
+
+    int okCount = 0;
+    int warningCount = 0;
+    int criticalCount = 0;
+    int unknownCount = 0;
+
+    List<Number> hostStateValues = daoUtils.selectList(query);
+    for (Number hostStateValue : hostStateValues) {
+      if (null == hostStateValue) {
+        continue;
+      }
+
+      int integerValue = hostStateValue.intValue();
+
+      switch (integerValue) {
+        case 0:
+          okCount++;
+          break;
+        case 1:
+          unknownCount++;
+          break;
+        case 2:
+          warningCount++;
+          break;
+        case 3:
+          criticalCount++;
+          break;
+      }
+    }
+
+    AlertHostSummaryDTO hostSummary = new AlertHostSummaryDTO(okCount,
+        unknownCount, warningCount, criticalCount);
+
+    return hostSummary;
+  }
+
+  /**
    * Gets the current alerts for a given service.
    *
    * @return the current alerts for the given service or an empty list if none
@@ -618,7 +680,7 @@ public class AlertsDAO {
   public AlertSummaryDTO findAggregateCounts(long clusterId, String alertName) {
     StringBuilder sb = new StringBuilder();
     sb.append("SELECT NEW %s (");
-    sb.append("COUNT(history), ");
+    sb.append("SUM(CASE WHEN history.alertState = %s.%s THEN 1 ELSE 0 END), ");
     sb.append("SUM(CASE WHEN history.alertState = %s.%s THEN 1 ELSE 0 END), ");
     sb.append("SUM(CASE WHEN history.alertState = %s.%s THEN 1 ELSE 0 END), ");
     sb.append("SUM(CASE WHEN history.alertState = %s.%s THEN 1 ELSE 0 END)) ");
@@ -627,6 +689,7 @@ public class AlertsDAO {
 
     String str = String.format(sb.toString(),
         AlertSummaryDTO.class.getName(),
+        AlertState.class.getName(), AlertState.OK.name(),
         AlertState.class.getName(), AlertState.WARNING.name(),
         AlertState.class.getName(), AlertState.CRITICAL.name(),
         AlertState.class.getName(), AlertState.UNKNOWN.name());

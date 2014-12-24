@@ -64,7 +64,7 @@ def hive(name=None):
                "-o {check_db_connection_jar_name}'")
 
   Execute(cmd,
-          not_if=format("[ -f {check_db_connection_jar_name}]"),
+          not_if=format("[ -f {check_db_connection_jar} ]"),
           environment = environment)
 
   if name == 'metastore':
@@ -161,34 +161,29 @@ def crt_file(name):
 def jdbc_connector():
   import params
 
-  if params.hive_jdbc_driver == "com.mysql.jdbc.Driver":
-    cmd = ('cp', format('/usr/share/java/{jdbc_jar_name}'), params.target)
+  if params.hive_jdbc_driver in params.hive_jdbc_drivers_list and params.hive_use_existing_db:
+    environment = {
+      "no_proxy": format("{ambari_server_hostname}")
+    }
 
-    Execute(cmd,
+    Execute(('curl', '-kf', '-x', "", '--retry', '10', params.driver_curl_source, '-o', params.driver_curl_target),
+            not_if=format("test -f {target}"),
+            path=["/bin", "/usr/bin/"],
+            environment=environment,
+            sudo = True)
+
+
+    Execute(('cp', params.driver_curl_target, params.target),
+            not_if=format("test -f {target}"),
+            creates=params.target,
+            path=["/bin", "/usr/bin/"],
+            sudo = True)
+
+  else:
+    #for default hive db (Mysql)
+    Execute(('cp', format('/usr/share/java/{jdbc_jar_name}'), params.target),
             not_if=format("test -f {target}"),
             creates=params.target,
             path=["/bin", "/usr/bin/"],
             sudo=True
     )
-
-  elif params.hive_jdbc_driver == "org.postgresql.Driver":
-    cmd = format("hive mkdir -p {artifact_dir} ; cp /usr/share/java/{jdbc_jar_name} {target}")
-
-    Execute(cmd,
-            not_if=format("test -f {target}"),
-            creates=params.target,
-            path=["/bin", "usr/bin/"])
-
-  elif params.hive_jdbc_driver == "oracle.jdbc.driver.OracleDriver":
-    environment = {
-      "no_proxy": format("{ambari_server_hostname}")
-    }
-
-    cmd = format(
-      "mkdir -p {artifact_dir} ; curl -kf -x \"\" --retry 10 {driver_curl_source} -o {driver_curl_target} &&  "
-      "cp {driver_curl_target} {target}")
-
-    Execute(cmd,
-            not_if=format("test -f {target}"),
-            path=["/bin", "/usr/bin/"],
-            environment=environment)

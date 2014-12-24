@@ -31,6 +31,17 @@ var App = require('app');
  */
 var urls = {
 
+  'common.cluster.update' : {
+    'type': 'PUT',
+    'real': '/clusters/{clusterName}',
+    'mock': '/data/wizard/deploy/poll_1.json',
+    'format': function (data) {
+      return {
+        data: JSON.stringify(data.data)
+      };
+    }
+  },
+
   'common.services.update' : {
     'real': '/clusters/{clusterName}/services?{urlParams}',
     'mock': '/data/wizard/deploy/poll_1.json',
@@ -175,6 +186,11 @@ var urls = {
     }
   },
 
+  'common.request.polling': {
+    'real': '/clusters/{clusterName}/requests/{requestId}?fields=tasks/*,Requests/*&tasks/Tasks/stage_id={stageId}',
+    'mock': '/data/background_operations/host_upgrade_tasks.json'
+  },
+
   'service.ambari': {
     'real': '/services/AMBARI?fields=components/RootServiceComponents',
     'mock': '/data/services/ambari.json'
@@ -303,11 +319,6 @@ var urls = {
   'common.delete.request_schedule': {
     'real': '/clusters/{clusterName}/request_schedules/{request_schedule_id}',
     'type': 'DELETE'
-  },
-
-  'alerts.load_alert_notification': {
-    'real': '/alert_targets?fields=*',
-    'mock': 'data/alerts/alertNotifications.json'
   },
   'alerts.load_alert_groups': {
     'real': '/clusters/{clusterName}/alert_groups?fields=*',
@@ -1288,17 +1299,17 @@ var urls = {
     }
   },
   'admin.kerberize.cluster': {
-    'type': 'POST',
+    'type': 'PUT',
     'real': '/clusters/{clusterName}',
     'mock': '/data/wizard/kerberos/kerberize_cluster.json',
-    'format' : function () {
+    'format' : function (data) {
       return {
-        data: '{"RequestInfo": {"context" :"' + Em.I18n.t('requestInfo.kerberizeCluster') + '"}'
+        data: JSON.stringify(data.data)
       }
     }
   },
   'admin.kerberize.stack_descriptor': {
-    'real': '',
+    'real': '/stacks/{stackName}/versions/{stackVersionNumber}?fields=Versions/kerberos_descriptor',
     'mock': '/data/wizard/kerberos/stack_descriptors.json'
   },
   'admin.poll.kerberize.cluster.request': {
@@ -1342,12 +1353,20 @@ var urls = {
     'mock': '/data/wizard/{mock}'
   },
   'admin.upgrade.data': {
-    'real': '/clusters/{clusterName}/upgrades/{id}?fields=Upgrade,upgrade_groups/UpgradeGroup,upgrade_groups/upgrade_items/*,upgrade_groups/upgrade_items/tasks/*',
+    'real': '/clusters/{clusterName}/upgrades/{id}?fields=Upgrade,upgrade_groups/UpgradeGroup,upgrade_groups/upgrade_items/*,' +
+      'upgrade_groups/upgrade_items/tasks/Tasks/id,' +
+      'upgrade_groups/upgrade_items/tasks/Tasks/command_detail,' +
+      'upgrade_groups/upgrade_items/tasks/Tasks/request_id,' +
+      'upgrade_groups/upgrade_items/tasks/Tasks/status',
     'mock': '/data/stack_versions/upgrade.json'
   },
   'admin.upgrade.state': {
     'real': '/clusters/{clusterName}/upgrades/{id}?fields=Upgrade',
-    'mock': '/data/stack_versions/upgrade_state.json'
+    'mock': '/data/stack_versions/upgrade.json'
+  },
+  'admin.upgrade.task': {
+    'real': '/clusters/{clusterName}/upgrades/{upgradeId}/upgrade_groups?upgrade_items/tasks/Tasks/id={taskId}&fields=upgrade_items/tasks/Tasks/*',
+    'mock': '/data/stack_versions/upgrade_task.json'
   },
   'admin.upgrade.start': {
     'real': '/clusters/{clusterName}/upgrades/{id}',
@@ -1361,6 +1380,20 @@ var urls = {
           }
         })
       }
+    }
+  },
+  'admin.upgrade.upgradeItem.setState': {
+    'real': '/clusters/{clusterName}/upgrades/{upgradeId}/upgrade_groups/{groupId}/upgrade_items/{itemId}',
+    'mock': '',
+    type: 'PUT',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          "UpgradeItem" : {
+            "status" : data.status
+          }
+        })
+      };
     }
   },
   'admin.stack_versions.all': {
@@ -1379,8 +1412,12 @@ var urls = {
     },
     'mock': ''
   },
+  'admin.stack_versions.progress.request': {
+    'real': '/clusters/{clusterName}/requests/{requestId}?fields=Requests/progress_percent',
+    'mock': '/data/background_operations/host_upgrade_tasks.json'
+  },
   'admin.rolling_upgrade.pre_upgrade_check': {
-    'real': '/clusters/{clusterName}/rolling_upgrades_check',
+    'real': '/clusters/{clusterName}/rolling_upgrades_check?fields=*',
     'mock': '/data/stack_versions/pre_upgrade_check.json'
   },
 
@@ -1615,7 +1652,7 @@ var urls = {
   },
 
   'preinstalled.checks.tasks': {
-    'real': '/requests/{requestId}?fields=tasks/Tasks',
+    'real': '/requests/{requestId}?fields=tasks/Tasks,Requests/inputs,Requests/request_status',
     'mock': '/data/requests/host_check/1.json'
   },
 
@@ -2030,7 +2067,7 @@ var urls = {
     }
   },
   'host.status.counters': {
-    'real': '/clusters/{clusterName}?fields=Clusters/health_report,Clusters/total_hosts,alerts_summary&minimal_response=true',
+    'real': '/clusters/{clusterName}?fields=Clusters/health_report,Clusters/total_hosts,alerts_summary_hosts&minimal_response=true',
     'mock': '/data/hosts/HDP2/host_status_counters.json'
   },
   'host.stack_versions.install': {

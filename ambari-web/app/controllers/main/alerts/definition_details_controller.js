@@ -23,7 +23,7 @@ App.MainAlertDefinitionDetailsController = Em.Controller.extend({
   alerts: function () {
     return App.AlertInstance.find().toArray()
         .filterProperty('definitionId', this.get('content.id'));
-  }.property('App.router.mainAlertInstancesController.isLoaded'),
+  }.property('App.router.mainAlertInstancesController.isLoaded', 'App.router.mainAlertInstancesController.reload'),
 
   // stores object with editing form data (label, description, thresholds)
   editing: Em.Object.create({
@@ -211,11 +211,28 @@ App.MainAlertDefinitionDetailsController = Em.Controller.extend({
 
   /**
    * "Disable / Enable" button handler
-   * @returns {$.ajax}
    * @method toggleState
    */
   toggleState: function () {
     var alertDefinition = this.get('content');
+    var self = this;
+    var bodyMessage = Em.Object.create({
+      confirmMsg: alertDefinition.get('enabled') ? Em.I18n.t('alerts.table.state.enabled.confirm.msg') : Em.I18n.t('alerts.table.state.disabled.confirm.msg'),
+      confirmButton: alertDefinition.get('enabled') ? Em.I18n.t('alerts.table.state.enabled.confirm.btn') : Em.I18n.t('alerts.table.state.disabled.confirm.btn')
+    });
+
+    return App.showConfirmationFeedBackPopup(function (query) {
+      self.toggleDefinitionState(alertDefinition);
+    }, bodyMessage);
+  },
+
+  /**
+   * Enable/disable alertDefinition
+   * @param {object} alertDefinition
+   * @returns {$.ajax}
+   * @method toggleDefinitionState
+   */
+  toggleDefinitionState: function (alertDefinition) {
     var newState = !alertDefinition.get('enabled');
     alertDefinition.set('enabled', newState);
     return App.ajax.send({
@@ -247,6 +264,7 @@ App.MainAlertDefinitionDetailsController = Em.Controller.extend({
    */
   goToHostAlerts: function (event) {
     if (event && event.context) {
+      App.router.get('mainHostDetailsController').set('referer', App.router.location.lastSetURL);
       App.router.transitionTo('main.hosts.hostDetails.alerts', event.context);
     }
   }

@@ -18,12 +18,17 @@
 
 package org.apache.ambari.server.serveraction.kerberos;
 
+import com.google.inject.Inject;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.agent.CommandReport;
 import org.apache.ambari.server.serveraction.AbstractServerAction;
+import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.Clusters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile.DATA_FILE_NAME;
 
 import java.io.File;
 import java.io.IOException;
@@ -47,23 +52,10 @@ public abstract class KerberosServerAction extends AbstractServerAction {
   public static final String DATA_DIRECTORY = "data_directory";
 
   /**
-   * A (command parameter) property name used to hold the KDC administrator's principal value.
-   * TODO (rlevas): For security purposes, this data should be moved to an encrypted storage facility.
+   * A (command parameter) property name used to hold encrypted data representing the KDC
+   * administrator credentials
    */
-  public static final String ADMINISTRATOR_PRINCIPAL = "admin_principal";
-
-  /**
-   * A (command parameter) property name used to hold the KDC administrator's password value.
-   * TODO (rlevas): For security purposes, this data should be moved to an encrypted storage facility.
-   */
-  public static final String ADMINISTRATOR_PASSWORD = "admin_password";
-
-  /**
-   * A (command parameter) property name used to hold the KDC administrator's (base64-encoded) keytab
-   * value.
-   * TODO (rlevas): For security purposes, this data should be moved to an encrypted storage facility.
-   */
-  public static final String ADMINISTRATOR_KEYTAB = "admin_keytab";
+  public static final String ADMINISTRATOR_CREDENTIAL = "kerberos_admin_credential";
 
   /**
    * A (command parameter) property name used to hold the default Kerberos realm value.
@@ -76,12 +68,33 @@ public abstract class KerberosServerAction extends AbstractServerAction {
    */
   public static final String KDC_TYPE = "kdc_type";
 
+  /**
+   * The prefix to use for the data directory name.
+   */
+  public static final String DATA_DIRECTORY_PREFIX = ".ambari_";
+
   /*
-   * Kerberos action shared data entry names
+   * Kerberos action shared data entry name for the principal-to-password map
    */
   private static final String PRINCIPAL_PASSWORD_MAP = "principal_password_map";
 
+  /*
+   * Kerberos action shared data entry name for the principal-to-key_number map
+   */
+  private static final String PRINCIPAL_KEY_NUMBER_MAP = "principal_key_number_map";
+
+  /*
+  * Key used in kerberosCommandParams in ExecutionCommand for base64 encoded keytab content
+  */
+  public static final String KEYTAB_CONTENT_BASE64 = "keytab_content_base64";
+
   private static final Logger LOG = LoggerFactory.getLogger(KerberosServerAction.class);
+
+  /**
+   * The Cluster that this ServerAction implementation is executing on
+   */
+  @Inject
+  private Clusters clusters = null;
 
   /**
    * Given a (command parameter) Map and a property name, attempts to safely retrieve the requested
@@ -119,7 +132,7 @@ public abstract class KerberosServerAction extends AbstractServerAction {
 
     return ((kdcType == null) || kdcType.isEmpty())
         ? KDCType.MIT_KDC
-        : KDCType.valueOf(kdcType.toUpperCase().replace("-", "_"));
+        : KDCType.translate(kdcType);
   }
 
   /**
@@ -130,25 +143,6 @@ public abstract class KerberosServerAction extends AbstractServerAction {
    */
   protected static String getDataDirectoryPath(Map<String, String> commandParameters) {
     return getCommandParameterValue(commandParameters, DATA_DIRECTORY);
-  }
-
-  /**
-   * Given a (command parameter) Map, attempts to safely retrieve the data needed to create a
-   * {@link org.apache.ambari.server.serveraction.kerberos.KerberosCredential} representing a KDC
-   * administrator.
-   * <p/>
-   * TODO (rlevas): For security purposes, this data should be moved to an encrypted storage facility.
-   *
-   * @param commandParameters a Map containing the dictionary of data to interrogate
-   * @return a KerberosCredential or null if commandParameters is null
-   */
-  protected static KerberosCredential getAdministratorCredential(Map<String, String> commandParameters) {
-    return (commandParameters == null)
-        ? null
-        : new KerberosCredential(
-        commandParameters.get(ADMINISTRATOR_PRINCIPAL),
-        commandParameters.get(ADMINISTRATOR_PASSWORD),
-        commandParameters.get(ADMINISTRATOR_KEYTAB));
   }
 
   /**
@@ -190,6 +184,50 @@ public abstract class KerberosServerAction extends AbstractServerAction {
 
       return (Map<String, String>) map;
     }
+  }
+
+  /**
+   * Gets the shared principal-to-key_number Map used to store principals and key numbers for
+   * use within the current request context.
+   * <p/>
+   * If the requested Map is not found in requestSharedDataContext, one will be created and stored,
+   * ensuring that a Map will always be returned, assuming requestSharedDataContext is not null.
+   *
+   * @param requestSharedDataContext a Map to be used a shared data among all ServerActions related
+   *                                 to a given request
+   * @return A Map of principals-to-key_numbers
+   */
+  protected static Map<String, Integer> getPrincipalKeyNumberMap(Map<String, Object> requestSharedDataContext) {
+    if (requestSharedDataContext == null) {
+      return null;
+    } else {
+      Object map = requestSharedDataContext.get(PRINCIPAL_KEY_NUMBER_MAP);
+
+      if (map == null) {
+        map = new HashMap<String, String>();
+        requestSharedDataContext.put(PRINCIPAL_KEY_NUMBER_MAP, map);
+      }
+
+      return (Map<String, Integer>) map;
+    }
+  }
+
+  /**
+   * Given a (command parameter) Map, attempts to safely retrieve the "data_directory" property.
+   *
+   * @param commandParameters a Map containing the dictionary of data to interrogate
+   * @return a String indicating the data directory or null (if not found or set)
+   */
+  protected KerberosCredential getAdministratorCredential(Map<String, String> commandParameters) throws AmbariException {
+    Cluster cluster = clusters.getCluster(getExecutionCommand().getClusterName());
+
+    if (cluster == null) {
+      throw new AmbariException("Failed get the Cluster object");
+    }
+
+    // Create the key like we did when we encrypted the data, based on the Cluster objects hashcode.
+    byte[] key = Integer.toHexString(cluster.hashCode()).getBytes();
+    return KerberosCredential.decrypt(getCommandParameterValue(commandParameters, ADMINISTRATOR_CREDENTIAL), key);
   }
 
   /**
@@ -243,68 +281,78 @@ public abstract class KerberosServerAction extends AbstractServerAction {
       if (dataDirectoryPath != null) {
         File dataDirectory = new File(dataDirectoryPath);
 
-        if (!dataDirectory.exists() || !dataDirectory.isDirectory()) {
-          String message = String.format("Failed to process the identities, the data directory does not exist: %s",
-              dataDirectory.getAbsolutePath());
-          LOG.error(message);
-          throw new AmbariException(message);
-        }
-        // The "index" file is expected to be in the specified data directory and named "index.dat"
-        File indexFile = new File(dataDirectory, KerberosActionDataFileBuilder.DATA_FILE_NAME);
-
-        if (!indexFile.canRead()) {
-          String message = String.format("Failed to process the identities, cannot read the index file: %s",
-              indexFile.getAbsolutePath());
-          LOG.error(message);
-          throw new AmbariException(message);
-        }
-        // Create the data file reader to parse and iterate through the records
-        KerberosActionDataFileReader reader = null;
-        KerberosOperationHandler handler = KerberosOperationHandlerFactory.getKerberosOperationHandler(kdcType);
-
-        if (handler == null) {
-          String message = String.format("Failed to process the identities, cannot read the index file: %s",
-              indexFile.getAbsolutePath());
-          LOG.error(message);
-          throw new AmbariException(message);
-        }
-
-        handler.open(administratorCredential, defaultRealm);
-
-        try {
-          reader = new KerberosActionDataFileReader(indexFile);
-          for (Map<String, String> record : reader) {
-            // Process the current record
-            commandReport = processRecord(record, defaultRealm, handler, requestSharedDataContext);
-
-            // If the principal processor returns a CommandReport, than it is time to stop since
-            // an error condition has probably occurred, else all is assumed to be well.
-            if (commandReport != null) {
-              break;
-            }
+        // If the data directory exists, attempt to process further, else assume there is no work to do
+        if (dataDirectory.exists()) {
+          if (!dataDirectory.isDirectory() || !dataDirectory.canRead()) {
+            String message = String.format("Failed to process the identities, the data directory is not accessible: %s",
+                dataDirectory.getAbsolutePath());
+            LOG.error(message);
+            throw new AmbariException(message);
           }
-        } catch (IOException e) {
-          String message = String.format("Failed to process the identities, cannot read the index file: %s",
-              indexFile.getAbsolutePath());
-          LOG.error(message, e);
-          throw new AmbariException(message, e);
-        } finally {
-          if (reader != null) {
-            // The reader needs to be closed, if it fails to close ignore the exception since
-            // there is little we can or care to do about it now.
+          // The "index" file may or may not exist in the data directory, depending on if there
+          // is work to do or not.
+          File indexFile = new File(dataDirectory, DATA_FILE_NAME);
+
+          if (indexFile.exists()) {
+            if (!indexFile.canRead()) {
+              String message = String.format("Failed to process the identities, cannot read the index file: %s",
+                  indexFile.getAbsolutePath());
+              LOG.error(message);
+              throw new AmbariException(message);
+            }
+
+            KerberosOperationHandler handler = KerberosOperationHandlerFactory.getKerberosOperationHandler(kdcType);
+            if (handler == null) {
+              String message = String.format("Failed to process the identities, a KDC operation handler was not found for the KDC type of : %s",
+                  kdcType.toString());
+              LOG.error(message);
+              throw new AmbariException(message);
+            }
+
+            // Create the data file reader to parse and iterate through the records
+            KerberosActionDataFileReader reader = null;
             try {
-              reader.close();
-            } catch (IOException e) {
-              // Ignore this...
-            }
-          }
+              handler.open(administratorCredential, defaultRealm);
 
-          // The KerberosOperationHandler needs to be closed, if it fails to close ignore the
-          // exception since there is little we can or care to do about it now.
-          try {
-            handler.close();
-          } catch (AmbariException e) {
-            // Ignore this...
+              reader = new KerberosActionDataFileReader(indexFile);
+              for (Map<String, String> record : reader) {
+                // Process the current record
+                commandReport = processRecord(record, defaultRealm, handler, requestSharedDataContext);
+
+                // If the principal processor returns a CommandReport, than it is time to stop since
+                // an error condition has probably occurred, else all is assumed to be well.
+                if (commandReport != null) {
+                  break;
+                }
+              }
+            } catch (AmbariException e) {
+              // Catch this separately from IOException since the reason it was thrown was not the same
+              // Note: AmbariException is an IOException, so there may be some confusion
+              throw new AmbariException(e.getMessage(), e);
+            } catch (IOException e) {
+              String message = String.format("Failed to process the identities, cannot read the index file: %s",
+                  indexFile.getAbsolutePath());
+              LOG.error(message, e);
+              throw new AmbariException(message, e);
+            } finally {
+              if (reader != null) {
+                // The reader needs to be closed, if it fails to close ignore the exception since
+                // there is little we can or care to do about it now.
+                try {
+                  reader.close();
+                } catch (IOException e) {
+                  // Ignore this...
+                }
+              }
+
+              // The KerberosOperationHandler needs to be closed, if it fails to close ignore the
+              // exception since there is little we can or care to do about it now.
+              try {
+                handler.close();
+              } catch (AmbariException e) {
+                // Ignore this...
+              }
+            }
           }
         }
       }

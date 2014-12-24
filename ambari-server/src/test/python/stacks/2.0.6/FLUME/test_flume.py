@@ -21,14 +21,20 @@ limitations under the License.
 from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
 import resource_management.core.source
+import os
+
 
 class TestFlumeHandler(RMFTestCase):
-
+  COMMON_SERVICES_PACKAGE_DIR = "FLUME/1.4.0.2.0/package"
+  STACK_VERSION = "2.0.6"
+  
   def test_configure_default(self):
-    self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
                        command = "configure",
-                       config_file="default.json")
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assert_configure_default()
     self.assertNoMoreResources()
@@ -42,9 +48,12 @@ class TestFlumeHandler(RMFTestCase):
     os_path_isfile_mock.side_effect = [True, False]
     cmd_target_names_mock.return_value = ["a1"]
 
-    self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
-                       classname = "FlumeHandler", command = "start",
-                       config_file="default.json")
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
+                       classname = "FlumeHandler",
+                       command = "start",
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assert_configure_default()
 
@@ -52,7 +61,7 @@ class TestFlumeHandler(RMFTestCase):
     self.assertTrue(set_desired_mock.call_args[0][0] == 'STARTED')
 
 
-    self.assertResourceCalled('Execute', "/usr/bin/sudo su flume -l -s /bin/bash -c 'export  JAVA_HOME=/usr/jdk64/jdk1.7.0_45 > /dev/null ; /usr/bin/flume-ng agent --name a1 --conf /etc/flume/conf/a1 --conf-file /etc/flume/conf/a1/flume.conf -Dflume.monitoring.type=ganglia -Dflume.monitoring.hosts=c6401.ambari.apache.org:8655' &",
+    self.assertResourceCalled('Execute', "/usr/bin/sudo su flume -l -s /bin/bash -c 'export  PATH=/bin JAVA_HOME=/usr/jdk64/jdk1.7.0_45 ; /usr/bin/flume-ng agent --name a1 --conf /etc/flume/conf/a1 --conf-file /etc/flume/conf/a1/flume.conf -Dflume.monitoring.type=ganglia -Dflume.monitoring.hosts=c6401.ambari.apache.org:8655' &",
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
         wait_for_finish = False,
     )
@@ -68,10 +77,12 @@ class TestFlumeHandler(RMFTestCase):
   def test_stop_default(self, set_desired_mock, glob_mock):
     glob_mock.side_effect = [['/var/run/flume/a1/pid'], ['/etc/flume/conf/a1/ambari-meta.json']]
 
-    self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
                        command = "stop",
-                       config_file="default.json")
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assertTrue(glob_mock.called)
 
@@ -90,10 +101,12 @@ class TestFlumeHandler(RMFTestCase):
   def test_status_default(self, sys_exit_mock, structured_out_mock):
     
     try:
-      self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+      self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
                        command = "status",
-                       config_file="default.json")
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
     except:
       # expected since ComponentIsNotRunning gets raised
       pass
@@ -110,10 +123,12 @@ class TestFlumeHandler(RMFTestCase):
     glob_mock.return_value = ['/etc/flume/conf/a1/ambari-meta.json']
 
     try:
-      self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+      self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
                        command = "status",
-                       config_file="default.json")
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
     except:
       # expected since ComponentIsNotRunning gets raised
       pass
@@ -133,10 +148,12 @@ class TestFlumeHandler(RMFTestCase):
     glob_mock.return_value = []
 
     try:
-      self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+      self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
        classname = "FlumeHandler",
        command = "status",
-       config_file="default.json")
+       config_file="default.json",
+       hdp_stack_version = self.STACK_VERSION,
+       target = RMFTestCase.TARGET_COMMON_SERVICES)
     except:
       # expected since ComponentIsNotRunning gets raised
       pass
@@ -228,10 +245,12 @@ class TestFlumeHandler(RMFTestCase):
     # 2nd call is to check if the process is live - that should be False
     os_path_isfile_mock.side_effect = [True, False]
 
-    self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
                        command = "start",
-                       config_file="flume_target.json")
+                       config_file="flume_target.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assert_configure_many()
 
@@ -256,15 +275,17 @@ class TestFlumeHandler(RMFTestCase):
     # 2nd call is to check if the process is live - that should be False
     os_path_isfile_mock.side_effect = [True, False]
 
-    self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
                        command = "start",
-                       config_file="flume_target.json")
+                       config_file="flume_target.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assert_configure_many()
 
 
-    self.assertResourceCalled('Execute', "/usr/bin/sudo su flume -l -s /bin/bash -c 'export  JAVA_HOME=/usr/jdk64/jdk1.7.0_45 > /dev/null ; /usr/bin/flume-ng agent --name b1 --conf /etc/flume/conf/b1 --conf-file /etc/flume/conf/b1/flume.conf -Dflume.monitoring.type=ganglia -Dflume.monitoring.hosts=c6401.ambari.apache.org:8655' &",
+    self.assertResourceCalled('Execute', "/usr/bin/sudo su flume -l -s /bin/bash -c 'export  PATH=/bin JAVA_HOME=/usr/jdk64/jdk1.7.0_45 ; /usr/bin/flume-ng agent --name b1 --conf /etc/flume/conf/b1 --conf-file /etc/flume/conf/b1/flume.conf -Dflume.monitoring.type=ganglia -Dflume.monitoring.hosts=c6401.ambari.apache.org:8655' &",
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
         wait_for_finish = False,
     )
@@ -280,10 +301,12 @@ class TestFlumeHandler(RMFTestCase):
   def test_stop_single(self, glob_mock):
     glob_mock.return_value = ['/var/run/flume/b1.pid']
 
-    self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
                        command = "stop",
-                       config_file="flume_target.json")
+                       config_file="flume_target.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assertTrue(glob_mock.called)
 
@@ -299,10 +322,12 @@ class TestFlumeHandler(RMFTestCase):
   def test_configure_with_existing(self, os_unlink_mock, expected_names_mock):
     expected_names_mock.return_value = ["x1"]
 
-    self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
                        command = "configure",
-                       config_file="default.json")
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assertTrue(os_unlink_mock.called)
     os_unlink_mock.assert_called_with('/etc/flume/conf/x1/ambari-meta.json')
@@ -312,10 +337,12 @@ class TestFlumeHandler(RMFTestCase):
 
 
   def test_flume_env_not_22(self):
-    self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
                        command = "configure",
-                       config_file="default.json")
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assertResourceCalled('Directory', '/etc/flume/conf', recursive=True)
 
@@ -347,10 +374,12 @@ class TestFlumeHandler(RMFTestCase):
                               content=content)
 
   def test_flume_env_with_22(self):
-    self.executeScript("2.0.6/services/FLUME/package/scripts/flume_handler.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
                        command = "configure",
-                       config_file="flume_22.json")
+                       config_file="flume_22.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assertResourceCalled('Directory', '/etc/flume/conf', recursive=True)
 

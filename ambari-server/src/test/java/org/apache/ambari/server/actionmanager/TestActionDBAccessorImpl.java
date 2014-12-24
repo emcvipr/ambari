@@ -103,7 +103,7 @@ public class TestActionDBAccessorImpl {
 
     am = new ActionManager(5000, 1200000, new ActionQueue(), clusters, db,
         new HostsMap((String) null), injector.getInstance(UnitOfWork.class),
-		injector.getInstance(RequestFactory.class), null);
+		injector.getInstance(RequestFactory.class), null, null);
   }
 
   @After
@@ -581,7 +581,7 @@ public class TestActionDBAccessorImpl {
     Stage s = new Stage(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
         "", "commandParamsStage", "hostParamsStage");
     s.setStageId(stageId);
-    s.addServerActionCommand(serverActionName, Role.AMBARI_SERVER_ACTION, RoleCommand.ACTIONEXECUTE, clusterName, null, null, 300);
+    s.addServerActionCommand(serverActionName, Role.AMBARI_SERVER_ACTION, RoleCommand.ACTIONEXECUTE, clusterName, null, null, "command details", 300);
     List<Stage> stages = new ArrayList<Stage>();
     stages.add(s);
     final RequestResourceFilter resourceFilter = new RequestResourceFilter("AMBARI", "SERVER", Arrays.asList(hostname));

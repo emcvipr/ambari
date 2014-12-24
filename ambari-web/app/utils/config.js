@@ -393,6 +393,7 @@ App.config = Em.Object.create({
           serviceConfigObj.id = 'site property';
           serviceConfigObj.displayName = configsPropertyDef && configsPropertyDef.displayName ? configsPropertyDef.displayName : index;
           serviceConfigObj.options = configsPropertyDef ? configsPropertyDef.options : null;
+          serviceConfigObj.radioName = configsPropertyDef ? configsPropertyDef.radioName : null;
           serviceConfigObj.serviceName = configsPropertyDef && configsPropertyDef.serviceName ? configsPropertyDef.serviceName : serviceName;
           serviceConfigObj.belongsToService = configsPropertyDef && configsPropertyDef.belongsToService ? configsPropertyDef.belongsToService : [];
           this.calculateConfigProperties(serviceConfigObj, isAdvanced, advancedConfigs);
@@ -974,7 +975,7 @@ App.config = Em.Object.create({
   },
   
   /**
-   * Add aditional properties to advanced property config object.
+   * Add additional properties to advanced property config object.
    * Additional logic based on `property_type`.
    *
    * @method advancedConfigIdentityData
@@ -1247,7 +1248,7 @@ App.config = Em.Object.create({
       hasInitialValue: !!stored.hasInitialValue,
       isOverridable: true,
       overrides: stored.overrides,
-      isRequired: true,
+      isRequired: false,
       isVisible: stored.isVisible,
       isFinal: stored.isFinal,
       defaultIsFinal: stored.defaultIsFinal,

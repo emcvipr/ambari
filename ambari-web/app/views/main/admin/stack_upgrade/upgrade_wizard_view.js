@@ -21,7 +21,7 @@ var App = require('app');
 
 App.upgradeWizardView = Em.View.extend({
   controllerBinding: 'App.router.mainAdminStackAndUpgradeController',
-  templateName: require('templates/main/admin/stack_upgrade/stack_upgrade_dialog'),
+  templateName: require('templates/main/admin/stack_upgrade/stack_upgrade_wizard'),
 
   /**
    * update timer
@@ -36,20 +36,36 @@ App.upgradeWizardView = Em.View.extend({
   isLoaded: false,
 
   /**
-   * string format: width:<number>%;
-   * @type {string}
-   */
-  progressWidth: function () {
-    return "width:" + this.get('overallProgress') + "%;";
-  }.property('overallProgress'),
-
-  /**
    * progress value is rounded to floor
    * @type {number}
    */
   overallProgress: function () {
     return Math.floor(this.get('controller.upgradeData.Upgrade.progress_percent'));
   }.property('controller.upgradeData.Upgrade.progress_percent'),
+
+  /**
+   * label of Upgrade status
+   * @type {string}
+   */
+  upgradeStatusLabel: function() {
+    switch (this.get('controller.upgradeData.Upgrade.request_status')) {
+      case 'QUEUED':
+      case 'PENDING':
+      case 'IN_PROGRESS':
+        return Em.I18n.t('admin.stackUpgrade.state.inProgress');
+      case 'COMPLETED':
+        return Em.I18n.t('admin.stackUpgrade.state.completed');
+      case 'ABORTED':
+      case 'TIMED_OUT':
+      case 'FAILED':
+      case 'HOLDING_FAILED':
+      case 'HOLDING_TIMED_OUT':
+      case 'HOLDING':
+        return Em.I18n.t('admin.stackUpgrade.state.paused');
+      default:
+        return ""
+    }
+  }.property('controller.upgradeData.Upgrade.request_status'),
 
   /**
    * start polling upgrade data
@@ -88,12 +104,5 @@ App.upgradeWizardView = Em.View.extend({
       self.get('controller').loadUpgradeData();
       self.doPolling();
     }, App.bgOperationsUpdateInterval));
-  },
-
-  /**
-   * @type {Array}
-   */
-  groups: function () {
-    return this.get('controller.upgradeData.upgrade_groups');
-  }.property('controller.upgradeData.upgrade_groups')
+  }
 });

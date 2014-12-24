@@ -50,15 +50,6 @@ describe('App.MainHostDetailsController', function () {
     });
   });
 
-  describe('#routeToService()', function () {
-    it('transiotion to dashboard', function () {
-      sinon.stub(App.router, 'transitionTo', Em.K);
-      controller.routeToService({context: {'service': 'service'}});
-      expect(App.router.transitionTo.calledWith('main.services.service.summary', {'service': 'service'})).to.be.true;
-      App.router.transitionTo.restore();
-    });
-  });
-
   describe('#startComponent()', function () {
     it('call sendComponentCommand', function () {
       var event = {
@@ -2294,7 +2285,7 @@ describe('App.MainHostDetailsController', function () {
       controller.deleteHostSuccessCallback();
       expect(App.router.get.calledWith('updateController')).to.be.true;
       expect(mock.updateHost.calledOnce).to.be.true;
-      expect(controller.loadConfigs.calledOnce).to.be.true;
+      expect(controller.loadConfigs.called).to.be.true;
       expect(App.router.transitionTo.calledWith('hosts.index')).to.be.true;
       expect(App.router.get.calledWith('clusterController')).to.be.true;
       expect(mock.getAllHostNames.calledOnce).to.be.true;

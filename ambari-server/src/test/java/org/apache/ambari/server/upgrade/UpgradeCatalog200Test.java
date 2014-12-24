@@ -117,6 +117,7 @@ public class UpgradeCatalog200Test {
     Capture<DBAccessor.DBColumnInfo> hostComponentStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> hostComponentStateSecurityStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> hostComponentDesiredStateSecurityStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
+    Capture<DBAccessor.DBColumnInfo> hostRoleCommandRetryColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
 
     Capture<DBAccessor.DBColumnInfo> viewparameterLabelColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> viewparameterPlaceholderColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
@@ -150,6 +151,10 @@ public class UpgradeCatalog200Test {
     // Host Component State
     dbAccessor.addColumn(eq("hostcomponentstate"),
         capture(hostComponentStateColumnCapture));
+
+    // Host Role Command retry allowed
+    dbAccessor.addColumn(eq("host_role_command"),
+        capture(hostRoleCommandRetryColumnCapture));
 
     // Host Component State: security State
     dbAccessor.addColumn(eq("hostcomponentstate"),
@@ -217,6 +222,14 @@ public class UpgradeCatalog200Test {
     assertEquals("NONE", upgradeStateColumn.getDefaultValue());
     assertFalse(upgradeStateColumn.isNullable());
 
+    // Verify added column in host_role_command table
+    DBAccessor.DBColumnInfo upgradeRetryColumn = hostRoleCommandRetryColumnCapture.getValue();
+    assertEquals("retry_allowed", upgradeRetryColumn.getName());
+    assertEquals(1, (int) upgradeRetryColumn.getLength());
+    assertEquals(Integer.class, upgradeRetryColumn.getType());
+    assertEquals(0, upgradeRetryColumn.getDefaultValue());
+    assertFalse(upgradeRetryColumn.isNullable());
+
     // verify security_state columns
     verifyComponentSecurityStateColumn(hostComponentStateSecurityStateColumnCapture);
     verifyComponentSecurityStateColumn(hostComponentDesiredStateSecurityStateColumnCapture);
@@ -226,8 +239,8 @@ public class UpgradeCatalog200Test {
         viewparameterDefaultValueColumnCapture);
 
     // Verify capture group sizes
-    assertEquals(8, clusterVersionCapture.getValue().size());
-    assertEquals(5, hostVersionCapture.getValue().size());
+    assertEquals(7, clusterVersionCapture.getValue().size());
+    assertEquals(4, hostVersionCapture.getValue().size());
 
     assertViewInstancePropertyColumns(valueColumnCapture);
     assertViewInstanceDataColumns(dataValueColumnCapture);

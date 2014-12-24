@@ -124,25 +124,24 @@ class TestHookBeforeInstall(RMFTestCase):
         content = StaticFile('changeToSecureUid.sh'),
         mode = 0555,
     )
-    self.assertResourceCalled('Execute', '/tmp/changeUid.sh ambari-qa /tmp/hadoop-ambari-qa,/tmp/hsperfdata_ambari-qa,/home/ambari-qa,/tmp/ambari-qa,/tmp/sqoop-ambari-qa 2>/dev/null',
+    self.assertResourceCalled('Execute', '/tmp/changeUid.sh ambari-qa /tmp/hadoop-ambari-qa,/tmp/hsperfdata_ambari-qa,/home/ambari-qa,/tmp/ambari-qa,/tmp/sqoop-ambari-qa',
         not_if = 'test $(id -u ambari-qa) -gt 1000',
+    )
+    self.assertResourceCalled('Directory', '/hadoop/hbase',
+        owner = 'hbase',
+        mode = 0775,
+        recursive = True,
+        recursive_permission = True
     )
     self.assertResourceCalled('File', '/tmp/changeUid.sh',
         content = StaticFile('changeToSecureUid.sh'),
         mode = 0555,
     )
-    self.assertResourceCalled('Execute', '/tmp/changeUid.sh hbase /home/hbase,/tmp/hbase,/usr/bin/hbase,/var/log/hbase,/hadoop/hbase 2>/dev/null',
+    self.assertResourceCalled('Execute', '/tmp/changeUid.sh hbase /home/hbase,/tmp/hbase,/usr/bin/hbase,/var/log/hbase,/hadoop/hbase',
         not_if = 'test $(id -u hbase) -gt 1000',
-    )
-    self.assertResourceCalled('Directory', '/hadoop',
-        mode = 0755
     )
     self.assertResourceCalled('Directory', '/etc/hadoop',
         mode = 0755
-    )
-    self.assertResourceCalled('Directory', '/hadoop/hdfs',
-        owner = 'hdfs',
-        group = 'hadoop'
     )
     self.assertResourceCalled('Directory', '/etc/hadoop/conf.empty',
         owner = 'hdfs',

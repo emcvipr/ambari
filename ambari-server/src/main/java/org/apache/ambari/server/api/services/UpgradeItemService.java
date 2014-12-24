@@ -67,24 +67,45 @@ public class UpgradeItemService extends BaseService {
         createResourceInstance(id));
   }
 
+  /**
+   * Handles:
+   * PUT /clusters/{clusterId}/upgrades/{upgradeId}/upgrade_groups/{upgradeGroupId}/upgrade_items/{upgradeItemId}
+   *
+   * Change state of existing upgrade item.
+   *
+   * @param body     http body
+   * @param headers  http headers
+   * @param ui       uri info
+   * @param id       the upgrade item id
+   *
+   * @return information regarding the created services
+   */
+  @PUT
+  @Path("{upgradeItemId}")
+  @Produces("text/plain")
+  public Response updateUpgradeItem(String body,
+                                    @Context HttpHeaders headers,
+                                    @Context UriInfo ui, @PathParam("upgradeItemId") Long id) {
+    return handleRequest(headers, body, ui, Request.Type.PUT, createResourceInstance(id));
+  }
+
   @Path("{upgradeItemId}/tasks")
   public TaskService getTasks(
       @Context HttpHeaders headers,
       @Context UriInfo ui,
       @PathParam("upgradeItemId") Long id) {
-    return new TaskService(m_clusterName, m_upgradeId, m_upgradeId.toString());
+    return new TaskService(m_clusterName, m_upgradeId, id.toString());
   }
 
   /**
    * @param upgradeItemId the specific item id
    * @return the resource instance
    */
-  private ResourceInstance createResourceInstance(Long upgradeItemId) {
+  ResourceInstance createResourceInstance(Long upgradeItemId) {
     Map<Resource.Type, String> mapIds = new HashMap<Resource.Type, String>();
     mapIds.put(Resource.Type.Cluster, m_clusterName);
     mapIds.put(Resource.Type.Upgrade, m_upgradeId);
     mapIds.put(Resource.Type.UpgradeGroup, m_upgradeGroupId);
-    mapIds.put(Resource.Type.Request, m_upgradeId);
 
     if (null != upgradeItemId) {
       mapIds.put(Resource.Type.UpgradeItem, upgradeItemId.toString());

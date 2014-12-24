@@ -24,12 +24,13 @@ import os
 import socket
 import subprocess
 from ambari_commons import inet_utils
-from resource_management import Script,ConfigDictionary
+from resource_management import Script, ConfigDictionary
 from mock.mock import patch
 from mock.mock import MagicMock
 from unittest import TestCase
 
 from check_host import CheckHost
+
 
 class TestCheckHost(TestCase):
 
@@ -230,15 +231,16 @@ class TestCheckHost(TestCase):
     self.assertTrue(structured_out_mock.called)
     structured_out_mock.assert_called_with({})
 
+
   @patch.object(Script, 'get_config')
   @patch.object(Script, 'get_tmp_dir')
   @patch('resource_management.libraries.script.Script.put_structured_out')
-  @patch('ambari_agent.HostInfo.HostInfo.javaProcs')
-  @patch('ambari_agent.HostInfo.HostInfo.checkLiveServices')
-  @patch('ambari_agent.HostInfo.HostInfo.getUMask')
-  @patch('ambari_agent.HostInfo.HostInfo.getTransparentHugePage')
-  @patch('ambari_agent.HostInfo.HostInfo.checkIptables')
-  @patch('ambari_agent.HostInfo.HostInfo.checkReverseLookup')
+  @patch('ambari_agent.HostInfo.HostInfoLinux.javaProcs')
+  @patch('ambari_agent.HostInfo.HostInfoLinux.checkLiveServices')
+  @patch('ambari_agent.HostInfo.HostInfoLinux.getUMask')
+  @patch('ambari_agent.HostInfo.HostInfoLinux.getTransparentHugePage')
+  @patch('ambari_agent.HostInfo.HostInfoLinux.checkIptables')
+  @patch('ambari_agent.HostInfo.HostInfoLinux.checkReverseLookup')
   @patch('time.time')
   def testLastAgentEnv(self, time_mock, checkReverseLookup_mock, checkIptables_mock, getTransparentHugePage_mock,
                        getUMask_mock, checkLiveServices_mock, javaProcs_mock, put_structured_out_mock,

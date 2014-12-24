@@ -25,6 +25,8 @@ var App = require('app');
  */
 App.AddSecurityConfigs = Em.Mixin.create({
 
+  kerberosDescriptor: {},
+
   secureProperties: function () {
     if (App.get('isHadoop2Stack')) {
       return require('data/HDP2/secure_properties').configProperties;
@@ -110,8 +112,8 @@ App.AddSecurityConfigs = Em.Mixin.create({
     return configs;
   }.property('App.isHadoop22Stack'),
 
-  secureServices: function() {
-    return  this.get('content.services');
+  secureServices: function () {
+    return this.get('content.services');
   }.property('content.services'),
 
   /**
@@ -246,9 +248,9 @@ App.AddSecurityConfigs = Em.Mixin.create({
    */
   loadUiSideSecureConfigs: function () {
     var uiConfig = [];
-    var configs = this.get('secureMapping').filterProperty('foreignKey', null).filter(function(_configProperty){
+    var configs = this.get('secureMapping').filterProperty('foreignKey', null).filter(function (_configProperty) {
       return (App.Service.find().mapProperty('serviceName').contains(_configProperty.serviceName));
-    },this);
+    }, this);
     configs.forEach(function (_config) {
       var value = _config.value;
       if (_config.hasOwnProperty('dependedServiceName')) {
@@ -386,41 +388,45 @@ App.AddSecurityConfigs = Em.Mixin.create({
   /**
    * Generate stack descriptor configs.
    *
-   * @returns {$.Deferred} 
+   * @returns {$.Deferred}
    */
-  getStackDescriptorConfigs: function() {
+  getStackDescriptorConfigs: function () {
     return this.loadStackDescriptorConfigs().pipe(this.createServicesStackDescriptorConfigs.bind(this));
   },
 
   /**
-   * 
+   *
    * @param {object[]} items - stack descriptor json response
-   * @returns {App.ServiceConfigProperty[]} 
+   * @returns {App.ServiceConfigProperty[]}
    */
-  createServicesStackDescriptorConfigs: function(items) {
+  createServicesStackDescriptorConfigs: function (items) {
     var self = this;
     var configs = [];
     var clusterConfigs = [];
-    
+    var kerberosDescriptor = items.Versions.kerberos_descriptor;
+    this.set('kerberosDescriptor', kerberosDescriptor);
     // generate configs for root level properties object, currently realm, keytab_dir
-    clusterConfigs = clusterConfigs.concat(this.expandKerberosStackDescriptorProps(items.properties));
+    clusterConfigs = clusterConfigs.concat(this.expandKerberosStackDescriptorProps(kerberosDescriptor.properties));
     // generate configs for root level identities object, currently spnego property
-    clusterConfigs = clusterConfigs.concat(this.createConfigsByIdentities(items.identities, 'Cluster'));
+    clusterConfigs = clusterConfigs.concat(this.createConfigsByIdentities(kerberosDescriptor.identities, 'Cluster'));
     clusterConfigs.setEach('serviceName', 'Cluster');
     // generate properties for services object
-    items.services.forEach(function(service) {
+    kerberosDescriptor.services.forEach(function (service) {
       var serviceName = service.name;
-      service.components.forEach(function(component) {
+      service.components.forEach(function (component) {
         var componentName = component.name;
-        var identityConfigs = self.createConfigsByIdentities(component.identities, componentName);
-        identityConfigs.setEach('serviceName', serviceName);
-        configs = configs.concat(identityConfigs);
+        if (component.identities) {
+          var identityConfigs = self.createConfigsByIdentities(component.identities, componentName);
+          identityConfigs.setEach('serviceName', serviceName);
+          configs = configs.concat(identityConfigs);
+        }
       });
-    });    
+    });
     // unite cluster and service configs
     configs = configs.concat(clusterConfigs);
+    self.processConfigReferences(kerberosDescriptor, configs);
     // return configs with uniq names
-    return configs.reduce(function(p,c) {
+    return configs.reduce(function (p, c) {
       if (!p.findProperty('name', c.get('name'))) p.push(c);
       return p;
     }, []);
@@ -431,13 +437,13 @@ App.AddSecurityConfigs = Em.Mixin.create({
    *
    * @param {object[]} identities
    * @param {string} componentName
-   * @returns {App.ServiceConfigProperty[]} 
+   * @returns {App.ServiceConfigProperty[]}
    */
-  createConfigsByIdentities: function(identities, componentName) {
+  createConfigsByIdentities: function (identities, componentName) {
     var self = this;
     var configs = [];
-    
-    identities.forEach(function(identity) {
+
+    identities.forEach(function (identity) {
       var defaultObject = {
         isOverridable: false,
         isVisible: true,
@@ -445,10 +451,8 @@ App.AddSecurityConfigs = Em.Mixin.create({
         componentName: componentName,
         name: identity.name
       };
-      if (identity.name == '/spnego') {
-        defaultObject.isEditable = false;
-      }
-      self.parseIdentityObject(identity).forEach(function(item) {
+
+      self.parseIdentityObject(identity).forEach(function (item) {
         configs.push(App.ServiceConfigProperty.create($.extend({}, defaultObject, item)));
       });
     });
@@ -461,17 +465,24 @@ App.AddSecurityConfigs = Em.Mixin.create({
    * App.ServiceConfigProperty model class instances.
    *
    * @param {object} identity
-   * @returns {object[]} 
+   * @returns {object[]}
    */
-  parseIdentityObject: function(identity) {
+  parseIdentityObject: function (identity) {
     var result = [];
-    var keys = Em.keys(identity);
-    var name = identity[keys.shift()];
-    keys.forEach(function(item) {
+    var name = identity.name;
+    var keys = Em.keys(identity).without('name');
+    keys.forEach(function (item) {
       var configObject = {};
       var prop = identity[item];
-      if (name == '/spnego') configObject.observesValueFrom = 'spnego_' + item;
-      configObject.defaultValue = configObject.value = item == 'principal' ? prop.value : prop.file;
+      var itemValue = prop[{keytab: 'file', principal: 'value'}[item]];
+      // skip inherited property without `configuration` and `keytab` or `file` values
+      if (!prop.configuration && !itemValue) return;
+      // inherited property with value should not observe value from reference
+      if (name.startsWith('/') && !itemValue) {
+        configObject.referenceProperty = name.substring(1) + ':' + item;
+        configObject.isEditable = false;
+      }
+      configObject.defaultValue = configObject.value = itemValue;
       configObject.filename = prop.configuration ? prop.configuration.split('/')[0] : 'cluster-env';
       configObject.name = configObject.displayName = prop.configuration ? prop.configuration.split('/')[1] : name + '_' + item;
       result.push(configObject);
@@ -481,13 +492,13 @@ App.AddSecurityConfigs = Em.Mixin.create({
 
   /**
    * Wrap kerberos properties to App.ServiceConfigProperty model class instances.
-   * 
+   *
    * @param {object} kerberosProperties
-   * @returns {App.ServiceConfigProperty[]} 
+   * @returns {App.ServiceConfigProperty[]}
    */
-  expandKerberosStackDescriptorProps: function(kerberosProperties) {
+  expandKerberosStackDescriptorProps: function (kerberosProperties) {
     var configs = [];
-    
+
     for (var propertyName in kerberosProperties) {
       var propertyObject = {
         name: propertyName,
@@ -504,15 +515,98 @@ App.AddSecurityConfigs = Em.Mixin.create({
 
     return configs;
   },
+
+
+  /**
+   * Take care about configs that should observe value from referenced configs.
+   * Reference is set with `referenceProperty` key.
+   *
+   * @param {object[]} kerberosDescriptor
+   * @param {App.ServiceConfigProperty[]} configs
+   */
+  processConfigReferences: function (kerberosDescriptor, configs) {
+    var identities = kerberosDescriptor.identities;
+    identities = identities.concat(kerberosDescriptor.services.map(function (service) {
+      var _identities = service.identities || [];
+      if (service.components && !!service.components.length) {
+        identities = identities.concat(service.components.mapProperty('identities').reduce(function (p, c) {
+          return p.concat(c);
+        }, []));
+        return identities;
+      }
+    }).reduce(function (p, c) {
+      return p.concat(c);
+    }, []));
+    // clean up array
+    identities = identities.compact().without(undefined);
+    configs.forEach(function (item) {
+      var reference = item.get('referenceProperty');
+      if (!!reference) {
+        var identity = identities.findProperty('name', reference.split(':')[0])[reference.split(':')[1]];
+        if (identity && !!identity.configuration) {
+          item.set('observesValueFrom', identity.configuration.split('/')[1]);
+        } else {
+          item.set('observesValueFrom', reference.replace(':', '_'));
+        }
+      }
+    });
+  },
+
+  /**
+   * update the kerberos descriptor to be put on cluster resource with user customizations
+   * @param kerberosDescriptor {Object}
+   * @param configs {Object}
+   */
+  updateKerberosDescriptor: function (kerberosDescriptor, configs) {
+    configs.forEach(function (_config) {
+      if (Object.keys(kerberosDescriptor.properties).contains(_config.name)) {
+        for (var key in kerberosDescriptor.properties) {
+          if (key === _config.name) {
+            kerberosDescriptor.properties[key] = _config.value;
+          }
+        }
+      } else if (_config.name.endsWith('_principal') || _config.name.endsWith('_keytab')) {
+        var identities = kerberosDescriptor.identities;
+        identities.forEach(function (_identity) {
+          if (_config.name.startsWith(_identity.name)) {
+            if (_config.name.endsWith('_principal')) {
+              _identity.principal.value = _config.value;
+            } else if (_config.name.endsWith('_keytab')) {
+              _identity.keytab.file = _config.value;
+            }
+          }
+        }, this);
+      } else {
+        kerberosDescriptor.services.forEach(function (_service) {
+          _service.components.forEach(function (_component) {
+            if (_component.identities) {
+              _component.identities.forEach(function (_identity) {
+                if (_identity.principal && _identity.principal.configuration && _identity.principal.configuration.endsWith(_config.name)) {
+                  _identity.principal.value = _config.value;
+                } else if (_identity.keytab && _identity.keytab.configuration && _identity.keytab.configuration.endsWith(_config.name)) {
+                  _identity.keytab.file = _config.value;
+                }
+              }, this);
+            }
+          }, this);
+        }, this);
+      }
+    }, this);
+  },
+
   /**
    * Make request for stack descriptor configs.
    *
-   * @returns {$.ajax} 
+   * @returns {$.ajax}
    */
-  loadStackDescriptorConfigs: function() {
+  loadStackDescriptorConfigs: function () {
     return App.ajax.send({
       sender: this,
-      name: 'admin.kerberize.stack_descriptor'
+      name: 'admin.kerberize.stack_descriptor',
+      data: {
+        stackName: App.get('currentStackName'),
+        stackVersionNumber: App.get('currentStackVersionNumber')
+      }
     });
   }
 });

@@ -75,8 +75,10 @@ import org.apache.ambari.server.agent.HostStatus.Status;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.HostsMap;
+import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
+import org.apache.ambari.server.orm.OrmTestHelper;
 import org.apache.ambari.server.state.Alert;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
@@ -121,6 +123,8 @@ public class TestHeartbeatHandler {
   Configuration config;
   @Inject
   ActionDBAccessor actionDBAccessor;
+  @Inject
+  OrmTestHelper helper;
 
   private UnitOfWork unitOfWork;
 
@@ -723,7 +727,7 @@ public class TestHeartbeatHandler {
     clusters.addCluster(DummyCluster);
     ActionDBAccessor db = injector.getInstance(ActionDBAccessorImpl.class);
     ActionManager am = new ActionManager(5000, 1200000, new ActionQueue(), clusters, db,
-        new HostsMap((String) null), unitOfWork, injector.getInstance(RequestFactory.class), null);
+        new HostsMap((String) null), unitOfWork, injector.getInstance(RequestFactory.class), null, null);
     populateActionDB(db, DummyHostname1);
     Stage stage = db.getAllStages(requestId).get(0);
     Assert.assertEquals(stageId, stage.getStageId());
@@ -1094,6 +1098,7 @@ public class TestHeartbeatHandler {
     cr.setClusterName(DummyCluster);
     cr.setServiceName(HDFS);
     cr.setRole(DATANODE);
+    cr.setRoleCommand("INSTALL");
     cr.setStatus("IN_PROGRESS");
     cr.setStdErr("none");
     cr.setStdOut("dummy output");
@@ -1103,7 +1108,7 @@ public class TestHeartbeatHandler {
     hb.setComponentStatus(new ArrayList<ComponentStatus>());
 
     final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
-            Role.DATANODE, null, null);
+            Role.DATANODE, null, RoleCommand.INSTALL);
 
     ActionManager am = getMockActionManager();
     expect(am.getTasks(anyObject(List.class))).andReturn(
@@ -1169,6 +1174,7 @@ public class TestHeartbeatHandler {
     cr.setClusterName(DummyCluster);
     cr.setServiceName(HDFS);
     cr.setRole(DATANODE);
+    cr.setRoleCommand("INSTALL");
     cr.setStatus("FAILED");
     cr.setStdErr("none");
     cr.setStdOut("dummy output");
@@ -1360,6 +1366,7 @@ public class TestHeartbeatHandler {
     cr.setClusterName(DummyCluster);
     cr.setServiceName(HDFS);
     cr.setRole(DATANODE);
+    cr.setRoleCommand("INSTALL");
     cr.setStatus(HostRoleStatus.IN_PROGRESS.toString());
     cr.setStdErr("none");
     cr.setStdOut("dummy output");
@@ -1637,6 +1644,7 @@ public class TestHeartbeatHandler {
     cr1.setClusterName(DummyCluster);
     cr1.setServiceName(HDFS);
     cr1.setRole(DATANODE);
+    cr1.setRoleCommand("INSTALL");
     cr1.setStatus(HostRoleStatus.IN_PROGRESS.toString());
     cr1.setStdErr("none");
     cr1.setStdOut("dummy output");
@@ -1648,6 +1656,7 @@ public class TestHeartbeatHandler {
     cr2.setClusterName(DummyCluster);
     cr2.setServiceName(HDFS);
     cr2.setRole(NAMENODE);
+    cr2.setRoleCommand("INSTALL");
     cr2.setStatus(HostRoleStatus.IN_PROGRESS.toString());
     cr2.setStdErr("none");
     cr2.setStdOut("dummy output");
@@ -1758,6 +1767,7 @@ public class TestHeartbeatHandler {
     cr1.setClusterName(DummyCluster);
     cr1.setServiceName(HDFS);
     cr1.setRole(DATANODE);
+    cr1.setRoleCommand("INSTALL");
     cr1.setStatus(HostRoleStatus.FAILED.toString());
     cr1.setStdErr("none");
     cr1.setStdOut("dummy output");
@@ -1769,6 +1779,7 @@ public class TestHeartbeatHandler {
     cr2.setClusterName(DummyCluster);
     cr2.setServiceName(HDFS);
     cr2.setRole(NAMENODE);
+    cr2.setRoleCommand("INSTALL");
     cr2.setStatus(HostRoleStatus.FAILED.toString());
     cr2.setStdErr("none");
     cr2.setStdOut("dummy output");
@@ -2115,7 +2126,7 @@ public class TestHeartbeatHandler {
             addMockedMethod("getTasks").
             withConstructor((long)0, (long)0, actionQueueMock, clustersMock,
                     actionDBAccessor, new HostsMap((String) null), unitOfWork,
-                    injector.getInstance(RequestFactory.class), configurationMock).
+                    injector.getInstance(RequestFactory.class), configurationMock, createNiceMock(AmbariEventPublisher.class)).
             createMock();
     return actionManager;
   }
@@ -2166,6 +2177,7 @@ public class TestHeartbeatHandler {
     StackId stackId = new StackId(DummyStackId);
     cluster.setDesiredStackVersion(stackId);
     cluster.setCurrentStackVersion(stackId);
+    helper.getOrCreateRepositoryVersion(stackId.getStackName(), stackId.getStackVersion());
     cluster.createClusterVersion(stackId.getStackName(), stackId.getStackVersion(), "admin", RepositoryVersionState.CURRENT);
     return cluster;
   }

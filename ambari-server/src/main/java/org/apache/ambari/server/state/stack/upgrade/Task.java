@@ -23,7 +23,7 @@ import javax.xml.bind.annotation.XmlSeeAlso;
 /**
  * Base class to identify the items that could possibly occur during an upgrade
  */
-@XmlSeeAlso(value={ExecuteTask.class, ConfigureTask.class, ManualTask.class, RestartTask.class})
+@XmlSeeAlso(value={ExecuteTask.class, ConfigureTask.class, ManualTask.class, RestartTask.class, ServerActionTask.class})
 public abstract class Task {
 
   /**
@@ -59,23 +59,24 @@ public abstract class Task {
     /**
      * Task that is a service check
      */
-    SERVICE_CHECK;
+    SERVICE_CHECK,
+    /**
+     * Task meant to run against Ambari server.
+     */
+    SERVER_ACTION;
 
     /**
      * @return {@code true} if the task is manual or automated.
      */
-    public boolean isManual() {
-      return this == MANUAL;
+    public boolean isServerAction() {
+      return this == MANUAL || this == CONFIGURE || this == SERVER_ACTION;
     }
 
     /**
      * @return {@code true} if the task is a command type (as opposed to an action)
      */
     public boolean isCommand() {
-      return this == RESTART;
+      return this == RESTART || this == SERVICE_CHECK;
     }
-
-
-
   }
 }

@@ -23,8 +23,8 @@ App.StackVersionMenuView = Em.CollectionView.extend({
   classNames: ["nav", "nav-tabs"],
   content:function(){
     var menuItems = [
-      { label: 'Installed', routing:'versions', url:"versions", active:"active"},
-      { label: 'Updates', routing:'updates', url:"versions/updates"}
+      { label: Em.I18n.t('common.installed'), routing:'versions', url:"versions", active:"active"},
+      { label: Em.I18n.t('admin.stackVersions.updateTab.title.not.available'), routing:'updates', url:"versions/updates"}
     ];
     return menuItems;
   }.property(),
@@ -32,10 +32,13 @@ App.StackVersionMenuView = Em.CollectionView.extend({
   init: function(){ this._super(); this.activateView(); },
 
   activateView:function () {
+    var self = this;
+    self.changeNewRepoCount();
     $.each(this._childViews, function () {
-      this.set('active', (document.URL.endsWith(this.get('content.routing')) ? "active" : ""));
+      this.set('active', self.getActive(this.get('content.routing')));
+      this.set('label', self.updateLabel(this.get('content.routing'), this.get('content.label')));
     });
-  }.observes('App.router.location.lastSetURL'),
+  }.observes('App.router.location.lastSetURL', 'controller.dataIsLoaded'),
 
   deactivateChildViews: function() {
     $.each(this._childViews, function(){
@@ -43,9 +46,45 @@ App.StackVersionMenuView = Em.CollectionView.extend({
     });
   },
 
+  /**
+   * disable update available tab if there is no any updates
+   * otherwise set active selected tab
+   * @param routing
+   * @returns {string}
+   * @method getActive
+   */
+  getActive: function(routing) {
+    if (routing == 'updates' && this.get('newRepoCount') == 0) {
+      return 'not-active-link';
+    }
+    return document.URL.endsWith(routing) ? "active" : "";
+  },
+
+  /**
+   * update label on updates tab if there is any new repo vreison
+   * otherwise returns same label as is
+   * @param {String} routing
+   * @param {String} defauldLabel
+   * @returns {string}
+   * @method getActive
+   */
+  updateLabel: function(routing, defauldLabel) {
+    if (routing == 'updates' && this.get('newRepoCount') > 0) {
+      return Em.I18n.t('admin.stackVersions.updateTab.title.available').format(this.get('newRepoCount'));
+    }
+    return defauldLabel;
+  },
+
+  changeNewRepoCount: function() {
+    this.set('newRepoCount', App.RepositoryVersion.find().filterProperty('stackVersion', null).get('length'));
+  },
+
+  newRepoCount: 0,
+
   itemViewClass: Em.View.extend({
     classNameBindings: ["active"],
     active: "",
-    template: Ember.Handlebars.compile('<a href="#/main/admin/{{unbound view.content.url}}"> {{unbound view.content.label}}</a>')
+    label: "",
+    template: Ember.Handlebars.compile('<a href="#/main/admin/{{unbound view.content.url}}"> {{view.label}}</a>')
   })
 });

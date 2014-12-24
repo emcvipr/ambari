@@ -22,15 +22,19 @@ from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
 import datetime
 import  resource_management.libraries.functions
+from test_storm_base import TestStormBase
+
 @patch.object(resource_management.libraries.functions, "get_unique_id_and_date", new = MagicMock(return_value=''))
 
-class TestStormServiceCheck(RMFTestCase):
+class TestStormServiceCheck(TestStormBase):
 
   def test_service_check(self):
-    self.executeScript("2.1/services/STORM/package/scripts/service_check.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/service_check.py",
                        classname="ServiceCheck",
                        command="service_check",
-                       config_file="default.json"
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
     self.assertResourceCalled('File', '/tmp/wordCount.jar',
@@ -38,9 +42,11 @@ class TestStormServiceCheck(RMFTestCase):
     )
     self.assertResourceCalled('Execute', 'env JAVA_HOME=/usr/jdk64/jdk1.7.0_45 storm jar /tmp/wordCount.jar storm.starter.WordCountTopology WordCount -c nimbus.host=c6402.ambari.apache.org',
       logoutput = True,
-      path = ['/usr/bin']
+      path = ['/usr/bin'],
+      user = 'storm'
     )
     self.assertResourceCalled('Execute', 'env JAVA_HOME=/usr/jdk64/jdk1.7.0_45 storm kill WordCount',
-      path = ['/usr/bin']
+      path = ['/usr/bin'],
+      user = 'storm'
     )
 

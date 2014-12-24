@@ -37,6 +37,7 @@ import org.apache.ambari.server.actionmanager.RequestFactory;
 import org.apache.ambari.server.actionmanager.Stage;
 import org.apache.ambari.server.actionmanager.StageFactory;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.ActionExecutionContext;
 import org.apache.ambari.server.controller.AmbariActionExecutionHelper;
 import org.apache.ambari.server.controller.AmbariManagementController;
@@ -146,6 +147,9 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
   @Inject
   private static RequestFactory requestFactory;
 
+  @Inject
+  private static Configuration configuration;
+
   /**
    * Constructor.
    */
@@ -189,11 +193,12 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
       for (RepositoryVersionState state: RepositoryVersionState.values()) {
         hostStates.put(state.name(), new ArrayList<String>());
       }
-      for (HostVersionEntity hostVersionEntity: hostVersionDAO.findByClusterStackAndVersion(entity.getClusterEntity().getClusterName(), entity.getStack(), entity.getVersion())) {
+      for (HostVersionEntity hostVersionEntity: hostVersionDAO.findByClusterStackAndVersion(entity.getClusterEntity().getClusterName(),
+          entity.getRepositoryVersion().getStack(), entity.getRepositoryVersion().getVersion())) {
         hostStates.get(hostVersionEntity.getState().name()).add(hostVersionEntity.getHostName());
       }
-      StackId stackId = new StackId(entity.getStack());
-      RepositoryVersionEntity repoVerEntity = repositoryVersionDAO.findByStackAndVersion(stackId.getStackId(), entity.getVersion());
+      StackId stackId = new StackId(entity.getRepositoryVersion().getStack());
+      RepositoryVersionEntity repoVerEntity = repositoryVersionDAO.findByStackAndVersion(stackId.getStackId(), entity.getRepositoryVersion().getVersion());
 
       setResourceProperty(resource, CLUSTER_STACK_VERSION_CLUSTER_NAME_PROPERTY_ID, entity.getClusterEntity().getClusterName(), requestedIds);
       setResourceProperty(resource, CLUSTER_STACK_VERSION_HOST_STATES_PROPERTY_ID, hostStates, requestedIds);
@@ -226,15 +231,23 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
     if (request.getProperties().size() != 1) {
       throw new UnsupportedOperationException("Multiple requests cannot be executed at the same time.");
     }
-
     Map<String, Object> propertyMap = iterator.next();
-    if (!propertyMap.containsKey(CLUSTER_STACK_VERSION_CLUSTER_NAME_PROPERTY_ID) ||
-            !propertyMap.containsKey(CLUSTER_STACK_VERSION_REPOSITORY_VERSION_PROPERTY_ID)) {
-      throw new IllegalArgumentException(
-              String.format("%s or %s not defined",
-                      CLUSTER_STACK_VERSION_CLUSTER_NAME_PROPERTY_ID,
-                      CLUSTER_STACK_VERSION_REPOSITORY_VERSION_PROPERTY_ID));
+
+    Set<String> requiredProperties = new HashSet<String>(){{
+      add(CLUSTER_STACK_VERSION_CLUSTER_NAME_PROPERTY_ID);
+      add(CLUSTER_STACK_VERSION_REPOSITORY_VERSION_PROPERTY_ID);
+      add(CLUSTER_STACK_VERSION_STACK_PROPERTY_ID);
+      add(CLUSTER_STACK_VERSION_VERSION_PROPERTY_ID);
+    }};
+
+    for (String requiredProperty : requiredProperties) {
+      if (! propertyMap.containsKey(requiredProperty)) {
+        throw new IllegalArgumentException(
+                String.format("The required property %s is not defined",
+                        requiredProperty));
+      }
     }
+
     clName = (String) propertyMap.get(CLUSTER_STACK_VERSION_CLUSTER_NAME_PROPERTY_ID);
     desiredRepoVersion = (String) propertyMap.get(CLUSTER_STACK_VERSION_REPOSITORY_VERSION_PROPERTY_ID);
 
@@ -347,7 +360,7 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
               cluster.getClusterName(), INSTALL_PACKAGES_ACTION,
               Collections.singletonList(filter),
               params);
-      actionContext.setTimeout((short) 600);
+      actionContext.setTimeout(Short.valueOf(configuration.getDefaultAgentTaskTimeout()));
 
       try {
         actionExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage);
@@ -360,9 +373,8 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
       ClusterVersionEntity existingCSVer = clusterVersionDAO.findByClusterAndStackAndVersion(clName, stackId, desiredRepoVersion);
       if (existingCSVer == null) {
         try {  // Create/persist new cluster stack version
-          cluster.createClusterVersion(stackId, desiredRepoVersion, managementController.getAuthName(), RepositoryVersionState.INSTALLED);
-          ClusterVersionEntity newCSVer = clusterVersionDAO.findByClusterAndStackAndVersion(clName, stackId, desiredRepoVersion);
-          cluster.initHostVersions(newCSVer);
+          cluster.createClusterVersion(stackId, desiredRepoVersion, managementController.getAuthName(), RepositoryVersionState.INSTALLING);
+          existingCSVer = clusterVersionDAO.findByClusterAndStackAndVersion(clName, stackId, desiredRepoVersion);
         } catch (AmbariException e) {
           throw new SystemException(
                   String.format(
@@ -370,7 +382,11 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
                           desiredRepoVersion, clName),
                   e);
         }
+      } else {
+        // Move CSV into INSTALLING state (retry installation)
+        cluster.transitionClusterVersion(stackId, desiredRepoVersion, RepositoryVersionState.INSTALLING);
       }
+      cluster.inferHostVersions(existingCSVer);
 
       req.persist();
 

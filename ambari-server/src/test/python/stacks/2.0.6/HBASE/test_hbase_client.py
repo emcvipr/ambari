@@ -22,12 +22,16 @@ from stacks.utils.RMFTestCase import *
 
 @patch("os.path.exists", new = MagicMock(return_value=True))
 class TestHBaseClient(RMFTestCase):
-  
+  COMMON_SERVICES_PACKAGE_DIR = "HBASE/0.96.0.2.0/package"
+  STACK_VERSION = "2.0.6"
+
   def test_configure_secured(self):
-    self.executeScript("2.0.6/services/HBASE/package/scripts/hbase_client.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hbase_client.py",
                    classname = "HbaseClient",
                    command = "configure",
-                   config_file="secured.json"
+                   config_file="secured.json",
+                   hdp_stack_version = self.STACK_VERSION,
+                   target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
     self.assertResourceCalled('Directory', '/etc/hbase',
@@ -42,6 +46,7 @@ class TestHBaseClient(RMFTestCase):
       owner = 'hbase',
       mode=0775,
       recursive = True,
+      recursive_permission = True
     )
     self.assertResourceCalled('Directory', '/hadoop/hbase/local',
       owner = 'hbase',
@@ -106,10 +111,12 @@ class TestHBaseClient(RMFTestCase):
     self.assertNoMoreResources()
     
   def test_configure_default(self):
-    self.executeScript("2.0.6/services/HBASE/package/scripts/hbase_client.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hbase_client.py",
                    classname = "HbaseClient",
                    command = "configure",
-                   config_file="default.json"
+                   config_file="default.json",
+                   hdp_stack_version = self.STACK_VERSION,
+                   target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('Directory', '/etc/hbase',
       mode = 0755
@@ -123,6 +130,7 @@ class TestHBaseClient(RMFTestCase):
       owner = 'hbase',
       mode=0775,
       recursive = True,
+      recursive_permission = True
     )
     self.assertResourceCalled('Directory', '/hadoop/hbase/local',
       owner = 'hbase',
@@ -181,7 +189,16 @@ class TestHBaseClient(RMFTestCase):
                               content='log4jproperties\nline2'
     )
     self.assertNoMoreResources()
-    
 
-    
 
+  def test_upgrade(self):
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hbase_client.py",
+                   classname = "HbaseClient",
+                   command = "restart",
+                   config_file="client-upgrade.json",
+                   hdp_stack_version = self.STACK_VERSION,
+                   target = RMFTestCase.TARGET_COMMON_SERVICES)
+
+    self.assertResourceCalled("Execute", "hdp-select set hbase-client 2.2.1.0-2067")
+
+    # for now, it's enough that hdp-select is confirmed

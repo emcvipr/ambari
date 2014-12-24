@@ -22,27 +22,33 @@ from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
 
 class TestHiveMetastore(RMFTestCase):
+  COMMON_SERVICES_PACKAGE_DIR = "HIVE/0.12.0.2.0/package"
+  STACK_VERSION = "2.0.6"
 
   def test_configure_default(self):
-    self.executeScript("2.0.6/services/HIVE/package/scripts/hive_metastore.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_metastore.py",
                        classname = "HiveMetastore",
                        command = "configure",
-                       config_file="default.json"
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_default()
 
   def test_start_default(self):
-    self.executeScript("2.0.6/services/HIVE/package/scripts/hive_metastore.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_metastore.py",
                        classname = "HiveMetastore",
                        command = "start",
-                       config_file="default.json"
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
     self.assert_configure_default()
     self.assertResourceCalled('Execute', 'env HADOOP_HOME=/usr JAVA_HOME=/usr/jdk64/jdk1.7.0_45 /tmp/start_metastore_script /var/log/hive/hive.out /var/log/hive/hive.log /var/run/hive/hive.pid /etc/hive/conf.server /var/log/hive',
         not_if = 'ls /var/run/hive/hive.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive.pid` >/dev/null 2>&1',
         environment = {'HADOOP_HOME' : '/usr'},
-        path = [os.environ['PATH'] + os.pathsep + "/usr/lib/hive/bin" + os.pathsep + "/usr/bin"],
+        path = ["/bin:/usr/lib/hive/bin:/usr/bin"],
         user = 'hive',
     )
     self.assertResourceCalled('Execute', '/usr/jdk64/jdk1.7.0_45/bin/java -cp /usr/lib/ambari-agent/DBConnectionVerification.jar:/usr/share/java/mysql-connector-java.jar org.apache.ambari.server.DBConnectionVerification \'jdbc:mysql://c6402.ambari.apache.org/hive?createDatabaseIfNotExist=true\' hive \'!`"\'"\'"\' 1\' com.mysql.jdbc.Driver',
@@ -53,10 +59,12 @@ class TestHiveMetastore(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_stop_default(self):
-    self.executeScript("2.0.6/services/HIVE/package/scripts/hive_metastore.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_metastore.py",
                        classname = "HiveMetastore",
                        command = "stop",
-                       config_file="default.json"
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
     self.assertResourceCalled('Execute', 'sudo kill `cat /var/run/hive/hive.pid`',
@@ -68,26 +76,30 @@ class TestHiveMetastore(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_configure_secured(self):
-    self.executeScript("2.0.6/services/HIVE/package/scripts/hive_metastore.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_metastore.py",
                        classname = "HiveMetastore",
                        command = "configure",
-                       config_file="secured.json"
+                       config_file="secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_default()
     self.assertNoMoreResources()
 
   def test_start_secured(self):
-    self.executeScript("2.0.6/services/HIVE/package/scripts/hive_metastore.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_metastore.py",
                        classname = "HiveMetastore",
                        command = "start",
-                       config_file="secured.json"
+                       config_file="secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
     self.assert_configure_secured()
     self.assertResourceCalled('Execute', 'env HADOOP_HOME=/usr JAVA_HOME=/usr/jdk64/jdk1.7.0_45 /tmp/start_metastore_script /var/log/hive/hive.out /var/log/hive/hive.log /var/run/hive/hive.pid /etc/hive/conf.server /var/log/hive',
         not_if = 'ls /var/run/hive/hive.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive.pid` >/dev/null 2>&1',
         environment = {'HADOOP_HOME' : '/usr'},
-        path = [os.environ['PATH'] + os.pathsep + "/usr/lib/hive/bin" + os.pathsep + "/usr/bin"],
+        path = ["/bin:/usr/lib/hive/bin:/usr/bin"],
         user = 'hive',
     )
     self.assertResourceCalled('Execute', '/usr/jdk64/jdk1.7.0_45/bin/java -cp /usr/lib/ambari-agent/DBConnectionVerification.jar:/usr/share/java/mysql-connector-java.jar org.apache.ambari.server.DBConnectionVerification \'jdbc:mysql://c6402.ambari.apache.org/hive?createDatabaseIfNotExist=true\' hive \'!`"\'"\'"\' 1\' com.mysql.jdbc.Driver',
@@ -98,10 +110,12 @@ class TestHiveMetastore(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_stop_secured(self):
-    self.executeScript("2.0.6/services/HIVE/package/scripts/hive_metastore.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_metastore.py",
                        classname = "HiveMetastore",
                        command = "stop",
-                       config_file="secured.json"
+                       config_file="secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
     self.assertResourceCalled('Execute', 'sudo kill `cat /var/run/hive/hive.pid`',
@@ -195,20 +209,15 @@ class TestHiveMetastore(RMFTestCase):
                               owner = 'hive',
                               group = 'hadoop',
                               )
-    self.assertResourceCalled('File', '/usr/lib/hive/lib//mysql-connector-java.jar',
-        action = ['delete'],
-    )
-    self.assertResourceCalled('Execute', ('cp',
-     '/usr/share/java/mysql-connector-java.jar',
-     '/usr/lib/hive/lib//mysql-connector-java.jar'),
-        creates = '/usr/lib/hive/lib//mysql-connector-java.jar',
-        path = ['/bin', '/usr/bin/'],
-        sudo = True,
-        not_if = 'test -f /usr/lib/hive/lib//mysql-connector-java.jar',
-    )
+    self.assertResourceCalled('Execute', ('cp', '/usr/share/java/mysql-connector-java.jar', '/usr/lib/hive/lib//mysql-connector-java.jar'),
+                              path = ['/bin', '/usr/bin/'],
+                              creates = '/usr/lib/hive/lib//mysql-connector-java.jar',
+                              sudo = True,
+                              not_if = 'test -f /usr/lib/hive/lib//mysql-connector-java.jar',
+                              )
     self.assertResourceCalled('Execute', '/bin/sh -c \'cd /usr/lib/ambari-agent/ && curl -kf -x "" --retry 5 http://c6401.ambari.apache.org:8080/resources/DBConnectionVerification.jar -o DBConnectionVerification.jar\'',
         environment = {'no_proxy': 'c6401.ambari.apache.org'},
-        not_if = '[ -f DBConnectionVerification.jar]',
+        not_if = '[ -f /usr/lib/ambari-agent/DBConnectionVerification.jar ]',
     )
     self.assertResourceCalled('File', '/tmp/start_metastore_script',
         content = StaticFile('startMetastore.sh'),
@@ -316,20 +325,15 @@ class TestHiveMetastore(RMFTestCase):
                               owner = 'hive',
                               group = 'hadoop',
                               )
-    self.assertResourceCalled('File', '/usr/lib/hive/lib//mysql-connector-java.jar',
-        action = ['delete'],
-    )
-    self.assertResourceCalled('Execute', ('cp',
-     '/usr/share/java/mysql-connector-java.jar',
-     '/usr/lib/hive/lib//mysql-connector-java.jar'),
-        creates = '/usr/lib/hive/lib//mysql-connector-java.jar',
-        path = ['/bin', '/usr/bin/'],
-        sudo = True,
-        not_if = 'test -f /usr/lib/hive/lib//mysql-connector-java.jar',
-    )
+    self.assertResourceCalled('Execute', ('cp', '/usr/share/java/mysql-connector-java.jar', '/usr/lib/hive/lib//mysql-connector-java.jar'),
+                              path = ['/bin', '/usr/bin/'],
+                              creates = '/usr/lib/hive/lib//mysql-connector-java.jar',
+                              sudo = True,
+                              not_if = 'test -f /usr/lib/hive/lib//mysql-connector-java.jar',
+                              )
     self.assertResourceCalled('Execute', '/bin/sh -c \'cd /usr/lib/ambari-agent/ && curl -kf -x "" --retry 5 http://c6401.ambari.apache.org:8080/resources/DBConnectionVerification.jar -o DBConnectionVerification.jar\'',
         environment = {'no_proxy': 'c6401.ambari.apache.org'},
-        not_if = '[ -f DBConnectionVerification.jar]',
+        not_if = '[ -f /usr/lib/ambari-agent/DBConnectionVerification.jar ]',
     )
     self.assertResourceCalled('File', '/tmp/start_metastore_script',
         content = StaticFile('startMetastore.sh'),

@@ -18,13 +18,13 @@
 
 
 var App = require('app');
-var controller;
 require('controllers/main/admin/stack_and_upgrade_controller');
 
 describe('App.MainAdminStackAndUpgradeController', function() {
 
-  beforeEach(function() {
-    controller = App.MainAdminStackAndUpgradeController.create({});
+  var controller = App.MainAdminStackAndUpgradeController.create({
+    getDBProperty: Em.K,
+    setDBProperty: Em.K
   });
 
   describe("#services", function () {
@@ -183,25 +183,36 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         success: 'loadUpgradeDataSuccessCallback'
       })
     });
+    it("upgrade id is null", function() {
+      controller.set('upgradeId', null);
+      controller.loadUpgradeData();
+      expect(App.ajax.send.called).to.be.false;
+    });
   });
 
   describe("#loadUpgradeDataSuccessCallback()", function() {
+    beforeEach(function () {
+      sinon.stub(controller, 'updateUpgradeData', Em.K);
+    });
+    afterEach(function () {
+      controller.updateUpgradeData.restore();
+    });
     it("", function() {
       var data = {
         "Upgrade": {
           "request_status": "COMPLETED"
         },
         "upgrade_groups": [
-        {
-          "UpgradeGroup": {
-            "id": 1
-          },
-          "upgrade_items": []
-        }
-      ]};
+          {
+            "UpgradeGroup": {
+              "id": 1
+            },
+            "upgrade_items": []
+          }
+        ]};
       controller.loadUpgradeDataSuccessCallback(data);
-      expect(controller.get('upgradeData')).to.eql(data);
       expect(App.get('upgradeState')).to.equal('COMPLETED');
+      expect(controller.updateUpgradeData.called).to.be.true;
     });
   });
 
@@ -242,24 +253,28 @@ describe('App.MainAdminStackAndUpgradeController', function() {
       controller.upgrade.restore();
     });
     it("shows popup", function () {
-      var check =  {UpgradeChecks: [{
-        "check": "Work-preserving RM/NM restart is enabled in YARN configs",
-        "status": "FAIL",
-        "reason": "FAIL",
-        "failed_on": [],
-        "check_type": "SERVICE"
+      var check =  { items: [{
+        UpgradeChecks: {
+          "check": "Work-preserving RM/NM restart is enabled in YARN configs",
+          "status": "FAIL",
+          "reason": "FAIL",
+          "failed_on": [],
+          "check_type": "SERVICE"
+        }
       }]};
       controller.runPreUpgradeCheckSuccess(check,null,{label: "name"});
       expect(controller.upgrade.calledOnce).to.be.false;
       expect(App.ModalPopup.show.calledOnce).to.be.true;
     });
     it("runs upgrade popup", function () {
-      var check = {UpgradeChecks: [{
-        "check": "Work-preserving RM/NM restart is enabled in YARN configs",
-        "status": "PASS",
-        "reason": "OK",
-        "failed_on": [],
-        "check_type": "SERVICE"
+      var check = { items: [{
+        UpgradeChecks: {
+          "check": "Work-preserving RM/NM restart is enabled in YARN configs",
+          "status": "PASS",
+          "reason": "OK",
+          "failed_on": [],
+          "check_type": "SERVICE"
+        }
       }]};
       controller.runPreUpgradeCheckSuccess(check,null,{label: "name"});
       expect(controller.upgrade.calledOnce).to.be.true;
@@ -267,5 +282,242 @@ describe('App.MainAdminStackAndUpgradeController', function() {
     });
   });
 
+  describe("#initDBProperties()", function() {
+    before(function () {
+      sinon.stub(controller, 'getDBProperty', function (prop) {
+        return prop;
+      });
+    });
+    after(function () {
+      controller.getDBProperty.restore();
+    });
+    it("set properties", function () {
+      controller.set('wizardStorageProperties', ['prop1']);
+      controller.initDBProperties();
+      expect(controller.get('prop1')).to.equal('prop1');
+    });
+  });
 
+  describe("#init()", function() {
+    before(function () {
+      sinon.stub(controller, 'initDBProperties', Em.K);
+    });
+    after(function () {
+      controller.initDBProperties.restore();
+    });
+    it("call initDBProperties", function () {
+      controller.init();
+      expect(controller.initDBProperties.calledOnce).to.be.true;
+    });
+  });
+
+  describe("#parseVersionsData()", function() {
+    it("", function() {
+      var data = {
+        items: [
+          {
+            ClusterStackVersions: {},
+            repository_versions: [
+              {
+                RepositoryVersions: {
+                  repository_version: '2.2',
+                  display_name: 'v1',
+                  id: '1'
+                }
+              }
+            ]
+          }
+        ]
+      };
+      expect(controller.parseVersionsData(data)).to.eql([
+        {
+          "repository_name": "v1",
+          "repository_id": "1",
+          "repository_version": "2.2"
+        }
+      ]);
+    });
+  });
+
+  describe("#upgrade()", function() {
+    before(function () {
+      sinon.stub(App.ajax, 'send', Em.K);
+      sinon.stub(controller, 'setDBProperty', Em.K);
+    });
+    after(function () {
+      App.ajax.send.restore();
+      controller.setDBProperty.restore();
+    });
+    it("make ajax call", function() {
+      controller.upgrade({
+        value: '2.2',
+        label: 'HDP-2.2'
+      });
+      expect(App.ajax.send.getCall(0).args[0]).to.eql({
+        name: 'admin.upgrade.start',
+        sender: controller,
+        data: {
+          version: '2.2'
+        },
+        success: 'upgradeSuccessCallback'
+      });
+      expect(controller.get('upgradeVersion')).to.equal('HDP-2.2');
+      expect(controller.setDBProperty.calledWith('upgradeVersion', 'HDP-2.2')).to.be.true;
+    });
+  });
+
+  describe("#upgradeSuccessCallback()", function() {
+    before(function () {
+      sinon.stub(App.clusterStatus, 'setClusterStatus', Em.K);
+      sinon.stub(controller, 'openUpgradeDialog', Em.K);
+      sinon.stub(controller, 'setDBProperty', Em.K);
+    });
+    after(function () {
+      App.clusterStatus.setClusterStatus.restore();
+      controller.openUpgradeDialog.restore();
+      controller.setDBProperty.restore();
+    });
+    it("open upgrade dialog", function() {
+      var data = {
+        resources: [
+          {
+            Upgrade: {
+              request_id: 1
+            }
+          }
+        ]
+      };
+      controller.upgradeSuccessCallback(data);
+      expect(controller.setDBProperty.calledWith('upgradeId', 1)).to.be.true;
+      expect(App.clusterStatus.setClusterStatus.calledOnce).to.be.true;
+      expect(controller.openUpgradeDialog.calledOnce).to.be.true;
+    });
+  });
+
+  describe("#updateUpgradeData()", function() {
+    beforeEach(function () {
+      sinon.stub(controller, 'initUpgradeData', Em.K);
+    });
+    afterEach(function () {
+      controller.initUpgradeData.restore();
+    });
+    it("data loaded first time", function() {
+      controller.set('upgradeData', null);
+      controller.updateUpgradeData({});
+      expect(controller.initUpgradeData.calledWith({})).to.be.true;
+    });
+    it("update loaded data", function() {
+      var oldData = Em.Object.create({
+        upgradeGroups: [
+          Em.Object.create({
+            group_id: 1,
+            upgradeItems: [
+              Em.Object.create({
+                stage_id: 1,
+                tasks: [
+                  Em.Object.create({
+                    id: 1
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      });
+      var newData = {
+        Upgrade: {
+          request_id: 1
+        },
+        upgrade_groups: [
+          {
+            UpgradeGroup: {
+              group_id: 1,
+              status: 'COMPLETED',
+              progress_percent: 100
+            },
+            upgrade_items: [
+              {
+                UpgradeItem: {
+                  stage_id: 1,
+                  status: 'COMPLETED',
+                  progress_percent: 100
+                },
+                tasks: [
+                  {
+                    Tasks: {
+                      id: 1,
+                      status: 'COMPLETED'
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+      controller.set('upgradeData', oldData);
+      controller.updateUpgradeData(newData);
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('status')).to.equal('COMPLETED');
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('progress_percent')).to.equal(100);
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('upgradeItems')[0].get('status')).to.equal('COMPLETED');
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('upgradeItems')[0].get('progress_percent')).to.equal(100);
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('upgradeItems')[0].get('tasks')[0].get('status')).to.equal('COMPLETED');
+    });
+  });
+
+  describe("#initUpgradeData()", function() {
+    it("", function() {
+      var newData = {
+        Upgrade: {
+          request_id: 1
+        },
+        upgrade_groups: [
+          {
+            UpgradeGroup: {
+              group_id: 1
+            },
+            upgrade_items: [
+              {
+                UpgradeItem: {
+                  stage_id: 1
+                },
+                tasks: [
+                  {
+                    Tasks: {
+                      id: 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+      controller.initUpgradeData(newData);
+      expect(controller.get('upgradeData.Upgrade.request_id')).to.equal(1);
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('group_id')).to.equal(1);
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('upgradeItems')[0].get('stage_id')).to.equal(1);
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('upgradeItems')[0].get('tasks')[0].get('id')).to.equal(1);
+    });
+  });
+
+  describe("#finish()", function() {
+    before(function () {
+      sinon.stub(App.clusterStatus, 'setClusterStatus', Em.K);
+      sinon.stub(controller, 'setDBProperty', Em.K);
+    });
+    after(function () {
+      App.clusterStatus.setClusterStatus.restore();
+      controller.setDBProperty.restore();
+    });
+    it("reset upgrade info", function() {
+      controller.finish();
+      expect(controller.get('upgradeId')).to.be.null;
+      expect(controller.setDBProperty.calledWith('upgradeId', undefined)).to.be.true;
+      expect(App.get('upgradeState')).to.equal('INIT');
+      expect(controller.get('upgradeVersion')).to.be.null;
+      expect(controller.setDBProperty.calledWith('upgradeVersion', undefined)).to.be.true;
+      expect(App.clusterStatus.setClusterStatus.calledOnce).to.be.true;
+    });
+  });
 });

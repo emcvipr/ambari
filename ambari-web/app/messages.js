@@ -221,6 +221,7 @@ Em.I18n.translations = {
   'common.hostLog.popup.outputLog.value': 'output-{0}.txt',
   'common.hostLog.popup.errorLog.value': 'errors-{0}.txt',
   'common.maintenance.task': ' Toggle Maintenance Mode',
+  'common.installRepo.task': ' Install Packages',
   'common.used': 'used',
   'common.free': 'free',
   'common.type.string': 'string',
@@ -243,9 +244,12 @@ Em.I18n.translations = {
   'common.finalize': "Finalize",
   'common.severity': "Severity",
   'common.dismiss': "Dismiss",
+  'common.stdout': "stdout",
+  'common.stderr': "stderr",
 
   'models.alert_instance.tiggered.verbose': "Occured on {0} <br> Checked on {1}",
   'models.alert_definition.triggered.verbose': "Occured on {0}",
+  'models.alert_definition.triggered.checked': "Status Changed: {0}\nLast Checked: {1}",
 
   'passiveState.turnOn':'Turn On Maintenance Mode',
   'passiveState.turnOff':'Turn Off Maintenance Mode',
@@ -328,7 +332,6 @@ Em.I18n.translations = {
   'graphs.timeRange.week': 'Last 1 week',
   'graphs.timeRange.month': 'Last 1 month',
   'graphs.timeRange.year': 'Last 1 year',
-  'graphs.timeRangeControl.label': 'Time range: ',
 
   'users.userName.validationFail': 'Only lowercase letters and numbers are recommended; must start with a letter',
   'host.spacesValidation': 'Cannot contain whitespace',
@@ -692,6 +695,11 @@ Em.I18n.translations = {
   'installer.step7.oozie.database.new': 'New Derby Database',
   'installer.step7.hive.database.new.mysql': 'New MySQL Database',
   'installer.step7.hive.database.new.postgres': 'New PostgreSQL Database',
+  'installer.step7.misc.notification.configure':'Configure email notifications',
+  'installer.step7.misc.notification.configure.later':'Configure email notifications later',
+  'installer.step7.misc.notification.use_tls':'Use TLS',
+  'installer.step7.misc.notification.use_ssl':'Use SSL',
+
 
   'installer.step8.header':'Review',
   'installer.step8.body':'Please review the configuration before installation',
@@ -867,12 +875,16 @@ Em.I18n.translations = {
   'alerts.actions.manageNotifications': 'Manage Notifications',
   'alerts.actions.manageNotifications.info': 'You can manage notification methods and recipients.',
 
+  'alerts.groups.successPopup.header': 'Alert Groups processing results',
+  'alerts.groups.successPopup.body.created': 'New Alert Groups',
+  'alerts.groups.successPopup.body.updated': 'Updated Alert Groups',
+  'alerts.groups.successPopup.body.deleted': 'Removed Alert Groups',
+
   'alerts.table.noAlerts': 'No Alerts to display',
   'alerts.table.header.lastTriggered': 'Last Status Changed',
   'alerts.table.header.lastChecked': 'Last Checked',
   'alerts.table.header.lastTrigger': 'Last Changed',
-  'alerts.table.header.text': 'Text',
-  'alerts.table.header.triggeredOn': 'Triggered On',
+  'alerts.table.header.check.response': 'Check Response',
   'alerts.table.header.definitionName': 'Alert Definition Name',
   'alerts.table.header.notification': 'Notification',
   'alerts.table.state': 'State',
@@ -885,6 +897,7 @@ Em.I18n.translations = {
   'alerts.table.state.enabled.confirm.btn': 'Confirm Disable',
   'alerts.table.state.disabled.confirm.btn': 'Confirm Enable',
   'alerts.filters.filteredAlertsInfo': '{0} of {1} definitions showing',
+  'alerts.definition.name': 'Alert Definition Name',
 
   'alerts.definition.details.enable': 'Enable',
   'alerts.definition.details.disable': 'Disable',
@@ -895,6 +908,7 @@ Em.I18n.translations = {
   'alerts.definition.details.24-hour': '24-Hour',
   'alerts.definition.details.notification': 'Notification',
   'alerts.definition.details.noAlerts': 'No alert instances to show',
+  'alerts.definition.details.configs.thresholdsErrorMsg': 'Critical threshold should be larger than warning threshold',
 
   'alerts.notifications.addCustomPropertyPopup.header': 'Add Property',
   'alerts.notifications.addCustomPropertyPopup.error.propertyExists': 'Custom Property with current name already exists',
@@ -1076,9 +1090,9 @@ Em.I18n.translations = {
     '<ol>' +
       '<li>Login to the NameNode host <b>{1}</b>.</li>' +
       '<li>Put the NameNode in Safe Mode (read-only mode):' +
-      '<div class="code-snippet">sudo su -l {0} -c \'hdfs dfsadmin -safemode enter\'</div></li>' +
+      '<div class="code-snippet">sudo su {0} -l -c \'hdfs dfsadmin -safemode enter\'</div></li>' +
       '<li>Once in Safe Mode, create a Checkpoint:' +
-      '<div class="code-snippet">sudo su -l {0} -c \'hdfs dfsadmin -saveNamespace\'</div></li>' +
+      '<div class="code-snippet">sudo su {0} -l -c \'hdfs dfsadmin -saveNamespace\'</div></li>' +
       '</ol>',
 
   'admin.highAvailability.wizard.step8.body':
@@ -1086,7 +1100,7 @@ Em.I18n.translations = {
     '<ol>' +
     '<li>Login to the NameNode host <b>{1}</b>.</li>' +
     '<li>Initialize the metadata for NameNode automatic failover by running:' +
-    '<div class="code-snippet">sudo su -l {0} -c \'hdfs zkfc -formatZK\'</div></li>' +
+    '<div class="code-snippet">sudo su {0} -l -c \'hdfs zkfc -formatZK\'</div></li>' +
     '</div>' +
     '<div class="alert alert-info">' +
     '<ol start="3">' +
@@ -1094,7 +1108,7 @@ Em.I18n.translations = {
     '<div class="alert alert-warn"><strong>Important!</strong> Be sure to login to the Additional NameNode host.<br>This is a different host from the Steps 1 and 2 above.</div>' +
     '</li>' +
     '<li>Initialize the metadata for the Additional NameNode by running:' +
-    '<div class="code-snippet">sudo su -l {0} -c \'hdfs namenode -bootstrapStandby\'</div></li>' +
+    '<div class="code-snippet">sudo su {0} -l -c \'hdfs namenode -bootstrapStandby\'</div></li>' +
     '</ol>' +
     '</div>' +
     'Please proceed once you have completed the steps above.',
@@ -1102,16 +1116,16 @@ Em.I18n.translations = {
     '<ol>' +
     '<li>Login to the NameNode host <b>{1}</b>.</li>' +
     '<li>Initialize the JournalNodes by running:' +
-    '<div class="code-snippet">sudo su -l {0} -c \'hdfs namenode -initializeSharedEdits\'</div></li>' +
+    '<div class="code-snippet">sudo su {0} -l -c \'hdfs namenode -initializeSharedEdits\'</div></li>' +
     '<li>You will be able to proceed once Ambari detects that the JournalNodes have been initialized successfully.</li>' +
     '</ol>',
   'admin.highAvailability.wizard.step4.body':
     '<ol>' +
     '<li>Login to the NameNode host <b>{1}</b>.</li>' +
     '<li>Put the NameNode in Safe Mode (read-only mode):' +
-    '<div class="code-snippet">sudo su -l {0} -c \'hdfs dfsadmin -safemode enter\'</div></li>' +
+    '<div class="code-snippet">sudo su {0} -l -c \'hdfs dfsadmin -safemode enter\'</div></li>' +
     '<li>Once in Safe Mode, create a Checkpoint:' +
-    '<div class="code-snippet">sudo su -l {0} -c \'hdfs dfsadmin -saveNamespace\'</div></li>' +
+    '<div class="code-snippet">sudo su {0} -l -c \'hdfs dfsadmin -saveNamespace\'</div></li>' +
     '<li>You will be able to proceed once Ambari detects that the NameNode is in Safe Mode and the Checkpoint has been created successfully.</li>'+
     '<div class="alert alert-warn">If the <b>Next</b> button is enabled before you run the <b>"Step 3: Create a Checkpoint"</b> command, it means there is a recent Checkpoint already and you may proceed without running the <b>"Step 3: Create a Checkpoint"</b> command.</div>' +
     '</ol>',
@@ -1272,32 +1286,42 @@ Em.I18n.translations = {
   'admin.stackVersions.table.empty': "No cluster stack versions to display",
   'admin.repoVersions.table.empty': "No repository versions to display",
 
-  'admin.stackVersions.datails.versionName': "Version Name",
-  'admin.stackVersions.datails.installed.on': "Installed On",
-  'admin.stackVersions.datails.current.on': "Current On",
-  'admin.stackVersions.datails.not.installed.on': "Not installed on",
-  'admin.stackVersions.datails.base.url': "Base Url",
+  'admin.stackVersions.details.versionName': "Version Name",
+  'admin.stackVersions.details.installed.on': "Installed on",
+  'admin.stackVersions.details.current.on': "Current on",
+  'admin.stackVersions.details.not.installed.on': "Not installed on",
+  'admin.stackVersions.details.host': "host",
+  'admin.stackVersions.details.hosts': "hosts",
+  'admin.stackVersions.details.base.url': "Base Url",
 
-  'admin.stackVersions.datails.hosts.btn.install': "Install to {0} hosts",
-  'admin.stackVersions.datails.hosts.btn.installing': "Installing...",
-  'admin.stackVersions.datails.hosts.btn.nothing': "Installed on all hosts",
-  'admin.stackVersions.datails.hosts.btn.goto.upgrade': "Proceed to upgrade",
-  'admin.stackVersions.datails.hosts.btn.na': "Status not available",
-  'admin.stackVersions.datails.install.hosts.popup.title': "Install {0} version",
+  'admin.stackVersions.details.hosts.btn.reinstall': "Reinstall on failed hosts",
+  'admin.stackVersions.details.hosts.btn.install': "Install to {0} hosts",
+  'admin.stackVersions.details.hosts.btn.installing': "Installing...",
+  'admin.stackVersions.details.hosts.btn.nothing': "Installed on all hosts.",
+  'admin.stackVersions.details.hosts.btn.goto.upgrade': "Proceed to upgrade",
+  'admin.stackVersions.details.hosts.btn.na': "Status not available",
+  'admin.stackVersions.details.install.hosts.popup.title': "Install {0} version",
 
+  'admin.stackVersions.hosts.popup.header.current': "Current",
+  'admin.stackVersions.hosts.popup.header.installed': "Installed",
+  'admin.stackVersions.hosts.popup.header.not_installed': "Not installed",
   'admin.stackVersions.hosts.popup.header': "Version Status: {0}",
   'admin.stackVersions.hosts.popup.title': "{0} Version is {1} on {2} hosts:",
   'admin.stackVersions.hosts.popup.primary': "Go to Hosts",
+
+  'admin.stackVersions.updateTab.title.available': "Updates Available ({0})",
+  'admin.stackVersions.updateTab.title.not.available': "No Updates Available",
 
   'admin.stackUpgrade.title': "Stack and upgrade",
   'admin.stackUpgrade.hostsOnline': "{0}/{1} hosts online",
   'admin.stackUpgrade.state.available': "Upgrade Available",
   'admin.stackUpgrade.state.notAvailable': "No Upgrade Available",
   'admin.stackUpgrade.state.resume': "Resume Upgrade",
-  'admin.stackUpgrade.state.inProgress': "Upgrade in progress",
-  'admin.stackUpgrade.state.paused': "Upgrade is paused",
+  'admin.stackUpgrade.state.inProgress': "Upgrade in Progress",
+  'admin.stackUpgrade.state.paused': "Upgrade Paused",
   'admin.stackUpgrade.state.stopped': "Upgrade Stopped",
   'admin.stackUpgrade.state.completed': "Upgrade Finished",
+  'admin.stackUpgrade.state.failed': "Upgrade Failed",
   'admin.stackUpgrade.state.upgrading': "Upgrading...",
   'admin.stackUpgrade.hosts': "hosts",
   'admin.stackUpgrade.host': "host",
@@ -1314,8 +1338,7 @@ Em.I18n.translations = {
   'admin.stackUpgrade.dialog.closePause': "Upgrade is paused. \n If you dismiss this window, you can resume Upgrade later.",
   'admin.stackUpgrade.preupgradeCheck.header': "Upgrade to {0}",
   'admin.stackUpgrade.preupgradeCheck.title': "Upgrade Requirements Not Met",
-  'admin.stackUpgrade.preupgradeCheck.alert': "You have not met the following requirements for performing on upgrade.<br/>"+
-    "You must fix them before you continue",
+  'admin.stackUpgrade.preupgradeCheck.alert': "You must meet the following requirements before you can proceed with rolling upgrade.",
   'admin.stackUpgrade.preupgradeCheck.failedOn': "Failed on: ",
   'admin.stackUpgrade.preupgradeCheck.reason': "Reason: ",
   'services.service.start':'Start',
@@ -1412,15 +1435,15 @@ Em.I18n.translations = {
   'services.service.summary.storm.tasks': 'Tasks',
   'services.service.summary.storm.nimbus.uptime': 'Nimbus uptime',
   'services.service.summary.storm.topologies': 'Topologies',
-  'services.service.summary.flume.startAgent': 'Start Flume',
-  'services.service.summary.flume.stopAgent': 'Stop Flume',
+  'services.service.summary.flume.startAgent': 'Start Agent',
+  'services.service.summary.flume.stopAgent': 'Stop Agent',
   'services.service.summary.flume.stop.context': 'Stop Flume {0}',
   'services.service.summary.flume.start.context': 'Start Flume {0}',
   'services.service.summary.flume.noAgents': 'No Flume to display',
 
   'services.service.summary.alerts.noAlerts': 'No alerts',
   'services.service.summary.alerts.alertsExist': '{0} alerts',
-  'services.service.summary.alerts.popup.header': 'Critical or Warning Alerts for {0}',
+  'services.service.summary.alerts.popup.header': 'Alerts for {0}',
 
   'services.service.info.metrics.flume.channelFillPercent':'Channel Fill Percentage',
   'services.service.info.metrics.flume.channelSize':'Channel Size',
@@ -1720,6 +1743,7 @@ Em.I18n.translations = {
   'services.reassign.step4.task6.title':'Start NameNode',
   'services.reassign.step4.task7.title':'Delete disabled {0}',
   'services.reassign.step4.task8.title':'Start Required Services',
+  'services.reassign.step4.tasks.startNewMySqlServer.title':'Start New MYSQL Server',
   'services.reassign.step4.status.success': 'Successfully moved <b>{0}</b> from <b>{1}</b> host to <b>{2}</b> host',
   'services.reassign.step4.status.success.withManualSteps': 'Proceed to the next step',
   'services.reassign.step4.status.failed': 'Failed to move <b>{0}</b> from <b>{1}</b> host to <b>{2}</b> host',
@@ -1742,7 +1766,7 @@ Em.I18n.translations = {
       '<ol>' +
       '<li>Login to the NameNode host <b>{4}</b>.</li>' +
       '<li>Reset automatic failover information in ZooKeeper by running:' +
-      '<div class="code-snippet">sudo su -l {3} -c \'hdfs zkfc -formatZK\'</div></li>' +
+      '<div class="code-snippet">sudo su {3} -l -c \'hdfs zkfc -formatZK\'</div></li>' +
       '</ol>' +
       '</div>' +
       '<div class="alert alert-info">' +
@@ -1751,7 +1775,7 @@ Em.I18n.translations = {
       '<div class="alert alert-warn"><strong>Important!</strong> Be sure to login to the newly installed NameNode host.<br>This is a different host from the Steps 1 and 2 above.</div>' +
       '</li>' +
       '<li>Initialize the metadata by running:' +
-      "<div class='code-snippet'>sudo su -l {3} -c 'hdfs namenode -bootstrapStandby'</div></li>" +
+      "<div class='code-snippet'>sudo su {3} -l -c 'hdfs namenode -bootstrapStandby'</div></li>" +
       '</ol>' +
       '</div>',
   'services.reassign.step5.body.secondary_namenode':
@@ -1771,7 +1795,10 @@ Em.I18n.translations = {
     '<ol>' +
     '<li>On <b>{1}</b> using a terminal you can export your Metastore DB (MYSQL) using:' +
     '<div class="code-snippet">mysqldump db_name > backup-file.sql</div></li>' +
-    '<li>Copy the file to the target host <b>{2}</b> hosting the MySQL DB and import' +
+    '<li>Copy the file to the target host <b>{2}</b> hosting the MySQL DB</li>' +
+    '<li>Execute this SQL inside <b>mysql<b>' +
+    '<div class="code-snippet">CREATE DATABASE db_name;</div></li>' +
+    '<li>Import the database using' +
     '<div class="code-snippet">mysql db_name < backup-file.sql</div></li>' +
     '</ol>' +
     '</div>',
@@ -1782,8 +1809,10 @@ Em.I18n.translations = {
   'services.reassign.step5.body.proceedMsg': 'Please proceed once you have completed the steps above',
   'services.reassign.step5.confirmPopup.body': 'Please confirm that you have run the manual steps before continuing.',
   'services.reassign.step6.header': 'Start and Test services',
-  'services.reassign.step6.task0.title': 'Delete disabled {0}',
-  'services.reassign.step6.task1.title': 'Start All Services',
+  'services.reassign.step6.tasks.putHostComponentsInMaintenanceMode.title':'Disable {0}',
+  'services.reassign.step6.tasks.deleteHostComponents.title': 'Delete disabled {0}',
+  'services.reassign.step6.tasks.startServices.title': 'Start All Services',
+  'services.reassign.step6.tasks.stopMysqlService.title': 'Stop Mysql Server',
   'services.reassign.step6.status.success': 'Successfully moved <b>{0}</b> from <b>{1}</b> host to <b>{2}</b> host.',
   'services.reassign.step6.status.failed': 'Failed to move <b>{0}</b> from <b>{1}</b> host to <b>{2}</b> host.',
   'services.reassign.step6.status.info': 'Reassigning {0}. \nPlease wait for all tasks to be completed.',
@@ -1874,9 +1903,10 @@ Em.I18n.translations = {
   'alerts.actions.manage_alert_groups_popup.removeButtonDisabled':'Cannot delete default alert group',
   'alerts.actions.manage_alert_groups_popup.renameButton':'Rename Alert Group',
   'alerts.actions.manage_alert_groups_popup.duplicateButton':'Duplicate Alert Group',
+  'alerts.actions.manage_alert_groups_popup.addDefinition.noDefinitions':'No alert definitions to display',
   'alerts.actions.manage_alert_groups_popup.addDefinition':'Add alert definitions to selected Alert Group',
   'alerts.actions.manage_alert_groups_popup.addDefinitionDisabled':'There are no available alert definitions to add',
-  'alerts.actions.manage_alert_groups_popup.addDefinitionToDefault': 'You cannot add alert definition to a default group',
+  'alerts.actions.manage_alert_groups_popup.addDefinitionToDefault': 'Cannot modify default alert group',
   'alerts.actions.manage_alert_groups_popup.removeDefinition':'Remove alert definitions from selected Alert Group',
   'alerts.actions.manage_alert_groups_popup.removeDefinitionDisabled':'Cannot modify default alert group',
   'alerts.actions.manage_alert_groups_popup.selectDefsDialog.title': 'Select Alert Group Definitions',
@@ -1886,6 +1916,7 @@ Em.I18n.translations = {
   'alerts.actions.manage_alert_groups_popup.selectDefsDialog.message.warning': 'At least one alert definition needs to be selected.',
 
   'alerts.actions.manage_alert_notifications_popup.header':'Manage Alert Notifications',
+  'alerts.actions.manage_alert_notifications_popup.noAlertNotification':'No alert notifications defined',
   'alerts.actions.manage_alert_notifications_popup.addButton':'Create new Alert Notification',
   'alerts.actions.manage_alert_notifications_popup.addHeader':'Create Alert Notification',
   'alerts.actions.manage_alert_notifications_popup.removeButton':'Delete Alert Notification',
@@ -1906,8 +1937,9 @@ Em.I18n.translations = {
   'alerts.actions.manage_alert_notifications_popup.community':'Community',
   'alerts.actions.manage_alert_notifications_popup.port':'Port',
   'alerts.actions.manage_alert_notifications_popup.global':'Global',
-  'alerts.actions.manage_alert_notifications_popup.global.tooltip':'Check this checkbox to make the notification apply globally to all groups defined in Ambari',
-  'alerts.actions.manage_alert_notifications_popup.severityFilter':'Severity Filter',
+  'alerts.actions.manage_alert_notifications_popup.noDescription':'<i>No description</i>',
+  'alerts.actions.manage_alert_notifications_popup.noGroup':'<i>None selected</i>',
+  'alerts.actions.manage_alert_notifications_popup.severityFilter':'Severity',
   'alerts.actions.manage_alert_notifications_popup.clearAll':'Clear All',
   'alerts.actions.manage_alert_notifications_popup.selectAll':'Select All',
   'alerts.actions.manage_alert_notifications_popup.confirmDeleteHeader':'Confirm Delete',
@@ -2019,7 +2051,7 @@ Em.I18n.translations = {
   'hosts.host.installComponent.popup.confirm':'Confirm Install',
   'hosts.host.installComponent.msg':'Are you sure you want to install {0}?',
   'hosts.host.addComponent.msg':'Are you sure you want to add {0}?',
-  'hosts.host.addComponent.addZooKeeper':'Adding ZooKeeper Server may reconfigure such properties:<ul><li>ha.zookeeper.quorum</li><li>hbase.zookeeper.quorum</li><li>templeton.zookeeper.hosts</li><li>yarn.resourcemanager.zk-address</li><li>hive.zookeeper.quorum</li><li>hive.cluster.delegation.token.store.zookeeper.connectString</li></ul>',
+  'hosts.host.addComponent.ZOOKEEPER_SERVER':'Adding ZooKeeper Server may reconfigure such properties:<ul><li>ha.zookeeper.quorum</li><li>hbase.zookeeper.quorum</li><li>templeton.zookeeper.hosts</li><li>yarn.resourcemanager.zk-address</li><li>hive.zookeeper.quorum</li><li>hive.cluster.delegation.token.store.zookeeper.connectString</li></ul>',
   'hosts.host.addComponent.deleteHostWithZooKeeper':'Deleting host with ZooKeeper Server may reconfigure such properties:<ul><li>ha.zookeeper.quorum</li><li>hbase.zookeeper.quorum</li><li>templeton.zookeeper.hosts</li><li>yarn.resourcemanager.zk-address</li><li>hive.zookeeper.quorum</li><li>hive.cluster.delegation.token.store.zookeeper.connectString</li></ul>',
   'host.host.addComponent.popup.dependedComponents.body': '{0} requires {1} to be installed along with it on the same host. Please add them first and then try adding {0}',
   'host.host.addComponent.popup.dependedComponents.header': 'Component dependencies',
@@ -2042,6 +2074,9 @@ Em.I18n.translations = {
   'hosts.host.hbase_regionserver.decommission.warning':'Last RegionServer can\'t be decommissioned',
   'hosts.host.decommissioned':'Decommissioned',
   'hosts.host.decommissioning':'Decommissioning',
+  'hosts.host.addComponent.HIVE_METASTORE':'Adding <i>Hive Metastore</i> will reconfigure such properties:<ul><li>hive.metastore.uris</li><li>templeton.hive.properties</li></ul>',
+  'hosts.host.deleteComponent.popup.deleteHiveMetastore':'Deleting <i>Hive Metastore</i> will reconfigure such properties:<ul><li>hive.metastore.uris</li><li>templeton.hive.properties</li></ul>',
+  'hosts.host.hive.configs.save.note': 'This configuration is created by ambari while installing/deleting hive component on a host',
 
   'hosts.component.passive.implied.host.mode.tooltip':'Cannot Turn Off Maintenance Mode because Host is in Maintenance Mode',
   'hosts.component.passive.implied.service.mode.tooltip':'Cannot Turn Off Maintenance Mode because {0} is in Maintenance Mode',
@@ -2194,6 +2229,8 @@ Em.I18n.translations = {
   'dashboard.widgets.NodeManagersLive': 'NodeManagers Live',
   'dashboard.widgets.YARNMemory': 'YARN Memory',
   'dashboard.widgets.YARNLinks': 'YARN Links',
+  'dashboard.widgets.error.invalid': 'Invalid! Enter a number between 0 - {0}',
+  'dashboard.widgets.error.smaller': 'Threshold 1 should be smaller than threshold 2!',
 
   'dashboard': {
     'widgets': {
@@ -2308,6 +2345,7 @@ Em.I18n.translations = {
 
   'dashboard.services.hive.clients':'Hive Clients',
   'dashboard.services.hive.client':'Hive Client',
+  'dashboard.services.hive.metastore':'Hive Metastore',
 
   'dashboard.services.oozie.clients':'Oozie Clients',
   'dashboard.services.oozie.client':'Oozie Client',

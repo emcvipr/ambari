@@ -18,75 +18,20 @@
 
 var App = require('app');
 
-App.RepoVersionsController = Em.ArrayController.extend({
+App.RepoVersionsController = App.RepoVersionsManagementController.extend({
   name: 'repoVersionsController',
 
   content: function () {
     return App.RepositoryVersion.find().filterProperty('stackVersion', null);
   }.property('dataIsLoaded'),
-  dataIsLoaded: false,
-  mockUrl: '/data/stack_versions/repo_versions_all.json',
-  realUrl: function () {
-    return App.get('apiPrefix') + App.get('stackVersionURL') + '/repository_versions?fields=*,operatingSystems/*,operatingSystems/repositories/*';
-  }.property('App.stackVersionURL'),
-  /**
-   * load all data components required by repo version table
-   * @return {*}
-   */
-  load: function () {
-    this.set('dataIsLoaded', false);
-    var dfd = $.Deferred();
-    var self = this;
-    this.loadRepoVersionsToModel().done(function () {
-      self.set('dataIsLoaded', true);
-      dfd.resolve();
-    });
-    return dfd.promise();
-  },
 
   /**
-   * get repo versions from server and push it to model
-   * @return {*}
+   * installs repoversion to the cluster by running <code>installRepoVersion<code> method
+   * of <code>mainStackVersionsDetailsController<code> controller
+   * @param event
+   * @method installRepoVersion
    */
-  loadRepoVersionsToModel: function (isUpdate) {
-    var dfd = $.Deferred();
-    var self = this;
-    App.get('router.mainStackVersionsController').loadStackVersionsToModel().done(function () {
-      App.HttpClient.get(self.getUrl(isUpdate), App.repoVersionMapper, {
-        complete: function () {
-          dfd.resolve();
-        }
-      });
-    });
-
-    return dfd.promise();
-  },
-
-  getUrl: function (isUpdate) {
-    return App.get('testMode') ? this.get('mockUrl') :
-      isUpdate ? this.get('realUpdateUrl') : this.get('realUrl');
-  },
-
-  installRepoVersion: function (event) {
-    var repo = event.context;
-    var data = {
-      ClusterStackVersions: {
-        stack: repo.get('stackVersionType'),
-        version: repo.get('stackVersionNumber'),
-        repository_version: repo.get('repositoryVersion')
-      },
-      id: repo.get('id')
-    };
-    App.ajax.send({
-      name: 'admin.stack_version.install.repo_version',
-      sender: this,
-      data: data,
-      success: 'installStackVersionSuccess'
-    });
-  },
-
-  installStackVersionSuccess: function (data, opt, params) {
-    var stackVersion = App.StackVersion.find().findProperty('repositoryVersion.id', params.id);
-    App.router.transitionTo('main.admin.adminStackVersions.version', stackVersion);
+  installRepoVersion: function(event) {
+    App.get('router.mainStackVersionsDetailsController').installRepoVersion(event);
   }
 });

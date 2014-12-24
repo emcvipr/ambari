@@ -20,7 +20,7 @@
   <services>
     <service>
       <name>HIVE</name>
-      <version>0.14.0.2.2.0.0</version>
+      <version>0.14.0.2.2</version>
       <components>
         <component>
             <name>HIVE_METASTORE</name>
@@ -35,13 +35,21 @@
             <commandScript>
                 <script>scripts/hive_metastore.py</script>
                 <scriptType>PYTHON</scriptType>
-                <timeout>600</timeout>
+              <timeout>1200</timeout>
             </commandScript>
             <configuration-dependencies>
                 <config-type>hive-site</config-type>
             </configuration-dependencies>
         </component>
+        <component>
+          <name>HIVE_SERVER</name>
+          <cardinality>1+</cardinality>
+          <configuration-dependencies>
+              <config-type>hiveserver2-site</config-type>
+          </configuration-dependencies>
+        </component>
       </components>
+      
       <osSpecifics>
         <osSpecific>
           <osFamily>any</osFamily>

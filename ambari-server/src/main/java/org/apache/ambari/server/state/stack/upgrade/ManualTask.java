@@ -24,13 +24,19 @@ import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlTransient;
 import javax.xml.bind.annotation.XmlType;
 
+import org.apache.ambari.server.serveraction.upgrades.ManualStageAction;
+
 /**
  * Identifies that an upgrade step that requires confirmation before continuing.
  */
 @XmlRootElement
 @XmlAccessorType(XmlAccessType.FIELD)
 @XmlType(name="manual")
-public class ManualTask extends Task {
+public class ManualTask extends ServerSideActionTask {
+
+  public ManualTask() {
+    implClass = ManualStageAction.class.getName();
+  }
 
   @XmlTransient
   private Task.Type type = Task.Type.MANUAL;

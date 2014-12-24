@@ -19,8 +19,11 @@ Ambari Agent
 
 """
 
-import sys
+import nodemanager_upgrade
+
 from resource_management import *
+from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
+from resource_management.libraries.functions.format import format
 
 from yarn import yarn
 from service import service
@@ -34,21 +37,32 @@ class Nodemanager(Script):
     env.set_params(params)
     yarn(name="nodemanager")
 
-  def start(self, env):
+  def pre_rolling_restart(self, env):
+    Logger.info("Executing NodeManager Rolling Upgrade pre-restart")
+    import params
+    env.set_params(params)
+
+    if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
+      Execute(format("hdp-select set hadoop-yarn-nodemanager {version}"))
+
+  def start(self, env, rolling_restart=False):
     import params
     env.set_params(params)
     self.configure(env) # FOR SECURITY
-    service('nodemanager',
-            action='start'
-    )
+    service('nodemanager',action='start')
 
-  def stop(self, env):
+  def post_rolling_restart(self, env):
+    Logger.info("Executing NodeManager Rolling Upgrade post-restart")
     import params
     env.set_params(params)
 
-    service('nodemanager',
-            action='stop'
-    )
+    nodemanager_upgrade.post_upgrade_check()
+
+  def stop(self, env, rolling_restart=False):
+    import params
+    env.set_params(params)
+
+    service('nodemanager',action='stop')
 
   def status(self, env):
     import status_params

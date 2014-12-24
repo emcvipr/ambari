@@ -146,17 +146,23 @@ def copy_tarballs_to_hdfs(tarball_prefix, component_user, file_owner, group_owne
 
   # Ubuntu returns: "stdin: is not a tty", as subprocess output.
   tmpfile = tempfile.NamedTemporaryFile()
+  out = None
   with open(tmpfile.name, 'r+') as file:
-    get_hdp_version_cmd = '/usr/bin/hdp-select versions > %s' % tmpfile.name
+    get_hdp_version_cmd = '/usr/bin/hdp-select status > %s' % tmpfile.name
     code, stdoutdata = shell.call(get_hdp_version_cmd)
     out = file.read()
   pass
-  if code != 0 or out is None or not out.startswith(params.hdp_stack_version):
+  if code != 0 or out is None:
     Logger.warning("Could not verify HDP version by calling '%s'. Return Code: %s, Output: %s." %
                    (get_hdp_version_cmd, str(code), str(out)))
     return 1
 
-  hdp_version = out.strip() # this should include the build number
+  matches = re.findall(r"([\d\.]+\-\d+)", out)
+  hdp_version = matches[0] if matches and len(matches) > 0 else None
+
+  if not hdp_version:
+    Logger.error("Could not parse HDP version from output of hdp-select: %s" % str(out))
+    return 1
 
   file_name = os.path.basename(component_tar_source_file)
   destination_file = os.path.join(component_tar_destination_folder, file_name)

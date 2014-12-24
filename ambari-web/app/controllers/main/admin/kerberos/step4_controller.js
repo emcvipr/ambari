@@ -16,11 +16,10 @@
  * limitations under the License.
  */
 
-App.KerberosWizardStep4Controller = Em.Controller.extend(App.AddSecurityConfigs, {
+App.KerberosWizardStep4Controller = App.WizardStep7Controller.extend(App.AddSecurityConfigs, {
   name: 'kerberosWizardStep4Controller',
-  stepConfigs: [],
-  selectedService: null,
-  isRecommendedLoaded: false,
+
+  adminPropertyNames: ['admin_principal', 'admin_password'],
   
   clearStep: function() {
     this.set('isRecommendedLoaded', false);
@@ -45,7 +44,7 @@ App.KerberosWizardStep4Controller = Em.Controller.extend(App.AddSecurityConfigs,
    * @returns {Em.Object} 
    */
   createServiceConfig: function(configCategories, configs) {
-    return Em.Object.create({
+    return App.ServiceConfig.create({
       displayName: 'Kerberos Descriptor',
       name: 'KERBEROS',
       serviceName: 'KERBEROS',
@@ -64,23 +63,57 @@ App.KerberosWizardStep4Controller = Em.Controller.extend(App.AddSecurityConfigs,
   setStepConfigs: function(configs) {
     var selectedService = App.StackService.find().findProperty('serviceName', 'KERBEROS');
     var configCategories = selectedService.get('configCategories');
-    this.prepareConfigProperties(configs);
-    this.get('stepConfigs').pushObject(this.createServiceConfig(configCategories, configs));
+    var configProperties = this.prepareConfigProperties(configs);
+    if (this.get('wizardController.name') == 'addServiceController') {
+      // config properties for installed services should be disabled on Add Service Wizard
+      configProperties.forEach(function(item) {
+        if (this.get('adminPropertyNames').contains(item.get('name'))) return;
+        if (this.get('installedServiceNames').contains(item.get('serviceName')) || item.get('serviceName') == 'Cluster') {
+          item.set('isEditable', false);
+        }
+      }, this);
+    }
+    this.get('stepConfigs').pushObject(this.createServiceConfig(configCategories, configProperties));
     this.set('selectedService', this.get('stepConfigs')[0]);
   },
 
   /**
-   * 
-   * @param {} configs
+   * Filter configs by installed services for Kerberos Wizard or by installed + selected services
+   * for Add Service Wizard.
+   * Set property value observer.
+   * Set realm property with value from previous configuration step.
+   * Set appropriate category for all configs.
+   *
+   * @param {App.ServiceCofigProperty[]} configs
+   * @returns {App.ServiceConfigProperty[]}
    */
   prepareConfigProperties: function(configs) {
     var self = this;
-    var realmValue = this.get('wizardController').getDBProperty('serviceConfigProperties').findProperty('name', 'realm').value;
-    configs.findProperty('name', 'realm').set('value', realmValue);
-    configs.findProperty('name', 'realm').set('defaultValue', realmValue);
+    var storedServiceConfigs = this.get('wizardController').getDBProperty('serviceConfigProperties');
+    var realmValue = storedServiceConfigs.findProperty('name', 'realm').value;
+    var installedServiceNames = ['Cluster'].concat(App.Service.find().mapProperty('serviceName'));
+    var adminProps = [];
+    var configProperties = configs.slice(0);
+    if (this.get('wizardController.name') == 'addServiceController') {
+      installedServiceNames = installedServiceNames.concat(this.get('selectedServiceNames'));
+      this.get('adminPropertyNames').forEach(function(item) {
+        var property = storedServiceConfigs.filterProperty('filename', 'krb5-conf.xml').findProperty('name', item);
+        if (!!property) {
+          var _prop = App.ServiceConfigProperty.create($.extend({}, property, { value: '', defaultValue: '', serviceName: 'Cluster', displayName: item }));
+          _prop.validate();
+          adminProps.push(_prop);
+        }
+      });
+      configProperties = adminProps.concat(configProperties);
+    }
+    configProperties = configProperties.filter(function(item) {
+      return installedServiceNames.contains(item.get('serviceName'));
+    });
+    configProperties.findProperty('name', 'realm').set('value', realmValue);
+    configProperties.findProperty('name', 'realm').set('defaultValue', realmValue);
     
-    configs.setEach('isSecureConfig', false);
-    configs.forEach(function(property, item, allConfigs) {
+    configProperties.setEach('isSecureConfig', false);
+    configProperties.forEach(function(property, item, allConfigs) {
       if (['spnego_keytab', 'spnego_principal'].contains(property.get('name'))) {
         property.addObserver('value', self, 'spnegoPropertiesObserver');
       }
@@ -92,8 +125,15 @@ App.KerberosWizardStep4Controller = Em.Controller.extend(App.AddSecurityConfigs,
       if (property.get('serviceName') == 'Cluster') property.set('category', 'General');
       else property.set('category', 'Advanced');
     });
+
+    return configProperties;
   },
 
+  /**
+   * Sync up values between inherited property and its reference.
+   * 
+   * @param {App.ServiceConfigProperty} configProperty
+   */
   spnegoPropertiesObserver: function(configProperty) {
     var self = this;
     this.get('stepConfigs')[0].get('configs').forEach(function(config) {
@@ -107,7 +147,15 @@ App.KerberosWizardStep4Controller = Em.Controller.extend(App.AddSecurityConfigs,
   },
 
   submit: function() {
+    this.saveConfigurations();
     App.router.send('next');
-  }
+  },
   
+  saveConfigurations: function() {
+    var kerberosDescriptor = this.get('kerberosDescriptor');
+    var configs = this.get('stepConfigs')[0].get('configs');
+    this.updateKerberosDescriptor(kerberosDescriptor, configs);
+    this.get('wizardController').setDBProperty('kerberosDescriptorConfigs', kerberosDescriptor);
+    this.set('wizardController.content.kerberosDescriptorConfigs', kerberosDescriptor);
+  }
 });

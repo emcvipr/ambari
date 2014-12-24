@@ -124,7 +124,7 @@ class TestResourceManager(RMFTestCase):
         group = 'hadoop',
     )
     self.assertResourceCalled('Execute', ' yarn --config /etc/hadoop/conf rmadmin -refreshNodes',
-        environment = {'PATH': os.environ['PATH'] + ":/usr/bin:/usr/lib/hadoop-yarn/bin"},
+        environment = {'PATH': "/bin:/usr/bin:/usr/lib/hadoop-yarn/bin"},
         user = 'yarn',
     )
     self.assertNoMoreResources()
@@ -141,7 +141,7 @@ class TestResourceManager(RMFTestCase):
         group = 'hadoop',
     )
     self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/rm.service.keytab rm/c6401.ambari.apache.org@EXAMPLE.COM; yarn --config /etc/hadoop/conf rmadmin -refreshNodes',
-        environment = {'PATH': os.environ['PATH'] + ":/usr/bin:/usr/lib/hadoop-yarn/bin"},
+        environment = {'PATH': "/bin:/usr/bin:/usr/lib/hadoop-yarn/bin"},
         user = 'yarn',
     )
     
@@ -188,10 +188,6 @@ class TestResourceManager(RMFTestCase):
       owner = 'yarn',
       recursive = True,
       ignore_failures = True,
-    )
-    self.assertResourceCalled('Directory', '/hadoop/yarn',
-      owner = 'yarn',
-      group = 'hadoop'
     )
     self.assertResourceCalled('XmlConfig', 'core-site.xml',
       owner = 'hdfs',
@@ -323,10 +319,6 @@ class TestResourceManager(RMFTestCase):
       owner = 'yarn',
       recursive = True,
       ignore_failures = True,
-    )
-    self.assertResourceCalled('Directory', '/hadoop/yarn',
-      owner = 'yarn',
-      group = 'hadoop'
     )
     self.assertResourceCalled('XmlConfig', 'core-site.xml',
       owner = 'hdfs',

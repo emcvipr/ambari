@@ -27,31 +27,54 @@ module.exports = App.WizardRoute.extend({
       App.router.get('updateController').set('isWorking', false);
 
       return App.ModalPopup.show({
+        classNames: ['full-width-modal'],
         header: function () {
           return Em.I18n.t('admin.stackUpgrade.dialog.header').format(App.router.get('mainAdminStackAndUpgradeController').get('upgradeVersion'));
         }.property('App.router.mainAdminStackAndUpgradeController.upgradeVersion'),
         bodyClass: App.upgradeWizardView,
         primary: null,
         secondary: null,
+        didInsertElement: function () {
+          this.fitHeight();
+          this.fitInnerHeight();
+        },
+
+        /**
+         * fir height of scrollable block inside of modal body
+         */
+        fitInnerHeight: function () {
+          var block = this.$().find('#modal > .modal-body');
+          var scrollable = this.$().find('#modal .scrollable-block');
+
+          scrollable.css('max-height', Number(block.css('max-height').slice(0, -2)) - block.height());
+          block.css('max-height', 'none');
+        },
         onClose: function() {
-          var self = this;
-          var header = Em.I18n.t('admin.stackUpgrade.state.paused');
-          var body = Em.I18n.t('admin.stackUpgrade.dialog.closePause');
-          if (['IN_PROGRESS', 'PENDING'].contains(App.get('upgradeState'))) {
+          var self = this, header, body;
+          if (['IN_PROGRESS', 'PENDING', 'FAILED'].contains(App.get('upgradeState'))) {
             header = Em.I18n.t('admin.stackUpgrade.state.inProgress');
             body = Em.I18n.t('admin.stackUpgrade.dialog.closeProgress');
+          } else if (App.get('upgradeState') === 'HOLDING') {
+            header = Em.I18n.t('admin.stackUpgrade.state.paused');
+            body = Em.I18n.t('admin.stackUpgrade.dialog.closePause');
+          } else {
+            this.closeWizard();
+            return;
           }
           App.ModalPopup.show({
             header: header,
             body: body,
             showCloseButton: false,
             onPrimary: function() {
-              App.router.get('updateController').set('isWorking', true);
-              App.router.transitionTo('main.admin.stackAndUpgrade');
-              self.hide();
+              self.closeWizard();
               this._super();
             }
           })
+        },
+        closeWizard: function () {
+          App.router.get('updateController').set('isWorking', true);
+          App.router.transitionTo('main.admin.stackAndUpgrade');
+          this.hide();
         }
       });
     });

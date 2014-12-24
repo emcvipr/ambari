@@ -30,6 +30,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
+import java.io.FileReader;
 import java.lang.reflect.Field;
 import java.util.Collection;
 import java.util.HashSet;
@@ -41,6 +42,7 @@ import java.util.Set;
 import javax.persistence.EntityManager;
 import javax.xml.bind.JAXBException;
 
+import com.google.gson.Gson;
 import junit.framework.Assert;
 
 import org.apache.ambari.server.AmbariException;
@@ -75,9 +77,11 @@ import org.apache.ambari.server.state.alert.MetricSource;
 import org.apache.ambari.server.state.alert.PortSource;
 import org.apache.ambari.server.state.alert.Reporting;
 import org.apache.ambari.server.state.alert.Source;
+import org.apache.ambari.server.state.kerberos.KerberosDescriptor;
 import org.apache.ambari.server.state.stack.MetricDefinition;
 import org.apache.ambari.server.state.stack.OsFamily;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.StringUtils;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -819,6 +823,33 @@ public class AmbariMetaInfoTest {
   }
 
   @Test
+  public void testKerberosJson() throws Exception {
+    ServiceInfo svc;
+
+    svc = metaInfo.getService(STACK_NAME_HDP, "2.0.8", "HDFS");
+    Assert.assertNotNull(svc);
+
+    File kerberosDescriptorFile1 = svc.getKerberosDescriptorFile();
+    Assert.assertNotNull(kerberosDescriptorFile1);
+    Assert.assertTrue(kerberosDescriptorFile1.exists());
+
+    svc = metaInfo.getService(STACK_NAME_HDP, "2.1.1", "HDFS");
+    Assert.assertNotNull(svc);
+
+    File kerberosDescriptorFile2 = svc.getKerberosDescriptorFile();
+    Assert.assertNotNull(kerberosDescriptorFile1);
+    Assert.assertTrue(kerberosDescriptorFile1.exists());
+
+    Assert.assertEquals(kerberosDescriptorFile1, kerberosDescriptorFile2);
+
+    svc = metaInfo.getService(STACK_NAME_HDP, "2.0.7", "HDFS");
+    Assert.assertNotNull(svc);
+
+    File kerberosDescriptorFile3 = svc.getKerberosDescriptorFile();
+    Assert.assertNull(kerberosDescriptorFile3);
+  }
+
+  @Test
   public void testGanglia134Dependencies() throws Exception {
     ServiceInfo service = metaInfo.getService(STACK_NAME_HDP, "1.3.4", "GANGLIA");
     List<ComponentInfo> componentList = service.getComponents();
@@ -1219,12 +1250,10 @@ public class AmbariMetaInfoTest {
 
   @Test
   public void testServicePackageDirInheritance() throws Exception {
-    String assertionTemplate07 = "HDP/2.0.7/services/%s/package";
-    String assertionTemplate08 = "HDP/2.0.8/services/%s/package";
-    if (System.getProperty("os.name").contains("Windows")) {
-      assertionTemplate07 = "HDP\\2.0.7\\services\\%s\\package";
-      assertionTemplate08 = "HDP\\2.0.8\\services\\%s\\package";
-    }
+    String assertionTemplate07 = StringUtils.join(
+        new String[]{"stacks", "HDP", "2.0.7", "services", "%s", "package"}, File.separator);
+    String assertionTemplate08 = StringUtils.join(
+        new String[]{"stacks", "HDP", "2.0.8", "services", "%s", "package"}, File.separator);
     // Test service package dir determination in parent
     ServiceInfo service = metaInfo.getService(STACK_NAME_HDP, "2.0.7", "HBASE");
     Assert.assertEquals(String.format(assertionTemplate07, "HBASE"),
@@ -1679,6 +1708,57 @@ public class AmbariMetaInfoTest {
     }
   }
 
+  @Test
+  public void testKerberosDescriptor() throws Exception {
+    ServiceInfo service;
+
+    // Test that kerberos descriptor file is not available when not supplied in service definition
+    service = metaInfo.getService(STACK_NAME_HDP, "2.1.1", "PIG");
+    Assert.assertNotNull(service);
+    Assert.assertNull(service.getKerberosDescriptorFile());
+
+    // Test that kerberos descriptor file is available when supplied in service definition
+    service = metaInfo.getService(STACK_NAME_HDP, "2.0.8", "HDFS");
+    Assert.assertNotNull(service);
+    Assert.assertNotNull(service.getKerberosDescriptorFile());
+
+    // Test that kerberos descriptor file is available from inherited stack version
+    service = metaInfo.getService(STACK_NAME_HDP, "2.1.1", "HDFS");
+    Assert.assertNotNull(service);
+    Assert.assertNotNull(service.getKerberosDescriptorFile());
+
+    // Test that kerberos.json file can be parsed into mapped data
+    Map<?,?> kerberosDescriptorData = new Gson()
+        .fromJson(new FileReader(service.getKerberosDescriptorFile()), Map.class);
+
+    Assert.assertNotNull(kerberosDescriptorData);
+    Assert.assertEquals(1, kerberosDescriptorData.size());
+  }
+
+  @Test
+  public void testGetKerberosDescriptor() throws AmbariException {
+    KerberosDescriptor descriptor = metaInfo.getKerberosDescriptor(STACK_NAME_HDP, "2.0.8");
+
+    Assert.assertNotNull(descriptor);
+    Assert.assertNotNull(descriptor.getProperties());
+    Assert.assertEquals(2, descriptor.getProperties().size());
+
+    Assert.assertNotNull(descriptor.getIdentities());
+    Assert.assertEquals(1, descriptor.getIdentities().size());
+    Assert.assertEquals("spnego", descriptor.getIdentities().get(0).getName());
+
+    Assert.assertNotNull(descriptor.getConfigurations());
+    Assert.assertEquals(1, descriptor.getConfigurations().size());
+    Assert.assertNotNull(descriptor.getConfigurations().get("core-site"));
+    Assert.assertNotNull(descriptor.getConfiguration("core-site"));
+
+    Assert.assertNotNull(descriptor.getServices());
+    Assert.assertEquals(1, descriptor.getServices().size());
+    Assert.assertNotNull(descriptor.getServices().get("HDFS"));
+    Assert.assertNotNull(descriptor.getService("HDFS"));
+  }
+
+
   private TestAmbariMetaInfo setupTempAmbariMetaInfo(String buildDir, boolean replayMocks) throws Exception {
     File stackRootTmp = new File(buildDir + "/ambari-metaInfo");
     File stackRoot = new File("src/test/resources/stacks");
@@ -1735,7 +1815,7 @@ public class AmbariMetaInfoTest {
     OsFamily osFamily;
 
     public TestAmbariMetaInfo(File stackRoot, File serverVersionFile) throws Exception {
-      super(stackRoot, serverVersionFile);
+      super(stackRoot, null, serverVersionFile);
       // MetainfoDAO
       metaInfoDAO = createNiceMock(MetainfoDAO.class);
       Class<?> c = getClass().getSuperclass();

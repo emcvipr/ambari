@@ -17,6 +17,10 @@
  */
 package org.apache.ambari.server.agent;
 
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -39,10 +43,15 @@ import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.MaintenanceStateHelper;
+import org.apache.ambari.server.events.ActionFinalReportReceivedEvent;
 import org.apache.ambari.server.events.AlertEvent;
 import org.apache.ambari.server.events.AlertReceivedEvent;
 import org.apache.ambari.server.events.publishers.AlertEventPublisher;
+import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.metadata.ActionMetadata;
+import org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile;
+import org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFileReader;
+import org.apache.ambari.server.serveraction.kerberos.KerberosServerAction;
 import org.apache.ambari.server.state.AgentVersion;
 import org.apache.ambari.server.state.Alert;
 import org.apache.ambari.server.state.Cluster;
@@ -75,6 +84,10 @@ import org.apache.ambari.server.state.svccomphost.ServiceComponentHostStartedEve
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostStoppedEvent;
 import org.apache.ambari.server.utils.StageUtils;
 import org.apache.ambari.server.utils.VersionUtils;
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -123,6 +136,9 @@ public class HeartBeatHandler {
    */
   @Inject
   private AlertEventPublisher alertEventPublisher;
+
+  @Inject
+  private AmbariEventPublisher ambariEventPublisher;
 
   private Map<String, Long> hostResponseIds = new ConcurrentHashMap<String, Long>();
 
@@ -357,7 +373,7 @@ public class HeartBeatHandler {
         host.persist();
       }
 
-      //If host doesn't belongs to any cluster
+      //If host doesn't belong to any cluster
       if ((clusterFsm.getClustersForHost(host.getHostName())).size() == 0) {
         healthStatus = HealthStatus.HEALTHY;
         host.setStatus(healthStatus.name());
@@ -380,9 +396,28 @@ public class HeartBeatHandler {
 
     Iterator<HostRoleCommand> hostRoleCommandIterator = commands.iterator();
     for (CommandReport report : reports) {
+
+      Long clusterId = null;
+      if (report.getClusterName() != null) {
+        try {
+          Cluster cluster = clusterFsm.getCluster(report.getClusterName());
+          clusterId = Long.valueOf(cluster.getClusterId());
+        } catch (AmbariException e) {
+        }
+      }
+
       LOG.debug("Received command report: " + report);
       // Fetch HostRoleCommand that corresponds to a given task ID
       HostRoleCommand hostRoleCommand = hostRoleCommandIterator.next();
+
+      // Send event for final command reports for actions
+      if (RoleCommand.valueOf(report.getRoleCommand()) == RoleCommand.ACTIONEXECUTE &&
+          HostRoleStatus.valueOf(report.getStatus()).isCompletedState()) {
+        ActionFinalReportReceivedEvent event = new ActionFinalReportReceivedEvent(
+                clusterId, hostname, report, report.getRole());
+        ambariEventPublisher.publish(event);
+      }
+
       // Skip sending events for command reports for ABORTed commands
       if (hostRoleCommand.getStatus() == HostRoleStatus.ABORTED) {
         continue;
@@ -414,7 +449,7 @@ public class HeartBeatHandler {
           ServiceComponentHost scHost = svcComp.getServiceComponentHost(hostname);
           String schName = scHost.getServiceComponentName();
 
-          if (report.getStatus().equals("COMPLETED")) {
+          if (report.getStatus().equals(HostRoleStatus.COMPLETED.toString())) {
             // Updating stack version, if needed
             if (scHost.getState().equals(State.UPGRADING)) {
               scHost.setStackVersion(scHost.getDesiredStackVersion());
@@ -605,6 +640,16 @@ public class HeartBeatHandler {
         switch (ac.getCommandType()) {
           case BACKGROUND_EXECUTION_COMMAND:
           case EXECUTION_COMMAND: {
+            ExecutionCommand ec = (ExecutionCommand)ac;
+            Map<String, String> hlp = ec.getHostLevelParams();
+            if ((hlp != null) && "SET_KEYTAB".equals(hlp.get("custom_command")))   {
+              LOG.info("SET_KEYTAB called") ;
+              try {
+                injectKeytab(ec, hostname);
+              } catch (IOException e) {
+                throw new AmbariException("Could not inject keytab into command", e);
+              }
+            }
             response.addExecutionCommand((ExecutionCommand) ac);
             break;
           }
@@ -842,4 +887,62 @@ public class HeartBeatHandler {
 
     return commands;
   }
+
+  static void injectKeytab(ExecutionCommand ec, String targetHost) throws AmbariException {
+    Map<String, String> hlp = ec.getHostLevelParams();
+    if ((hlp == null) || !"SET_KEYTAB".equals(hlp.get("custom_command"))) {
+      return;
+    }
+    List<Map<String, String>> kcp = ec.getKerberosCommandParams();
+    String dataDir = ec.getCommandParams().get(KerberosServerAction.DATA_DIRECTORY);
+    File file = new File(dataDir + File.separator + "index.dat");
+    CSVParser csvParser = null;
+    try {
+      KerberosActionDataFileReader reader = new KerberosActionDataFileReader(file);
+      Iterator<Map<String, String>> iterator = reader.iterator();
+      while (iterator.hasNext())    {
+        Map<String, String> record = iterator.next();
+        String hostName = record.get(KerberosActionDataFile.HOSTNAME);
+        if (!targetHost.equalsIgnoreCase(hostName))    {
+          continue;
+        }
+        Map<String, String> keytabMap = new HashMap<String, String>();
+        keytabMap.put(KerberosActionDataFile.HOSTNAME, hostName);
+        keytabMap.put(KerberosActionDataFile.SERVICE, record.get(KerberosActionDataFile.SERVICE));
+        keytabMap.put(KerberosActionDataFile.COMPONENT, record.get(KerberosActionDataFile.COMPONENT));
+        keytabMap.put(KerberosActionDataFile.PRINCIPAL, record.get(KerberosActionDataFile.PRINCIPAL));
+        keytabMap.put(KerberosActionDataFile.PRINCIPAL_CONFIGURATION, record.get(KerberosActionDataFile.PRINCIPAL_CONFIGURATION));
+        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_PATH, record.get(KerberosActionDataFile.KEYTAB_FILE_PATH));
+        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_OWNER_NAME, record.get(KerberosActionDataFile.KEYTAB_FILE_OWNER_NAME));
+        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_OWNER_ACCESS, record.get(KerberosActionDataFile.KEYTAB_FILE_OWNER_ACCESS));
+        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_GROUP_NAME, record.get(KerberosActionDataFile.KEYTAB_FILE_GROUP_NAME));
+        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_GROUP_ACCESS, record.get(KerberosActionDataFile.KEYTAB_FILE_GROUP_ACCESS));
+        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION, record.get(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION));
+
+        String sha1Keytab =  DigestUtils.sha1Hex(record.get(KerberosActionDataFile.KEYTAB_FILE_PATH));
+
+        BufferedInputStream bufferedIn = new BufferedInputStream(
+          new FileInputStream(dataDir + File.separator +
+            hostName + File.separator + sha1Keytab));
+        byte[] keytabContent = IOUtils.toByteArray(bufferedIn);
+        String keytabContentBase64 = Base64.encodeBase64String(keytabContent);
+        keytabMap.put(KerberosServerAction.KEYTAB_CONTENT_BASE64, keytabContentBase64);
+        kcp.add(keytabMap);
+      }
+    } catch (IOException e) {
+      throw new AmbariException("Could not inject keytabs to enable kerberos");
+    }  finally {
+      if (csvParser != null && !csvParser.isClosed())  {
+        try {
+          csvParser.close();
+        }  catch (Throwable t)  {
+          // ignored
+        }
+      }
+    }
+
+    ec.setKerberosCommandParams(kcp);
+  }
+
+
 }

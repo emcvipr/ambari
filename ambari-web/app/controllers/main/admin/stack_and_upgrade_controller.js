@@ -58,10 +58,19 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
   targetVersions: [],
 
   /**
+   * properties that stored to localStorage to resume wizard progress
+   */
+  wizardStorageProperties: ['upgradeId', 'upgradeVersion'],
+
+  init: function () {
+    this.initDBProperties();
+  },
+
+  /**
    * restore data from localStorage
    */
-  init: function () {
-    ['upgradeId', 'upgradeVersion'].forEach(function (property) {
+  initDBProperties: function () {
+    this.get('wizardStorageProperties').forEach(function (property) {
       if (this.getDBProperty(property)) {
         this.set(property, this.getDBProperty(property));
       }
@@ -163,9 +172,81 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    */
   loadUpgradeDataSuccessCallback: function (data) {
     App.set('upgradeState', data.Upgrade.request_status);
+    this.setDBProperty('upgradeState', data.Upgrade.request_status);
     if (data.upgrade_groups) {
-      this.set("upgradeData", data);
+      this.updateUpgradeData(data);
     }
+  },
+
+  /**
+   * update data of Upgrade
+   * @param {object} newData
+   */
+  updateUpgradeData: function (newData) {
+    var oldData = this.get('upgradeData'),
+        groupsMap = {},
+        itemsMap = {},
+        tasksMap = {};
+
+    if (Em.isNone(oldData)) {
+      this.initUpgradeData(newData);
+    } else {
+      //create entities maps
+      newData.upgrade_groups.forEach(function (newGroup) {
+        groupsMap[newGroup.UpgradeGroup.group_id] = newGroup.UpgradeGroup;
+        newGroup.upgrade_items.forEach(function (item) {
+          itemsMap[item.UpgradeItem.stage_id] = item.UpgradeItem;
+          item.tasks.forEach(function (task) {
+            tasksMap[task.Tasks.id] = task.Tasks;
+          });
+        })
+      });
+
+      //update existed entities with new data
+      oldData.upgradeGroups.forEach(function (oldGroup) {
+        oldGroup.set('status', groupsMap[oldGroup.get('group_id')].status);
+        oldGroup.set('progress_percent', groupsMap[oldGroup.get('group_id')].progress_percent);
+        oldGroup.upgradeItems.forEach(function (item) {
+          item.set('status', itemsMap[item.get('stage_id')].status);
+          item.set('progress_percent', itemsMap[item.get('stage_id')].progress_percent);
+          item.tasks.forEach(function (task) {
+            task.set('status', tasksMap[task.get('id')].status);
+          });
+        })
+      });
+      oldData.set('Upgrade', newData.Upgrade);
+    }
+  },
+
+  /**
+   * change structure of Upgrade
+   * In order to maintain nested views in template object should have direct link to its properties, for example
+   * item.UpgradeItem.<properties> -> item.<properties>
+   * @param {object} newData
+   */
+  initUpgradeData: function (newData) {
+    var upgradeGroups = [];
+
+    //wrap all entities into App.upgradeEntity
+    newData.upgrade_groups.forEach(function (newGroup) {
+      var oldGroup = App.upgradeEntity.create({type: 'GROUP'}, newGroup.UpgradeGroup);
+      var upgradeItems = [];
+      newGroup.upgrade_items.forEach(function (item) {
+        var oldItem = App.upgradeEntity.create({type: 'ITEM'}, item.UpgradeItem);
+        var tasks = [];
+        item.tasks.forEach(function (task) {
+          tasks.pushObject(App.upgradeEntity.create({type: 'TASK'}, task.Tasks));
+        });
+        oldItem.set('tasks', tasks);
+        upgradeItems.pushObject(oldItem);
+      });
+      oldGroup.set('upgradeItems', upgradeItems);
+      upgradeGroups.pushObject(oldGroup);
+    });
+    this.set('upgradeData', Em.Object.create({
+      upgradeGroups: upgradeGroups,
+      Upgrade: newData.Upgrade
+    }));
   },
 
   /**
@@ -199,9 +280,10 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
   upgradeSuccessCallback: function (data) {
     this.set('upgradeId', data.resources[0].Upgrade.request_id);
     this.setDBProperty('upgradeId', data.resources[0].Upgrade.request_id);
+    this.setDBProperty('upgradeState', 'PENDING');
+    App.set('upgradeState', 'PENDING');
     App.clusterStatus.setClusterStatus({
-      clusterName: App.get('clusterName'),
-      clusterState: 'DEFAULT',
+      wizardControllerName: this.get('name'),
       localdb: App.db.data
     });
     this.openUpgradeDialog();
@@ -212,12 +294,16 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    * @param version
    */
   runPreUpgradeCheck: function(version) {
-    App.ajax.send({
-      name: "admin.rolling_upgrade.pre_upgrade_check",
-      sender: this,
-      data: version,
-      success: "runPreUpgradeCheckSuccess"
-    })
+    if (App.get('supports.preUpgradeCheck')) {
+      App.ajax.send({
+        name: "admin.rolling_upgrade.pre_upgrade_check",
+        sender: this,
+        data: version,
+        success: "runPreUpgradeCheckSuccess"
+      });
+    } else {
+      this.upgrade(version);
+    }
   },
 
   /**
@@ -226,19 +312,17 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    * @param data {object}
    * @param opt {object}
    * @param params {object}
-   * @returns {App.ModalPopup|void}
+   * @returns {App.ModalPopup|undefined}
    */
-  runPreUpgradeCheckSuccess: function(data, opt, params) {
-    if (data.UpgradeChecks.someProperty('status',"FAIL")) {
+  runPreUpgradeCheckSuccess: function (data, opt, params) {
+    if (data.items.someProperty('UpgradeChecks.status', "FAIL")) {
       return App.ModalPopup.show({
         header: Em.I18n.t('admin.stackUpgrade.preupgradeCheck.header').format(params.label),
         primary: Em.I18n.t('common.dismiss'),
         secondary: false,
         bodyClass: Em.View.extend({
           templateName: require('templates/main/admin/stack_upgrade/pre_upgrade_check_dialog'),
-          checks: function() {
-            return data.UpgradeChecks.filterProperty('status',"FAIL");
-          }.property()
+          checks: data.items.filterProperty('UpgradeChecks.status', "FAIL")
         })
       })
     } else {
@@ -250,13 +334,7 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    */
   resumeUpgrade: function () {
     //TODO resume upgrade
-  },
-
-  /**
-   * make call to stop upgrade process
-   */
-  stopUpgrade: function () {
-    //TODO stop upgrade
+    this.openUpgradeDialog();
   },
 
   /**
@@ -274,12 +352,11 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
   finish: function () {
     this.set('upgradeId', null);
     this.setDBProperty('upgradeId', undefined);
+    this.setDBProperty('upgradeState', 'INIT');
     App.set('upgradeState', 'INIT');
     this.set('upgradeVersion', null);
     this.setDBProperty('upgradeVersion', undefined);
     App.clusterStatus.setClusterStatus({
-      clusterName: App.get('clusterName'),
-      clusterState: 'DEFAULT',
       localdb: App.db.data
     });
   },

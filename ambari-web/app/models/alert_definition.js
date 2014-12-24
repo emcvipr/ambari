@@ -71,10 +71,10 @@ App.AlertDefinition = DS.Model.extend({
    */
   lastTriggeredAgoFormatted: function () {
     var lastTriggered = this.get('lastTriggered');
-    return lastTriggered ? $.timeago(new Date(lastTriggered)): '';
+    return lastTriggered ? $.timeago(new Date(lastTriggered)) : '';
   }.property('lastTriggered'),
 
-  lastTriggeredVerboseDisplay : function() {
+  lastTriggeredVerboseDisplay: function () {
     var lastTriggered = this.get('lastTriggered');
     return Em.I18n.t('models.alert_definition.triggered.verbose').format(dateUtils.dateFormat(lastTriggered));
   }.property('lastTriggered'),
@@ -89,7 +89,7 @@ App.AlertDefinition = DS.Model.extend({
     var previousPrefixAgo = $.timeago.settings.strings.prefixAgo;
     $.timeago.settings.strings.suffixAgo = null;
     $.timeago.settings.strings.prefixAgo = 'for';
-    var triggeredFor = lastTriggered ? $.timeago(new Date(lastTriggered)): '';
+    var triggeredFor = lastTriggered ? $.timeago(new Date(lastTriggered)) : '';
     $.timeago.settings.strings.suffixAgo = previousSuffixAgo;
     $.timeago.settings.strings.prefixAgo = previousPrefixAgo;
     return triggeredFor;
@@ -115,26 +115,27 @@ App.AlertDefinition = DS.Model.extend({
   status: function () {
     var order = this.get('order'),
         summary = this.get('summary'),
-        hostCnt = 0;
-    order.forEach(function(state) {
+        hostCnt = 0,
+        self = this;
+    order.forEach(function (state) {
       var cnt = summary[state] ? summary[state] : 0;
       hostCnt += cnt;
     });
     if (hostCnt > 1) {
       // multiple hosts
       return order.map(function (state) {
-        var shortState = state.substring(0, 4);
-        return summary[state] ? '<span class="label alert-state-' + state + '">' + shortState + ' ( ' + summary[state] + ' )</span>' : null;
+        var shortState = self.get('shortState')[state];
+        return summary[state] ? '<span class="alert-state-single-host label alert-state-' + state + '">' + shortState + ' (' + summary[state] + ')</span>' : null;
       }).compact().join(' ');
     } else if (hostCnt == 1) {
       // single host, single status
       return order.map(function (state) {
-        return summary[state] ? '<span class="alert-state-single-host label alert-state-'+ state + '">' + state + '</span>' : null;
+        var shortState = self.get('shortState')[state];
+        return summary[state] ? '<span class="alert-state-single-host label alert-state-' + state + '">' + shortState + '</span>' : null;
       }).compact().join(' ');
     } else if (hostCnt == 0) {
-      // penging
-      var state = 'PENDING';
-      return '<span class="alert-state-single-host label alert-state-'+ state + '">' + state + '</span>';
+      // none
+      return '<span class="alert-state-single-host label alert-state-PENDING">NONE</span>';
     }
     return null;
   }.property('summary'),
@@ -180,12 +181,32 @@ App.AlertDefinition = DS.Model.extend({
   }.property('summary'),
 
   /**
+   * if this definition is in state: OK
+   * @type {boolean}
+   */
+  isOK: function () {
+    var summary = this.get('summary');
+    var state = 'OK';
+    return !!summary[state];
+  }.property('summary'),
+
+  /**
+   * if this definition is in state: OK
+   * @type {boolean}
+   */
+  isUnknown: function () {
+    var summary = this.get('summary');
+    var state = 'UNKNOWN';
+    return !!summary[state];
+  }.property('summary'),
+
+  /**
    * For alerts we will have processes which are not typical
    * cluster services - like Ambari-Server. This method unifies
    * cluster services and other services into a common display-name.
    * @see App.AlertInstance#serviceDisplayName()
    */
-  serviceDisplayName : function() {
+  serviceDisplayName: function () {
     var serviceName = this.get('service.displayName');
     if (!serviceName) {
       serviceName = this.get('serviceName');
@@ -214,8 +235,13 @@ App.AlertDefinition = DS.Model.extend({
   severityOrder: ['CRITICAL', 'WARNING', 'OK', 'UNKNOWN', 'PENDING'],
   order: ['OK', 'WARNING', 'CRITICAL', 'UNKNOWN'],
 
-  // todo: in future be mapped from server response
-  thresholds: '5-10'
+  shortState: {
+    'CRITICAL': 'CRIT',
+    'WARNING': 'WARN',
+    'OK': 'OK',
+    'UNKNOWN': 'UNKWN',
+    'PENDING': 'NONE'
+  }
 });
 
 App.AlertDefinition.reopenClass({

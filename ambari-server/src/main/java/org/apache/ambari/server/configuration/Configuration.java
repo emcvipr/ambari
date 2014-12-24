@@ -98,6 +98,7 @@ public class Configuration {
   public static final String SRVR_DISABLED_PROTOCOLS = "security.server.disabled.protocols";
   public static final String RESOURCES_DIR_KEY = "resources.dir";
   public static final String METADETA_DIR_PATH = "metadata.path";
+  public static final String COMMON_SERVICES_DIR_PATH = "common.services.path";
   public static final String SERVER_VERSION_FILE = "server.version.file";
   public static final String SERVER_VERSION_KEY = "version";
   public static final String JAVA_HOME_KEY = "java.home";
@@ -114,6 +115,10 @@ public class Configuration {
   public static final String CLIENT_API_SSL_KEY_NAME_KEY = "client.api.ssl.key_name";
   public static final String SERVER_DB_NAME_KEY = "server.jdbc.database_name";
   public static final String SERVER_DB_NAME_DEFAULT = "ambari";
+  public static final String REQUEST_READ_TIMEOUT = "views.request.read.timeout.millis";
+  public static final String REQUEST_READ_TIMEOUT_DEFAULT= "10000";
+  public static final String REQUEST_CONNECT_TIMEOUT = "views.request.connect.timeout.millis";
+  public static final String REQUEST_CONNECT_TIMEOUT_DEFAULT = "5000";
   public static final String SERVER_JDBC_POSTGRES_SCHEMA_NAME = "server.jdbc.postgres.schema";
   public static final String POSTGRES_DB_NAME = "postgres";
   public static final String ORACLE_DB_NAME = "oracle";
@@ -675,6 +680,14 @@ public class Configuration {
     return properties.getProperty(METADETA_DIR_PATH);
   }
 
+  /**
+   * Gets ambari common services path
+   * @return String
+   */
+  public String getCommonServicesPath() {
+    return properties.getProperty(COMMON_SERVICES_DIR_PATH);
+  }
+
   public String getServerVersionFilePath() {
     return properties.getProperty(SERVER_VERSION_FILE);
   }
@@ -1096,6 +1109,16 @@ public class Configuration {
   public String getExecutionSchedulerThreads() {
     return properties.getProperty(EXECUTION_SCHEDULER_THREADS,
         DEFAULT_SCHEDULER_THREAD_COUNT);
+  }
+
+  public Integer getRequestReadTimeout() {
+    return Integer.parseInt(properties.getProperty(REQUEST_READ_TIMEOUT,
+        REQUEST_READ_TIMEOUT_DEFAULT));
+  }
+
+  public Integer getRequestConnectTimeout() {
+    return Integer.parseInt(properties.getProperty(REQUEST_CONNECT_TIMEOUT,
+        REQUEST_CONNECT_TIMEOUT_DEFAULT));
   }
 
   public String getExecutionSchedulerConnections() {

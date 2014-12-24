@@ -28,21 +28,27 @@ import subprocess
 
 @patch.object(shell, "call", new=MagicMock(return_value=(1,"")))
 class TestNamenode(RMFTestCase):
+  COMMON_SERVICES_PACKAGE_DIR = "HDFS/2.1.0.2.0/package"
+  STACK_VERSION = "2.0.6"
 
   def test_configure_default(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "configure",
-                       config_file="default.json"
+                       config_file = "default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_default()
     self.assertNoMoreResources()
 
   def test_start_default(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "start",
-                       config_file="default.json"
+                       config_file = "default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_default()
     self.assertResourceCalled('File', '/tmp/checkForFormat.sh',
@@ -78,7 +84,7 @@ class TestNamenode(RMFTestCase):
                               action = ['delete'],
                               not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
                               )
-    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export {ENV_PLACEHOLDER} > /dev/null ; ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start namenode'",
+    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start namenode'",
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec'},
         not_if = 'ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
     )
@@ -128,16 +134,18 @@ class TestNamenode(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_stop_default(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "stop",
-                       config_file="default.json"
+                       config_file = "default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('File', '/var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid',
                               action = ['delete'],
                               not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
                               )
-    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export {ENV_PLACEHOLDER} > /dev/null ; ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf stop namenode'",
+    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf stop namenode'",
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec'},
         not_if = None,
     )
@@ -147,19 +155,23 @@ class TestNamenode(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_configure_secured(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "configure",
-                       config_file="secured.json"
+                       config_file = "secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_secured()
     self.assertNoMoreResources()
 
   def test_start_secured(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "start",
-                       config_file="secured.json"
+                       config_file = "secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_secured()
     self.assertResourceCalled('File', '/tmp/checkForFormat.sh',
@@ -195,7 +207,7 @@ class TestNamenode(RMFTestCase):
                               action = ['delete'],
                               not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
                               )
-    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export {ENV_PLACEHOLDER} > /dev/null ; ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start namenode'",
+    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start namenode'",
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec'},
         not_if = 'ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
     )
@@ -248,16 +260,18 @@ class TestNamenode(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_stop_secured(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "stop",
-                       config_file="secured.json"
+                       config_file = "secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('File', '/var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid',
                               action = ['delete'],
                               not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
                               )
-    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export {ENV_PLACEHOLDER} > /dev/null ; ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf stop namenode'",
+    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf stop namenode'",
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec'},
         not_if = None,
     )
@@ -267,10 +281,12 @@ class TestNamenode(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_start_ha_default(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "start",
-                       config_file="ha_default.json"
+                       config_file = "ha_default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_default()
     self.assertResourceCalled('File', '/etc/hadoop/conf/dfs.exclude',
@@ -295,16 +311,16 @@ class TestNamenode(RMFTestCase):
                               action = ['delete'],
                               not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
                               )
-    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export {ENV_PLACEHOLDER} > /dev/null ; ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start namenode'",
+    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start namenode'",
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec'},
         not_if = 'ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
     )
     self.assertResourceCalled('Execute', "hadoop dfsadmin -safemode get | grep 'Safe mode is OFF'",
-                              path = ['/usr/bin'],
-                              tries = 40,
-                              only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/usr/bin > /dev/null ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn1 | grep active'",
-                              user = 'hdfs',
-                              try_sleep = 10,
+        path = ['/usr/bin'],
+        tries = 40,
+        only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/bin:/usr/bin ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn1 | grep active'",
+        user = 'hdfs',
+        try_sleep = 10,
     )
     self.assertResourceCalled('HdfsDirectory', '/tmp',
                               security_enabled = False,
@@ -329,22 +345,24 @@ class TestNamenode(RMFTestCase):
                               action = ['create_delayed'],
                               )
     self.assertResourceCalled('HdfsDirectory', None,
-                              security_enabled = False,
-                              keytab = UnknownConfigurationMock(),
-                              conf_dir = '/etc/hadoop/conf',
-                              hdfs_user = 'hdfs',
-                              kinit_path_local = '/usr/bin/kinit',
-                              action = ['create'],
-                              bin_dir = '/usr/bin',
-                              only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/usr/bin > /dev/null ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn1 | grep active'",
-                              )
+        security_enabled = False,
+        keytab = UnknownConfigurationMock(),
+        conf_dir = '/etc/hadoop/conf',
+        hdfs_user = 'hdfs',
+        kinit_path_local = '/usr/bin/kinit',
+        action = ['create'],
+        bin_dir = '/usr/bin',
+        only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/bin:/usr/bin ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn1 | grep active'",
+    )
     self.assertNoMoreResources()
 
   def test_start_ha_secured(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "start",
-                       config_file="ha_secured.json"
+                       config_file = "ha_secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_secured()
     self.assertResourceCalled('File', '/etc/hadoop/conf/dfs.exclude',
@@ -369,7 +387,7 @@ class TestNamenode(RMFTestCase):
                               action = ['delete'],
                               not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
                               )
-    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export {ENV_PLACEHOLDER} > /dev/null ; ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start namenode'",
+    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start namenode'",
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec'},
         not_if = 'ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
     )
@@ -379,7 +397,7 @@ class TestNamenode(RMFTestCase):
     self.assertResourceCalled('Execute', "hadoop dfsadmin -safemode get | grep 'Safe mode is OFF'",
         path = ['/usr/bin'],
         tries = 40,
-        only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/usr/bin > /dev/null ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn1 | grep active'",
+        only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/bin:/usr/bin ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn1 | grep active'",
         user = 'hdfs',
         try_sleep = 10,
     )
@@ -406,22 +424,202 @@ class TestNamenode(RMFTestCase):
                               action = ['create_delayed'],
                               )
     self.assertResourceCalled('HdfsDirectory', None,
-                              security_enabled = True,
-                              keytab = '/etc/security/keytabs/hdfs.headless.keytab',
+        security_enabled = True,
+        keytab = '/etc/security/keytabs/hdfs.headless.keytab',
+        conf_dir = '/etc/hadoop/conf',
+        hdfs_user = 'hdfs',
+        kinit_path_local = '/usr/bin/kinit',
+        action = ['create'],
+        bin_dir = '/usr/bin',
+        only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/bin:/usr/bin ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn1 | grep active'",
+    )
+    self.assertNoMoreResources()
+
+  # tests namenode start command when NameNode HA is enabled, and
+  # the HA cluster is started initially, rather than using the UI Wizard
+  def test_start_ha_bootstrap_active_from_blueprint(self):
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
+                       classname = "NameNode",
+                       command = "start",
+                       config_file="ha_bootstrap_active_node.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
+    self.assert_configure_default()
+
+    # verify that active namenode was formatted
+    self.assertResourceCalled('File', '/tmp/checkForFormat.sh',
+                              content = StaticFile('checkForFormat.sh'),
+                              mode = 0755,
+                              )
+    self.assertResourceCalled('Execute', '/tmp/checkForFormat.sh hdfs /etc/hadoop/conf /usr/bin /var/run/hadoop/hdfs/namenode/formatted/ /var/lib/hdfs/namenode/formatted/ /hadoop/hdfs/namenode',
+                              path = ['/usr/sbin:/sbin:/usr/local/bin:/bin:/usr/bin'],
+                              not_if = 'test -d /var/run/hadoop/hdfs/namenode/formatted/ || test -d /var/lib/hdfs/namenode/formatted/',
+                              )
+    self.assertResourceCalled('Directory', '/var/lib/hdfs/namenode/formatted/',
+                              recursive = True,
+                              )
+
+    self.assertResourceCalled('File', '/etc/hadoop/conf/dfs.exclude',
+                              owner = 'hdfs',
+                              content = Template('exclude_hosts_list.j2'),
+                              group = 'hadoop',
+                              )
+    self.assertResourceCalled('Directory', '/var/run/hadoop',
+                              owner = 'hdfs',
+                              group = 'hadoop',
+                              mode = 0755
+    )
+    self.assertResourceCalled('Directory', '/var/run/hadoop/hdfs',
+                              owner = 'hdfs',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('Directory', '/var/log/hadoop/hdfs',
+                              owner = 'hdfs',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('File', '/var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid',
+                              action = ['delete'],
+                              not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
+                              )
+    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start namenode'",
+                              environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec'},
+                              not_if = 'ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
+                              )
+    self.assertResourceCalled('Execute', "hadoop dfsadmin -safemode get | grep 'Safe mode is OFF'",
+                              path = ['/usr/bin'],
+                              tries = 40,
+                              only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/bin:/usr/bin ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn1 | grep active'",
+                              user = 'hdfs',
+                              try_sleep = 10,
+                              )
+    self.assertResourceCalled('HdfsDirectory', '/tmp',
+                              security_enabled = False,
+                              keytab = UnknownConfigurationMock(),
+                              conf_dir = '/etc/hadoop/conf',
+                              hdfs_user = 'hdfs',
+                              kinit_path_local = '/usr/bin/kinit',
+                              mode = 0777,
+                              owner = 'hdfs',
+                              bin_dir = '/usr/bin',
+                              action = ['create_delayed'],
+                              )
+    self.assertResourceCalled('HdfsDirectory', '/user/ambari-qa',
+                              security_enabled = False,
+                              keytab = UnknownConfigurationMock(),
+                              conf_dir = '/etc/hadoop/conf',
+                              hdfs_user = 'hdfs',
+                              kinit_path_local = '/usr/bin/kinit',
+                              mode = 0770,
+                              owner = 'ambari-qa',
+                              bin_dir = '/usr/bin',
+                              action = ['create_delayed'],
+                              )
+    self.assertResourceCalled('HdfsDirectory', None,
+                              security_enabled = False,
+                              keytab = UnknownConfigurationMock(),
                               conf_dir = '/etc/hadoop/conf',
                               hdfs_user = 'hdfs',
                               kinit_path_local = '/usr/bin/kinit',
                               action = ['create'],
                               bin_dir = '/usr/bin',
-                              only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/usr/bin > /dev/null ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn1 | grep active'",
-                             )
+                              only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/bin:/usr/bin ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn1 | grep active'",
+                              )
+    self.assertNoMoreResources()
+
+  # tests namenode start command when NameNode HA is enabled, and
+  # the HA cluster is started initially, rather than using the UI Wizard
+  # this test verifies the startup of a "standby" namenode
+  def test_start_ha_bootstrap_standby_from_blueprint(self):
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
+                       classname = "NameNode",
+                       command = "start",
+                       config_file="ha_bootstrap_standby_node.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
+    self.assert_configure_default()
+
+    self.assertResourceCalled('File', '/etc/hadoop/conf/dfs.exclude',
+                              owner = 'hdfs',
+                              content = Template('exclude_hosts_list.j2'),
+                              group = 'hadoop',
+                              )
+    self.assertResourceCalled('Directory', '/var/run/hadoop',
+                              owner = 'hdfs',
+                              group = 'hadoop',
+                              mode = 0755
+    )
+
+    # verify that the standby case is detected, and that the bootstrap
+    # command is run before the namenode launches
+    self.assertResourceCalled('Execute', 'hdfs namenode -bootstrapStandby',
+                              user = 'hdfs', tries=50)
+
+    self.assertResourceCalled('Directory', '/var/run/hadoop/hdfs',
+                              owner = 'hdfs',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('Directory', '/var/log/hadoop/hdfs',
+                              owner = 'hdfs',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('File', '/var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid',
+                              action = ['delete'],
+                              not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
+                              )
+    self.assertResourceCalled('Execute', "/usr/bin/sudo su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited &&  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start namenode'",
+                              environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec'},
+                              not_if = 'ls /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-namenode.pid` >/dev/null 2>&1',
+                              )
+    self.assertResourceCalled('Execute', "hadoop dfsadmin -safemode get | grep 'Safe mode is OFF'",
+                              path = ['/usr/bin'],
+                              tries = 40,
+                              only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/bin:/usr/bin ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn2 | grep active'",
+                              user = 'hdfs',
+                              try_sleep = 10,
+                              )
+    self.assertResourceCalled('HdfsDirectory', '/tmp',
+                              security_enabled = False,
+                              keytab = UnknownConfigurationMock(),
+                              conf_dir = '/etc/hadoop/conf',
+                              hdfs_user = 'hdfs',
+                              kinit_path_local = '/usr/bin/kinit',
+                              mode = 0777,
+                              owner = 'hdfs',
+                              bin_dir = '/usr/bin',
+                              action = ['create_delayed'],
+                              )
+    self.assertResourceCalled('HdfsDirectory', '/user/ambari-qa',
+                              security_enabled = False,
+                              keytab = UnknownConfigurationMock(),
+                              conf_dir = '/etc/hadoop/conf',
+                              hdfs_user = 'hdfs',
+                              kinit_path_local = '/usr/bin/kinit',
+                              mode = 0770,
+                              owner = 'ambari-qa',
+                              bin_dir = '/usr/bin',
+                              action = ['create_delayed'],
+                              )
+    self.assertResourceCalled('HdfsDirectory', None,
+                              security_enabled = False,
+                              keytab = UnknownConfigurationMock(),
+                              conf_dir = '/etc/hadoop/conf',
+                              hdfs_user = 'hdfs',
+                              kinit_path_local = '/usr/bin/kinit',
+                              action = ['create'],
+                              bin_dir = '/usr/bin',
+                              only_if = "/usr/bin/sudo su hdfs -l -s /bin/bash -c 'export  PATH=/bin:/usr/bin ; hdfs --config /etc/hadoop/conf haadmin -getServiceState nn2 | grep active'",
+                              )
     self.assertNoMoreResources()
 
   def test_decommission_default(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "decommission",
-                       config_file="default.json"
+                       config_file = "default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/dfs.exclude',
                               owner = 'hdfs',
@@ -437,10 +635,12 @@ class TestNamenode(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_decommission_update_exclude_file_only(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "decommission",
-                       config_file="default_update_exclude_file_only.json"
+                       config_file = "default_update_exclude_file_only.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/dfs.exclude',
                               owner = 'hdfs',
@@ -451,10 +651,12 @@ class TestNamenode(RMFTestCase):
 
 
   def test_decommission_ha_default(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "decommission",
-                       config_file="ha_default.json"
+                       config_file = "ha_default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/dfs.exclude',
                               owner = 'hdfs',
@@ -462,19 +664,21 @@ class TestNamenode(RMFTestCase):
                               group = 'hadoop',
                               )
     self.assertResourceCalled('Execute', '', user = 'hdfs')
-    self.assertResourceCalled('ExecuteHadoop', 'dfsadmin -fs hdfs://c6401.ambari.apache.org:8020 -refreshNodes', 
-                              user = 'hdfs', 
+    self.assertResourceCalled('ExecuteHadoop', 'dfsadmin -fs hdfs://c6401.ambari.apache.org:8020 -refreshNodes',
+                              user = 'hdfs',
                               conf_dir = '/etc/hadoop/conf',
                               bin_dir = '/usr/bin',
                               kinit_override = True)
-    self.assertNoMoreResources()    
+    self.assertNoMoreResources()
 
 
   def test_decommission_secured(self):
-    self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                        classname = "NameNode",
                        command = "decommission",
-                       config_file="secured.json"
+                       config_file = "secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/dfs.exclude',
         owner = 'hdfs',
@@ -528,6 +732,7 @@ class TestNamenode(RMFTestCase):
                               group = 'hadoop',
                               recursive = True,
                               mode = 0755,
+                              recursive_permission = True
                               )
 
   def assert_configure_secured(self):
@@ -566,6 +771,7 @@ class TestNamenode(RMFTestCase):
                               group = 'hadoop',
                               recursive = True,
                               mode = 0755,
+                              recursive_permission = True
                               )
 
   @patch("resource_management.libraries.script.Script.put_structured_out")
@@ -575,10 +781,12 @@ class TestNamenode(RMFTestCase):
       ll = subprocess.Popen()
       self.assertTrue(isinstance(ll.stdout.readline(),str))
       try:
-        self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+        self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                            classname = "NameNode",
                            command = "rebalancehdfs",
-                           config_file="rebalancehdfs_default.json"
+                           config_file = "rebalancehdfs_default.json",
+                           hdp_stack_version = self.STACK_VERSION,
+                           target = RMFTestCase.TARGET_COMMON_SERVICES
         )
         self.fail("Exception was not thrown")
       except  resource_management.core.exceptions.Fail:
@@ -588,10 +796,12 @@ class TestNamenode(RMFTestCase):
       Popen_Mock.return_value = 0
       ll = subprocess.Popen()
       self.assertTrue(isinstance(ll.stdout.readline(),str))
-      self.executeScript("2.0.6/services/HDFS/package/scripts/namenode.py",
+      self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/namenode.py",
                          classname = "NameNode",
                          command = "rebalancehdfs",
-                         config_file="rebalancehdfs_default.json"
+                         config_file = "rebalancehdfs_default.json",
+                         hdp_stack_version = self.STACK_VERSION,
+                         target = RMFTestCase.TARGET_COMMON_SERVICES
       )
       self.assertEqual(pso.call_count, 2, "Output was not parsed properly")
 

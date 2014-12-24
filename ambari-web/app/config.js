@@ -57,7 +57,8 @@ App.isManagedMySQLForHiveEnabled = false;
 App.enableExperimental = false;
 
 App.supports = {
-  stackUpgrade: false,
+  preUpgradeCheck: true,
+  stackUpgrade: true,
   autoRollbackHA: false,
   alwaysEnableManagedMySQLForHive: false,
   automatedKerberos: false,

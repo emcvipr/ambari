@@ -57,6 +57,14 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
       defaultValue: false,
       disabled: false
     },
+    allGroups: Em.Object.create({
+      value: '',
+      defaultValue: 'custom',
+      disabled: false,
+      isAll: function () {
+        return this.get('value') == 'all';
+      }.property('value')
+    }),
     method: {
       label: Em.I18n.t('alerts.actions.manage_alert_notifications_popup.method'),
       value: '',
@@ -246,10 +254,14 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
    */
   addAlertNotification: function () {
     var inputFields = this.get('inputFields');
-    inputFields.set('global.disabled', false);
+    inputFields.setProperties({
+      'global.disabled': false,
+      'allGroups.disabled': false
+    });
     Em.keys(inputFields).forEach(function (key) {
       inputFields.set(key + '.value', inputFields.get(key + '.defaultValue'));
     });
+    inputFields.set('severityFilter.value', ['OK', 'WARNING', 'CRITICAL', 'UNKNOWN']);
     this.showCreateEditPopup(false);
   },
 
@@ -273,7 +285,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
     inputFields.set('name.value', (addCopyToName ? 'Copy of ' : '') + selectedAlertNotification.get('name'));
     inputFields.set('groups.value', selectedAlertNotification.get('groups').toArray());
     inputFields.set('email.value', selectedAlertNotification.get('properties')['ambari.dispatch.recipients'] ?
-        selectedAlertNotification.get('properties')['ambari.dispatch.recipients'].join(', ') : '');
+      selectedAlertNotification.get('properties')['ambari.dispatch.recipients'].join(', ') : '');
     inputFields.set('SMTPServer.value', selectedAlertNotification.get('properties')['mail.smtp.host']);
     inputFields.set('SMTPPort.value', selectedAlertNotification.get('properties')['mail.smtp.port']);
     inputFields.set('SMTPUseAuthentication.value', selectedAlertNotification.get('properties')['mail.smtp.auth']);
@@ -287,6 +299,8 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
     inputFields.set('port.value', selectedAlertNotification.get('properties')['ambari.dispatch.snmp.port']);
     inputFields.set('severityFilter.value', selectedAlertNotification.get('alertStates'));
     inputFields.set('global.value', selectedAlertNotification.get('global'));
+    inputFields.set('allGroups.value', selectedAlertNotification.get('global') ? 'all' : 'custom');
+    inputFields.set('allGroups.disabled', true);
     // not allow to edit global field
     inputFields.set('global.disabled', true);
     inputFields.set('description.value', selectedAlertNotification.get('description'));
@@ -319,16 +333,13 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
         controller: this,
         templateName: require('templates/main/alerts/create_alert_notification'),
 
-        /**
-         * @type {string}
-         */
-        tooltipForGlobalCheckbox: function () {
-          return isEdit ? '' : Em.I18n.t('alerts.actions.manage_alert_notifications_popup.global.tooltip');
-        }.property(),
-
         didInsertElement: function () {
           App.tooltip($('.checkbox-tooltip'));
           this.nameValidation();
+          this.emailToValidation();
+          this.emailFromValidation();
+          this.smtpPortValidation();
+          this.portValidation();
         },
 
         isEmailMethodSelected: function () {
@@ -338,6 +349,51 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
         nameValidation: function () {
           this.set('parentView.hasErrors', !this.get('controller.inputFields.name.value').trim());
         }.observes('controller.inputFields.name.value'),
+
+        emailToValidation: function () {
+          var emailTo = this.get('controller.inputFields.email.value');
+          if (emailTo && !validator.isValidEmail(emailTo)) {
+            this.set('parentView.hasErrors', true);
+            this.set('controller.inputFields.email.errorMsg', 'Must be a valid email address');
+          } else {
+            this.set('parentView.hasErrors', false);
+            this.set('controller.inputFields.email.errorMsg', null);
+          }
+        }.observes('controller.inputFields.email.value'),
+
+        emailFromValidation: function () {
+          var emailFrom = this.get('controller.inputFields.emailFrom.value');
+          if (emailFrom && !validator.isValidEmail(emailFrom)) {
+            this.set('parentView.hasErrors', true);
+            this.set('controller.inputFields.emailFrom.errorMsg', 'Must be a valid email address');
+          } else {
+            this.set('parentView.hasErrors', false);
+            this.set('controller.inputFields.emailFrom.errorMsg', null);
+          }
+        }.observes('controller.inputFields.emailFrom.value'),
+
+        smtpPortValidation: function () {
+          var value = this.get('controller.inputFields.SMTPPort.value');
+          if (value && (!validator.isValidInt(value) || value < 0)) {
+            this.set('parentView.hasErrors', true);
+            this.set('controller.inputFields.SMTPPort.errorMsg', 'Invalid! Please enter positive integer.');
+          } else {
+            this.set('parentView.hasErrors', false);
+            this.set('controller.inputFields.SMTPPort.errorMsg', null);
+          }
+        }.observes('controller.inputFields.SMTPPort.value'),
+
+        portValidation: function () {
+          var value = this.get('controller.inputFields.port.value');
+          if (value && (!validator.isValidInt(value) || value < 0)) {
+            this.set('parentView.hasErrors', true);
+            this.set('controller.inputFields.port.errorMsg', 'Invalid! Please enter positive integer.');
+          } else {
+            this.set('parentView.hasErrors', false);
+            this.set('controller.inputFields.port.errorMsg', null);
+          }
+        }.observes('controller.inputFields.port.value'),
+
 
         groupsSelectView: Em.Select.extend({
           attributeBindings: ['disabled'],
@@ -349,14 +405,22 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
 
         groupSelect: null,
 
+        /**
+         * Select all alert-groups if <code>allGroups.value</code> is 'custom'
+         * @method selectAllGroups
+         */
         selectAllGroups: function () {
-          if (!this.get('controller.inputFields.global.value')) {
+          if (this.get('controller.inputFields.allGroups.value') == 'custom') {
             this.set('groupSelect.selection', this.get('groupSelect.content').slice());
           }
         },
 
+        /**
+         * Deselect all alert-groups if <code>allGroups.value</code> is 'custom'
+         * @method clearAllGroups
+         */
         clearAllGroups: function () {
-          if (!this.get('controller.inputFields.global.value')) {
+          if (this.get('controller.inputFields.allGroups.value') == 'custom') {
             this.set('groupSelect.selection', []);
           }
         },
@@ -370,10 +434,50 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
 
         severitySelect: null,
 
+        /**
+         * Determines if all alert-groups are selected
+         * @type {boolean}
+         */
+        allGroupsSelected: function () {
+          return this.get('groupSelect.selection.length') === this.get('groupSelect.content.length');
+        }.property('groupSelect.selection.length', 'groupSelect.content.length', 'groupSelect.disabled'),
+
+        /**
+         * Determines if no one alert-group is selected
+         * @type {boolean}
+         */
+        noneGroupsSelected: function () {
+          return this.get('groupSelect.selection.length') === 0;
+        }.property('groupSelect.selection.length', 'groupSelect.content.length', 'groupSelect.disabled'),
+
+        /**
+         * Determines if all severities are selected
+         * @type {boolean}
+         */
+        allSeveritySelected: function () {
+          return this.get('severitySelect.selection.length') === this.get('severitySelect.content.length');
+        }.property('severitySelect.selection.length', 'severitySelect.content.length'),
+
+        /**
+         * Determines if no one severity is selected
+         * @type {boolean}
+         */
+        noneSeveritySelected: function () {
+          return this.get('severitySelect.selection.length') === 0;
+        }.property('severitySelect.selection.length', 'severitySelect.content.length'),
+
+        /**
+         * Select all severities
+         * @method selectAllSeverity
+         */
         selectAllSeverity: function () {
           this.set('severitySelect.selection', this.get('severitySelect.content').slice());
         },
 
+        /**
+         * Deselect all severities
+         * @method clearAllSeverity
+         */
         clearAllSeverity: function () {
           this.set('severitySelect.selection', []);
         }
@@ -435,13 +539,13 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
       AlertTarget: {
         name: inputFields.get('name.value'),
         description: inputFields.get('description.value'),
-        global: inputFields.get('global.value'),
+        global: inputFields.get('allGroups.value') === 'all',
         notification_type: inputFields.get('method.value'),
         alert_states: inputFields.get('severityFilter.value'),
         properties: properties
       }
     };
-    if (!inputFields.get('global.value')) {
+    if (inputFields.get('allGroups.value') == 'custom') {
       apiObject.AlertTarget.groups = inputFields.get('groups.value').mapProperty('id');
     }
     return apiObject;
@@ -524,16 +628,16 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
   deleteAlertNotification: function () {
     var self = this;
     return App.showConfirmationPopup(function () {
-          App.ajax.send({
-            name: 'alerts.delete_alert_notification',
-            sender: self,
-            data: {
-              id: self.get('selectedAlertNotification.id')
-            },
-            success: 'deleteAlertNotificationSuccessCallback'
-          });
-        }, Em.I18n.t('alerts.actions.manage_alert_notifications_popup.confirmDeleteBody').format(this.get('selectedAlertNotification.name')),
-        null, Em.I18n.t('alerts.actions.manage_alert_notifications_popup.confirmDeleteHeader'), Em.I18n.t('common.delete'));
+        App.ajax.send({
+          name: 'alerts.delete_alert_notification',
+          sender: self,
+          data: {
+            id: self.get('selectedAlertNotification.id')
+          },
+          success: 'deleteAlertNotificationSuccessCallback'
+        });
+      }, Em.I18n.t('alerts.actions.manage_alert_notifications_popup.confirmDeleteBody').format(this.get('selectedAlertNotification.name')),
+      null, Em.I18n.t('alerts.actions.manage_alert_notifications_popup.confirmDeleteHeader'), Em.I18n.t('common.delete'));
   },
 
   /**
@@ -595,7 +699,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
           var flag = validator.isValidConfigKey(name);
           if (flag) {
             if (this.get('controller.inputFields.customProperties').mapProperty('name').contains(name) ||
-                this.get('controller.ignoredCustomProperties').contains(name)) {
+              this.get('controller.ignoredCustomProperties').contains(name)) {
               this.set('errorMessage', Em.I18n.t('alerts.notifications.addCustomPropertyPopup.error.propertyExists'));
               flag = false;
             }

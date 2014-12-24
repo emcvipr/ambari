@@ -30,12 +30,14 @@ import java.io.IOException;
 import java.net.URL;
 import java.sql.SQLException;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics
   .timeline.PhoenixTransactSQL.Condition;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics
+    .timeline.PhoenixTransactSQL.LikeCondition;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics
   .timeline.TimelineMetricConfiguration.HBASE_SITE_CONFIGURATION_FILE;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics
@@ -45,43 +47,22 @@ public class HBaseTimelineMetricStore extends AbstractService
     implements TimelineMetricStore {
 
   static final Log LOG = LogFactory.getLog(HBaseTimelineMetricStore.class);
+  private final TimelineMetricConfiguration configuration;
   private PhoenixHBaseAccessor hBaseAccessor;
 
   /**
    * Construct the service.
    *
    */
-  public HBaseTimelineMetricStore() {
+  public HBaseTimelineMetricStore(TimelineMetricConfiguration configuration) {
     super(HBaseTimelineMetricStore.class.getName());
+    this.configuration = configuration;
   }
 
   @Override
   protected void serviceInit(Configuration conf) throws Exception {
-    ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-    if (classLoader == null) {
-      classLoader = getClass().getClassLoader();
-    }
-    URL hbaseResUrl = classLoader.getResource(HBASE_SITE_CONFIGURATION_FILE);
-    URL amsResUrl = classLoader.getResource(METRICS_SITE_CONFIGURATION_FILE);
-    LOG.info("Found hbase site configuration: " + hbaseResUrl);
-    LOG.info("Found metric service configuration: " + amsResUrl);
-
-    if (hbaseResUrl == null) {
-      throw new IllegalStateException("Unable to initialize the metrics " +
-        "subsystem. No hbase-site present in the classpath.");
-    }
-
-    if (amsResUrl == null) {
-      throw new IllegalStateException("Unable to initialize the metrics " +
-        "subsystem. No ams-site present in the classpath.");
-    }
-
-    Configuration hbaseConf = new Configuration(true);
-    hbaseConf.addResource(hbaseResUrl.toURI().toURL());
-    Configuration metricsConf = new Configuration(true);
-    metricsConf.addResource(amsResUrl.toURI().toURL());
-
-    initializeSubsystem(hbaseConf, metricsConf);
+    super.serviceInit(conf);
+    initializeSubsystem(configuration.getHbaseConf(), configuration.getMetricsConf());
   }
 
   private void initializeSubsystem(Configuration hbaseConf,
@@ -129,14 +110,13 @@ public class HBaseTimelineMetricStore extends AbstractService
     super.serviceStop();
   }
 
-  //TODO: update to work with HOSTS_COUNT and METRIC_COUNT
   @Override
   public TimelineMetrics getTimelineMetrics(List<String> metricNames,
       String hostname, String applicationId, String instanceId,
       Long startTime, Long endTime, Integer limit,
       boolean groupedByHosts) throws SQLException, IOException {
 
-    Condition condition = new Condition(metricNames, hostname, applicationId,
+    Condition condition = new LikeCondition(metricNames, hostname, applicationId,
       instanceId, startTime, endTime, limit, groupedByHosts);
 
     if (hostname == null) {
@@ -153,7 +133,7 @@ public class HBaseTimelineMetricStore extends AbstractService
       throws SQLException, IOException {
 
     TimelineMetrics metrics = hBaseAccessor.getMetricRecords(
-      new Condition(Collections.singletonList(metricName), hostname,
+      new LikeCondition(Collections.singletonList(metricName), hostname,
         applicationId, instanceId, startTime, endTime, limit, true)
     );
 
@@ -167,7 +147,7 @@ public class HBaseTimelineMetricStore extends AbstractService
       metric.setHostName(metricList.get(0).getHostName());
       // Assumption that metrics are ordered by start time
       metric.setStartTime(metricList.get(0).getStartTime());
-      Map<Long, Double> metricRecords = new HashMap<Long, Double>();
+      Map<Long, Double> metricRecords = new TreeMap<Long, Double>();
       for (TimelineMetric timelineMetric : metricList) {
         metricRecords.putAll(timelineMetric.getMetricValues());
       }

@@ -40,18 +40,23 @@
           "default_port": 60000,
           "reporting": {
             "ok": {
-              "text": "TCP OK - {0:.4f} response on port {1}"
+              "text": "TCP OK - {0:.3f}s response on port {1}"
+            },
+            "warning": {
+              "text": "TCP OK - {0:.3f}s response on port {1}",
+              "value": 1.5
             },
             "critical": {
-              "text": "Connection failed: {0} to {1}:{2}"
+              "text": "Connection failed: {0} to {1}:{2}",
+              "value": 5.0
             }
-          }        
+          }
         }
       },
       {
         "name": "hbase_master_cpu",
         "label": "HBase Maser CPU Utilization",
-        "description": "This host-level alert is triggered if CPU utilization of the HBase Master exceeds certain warning and critical thresholds. It checks the HBase Master JMX Servlet for the SystemCPULoad property.",
+        "description": "This host-level alert is triggered if CPU utilization of the HBase Master exceeds certain warning and critical thresholds. It checks the HBase Master JMX Servlet for the SystemCPULoad property. The threshold values are in percent.",
         "interval": 5,
         "scope": "ANY",
         "enabled": true,
@@ -75,7 +80,8 @@
             "critical": {
               "text": "{1} CPU, load {0:.1%}",
               "value": 250
-            }
+            },
+            "units" : "%"            
           },
           "jmx": {
             "property_list": [
@@ -100,12 +106,17 @@
           "default_port": 60030,
           "reporting": {
             "ok": {
-              "text": "TCP OK - {0:.4f} response on port {1}"
+              "text": "TCP OK - {0:.3f}s response on port {1}"
+            },
+            "warning": {
+              "text": "TCP OK - {0:.3f}s response on port {1}",
+              "value": 1.5
             },
             "critical": {
-              "text": "Connection failed: {0} to {1}:{2}"
+              "text": "Connection failed: {0} to {1}:{2}",
+              "value": 5.0
             }
-          }        
+          }
         }
       }
     ]

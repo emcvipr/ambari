@@ -31,18 +31,32 @@ from exceptions import Fail
 from exceptions import ExecuteTimeoutException
 from resource_management.core.logger import Logger
 
-SUDO_ENVIRONMENT_PLACEHOLDER = "{ENV_PLACEHOLDER}"
+EXPORT_PLACEHOLDER = "[RMF_EXPORT_PLACEHOLDER]"
+ENV_PLACEHOLDER = "[RMF_ENV_PLACEHOLDER]"
+
+PLACEHOLDERS_TO_STR = {
+  EXPORT_PLACEHOLDER: "export {env_str} > /dev/null ; ",
+  ENV_PLACEHOLDER: "{env_str}"
+}
 
 def checked_call(command, verbose=False, logoutput=False,
-         cwd=None, env={}, preexec_fn=None, user=None, wait_for_finish=True, timeout=None, path=None, output_file=None, sudo=False):
+         cwd=None, env=None, preexec_fn=None, user=None, wait_for_finish=True, timeout=None, path=None, output_file=None, sudo=False):
+  """
+  Execute the process and throw an exception on failure.
+  @return: return_code, stdout
+  """
   return _call(command, verbose, logoutput, True, cwd, env, preexec_fn, user, wait_for_finish, timeout, path, output_file, sudo)
 
 def call(command, verbose=False, logoutput=False,
-         cwd=None, env={}, preexec_fn=None, user=None, wait_for_finish=True, timeout=None, path=None, output_file=None, sudo=False):
+         cwd=None, env=None, preexec_fn=None, user=None, wait_for_finish=True, timeout=None, path=None, output_file=None, sudo=False):
+  """
+  Execute the process despite failures.
+  @return: return_code, stdout
+  """
   return _call(command, verbose, logoutput, False, cwd, env, preexec_fn, user, wait_for_finish, timeout, path, output_file, sudo)
-            
+
 def _call(command, verbose=False, logoutput=False, throw_on_failure=True,
-         cwd=None, env={}, preexec_fn=None, user=None, wait_for_finish=True, timeout=None, path=None, output_file=None, sudo=False):
+         cwd=None, env=None, preexec_fn=None, user=None, wait_for_finish=True, timeout=None, path=None, output_file=None, sudo=False):
   """
   Execute shell command
   
@@ -51,18 +65,18 @@ def _call(command, verbose=False, logoutput=False, throw_on_failure=True,
   @param logoutput: boolean, whether command output should be logged of not
   @param throw_on_failure: if true, when return code is not zero exception is thrown
   
-  @return: retrun_code, stdout
+  @return: return_code, stdout
   """
+
+  command_alias = string_cmd_from_args_list(command) if isinstance(command, (list, tuple)) else command
   
-  # Append current PATH to env['PATH'] and path
-  if 'PATH' in env:
-    env['PATH'] = os.pathsep.join([os.environ['PATH'], env['PATH']])
+  # Append current PATH to env['PATH']
+  env = add_current_path_to_env(env)
+  # Append path to env['PATH']
   if path:
-    if not 'PATH' in env:
-      env['PATH'] = ''
     path = os.pathsep.join(path) if isinstance(path, (list, tuple)) else path
-    env['PATH'] = os.pathsep.join([os.environ['PATH'], path])
-    
+    env['PATH'] = os.pathsep.join([env['PATH'], path])
+
   # prepare command cmd
   if sudo:
     command = as_sudo(command, env=env)
@@ -72,12 +86,17 @@ def _call(command, verbose=False, logoutput=False, throw_on_failure=True,
   # convert to string and escape
   if isinstance(command, (list, tuple)):
     command = string_cmd_from_args_list(command)
+    
   # replace placeholder from as_sudo / as_user if present
-  command = command.replace(SUDO_ENVIRONMENT_PLACEHOLDER, get_environment_str(env), 1)
+  env_str = get_environment_str(env)
+  for placeholder, replacement in PLACEHOLDERS_TO_STR.iteritems():
+    command = command.replace(placeholder, replacement.format(env_str=env_str))
+  
   if verbose:
-    Logger.info("Call command: " + Logger.get_protected_text(command))
+    Logger.info("Running: " + command)
 
-  subprocess_command = ["/bin/bash","--login","-c", command]
+  # --noprofile is used to preserve PATH set for ambari-agent
+  subprocess_command = ["/bin/bash","--login","--noprofile","-c", command]
   proc = subprocess.Popen(subprocess_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           cwd=cwd, env=env, shell=False,
                           preexec_fn=preexec_fn)
@@ -105,12 +124,12 @@ def _call(command, verbose=False, logoutput=False, throw_on_failure=True,
     Logger.info(out)
   
   if throw_on_failure and code:
-    err_msg = Logger.get_protected_text(("Execution of '%s' returned %d. %s") % (command, code, out))
+    err_msg = Logger.filter_text(("Execution of '%s' returned %d. %s") % (command_alias, code, out))
     raise Fail(err_msg)
   
   return code, out
 
-def as_sudo(command, env=SUDO_ENVIRONMENT_PLACEHOLDER):
+def as_sudo(command, env=None):
   """
   command - list or tuple of arguments.
   env - when run as part of Execute resource, this SHOULD NOT be used.
@@ -125,21 +144,31 @@ def as_sudo(command, env=SUDO_ENVIRONMENT_PLACEHOLDER):
     #   
     # In that case while passing string,
     # any bash symbols eventually added to command like && || ; < > | << >> would cause problems.
-    err_msg = Logger.get_protected_text(("String command '%s' cannot be run as sudo. Please supply the command as a tuple of arguments") % (command))
+    err_msg = Logger.filter_text(("String command '%s' cannot be run as sudo. Please supply the command as a tuple of arguments") % (command))
     raise Fail(err_msg)
-  
-  env = get_environment_str(env) if env != SUDO_ENVIRONMENT_PLACEHOLDER else SUDO_ENVIRONMENT_PLACEHOLDER
-  return "/usr/bin/sudo {0} -H {1}".format(env, command)
 
-def as_user(command, user , env=SUDO_ENVIRONMENT_PLACEHOLDER):
+  env = get_environment_str(add_current_path_to_env(env)) if env else ENV_PLACEHOLDER
+  return "/usr/bin/sudo {0} -H -E {1}".format(env, command)
+
+def as_user(command, user, env=None):
   if isinstance(command, (list, tuple)):
     command = string_cmd_from_args_list(command)
-    
-  env = get_environment_str(env) if env != SUDO_ENVIRONMENT_PLACEHOLDER else SUDO_ENVIRONMENT_PLACEHOLDER
-  export_command = "export {0} > /dev/null ; ".format(env)
-  
-  return "/usr/bin/sudo su {0} -l -s /bin/bash -c {1}".format(user, quote_bash_args(export_command + command))
 
+  export_env = "export {0} ; ".format(get_environment_str(add_current_path_to_env(env))) if env else EXPORT_PLACEHOLDER
+  return "/usr/bin/sudo su {0} -l -s /bin/bash -c {1}".format(user, quote_bash_args(export_env + command))
+
+def add_current_path_to_env(env):
+  result = {} if not env else env
+  
+  if not 'PATH' in result:
+    result['PATH'] = os.environ['PATH']
+    
+  # don't append current env if already there
+  if not set(os.environ['PATH'].split(os.pathsep)).issubset(result['PATH'].split(os.pathsep)):
+    result['PATH'] = os.pathsep.join([os.environ['PATH'], result['PATH']])
+  
+  return result
+  
 def get_environment_str(env):
   return reduce(lambda str,x: '{0} {1}={2}'.format(str,x,quote_bash_args(env[x])), env, '')
 

@@ -63,6 +63,7 @@ public class ApplicationHistoryServer extends CompositeService {
   TimelineStore timelineStore;
   TimelineMetricStore timelineMetricStore;
   private WebApp webApp;
+  private TimelineMetricConfiguration metricConfiguration;
 
   public ApplicationHistoryServer() {
     super(ApplicationHistoryServer.class.getName());
@@ -70,6 +71,8 @@ public class ApplicationHistoryServer extends CompositeService {
 
   @Override
   protected void serviceInit(Configuration conf) throws Exception {
+    metricConfiguration = new TimelineMetricConfiguration();
+    metricConfiguration.initialize();
     historyManager = createApplicationHistory();
     ahsClientService = createApplicationHistoryClientService(historyManager);
     addService(ahsClientService);
@@ -106,10 +109,9 @@ public class ApplicationHistoryServer extends CompositeService {
     return this.ahsClientService;
   }
 
-  protected ApplicationHistoryClientService
-      createApplicationHistoryClientService(
+  protected ApplicationHistoryClientService createApplicationHistoryClientService(
           ApplicationHistoryManager historyManager) {
-    return new ApplicationHistoryClientService(historyManager);
+    return new ApplicationHistoryClientService(historyManager, metricConfiguration);
   }
 
   protected ApplicationHistoryManager createApplicationHistory() {
@@ -162,11 +164,11 @@ public class ApplicationHistoryServer extends CompositeService {
 
   protected TimelineMetricStore createTimelineMetricStore(Configuration conf) {
     LOG.info("Creating metrics store.");
-    return ReflectionUtils.newInstance(HBaseTimelineMetricStore.class, conf);
+    return new HBaseTimelineMetricStore(metricConfiguration);
   }
 
   protected void startWebApp() {
-    String bindAddress = WebAppUtils.getAHSWebAppURLWithoutScheme(getConfig());
+    String bindAddress = metricConfiguration.getWebappAddress();
     LOG.info("Instantiating AHSWebApp at " + bindAddress);
     try {
       webApp =
@@ -175,9 +177,9 @@ public class ApplicationHistoryServer extends CompositeService {
               ahsClientService, "ws")
             .with(getConfig())
             .withHttpSpnegoPrincipalKey(
-              YarnConfiguration.TIMELINE_SERVICE_WEBAPP_SPNEGO_USER_NAME_KEY)
+              YarnConfiguration.TIMELINE_SERVICE_PRINCIPAL)
             .withHttpSpnegoKeytabKey(
-              YarnConfiguration.TIMELINE_SERVICE_WEBAPP_SPNEGO_KEYTAB_FILE_KEY)
+              YarnConfiguration.TIMELINE_SERVICE_KEYTAB)
             .at(bindAddress)
             .start(new AHSWebApp(historyManager, timelineStore, timelineMetricStore));
     } catch (Exception e) {
@@ -186,6 +188,7 @@ public class ApplicationHistoryServer extends CompositeService {
       throw new YarnRuntimeException(msg, e);
     }
   }
+
   /**
    * @return ApplicationTimelineStore
    */

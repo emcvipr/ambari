@@ -20,6 +20,7 @@ Ambari Agent
 """
 import os
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from resource_management.libraries.functions.default import default
 from resource_management import *
 import status_params
 
@@ -28,19 +29,43 @@ config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
 # This is expected to be of the form #.#.#.#
-hdp_stack_version = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version = format_hdp_stack_version(hdp_stack_version)
+stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
+hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+
+# New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade
+version = default("/commandParams/version", None)
+
+hostname = config['hostname']
 
 #hadoop params
 if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
-  hadoop_libexec_dir = "/usr/hdp/current/hadoop-client/libexec"
-  hadoop_bin = "/usr/hdp/current/hadoop-client/sbin"
-  hadoop_bin_dir = "/usr/hdp/current/hadoop-client/bin"
-  hadoop_yarn_home = '/usr/hdp/current/hadoop-yarn-client'
-  hadoop_mapred2_jar_location = '/usr/hdp/current/hadoop-mapreduce-client'
-  mapred_bin = '/usr/hdp/current/hadoop-mapreduce-client/sbin'
-  yarn_bin = '/usr/hdp/current/hadoop-yarn-client/sbin'
-  yarn_container_bin = '/usr/hdp/current/hadoop-yarn-client/bin'
+  yarn_role_root = "hadoop-yarn-client"
+  mapred_role_root = "hadoop-mapreduce-client"
+
+  command_role = default("/role", "")
+  if command_role == "APP_TIMELINE_SERVER":
+    yarn_role_root = "hadoop-yarn-timelineserver"
+  elif command_role == "HISTORYSERVER":
+    mapred_role_root = "hadoop-mapreduce-historyserver"
+  elif command_role == "MAPREDUCE2_CLIENT":
+    mapred_role_root = "hadoop-mapreduce-client"
+  elif command_role == "NODEMANAGER":
+    yarn_role_root = "hadoop-yarn-nodemanager"
+  elif command_role == "RESOURCEMANAGER":
+    yarn_role_root = "hadoop-yarn-resourcemanager"
+  elif command_role == "YARN_CLIENT":
+    yarn_role_root = "hadoop-yarn-client"
+
+  hadoop_libexec_dir          = "/usr/hdp/current/hadoop-client/libexec"
+  hadoop_bin                  = "/usr/hdp/current/hadoop-client/sbin"
+  hadoop_bin_dir              = "/usr/hdp/current/hadoop-client/bin"
+
+  hadoop_mapred2_jar_location = format("/usr/hdp/current/{mapred_role_root}")
+  mapred_bin                  = format("/usr/hdp/current/{mapred_role_root}/sbin")
+
+  hadoop_yarn_home            = format("/usr/hdp/current/{yarn_role_root}")
+  yarn_bin                    = format("/usr/hdp/current/{yarn_role_root}/sbin")
+  yarn_container_bin          = format("/usr/hdp/current/{yarn_role_root}/bin")
 else:
   hadoop_libexec_dir = "/usr/lib/hadoop/libexec"
   hadoop_bin = "/usr/lib/hadoop/sbin"
@@ -98,6 +123,9 @@ else:
 
 nm_webui_address = config['configurations']['yarn-site']['yarn.nodemanager.webapp.address']
 hs_webui_address = config['configurations']['mapred-site']['mapreduce.jobhistory.webapp.address']
+nm_address = config['configurations']['yarn-site']['yarn.nodemanager.address']  # still contains 0.0.0.0
+if hostname and nm_address and nm_address.startswith("0.0.0.0:"):
+  nm_address = nm_address.replace("0.0.0.0", hostname)
 
 nm_local_dirs = config['configurations']['yarn-site']['yarn.nodemanager.local-dirs']
 nm_log_dirs = config['configurations']['yarn-site']['yarn.nodemanager.log-dirs']
@@ -107,8 +135,6 @@ hadoopMapredExamplesJarName = "hadoop-mapreduce-examples-2.*.jar"
 
 yarn_pid_dir = status_params.yarn_pid_dir
 mapred_pid_dir = status_params.mapred_pid_dir
-
-yarn_data_dir = "/hadoop/yarn"
 
 mapred_log_dir = format("{mapred_log_dir_prefix}/{mapred_user}")
 yarn_log_dir = format("{yarn_log_dir_prefix}/{yarn_user}")
@@ -121,16 +147,18 @@ user_group = config['configurations']['cluster-env']['user_group']
 exclude_hosts = default("/clusterHostInfo/decom_nm_hosts", [])
 exclude_file_path = default("/configurations/yarn-site/yarn.resourcemanager.nodes.exclude-path","/etc/hadoop/conf/yarn.exclude")
 
-hostname = config['hostname']
-
 ats_host = set(default("/clusterHostInfo/app_timeline_server_hosts", []))
 has_ats = not len(ats_host) == 0
 
+# default kinit commands
+rm_kinit_cmd = ""
+yarn_timelineservice_kinit_cmd = ""
+nodemanager_kinit_cmd = ""
+
 if security_enabled:
   _rm_principal_name = config['configurations']['yarn-site']['yarn.resourcemanager.principal']
-  _rm_keytab = config['configurations']['yarn-site']['yarn.resourcemanager.keytab']
   _rm_principal_name = _rm_principal_name.replace('_HOST',hostname.lower())
-  
+  _rm_keytab = config['configurations']['yarn-site']['yarn.resourcemanager.keytab']
   rm_kinit_cmd = format("{kinit_path_local} -kt {_rm_keytab} {_rm_principal_name};")
 
   # YARN timeline security options are only available in HDP Champlain
@@ -139,9 +167,12 @@ if security_enabled:
     _yarn_timelineservice_principal_name = _yarn_timelineservice_principal_name.replace('_HOST', hostname.lower())
     _yarn_timelineservice_keytab = config['configurations']['yarn-site']['yarn.timeline-service.keytab']
     yarn_timelineservice_kinit_cmd = format("{kinit_path_local} -kt {_yarn_timelineservice_keytab} {_yarn_timelineservice_principal_name};")
-else:
-  rm_kinit_cmd = ""
-  yarn_timelineservice_kinit_cmd = ""
+
+  if 'yarn.nodemanager.principal' in config['configurations']['yarn-site']:
+    _nodemanager_principal_name = config['configurations']['yarn-site']['yarn.nodemanager.principal']
+    _nodemanager_keytab = config['configurations']['yarn-site']['yarn.nodemanager.keytab']
+    nodemanager_kinit_cmd = format("{kinit_path_local} -kt {_nodemanager_keytab} {_nodemanager_principal_name};")
+
 
 yarn_log_aggregation_enabled = config['configurations']['yarn-site']['yarn.log-aggregation-enable']
 yarn_nm_app_log_dir =  config['configurations']['yarn-site']['yarn.nodemanager.remote-app-log-dir']
@@ -150,7 +181,6 @@ mapreduce_jobhistory_done_dir = config['configurations']['mapred-site']['mapredu
 jobhistory_heapsize = default("/configurations/mapred-env/jobhistory_heapsize", "900")
 
 #for create_hdfs_directory
-hostname = config["hostname"]
 hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
 hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name']
 import functools

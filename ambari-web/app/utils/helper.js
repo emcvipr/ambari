@@ -485,6 +485,9 @@ App.format = {
     if (result === ' Nagios Update Ignore Actionexecute') {
        result = Em.I18n.t('common.maintenance.task');
     }
+    if (result.indexOf('Install Packages Actionexecute') != -1) {
+      result = Em.I18n.t('common.installRepo.task');
+    }
     if (result === ' Rebalancehdfs NameNode') {
        result = Em.I18n.t('services.service.actions.run.rebalanceHdfsNodes.title');
     }
@@ -719,6 +722,45 @@ App.registerBoundHelper('formatWordBreak', Em.View.extend({
    */
   result: function() {
     return this.get('content') && this.get('content').replace(/\./g, '.<wbr />');
+  }.property('content')
+}));
+
+/**
+ * Return <i></i> with class that correspond to status
+ *
+ * @param {string} content - status
+ *
+ * Examples:
+ *
+ * {{statusIcon view.status}}
+ * returns 'icon-cog'
+ *
+ */
+App.registerBoundHelper('statusIcon', Em.View.extend({
+  tagName: 'i',
+
+  /**
+   * relation map between status and icon class
+   * @type {object}
+   */
+  statusIconMap: {
+    'COMPLETED': 'icon-ok completed',
+    'WARNING': 'icon-warning-sign',
+    'FAILED': 'icon-exclamation-sign failed',
+    'PENDING': 'icon-cog pending',
+    'QUEUED': 'icon-cog queued',
+    'IN_PROGRESS': 'icon-cogs in_progress',
+    'HOLDING': 'icon-pause',
+    'ABORTED': 'icon-minus aborted',
+    'TIMED_OUT': 'icon-time timedout'
+  },
+
+  classNameBindings: ['iconClass'],
+  /**
+   * @type {string}
+   */
+  iconClass: function () {
+    return this.get('statusIconMap')[this.get('content')] || 'icon-question-sign';
   }.property('content')
 }));
 

@@ -242,7 +242,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
         attributeValue: filter.attributeValue,
         name: this.t(filter.caption),
         selected: false
-      })
+      });
     }, this);
   }.property('propertyFilters'),
 
@@ -256,6 +256,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
    * @method clearStep
    */
   clearStep: function () {
+    this.set('configValidationGlobalMessage', []);
     this.set('submitButtonClicked', false);
     this.set('isSubmitDisabled', true);
     this.set('isRecommendedLoaded', false);
@@ -706,6 +707,8 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
       }, this);
       this.get('installedServiceNames').forEach(function (serviceName) {
         var serviceConfigObj = serviceConfigs.findProperty('serviceName', serviceName);
+        var isInstallableService = App.StackService.find(serviceName).get('isInstallable');
+        if (!isInstallableService) serviceConfigObj.set('showConfig', false);
         if (this.get('securityEnabled')) {
           this.setSecureConfigs(serviceConfigObj, serviceName);
         }
@@ -718,6 +721,19 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
           c = c.without(config);
         });
         serviceConfigs.findProperty('serviceName', 'HDFS').configs = c;
+      }
+
+      // Remove Notifications from MISC if it isn't Installer Controller
+      if (this.get('wizardController.name') !== 'installerController') {
+        var miscService = serviceConfigs.findProperty('serviceName', 'MISC');
+        if (miscService) {
+          c = miscService.configs;
+          removedConfigs = c.filterProperty('category', 'Notifications');
+          removedConfigs.map(function (config) {
+            c = c.without(config);
+          });
+          miscService.configs = c;
+        }
       }
     }
 

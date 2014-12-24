@@ -87,7 +87,9 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
       self.createKerberosComponent().done(function () {
         self.createKerberosHostComponents().done(function () {
           self.createConfigurations().done(function () {
-            App.router.send('next');
+            self.createKerberosAdminSession().done(function() {
+              App.router.send('next');
+            });
           });
         });
       });
@@ -209,7 +211,38 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
         properties[_configProperty.name] = _configProperty.value;
       }
     }, this);
+    this.tweakKdcTypeValue(properties);
     return {"type": site, "tag": tag, "properties": properties};
+  },
+
+  tweakKdcTypeValue: function(properties) {
+    if (properties['kdc_type'] === Em.I18n.t('admin.kerberos.wizard.step1.option.kdc')) {
+      properties['kdc_type'] = "mit-kdc";
+    } else if (properties['kdc_type'] === Em.I18n.t('admin.kerberos.wizard.step1.option.ad')) {
+      properties['kdc_type'] = "active-directory";
+    }
+  },
+
+  /**
+   * puts kerberos admin credentials in the live cluster session
+   * @returns {*} jqXHr
+   */
+  createKerberosAdminSession: function () {
+    var configs = this.get('stepConfigs')[0].get('configs');
+    var adminPrincipalValue = configs.findProperty('name','admin_principal').value;
+    var adminPasswordValue = configs.findProperty('name','admin_password').value;
+    return App.ajax.send({
+      name: 'common.cluster.update',
+      sender: this,
+      data: {
+        clusterName: App.get('clusterName') || App.clusterStatus.get('clusterName'),
+        data: [{
+          session_attributes : {
+            kerberos_admin : {principal : adminPrincipalValue, password : adminPasswordValue}
+          }
+        }]
+      }
+    });
   }
 });
 

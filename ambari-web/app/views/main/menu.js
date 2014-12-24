@@ -105,6 +105,8 @@ App.MainMenuView = Em.CollectionView.extend({
       } else if (event.context === 'views') {
         App.router.route('views');
         return;
+      } else if (event.context === 'alerts') {
+        App.router.set('mainAlertDefinitionsController.showFilterConditionsFirstLoad', false);
       }
       App.router.route('main/' + event.context);
     },
@@ -130,7 +132,7 @@ App.MainMenuView = Em.CollectionView.extend({
           categories.push({
             name: 'adminStackVersions.index',
             url: 'versions',
-            label: Em.I18n.t('common.stack.versions')
+            label: Em.I18n.t('common.versions')
           });
         }
         categories.push({

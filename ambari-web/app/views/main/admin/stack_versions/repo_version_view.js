@@ -40,67 +40,53 @@ App.RepoVersionsView = App.TableView.extend({
    */
   colPropAssoc: function () {
     var associations = [];
-    associations[1] = 'repositoryVersion';
-    associations[2] = 'displayName';
-    associations[3] = 'operatingSystems';
+    associations[1] = 'displayName';
+    associations[2] = 'operatingSystems';
     return associations;
   }.property(),
 
   sortView: sort.wrapperView,
-  repoNameSort: sort.fieldView.extend({
+  repoVersionSort: sort.fieldView.extend({
     column: 1,
-    name: 'repositoryVersion',
-    displayName: Em.I18n.t('admin.stackVersions.table.header.stack'),
+    name: 'displayName',
+    displayName: Em.I18n.t('admin.stackVersions.table.header.version'),
     type: 'version',
     classNames: ['first']
   }),
-  repoVersionSort: sort.fieldView.extend({
-    column: 2,
-    name: 'displayName',
-    displayName: Em.I18n.t('admin.stackVersions.table.header.version'),
-    type: 'version'
-  }),
   osSort: sort.fieldView.extend({
-    column: 3,
-    name: 'operatingSystems',
-    displayName: Em.I18n.t('admin.stackVersions.table.header.os')
+    column: 2,
+    name: 'operatingSystems.length',
+    displayName: Em.I18n.t('admin.stackVersions.table.header.os'),
+    type: 'number'
   }),
 
-  repoNameFilterView: filters.createSelectView({
+  repoVersionFilterView: filters.createTextView({
     column: 1,
     fieldType: 'filter-input-width',
+    onChangeValue: function () {
+      this.get('parentView').updateFilter(this.get('column'), this.get('value'), 'string');
+    }
+  }),
+
+  osFilterView: filters.createSelectView({
+    column: 2,
+    fieldType: 'filter-input-width',
     content: function () {
-      var names = this.get('parentView.content').mapProperty('repositoryVersion').uniq();
+      var names = App.OS.find().mapProperty('osType').uniq();
       return [
         {
           value: '',
           label: Em.I18n.t('common.all')
         }
       ].concat(names.map(function (name) {
-        return {
-          value: name,
-          label: name
-        }
-      }));
-    }.property('App.router.repoVersionsController.dataIsLoaded'),
+          return {
+            value: name,
+            label: name
+          }
+        }));
+    }.property('App.router.mainStackVersionsController.dataIsLoaded'),
     onChangeValue: function () {
-      this.get('parentView').updateFilter(this.get('column'), this.get('value'), 'select');
-    }
-  }),
-
-  repoVersionFilterView: filters.createTextView({
-    column: 2,
-    fieldType: 'filter-input-width',
-    onChangeValue: function () {
-      this.get('parentView').updateFilter(this.get('column'), this.get('value'), 'string');
-    }
-  }),
-
-  osFilterView: filters.createTextView({
-    column: 3,
-    fieldType: 'filter-input-width',
-    onChangeValue: function () {
-      this.get('parentView').updateFilter(this.get('column'), this.get('value'), 'string');
+      this.get('parentView').updateFilter(this.get('column'), this.get('value'), 'os');
     }
   }),
 
@@ -109,21 +95,7 @@ App.RepoVersionsView = App.TableView.extend({
   },
 
   RepositoryVersionView: Em.View.extend({
-    tagName: 'tr',
-    didInsertElement: function () {
-      App.tooltip(this.$("[rel='Tooltip']"));
-      this.set('isOsCollapsed', true);
-    },
-
-    toggleOs: function(event) {
-      this.set('isOsCollapsed', !this.get('isOsCollapsed'));
-      this.$('.operating-systems').toggle();
-    },
-
-    labels: function() {
-      return this.get('content.operatingSystems') &&
-        this.get('content.operatingSystems').getEach('osType').join("<br/>");
-    }.property('content.operatingSystems.length')
+    tagName: 'tr'
   })
 
 });

@@ -27,6 +27,7 @@ import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlSeeAlso;
 
+import org.apache.ambari.server.stack.HostsType;
 import org.apache.ambari.server.state.stack.UpgradePack;
 import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
 import org.apache.commons.lang.StringUtils;
@@ -34,7 +35,7 @@ import org.apache.commons.lang.StringUtils;
 /**
  *
  */
-@XmlSeeAlso(value = { ColocatedGrouping.class })
+@XmlSeeAlso(value = { ColocatedGrouping.class, ClusterGrouping.class })
 public class Grouping {
 
   @XmlAttribute(name="name")
@@ -44,7 +45,7 @@ public class Grouping {
   public String title;
 
   @XmlElement(name="service")
-  public List<UpgradePack.OrderService> services;
+  public List<UpgradePack.OrderService> services = new ArrayList<UpgradePack.OrderService>();
 
   /**
    * Gets the default builder.
@@ -59,13 +60,25 @@ public class Grouping {
     private List<StageWrapper> stages = new ArrayList<StageWrapper>();
     private Set<String> serviceChecks = new HashSet<String>();
 
+    /**
+     * Add stages where the restart stages are ordered
+     * E.g., preupgrade, restart hosts(0), ..., restart hosts(n-1), postupgrade
+     * @param hostsType the order collection of hosts, which may have a master and secondary
+     * @param service the service name
+     * @param pc the ProcessingComponent derived from the upgrade pack.
+     */
     @Override
-    public void add(Set<String> hosts, String service, ProcessingComponent pc) {
-      if (null != pc.preTasks && pc.preTasks.size() > 0) {
+    public void add(HostsType hostsType, String service, boolean clientOnly, ProcessingComponent pc) {
+
+      List<TaskBucket> buckets = buckets(pc.preTasks);
+      for (TaskBucket bucket : buckets) {
+        List<TaskWrapper> preTasks = TaskWrapperBuilder.getTaskList(service, pc.name, hostsType, bucket.tasks);
+        Set<String> preTasksEffectiveHosts = TaskWrapperBuilder.getEffectiveHosts(preTasks);
         StageWrapper stage = new StageWrapper(
-            StageWrapper.Type.RU_TASKS,
-            getStageText("Preparing", pc.name, hosts),
-            new TaskWrapper(service, pc.name, hosts, pc.preTasks));
+            bucket.type,
+            getStageText("Preparing", pc.name, preTasksEffectiveHosts),
+            preTasks
+            );
         stages.add(stage);
       }
 
@@ -73,7 +86,7 @@ public class Grouping {
       if (null != pc.tasks && 1 == pc.tasks.size()) {
         Task t = pc.tasks.get(0);
         if (RestartTask.class.isInstance(t)) {
-          for (String hostName : hosts) {
+          for (String hostName : hostsType.hosts) {
             StageWrapper stage = new StageWrapper(
                 StageWrapper.Type.RESTART,
                 getStageText("Restarting", pc.name, Collections.singleton(hostName)),
@@ -83,16 +96,21 @@ public class Grouping {
         }
       }
 
-      if (null != pc.postTasks && pc.postTasks.size() > 0) {
+      buckets = buckets(pc.postTasks);
+      for (TaskBucket bucket : buckets) {
+        List<TaskWrapper> postTasks = TaskWrapperBuilder.getTaskList(service, pc.name, hostsType, bucket.tasks);
+        Set<String> postTasksEffectiveHosts = TaskWrapperBuilder.getEffectiveHosts(postTasks);
         StageWrapper stage = new StageWrapper(
-            StageWrapper.Type.RU_TASKS,
-            getStageText("Completing", pc.name, hosts),
-            new TaskWrapper(service, pc.name, hosts, pc.postTasks));
+            bucket.type,
+            getStageText("Completing", pc.name, postTasksEffectiveHosts),
+            postTasks
+            );
         stages.add(stage);
       }
 
-      serviceChecks.add(service);
-
+      if (!clientOnly) {
+        serviceChecks.add(service);
+      }
     }
 
     @Override
@@ -116,8 +134,59 @@ public class Grouping {
 
       return stages;
     }
+  }
+
+  /**
+   * Group all like-typed tasks together.  When they change, create a new type.
+   */
+  private static List<TaskBucket> buckets(List<Task> tasks) {
+    if (null == tasks || tasks.isEmpty())
+      return Collections.emptyList();
+
+    List<TaskBucket> holders = new ArrayList<TaskBucket>();
+
+    TaskBucket current = null;
+
+    int i = 0;
+    for (Task t : tasks) {
+      if (i == 0) {
+        current = new TaskBucket(t);
+        holders.add(current);
+      } else if (i > 0 && t.getType() != tasks.get(i-1).getType()) {
+        current = new TaskBucket(t);
+        holders.add(current);
+      } else {
+        current.tasks.add(t);
+      }
+
+      i++;
+    }
+
+    return holders;
 
   }
 
-
+  private static class TaskBucket {
+    private StageWrapper.Type type;
+    private List<Task> tasks = new ArrayList<Task>();
+    private TaskBucket(Task initial) {
+      switch (initial.getType()) {
+        case CONFIGURE:
+        case SERVER_ACTION:
+        case MANUAL:
+          type = StageWrapper.Type.SERVER_SIDE_ACTION;
+          break;
+        case EXECUTE:
+          type = StageWrapper.Type.RU_TASKS;
+          break;
+        case RESTART:
+          type = StageWrapper.Type.RESTART;
+          break;
+        case SERVICE_CHECK:
+          type = StageWrapper.Type.SERVICE_CHECK;
+          break;
+      }
+      tasks.add(initial);
+    }
+  }
 }

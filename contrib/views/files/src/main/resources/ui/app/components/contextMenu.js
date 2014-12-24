@@ -36,7 +36,7 @@ App.ContextMenuComponent = Em.Component.extend({
     },
     moveToTrash:function () {
       this.get('target').send('deleteFile');
-    },
+    }
   }
 
 });

@@ -166,8 +166,8 @@
             <exclude>src/main/resources/stacks/HDP/2.1.GlusterFS/services/YARN/package/templates/exclude_hosts_list.j2</exclude>
             <exclude>src/main/windows/ambari-server.cmd</exclude>
             <exclude>src/main/windows/ambari-server.ps1</exclude>
-            <exclude>src/main/resources/stacks/HDP/2.0.6/services/HDFS/package/scripts/balancer-emulator/balancer-err.log</exclude>
-            <exclude>src/main/resources/stacks/HDP/2.0.6/services/HDFS/package/scripts/balancer-emulator/balancer.log</exclude>
+            <exclude>src/main/resources/common-services/HDFS/2.1.0.2.0/package/scripts/balancer-emulator/balancer-err.log</exclude>
+            <exclude>src/main/resources/common-services/HDFS/2.1.0.2.0/package/scripts/balancer-emulator/balancer.log</exclude>
             <exclude>src/main/resources/stacks/BIGTOP/0.8/services/HDFS/package/scripts/balancer-emulator/balancer.log</exclude>
             <exclude>src/main/resources/stacks/BIGTOP/0.8/services/HDFS/package/scripts/balancer-emulator/balancer-err.log</exclude>
             <exclude>src/main/resources/stacks/PHD/3.0.0.0/services/HDFS/package/scripts/balancer-emulator/balancer.log</exclude>
@@ -500,7 +500,7 @@
                   <location>src/main/resources/scripts</location>
                 </source>
                 <source>
-                  <location>src/main/python/UpgradeHelper_HDP2.py</location>
+                  <location>src/main/python/upgradeHelper.py</location>
                 </source>
               </sources>
             </mapping>
@@ -532,6 +532,22 @@
               <sources>
                 <source>
                   <location>src/main/resources/upgrade/dml</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
+              <directory>/var/lib/ambari-server/resources/common-services</directory>
+              <sources>
+                <source>
+                  <location>target/classes/common-services</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
+              <directory>/var/lib/ambari-server/resources/upgrade/catalog</directory>
+              <sources>
+                <source>
+                  <location>src/main/resources/upgrade/catalog</location>
                 </source>
               </sources>
             </mapping>
@@ -886,7 +902,7 @@
               </mapper>
             </data>
             <data>
-              <src>src/main/python/UpgradeHelper_HDP2.py</src>
+              <src>src/main/python/upgradeHelper.py</src>
               <type>file</type>
               <mapper>
                 <type>perm</type>
@@ -908,6 +924,22 @@
               <mapper>
                 <type>perm</type>
                 <prefix>/var/lib/ambari-server/resources/upgrade/dml</prefix>
+              </mapper>
+            </data>
+            <data>
+              <src>target/classes/common-services</src>
+              <type>directory</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>/var/lib/ambari-server/resources/common-services</prefix>
+              </mapper>
+            </data>
+            <data>
+              <src>src/main/resources/upgrade/catalog</src>
+              <type>directory</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>/var/lib/ambari-server/resources/upgrade/catalog</prefix>
               </mapper>
             </data>
             <data>
@@ -1706,6 +1738,11 @@
       <groupId>com.sun.mail</groupId>
       <artifactId>smtp</artifactId>
       <version>1.5.2</version>
+    </dependency>
+    <dependency>
+      <groupId>org.snmp4j</groupId>
+      <artifactId>snmp4j</artifactId>
+      <version>1.10.1</version>
     </dependency>
   </dependencies>
 

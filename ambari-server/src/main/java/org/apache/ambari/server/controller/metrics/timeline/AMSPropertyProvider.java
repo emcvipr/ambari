@@ -53,11 +53,8 @@ import static org.codehaus.jackson.map.annotate.JsonSerialize.Inclusion;
 public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
   static final Map<String, String> TIMELINE_APPID_MAP = new HashMap<String, String>();
   private static ObjectMapper mapper;
-  //private final HttpClient httpClient = new HttpClient();
   private final static ObjectReader timelineObjectReader;
-  private static final DecimalFormat decimalFormat = new DecimalFormat("#.00");
-
-  private static final Set<String> PERCENTAGE_METRIC;
+  private static final String METRIC_REGEXP_PATTERN = "\\([^)]*\\)";
 
   static {
     TIMELINE_APPID_MAP.put("HBASE_MASTER", "HBASE");
@@ -70,15 +67,6 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
     //noinspection deprecation
     mapper.getSerializationConfig().setSerializationInclusion(Inclusion.NON_NULL);
     timelineObjectReader = mapper.reader(TimelineMetrics.class);
-
-    Set<String> temp = new HashSet<String>();
-    temp.add("cpu_wio");
-    temp.add("cpu_idle");
-    temp.add("cpu_nice");
-    temp.add("cpu_aidle");
-    temp.add("cpu_system");
-    temp.add("cpu_user");
-    PERCENTAGE_METRIC = Collections.unmodifiableSet(temp);
   }
 
   public AMSPropertyProvider(Map<String, Map<String, PropertyInfo>> componentPropertyInfoMap,
@@ -159,7 +147,23 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
         Set<Resource> resourceSet = resourceEntry.getValue();
 
         for (Resource resource : resourceSet) {
-          String metricsParam = getSetString(metrics.keySet(), -1);
+          String clusterName = (String) resource.getPropertyValue(clusterNamePropertyId);
+
+          // Check liveliness of host
+          if (!hostProvider.isCollectorHostLive(clusterName, TIMELINE_METRICS)) {
+            LOG.info("METRIC_COLLECTOR host is not live. Skip populating " +
+              "resources with metrics.");
+            return Collections.emptySet();
+          }
+
+          // Check liveliness of Collector
+          if (!hostProvider.isCollectorComponentLive(clusterName, TIMELINE_METRICS)) {
+            LOG.info("METRIC_COLLECTOR is not live. Skip populating resources" +
+              " with metrics.");
+            return Collections.emptySet();
+          }
+
+          String metricsParam = getSetString(processRegexps(metrics.keySet()), -1);
           // Reuse uriBuilder
           uriBuilder.removeQuery();
 
@@ -198,8 +202,11 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
             TimelineMetrics timelineMetrics = timelineObjectReader.readValue(reader);
             LOG.debug("Timeline metrics response => " + timelineMetrics);
 
+            Set<String> patterns = createPatterns(metrics.keySet());
+
             for (TimelineMetric metric : timelineMetrics.getMetrics()) {
-              if (metric.getMetricName() != null && metric.getMetricValues() != null) {
+              if (metric.getMetricName() != null && metric.getMetricValues() != null
+                  && checkMetricName(patterns, metric.getMetricName())) {
                 populateResource(resource, metric);
               }
             }
@@ -221,6 +228,41 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
       }
 
       return Collections.emptySet();
+    }
+
+    private Set<String> createPatterns(Set<String> rawNames) {
+      Pattern pattern = Pattern.compile(METRIC_REGEXP_PATTERN);
+      Set<String> result = new HashSet<String>();
+      for (String rawName : rawNames) {
+        Matcher matcher = pattern.matcher(rawName);
+        StringBuilder sb = new StringBuilder();
+        int lastPos = 0;
+        while (matcher.find()) {
+          sb.append(Pattern.quote(rawName.substring(lastPos, matcher.start())));
+          sb.append(matcher.group());
+          lastPos = matcher.end();
+        }
+        sb.append(Pattern.quote(rawName.substring(lastPos)));
+        result.add(sb.toString());
+      }
+      return result;
+    }
+
+    private boolean checkMetricName(Set<String> patterns, String name) {
+      for (String pattern : patterns) {
+        if (Pattern.matches(pattern, name)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    private Set<String> processRegexps(Set<String> metricNames) {
+      Set<String> result = new HashSet<String>();
+      for (String name : metricNames) {
+        result.add(name.replaceAll(METRIC_REGEXP_PATTERN, Matcher.quoteReplacement("%")));
+      }
+      return result;
     }
 
     private void populateResource(Resource resource, TimelineMetric metric) {
@@ -267,59 +309,6 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
         }
       }
     }
-  }
-
-  // Normalize percent values: Copied over from Ganglia Metric
-  private static Number[][] getGangliaLikeDatapoints(TimelineMetric metric) {
-    Number[][] datapointsArray = new Number[metric.getMetricValues().size()][2];
-    int cnt = 0;
-
-    for (Map.Entry<Long, Double> metricEntry : metric.getMetricValues().entrySet()) {
-      Double value = metricEntry.getValue();
-      Long time = metricEntry.getKey();
-      if (time > 9999999999l) {
-        time = time / 1000;
-      }
-
-      if (PERCENTAGE_METRIC.contains(metric.getMetricName())) {
-        value = new Double(decimalFormat.format(value / 100));
-      }
-
-      datapointsArray[cnt][0] = value;
-      datapointsArray[cnt][1] = time;
-      cnt++;
-    }
-
-    return datapointsArray;
-  }
-
-  /**
-   * Get value from the given metric.
-   *
-   * @param metric      the metric
-   * @param isTemporal  indicates whether or not this a temporal metric
-   *
-   * @return a range of temporal data or a point in time value if not temporal
-   */
-  private static Object getValue(TimelineMetric metric, boolean isTemporal) {
-    Number[][] dataPoints = getGangliaLikeDatapoints(metric);
-
-    int length = dataPoints.length;
-    if (isTemporal) {
-      return length > 0 ? dataPoints : null;
-    } else {
-      // return the value of the last data point
-      return length > 0 ? dataPoints[length - 1][0] : 0;
-    }
-  }
-
-  protected static URIBuilder getUriBuilder(String hostname, int port) {
-    URIBuilder uriBuilder = new URIBuilder();
-    uriBuilder.setScheme("http");
-    uriBuilder.setHost(hostname);
-    uriBuilder.setPort(port);
-    uriBuilder.setPath("/ws/v1/timeline/metrics");
-    return uriBuilder;
   }
 
   @Override
@@ -392,7 +381,7 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
             MetricsRequest metricsRequest = requests.get(temporalInfo);
             if (metricsRequest == null) {
               metricsRequest = new MetricsRequest(temporalInfo,
-                getUriBuilder(collectorHostName,
+                getAMSUriBuilder(collectorHostName,
                   collectorPort != null ? Integer.parseInt(collectorPort) : 8188));
               requests.put(temporalInfo, metricsRequest);
             }
@@ -404,5 +393,14 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
     }
 
     return requestMap;
+  }
+
+  static URIBuilder getAMSUriBuilder(String hostname, int port) {
+    URIBuilder uriBuilder = new URIBuilder();
+    uriBuilder.setScheme("http");
+    uriBuilder.setHost(hostname);
+    uriBuilder.setPort(port);
+    uriBuilder.setPath("/ws/v1/timeline/metrics");
+    return uriBuilder;
   }
 }

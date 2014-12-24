@@ -34,16 +34,11 @@
     <!-- Needed for generating FindBugs warnings using parent pom -->
     <!--<yarn.basedir>${project.parent.parent.basedir}</yarn.basedir>-->
     <protobuf.version>2.5.0</protobuf.version>
-    <hadoop.version>2.4.0</hadoop.version>
+    <hadoop.version>(2.6.0.2.2.0.0, 2.6.0.2.2.1.0)</hadoop.version>
+    <phoenix.version>4.2.0.2.2.0.0-2041</phoenix.version>
+    <hbase.version>0.98.4.2.2.0.0-2041-hadoop2</hbase.version>
   </properties>
 
-  <repositories>
-    <repository>
-      <id>phoenix-core-tests</id>
-      <name>Phoenix Unit tests</name>
-      <url>file://${project.basedir}/src/test/resources/lib</url>
-    </repository>
-  </repositories>
   <build>
     <plugins>
       <plugin>
@@ -58,48 +53,35 @@
               <outputDirectory>${project.build.directory}/lib</outputDirectory>
               <includeScope>compile</includeScope>
               <excludeScope>test</excludeScope>
+              <excludeArtifactIds>jasper-runtime,jasper-compiler</excludeArtifactIds>
             </configuration>
           </execution>
         </executions>
       </plugin>
       <plugin>
-        <artifactId>maven-assembly-plugin</artifactId>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>1.7</version>
         <executions>
           <execution>
-            <configuration>
-              <descriptors>
-                <descriptor>src/main/assemblies/ats.xml</descriptor>
-              </descriptors>
-              <tarLongFileMode>gnu</tarLongFileMode>
-            </configuration>
-            <id>build-tarball</id>
-            <phase>none</phase>
+            <phase>generate-resources</phase>
             <goals>
-              <goal>single</goal>
-            </goals>
-          </execution>
-
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>com.github.goldin</groupId>
-        <artifactId>copy-maven-plugin</artifactId>
-        <version>0.2.5</version>
-        <executions>
-          <execution>
-            <id>create-archive</id>
-            <phase>package</phase>
-            <goals>
-              <goal>copy</goal>
+              <goal>run</goal>
             </goals>
             <configuration>
-              <resources>
-                <resource>
-                  <targetPath>${project.build.directory}/embedded</targetPath>
-                  <file>${hbase.tar}</file>
-                  <unpack>true</unpack>
-                </resource>
-              </resources>
+              <target name="Download HBase">
+                <mkdir dir="${project.build.directory}/embedded" />
+                <get
+                  src="${hbase.tar}"
+                  dest="${project.build.directory}/embedded/hbase.tar.gz"
+                  usetimestamp="true"
+                  />
+                <untar
+                  src="${project.build.directory}/embedded/hbase.tar.gz"
+                  dest="${project.build.directory}/embedded"
+                  compression="gzip"
+                  />
+              </target>
             </configuration>
           </execution>
         </executions>
@@ -251,7 +233,7 @@
     <dependency>
       <groupId>org.apache.phoenix</groupId>
       <artifactId>phoenix-core</artifactId>
-      <version>4.2.0.2.2.0.0-2041</version>
+      <version>${phoenix.version}</version>
       <exclusions>
         <exclusion>
           <groupId>org.apache.hadoop</groupId>
@@ -488,21 +470,22 @@
     <!-- for unit tests only -->
     <dependency>
       <groupId>org.apache.phoenix</groupId>
-      <artifactId>phoenix-core-tests</artifactId>
-      <version>4.2.0</version>
+      <artifactId>phoenix-core</artifactId>
+      <type>test-jar</type>
+      <version>${phoenix.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-it</artifactId>
-      <version>0.98.4-hadoop2</version>
+      <version>${hbase.version}</version>
       <scope>test</scope>
       <classifier>tests</classifier>
     </dependency>
       <dependency>
         <groupId>org.apache.hbase</groupId>
         <artifactId>hbase-testing-util</artifactId>
-        <version>0.98.4-hadoop2</version>
+        <version>${hbase.version}</version>
         <scope>test</scope>
         <optional>true</optional>
         <exclusions>

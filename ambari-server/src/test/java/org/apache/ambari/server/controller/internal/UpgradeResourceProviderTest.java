@@ -43,12 +43,12 @@ import org.apache.ambari.server.controller.utilities.PredicateBuilder;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
+import org.apache.ambari.server.orm.OrmTestHelper;
 import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
 import org.apache.ambari.server.orm.dao.UpgradeDAO;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.orm.entities.UpgradeEntity;
 import org.apache.ambari.server.orm.entities.UpgradeGroupEntity;
-import org.apache.ambari.server.orm.entities.UpgradeItemEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Host;
@@ -56,7 +56,6 @@ import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponent;
 import org.apache.ambari.server.state.StackId;
-import org.apache.ambari.server.state.UpgradeState;
 import org.apache.ambari.server.view.ViewRegistry;
 import org.junit.After;
 import org.junit.Before;
@@ -75,7 +74,7 @@ public class UpgradeResourceProviderTest {
   private RepositoryVersionDAO repoVersionDao = null;
   private Injector injector;
   private Clusters clusters;
-//  private UpgradeResourceProvider upgradeResourceProvider;
+  private OrmTestHelper helper;
   AmbariManagementController amc;
 
   @Before
@@ -84,9 +83,9 @@ public class UpgradeResourceProviderTest {
     injector = Guice.createInjector(new InMemoryDefaultTestModule());
     injector.getInstance(GuiceJpaInitializer.class);
 
+    helper = injector.getInstance(OrmTestHelper.class);
 
     amc = injector.getInstance(AmbariManagementController.class);
-//    upgradeResourceProvider = createProvider(amc);
 
     Field field = AmbariServer.class.getDeclaredField("clusterController");
     field.setAccessible(true);
@@ -96,7 +95,6 @@ public class UpgradeResourceProviderTest {
     repoVersionDao = injector.getInstance(RepositoryVersionDAO.class);
 
     ViewRegistry.initInstance(new ViewRegistry());
-    System.out.println(AmbariServer.getController());
 
     RepositoryVersionEntity repoVersionEntity = new RepositoryVersionEntity();
     repoVersionEntity.setDisplayName("My New Version");
@@ -112,6 +110,7 @@ public class UpgradeResourceProviderTest {
     Cluster cluster = clusters.getCluster("c1");
     StackId stackId = new StackId("HDP-2.1.1");
     cluster.setDesiredStackVersion(stackId);
+    helper.getOrCreateRepositoryVersion(stackId.getStackName(), stackId.getStackVersion());
     cluster.createClusterVersion(stackId.getStackName(), stackId.getStackVersion(), "admin", RepositoryVersionState.CURRENT);
 
     clusters.addHost("h1");
@@ -165,10 +164,9 @@ public class UpgradeResourceProviderTest {
     UpgradeEntity entity = upgrades.get(0);
     assertEquals(cluster.getClusterId(), entity.getClusterId().longValue());
 
-    assertEquals(3, entity.getUpgradeGroups().size());
+    assertEquals(4, entity.getUpgradeGroups().size());
 
-    UpgradeGroupEntity group = entity.getUpgradeGroups().get(0);
-
+    UpgradeGroupEntity group = entity.getUpgradeGroups().get(1);
     assertEquals(4, group.getItems().size());
 
     assertTrue(group.getItems().get(0).getText().contains("Preparing"));
@@ -184,16 +182,12 @@ public class UpgradeResourceProviderTest {
 
 
     List<Stage> stages = am.getRequestStatus(requests.get(0).longValue());
-    assertEquals(4, stages.size());
-    for (int i = 0; i < stages.size(); i++) {
-      Stage stage = stages.get(i);
-      UpgradeItemEntity upgradeItem = group.getItems().get(i);
-      assertEquals(stage.getStageId(), upgradeItem.getStageId().longValue());
-      assertEquals(UpgradeState.NONE, upgradeItem.getState());
-    }
+
+    assertEquals(9, stages.size());
 
     List<HostRoleCommand> tasks = am.getRequestTasks(requests.get(0).longValue());
-    assertEquals(4, tasks.size());
+    // same number of tasks as stages here
+    assertEquals(9, tasks.size());
 
     return status;
   }
@@ -240,7 +234,7 @@ public class UpgradeResourceProviderTest {
     ResourceProvider upgradeGroupResourceProvider = new UpgradeGroupResourceProvider(amc);
     resources = upgradeGroupResourceProvider.getResources(request, predicate);
 
-    assertEquals(3, resources.size());
+    assertEquals(4, resources.size());
     res = resources.iterator().next();
     assertNotNull(res.getPropertyValue("UpgradeGroup/status"));
     assertNotNull(res.getPropertyValue("UpgradeGroup/group_id"));
@@ -259,7 +253,7 @@ public class UpgradeResourceProviderTest {
     ResourceProvider upgradeItemResourceProvider = new UpgradeItemResourceProvider(amc);
     resources = upgradeItemResourceProvider.getResources(request, predicate);
 
-    assertEquals(4, resources.size());
+    assertEquals(2, resources.size());
     res = resources.iterator().next();
     assertNotNull(res.getPropertyValue("UpgradeItem/status"));
 

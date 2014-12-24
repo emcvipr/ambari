@@ -32,6 +32,7 @@ import static org.junit.Assert.fail;
 import java.io.File;
 import java.util.*;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.metadata.ActionMetadata;
@@ -63,10 +64,7 @@ public class StackManagerTest {
   }
 
   public static StackManager createTestStackManager() throws Exception {
-    String stack = "./src/test/resources/stacks/";
-    if (System.getProperty("os.name").contains("Windows")) {
-      stack = ClassLoader.getSystemClassLoader().getResource("stacks").getPath();
-    }
+    String stack = ClassLoader.getSystemClassLoader().getResource("stacks").getPath();
     return createTestStackManager(stack);
   }
 
@@ -76,17 +74,15 @@ public class StackManagerTest {
       dao = createNiceMock(MetainfoDAO.class);
       actionMetadata = createNiceMock(ActionMetadata.class);
       Configuration config = createNiceMock(Configuration.class);
-      if (System.getProperty("os.name").contains("Windows")) {
-        expect(config.getSharedResourcesDirPath()).andReturn(ClassLoader.getSystemClassLoader().getResource("").getPath()).anyTimes();
-      }
-      else {
-        expect(config.getSharedResourcesDirPath()).andReturn("./src/test/resources").anyTimes();
-      }
+      expect(config.getSharedResourcesDirPath()).andReturn(
+          ClassLoader.getSystemClassLoader().getResource("").getPath()).anyTimes();
       replay(config);
       osFamily = new OsFamily(config);
 
       replay(dao, actionMetadata);
-      return new StackManager(new File(stackRoot), new StackContext(dao, actionMetadata, osFamily));
+      StackManager stackManager = new StackManager(
+          new File(stackRoot), null, new StackContext(dao, actionMetadata, osFamily));
+      return stackManager;
     } catch (Exception e) {
       e.printStackTrace();
       throw e;
@@ -96,13 +92,13 @@ public class StackManagerTest {
   @Test
   public void testGetStacks_count() throws Exception {
     Collection<StackInfo> stacks = stackManager.getStacks();
-    assertEquals(16, stacks.size());
+    assertEquals(17, stacks.size());
   }
 
   @Test
   public void testGetStack_name__count() {
     Collection<StackInfo> stacks = stackManager.getStacks("HDP");
-    assertEquals(12, stacks.size());
+    assertEquals(13, stacks.size());
 
     stacks = stackManager.getStacks("OTHER");
     assertEquals(2, stacks.size());
@@ -154,7 +150,6 @@ public class StackManagerTest {
     assertNotNull(pigService);
     assertEquals("PIG", pigService.getName());
     assertEquals("1.0", pigService.getVersion());
-    assertNull(pigService.getParent());
     assertEquals("This is comment for PIG service", pigService.getComment());
     components = pigService.getComponents();
     assertEquals(1, components.size());
@@ -183,6 +178,8 @@ public class StackManagerTest {
     assertEquals(1, packages.size());
     ServiceOsSpecific.Package pkg = packages.get(0);
     assertEquals("pig", pkg.getName());
+
+    assertNull(pigService.getParent());
   }
 
   @Test
@@ -296,12 +293,10 @@ public class StackManagerTest {
     // overridden value
     assertEquals("Apache Hadoop Stream processing framework (Extended)", stormService.getComment());
     assertEquals("New version", stormService.getVersion());
-    if (System.getProperty("os.name").contains("Windows")) {
-      assertEquals("OTHER\\1.0\\services\\STORM\\package", stormService.getServicePackageFolder());
-    }
-    else {
-      assertEquals("OTHER/1.0/services/STORM/package", stormService.getServicePackageFolder());
-    }
+    String packageDir = StringUtils.join(
+        new String[]{"stacks", "OTHER", "1.0", "services", "STORM", "package"}, File.separator);
+    assertEquals(packageDir, stormService.getServicePackageFolder());
+
     // compare components
     List<ComponentInfo> stormServiceComponents = stormService.getComponents();
     List<ComponentInfo> baseStormServiceComponents = baseStormService.getComponents();
@@ -450,6 +445,10 @@ public class StackManagerTest {
     ServiceInfo yarnService = stack.getService("YARN");
     assertNull(yarnService.getComponentByName("YARN_CLIENT"));
 
+    stack = stackManager.getStack("HDP", "2.0.6.1");
+    yarnService = stack.getService("YARN");
+    assertNull(yarnService.getComponentByName("YARN_CLIENT"));
+
     stack = stackManager.getStack("HDP", "2.0.7");
     yarnService = stack.getService("YARN");
     assertNotNull(yarnService.getComponentByName("YARN_CLIENT"));
@@ -519,38 +518,6 @@ public class StackManagerTest {
   }
 
   @Test
-  public void testCycleDetection() throws Exception {
-    ActionMetadata actionMetadata = createNiceMock(ActionMetadata.class);
-    OsFamily osFamily = createNiceMock(OsFamily.class);
-    replay(actionMetadata);
-    try {
-      String stacksCycle1 = "./src/test/resources/stacks_with_cycle/";
-      if (System.getProperty("os.name").contains("Windows")) {
-        stacksCycle1 = ClassLoader.getSystemClassLoader().getResource("stacks_with_cycle").getPath();
-      }
-      new StackManager(new File(stacksCycle1),
-              new StackContext(null, actionMetadata, osFamily));
-      fail("Expected exception due to cyclic stack");
-    } catch (AmbariException e) {
-      // expected
-      assertEquals("Cycle detected while parsing stack definition", e.getMessage());
-    }
-
-    try {
-      String stacksCycle2 = "./src/test/resources/stacks_with_cycle2/";
-      if (System.getProperty("os.name").contains("Windows")) {
-        stacksCycle2 = ClassLoader.getSystemClassLoader().getResource("stacks_with_cycle2").getPath();
-      }
-      new StackManager(new File(stacksCycle2),
-              new StackContext(null, actionMetadata, osFamily));
-      fail("Expected exception due to cyclic stack");
-    } catch (AmbariException e) {
-      // expected
-      assertEquals("Cycle detected while parsing stack definition", e.getMessage());
-    }
-  }
-
-  @Test
   public void testExcludedConfigTypes() {
     StackInfo stack = stackManager.getStack("HDP", "2.0.8");
     ServiceInfo service = stack.getService("HBASE");
@@ -574,6 +541,7 @@ public class StackManagerTest {
     // the new version also excludes hbase-policy
     stack = stackManager.getStack("OTHER", "2.0");
     service = stack.getService("HBASE");
+    assertFalse(service.hasConfigType("hbase-policy"));
     assertFalse(service.hasConfigType("global"));
     configTypes = service.getConfigTypeAttributes();
     assertEquals(1, configTypes.size());
@@ -587,34 +555,6 @@ public class StackManagerTest {
 
     assertEquals("HDFS", hdfsService.getName());
     assertNotNull(hdfsService.getMetricsFile());
-  }
-
-  /**
-   * This test ensures the service status check is added into the action metadata when
-   * the stack has no parent and is the only stack in the stack family
-   */
-  @Test
-  public void testGetServiceInfoFromSingleStack() throws Exception {
-    dao = createNiceMock(MetainfoDAO.class);
-    actionMetadata = createNiceMock(ActionMetadata.class);
-    osFamily = createNiceMock(OsFamily.class);
-
-    // ensure that service check is added for HDFS
-    actionMetadata.addServiceCheckAction("HDFS");
-    replay(dao, actionMetadata, osFamily);
-    String singleStack = "./src/test/resources/single_stack";
-    if (System.getProperty("os.name").contains("Windows")) {
-      singleStack = ClassLoader.getSystemClassLoader().getResource("single_stack").getPath();
-    }
-    StackManager stackManager = new StackManager(
-        new File(singleStack.replace("/", File.separator)),
-        new StackContext(dao, actionMetadata, osFamily));
-
-    Collection<StackInfo> stacks = stackManager.getStacks();
-    assertEquals(1, stacks.size());
-    assertNotNull(stacks.iterator().next().getService("HDFS"));
-
-    verify(dao, actionMetadata, osFamily);
   }
 
   @Test

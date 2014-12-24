@@ -22,5 +22,5 @@ App.File = DS.Model.extend({
   fileContent: DS.attr('string'),
   hasNext:DS.attr('boolean'),
   page:DS.attr('number'),
-  pageCount:DS.attr('number'),
+  pageCount:DS.attr('number')
 });

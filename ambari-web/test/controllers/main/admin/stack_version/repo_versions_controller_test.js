@@ -19,61 +19,26 @@
 
 var App = require('app');
 require('controllers/main/admin/stack_versions/repo_versions_controller');
-var repoVersionsController;
+var controller;
 
 describe('App.RepoVersionsController', function () {
 
   beforeEach(function () {
-    repoVersionsController = App.RepoVersionsController.create();
+    controller = App.RepoVersionsController.create();
   });
+
 
   describe('#installRepoVersion', function () {
-    beforeEach(function () {
-      sinon.stub(App.ajax, 'send', Em.K);
+    beforeEach(function() {
+      sinon.stub(App.get('router.mainStackVersionsDetailsController'), 'installRepoVersion', Em.K);
     });
-    afterEach(function () {
-      App.ajax.send.restore();
+    afterEach(function() {
+      App.get('router.mainStackVersionsDetailsController').installRepoVersion.restore();
     });
-    it("runs post request to create stack version", function () {
-      var repoVersion = Em.Object.create({
-        stackVersionType: "HDP",
-        stackVersionNumber: "2.2",
-        repositoryVersion: "2.2.0.1"
-      });
-      repoVersionsController.installRepoVersion({context: repoVersion});
-      expect(App.ajax.send.getCall(0).args[0].data.ClusterStackVersions).to.deep.eql({
-        "stack": "HDP",
-        "version": "2.2",
-        "repository_version": "2.2.0.1"
-      });
+    it("runs installRepoVersion of mainStackVersionsDetailsController", function() {
+      controller.installRepoVersion();
+      expect(App.get('router.mainStackVersionsDetailsController').installRepoVersion.calledOnce).to.be.true;
     });
   });
-
-  describe('#load', function () {
-    it('', function () {
-      sinon.stub(repoVersionsController, 'loadRepoVersionsToModel').returns({done: Em.K});
-      repoVersionsController.load();
-      expect(repoVersionsController.loadRepoVersionsToModel.calledOnce).to.be.true;
-      repoVersionsController.loadRepoVersionsToModel.restore();
-    });
-  });
-  describe('#loadRepoVersionsToModel()', function () {
-    it('', function () {
-      sinon.stub(App.HttpClient, 'get', Em.K);
-      sinon.stub(repoVersionsController, 'getUrl', Em.K);
-      sinon.stub(App.get('router.mainStackVersionsController'), 'loadStackVersionsToModel', function() { return $.Deferred().resolve()});
-
-      repoVersionsController.loadRepoVersionsToModel();
-      expect(App.HttpClient.get.calledOnce).to.be.true;
-      expect(repoVersionsController.getUrl.calledOnce).to.be.true;
-      expect(App.get('router.mainStackVersionsController').loadStackVersionsToModel.calledOnce).to.be.true;
-
-
-      App.get('router.mainStackVersionsController').loadStackVersionsToModel.restore();
-      repoVersionsController.getUrl.restore();
-      App.HttpClient.get.restore();
-    });
-  });
-
 
 });

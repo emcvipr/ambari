@@ -29,8 +29,19 @@ App.MainAlertDefinitionsView = App.TableView.extend({
     return this.get('controller.content');
   }.property('controller.content.@each'),
 
+  willInsertElement: function () {
+    if (!this.get('controller.showFilterConditionsFirstLoad')) {
+      this.clearFilterCondition();
+    }
+    this._super();
+  },
+
   didInsertElement: function () {
+    var self = this;
     this.tooltipsUpdater();
+    Em.run.next(function () {
+      self.set('isInitialRendering', false);
+    });
   },
 
   /**
@@ -52,7 +63,23 @@ App.MainAlertDefinitionsView = App.TableView.extend({
    */
   disabledTooltip: Em.I18n.t('alerts.table.state.disabled.tooltip'),
 
+  /**
+   * @type {string}
+   */
+  enabledDisplay: Em.I18n.t('alerts.table.state.enabled'),
+
+  /**
+   * @type {string}
+   */
+  disabledDisplay: Em.I18n.t('alerts.table.state.disabled'),
+
   sortView: sort.wrapperView,
+
+  /**
+   * Define whether initial view rendering has finished
+   * @type {Boolean}
+   */
+  isInitialRendering: true,
 
   /**
    * Sorting header for <label>alertDefinition.label</label>
@@ -161,7 +188,7 @@ App.MainAlertDefinitionsView = App.TableView.extend({
       },
       {
         value: 'PENDING',
-        label: 'PENDING'
+        label: 'NONE'
       }
     ],
     onChangeValue: function () {
@@ -373,13 +400,16 @@ App.MainAlertDefinitionsView = App.TableView.extend({
 
     onValueChange: function () {
       var value = this.get('value');
-      if (value != undefined ) {
+      if (value != undefined) {
         this.get('content').setEach('selected', false);
         this.set('selected', this.get('content').findProperty('value', value));
         var selectEntry = this.get('content').findProperty('value', value);
         if (selectEntry) {
           selectEntry.set('selected', true);
         }
+      } else {
+        this.set('value', '');
+        this.get('parentView').updateFilter(this.get('column'), '', 'alert_group');
       }
     }.observes('value')
   }),
@@ -442,6 +472,12 @@ App.MainAlertDefinitionsView = App.TableView.extend({
     Em.run.next(this, function () {
       App.tooltip($(".enable-disable-button, .timeago"));
     });
-  }.observes('pageContent.@each')
+  }.observes('pageContent.@each'),
+
+  updateFilter: function (iColumn, value, type) {
+    if (!this.get('isInitialRendering')) {
+      this._super(iColumn, value, type);
+    }
+  }
 
 });

@@ -20,7 +20,6 @@
   <table class="table advanced-header-table table-bordered table-striped">
     <thead>
     {{#view view.sortView classNames="label-row" contentBinding="view.filteredContent"}}
-      {{view view.parentView.stackNameSort}}
       {{view view.parentView.stackVersionSort}}
       {{view view.parentView.osSort}}
       {{view view.parentView.installedSort}}
@@ -28,8 +27,7 @@
     {{/view}}
 
     <tr class="filter-row">
-      <th class="first stack-name-filter">{{view view.stackNameFilterView}}</th>
-      <th class="repo-version-filter">{{view view.stackVersionFilterView}}</th>
+      <th class="first repo-version-filter">{{view view.stackVersionFilterView}}</th>
       <th class="os-type-filter">{{view view.osFilterView}}</th>
       <th class="installed-hosts-filter">{{view view.installedFilterView}}</th>
       <th class="current-hosts-filter">{{view view.currentFilterView}}</th>
@@ -39,26 +37,16 @@
       {{#if view.pageContent}}
         {{#each item in view.pageContent}}
           {{#view view.StackVersionView contentBinding="item"}}
-            <td class="first stack-name">
-               <span class="stack-name">{{view.content.name}}</span>
-            </td>
-            <td class="repo-version">
-              <a href="#/main/admin/versions/{{unbound view.content.id}}">{{view.content.repositoryVersion.displayName}}</a>
+            <td class="first repo-version">
+              <a href="#/main/admin/versions/{{unbound view.content.repositoryVersion.id}}">{{view.content.repositoryVersion.displayName}}</a>
             </td>
             <td class="os-types">
-              <a href="#" class="os-expander" {{action toggleOs target="view"}}>
-                <span {{bindAttr class="view.isOsCollapsed:icon-caret-right:icon-caret-down"}}></span>
-                {{view.content.repositoryVersion.operatingSystems.length}} {{pluralize view.content.repositoryVersion.operatingSystems.length singular="t:common.os" plural="t:common.oss"}}
-              </a>
-
-              <div id="stack-{{view.content.name}}" class="operating-systems">
-                {{{view.labels}}}
-              </div>
+              {{view App.OperatingSystemsView contentBinding="view.content.repositoryVersion"}}
             </td>
             <td class="installed-hosts-count">
               <span  {{bindAttr class="view.content.noInstalledHosts:not-active-link"}}>
                 <a href="#"
-                  title='installed' {{action showHosts view.content.repositoryVersion.displayName view.content.installedHosts target="controller"}}>
+                  {{action showHosts view.versionStateMap.installed view.content.repositoryVersion.repositoryVersion view.content.installedHosts target="controller"}}>
                   <span>{{view.content.installedHosts.length}}</span>
                 </a>
               </span>
@@ -66,7 +54,7 @@
             <td class="current-hosts-count">
               <span {{bindAttr class="view.content.noCurrentHosts:not-active-link"}}>
                 <a href="#"
-                  title='current' {{action showHosts view.content.repositoryVersion.displayName view.content.currentHosts target="controller"}}>
+                  {{action showHosts view.versionStateMap.current view.content.repositoryVersion.repositoryVersion view.content.currentHosts target="controller"}}>
                   <span>{{view.content.currentHosts.length}}</span>
                 </a>
               </span>
@@ -75,7 +63,7 @@
         {{/each}}
       {{else}}
         <tr>
-          <td class="first empty-table" colspan="5">
+          <td class="first empty-table" colspan="4">
             {{t admin.stackVersions.table.empty}}
           </td>
         </tr>

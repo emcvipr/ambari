@@ -18,18 +18,15 @@
 package org.apache.ambari.server.state;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.ambari.server.controller.internal.RequestImpl;
+import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.internal.RequestResourceProvider;
 import org.apache.ambari.server.controller.internal.StageResourceProvider;
-import org.apache.ambari.server.controller.internal.UpgradeResourceProvider;
 import org.apache.ambari.server.controller.predicate.AndPredicate;
-import org.apache.ambari.server.controller.predicate.EqualsPredicate;
-import org.apache.ambari.server.controller.predicate.OrPredicate;
 import org.apache.ambari.server.controller.spi.ClusterController;
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
 import org.apache.ambari.server.controller.spi.NoSuchResourceException;
@@ -42,13 +39,15 @@ import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.ClusterControllerHelper;
 import org.apache.ambari.server.controller.utilities.PredicateBuilder;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.stack.HostsType;
+import org.apache.ambari.server.stack.MasterHostResolver;
 import org.apache.ambari.server.state.stack.UpgradePack;
 import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
+import org.apache.ambari.server.state.stack.upgrade.ClusterGrouping;
 import org.apache.ambari.server.state.stack.upgrade.Grouping;
 import org.apache.ambari.server.state.stack.upgrade.StageWrapper;
 import org.apache.ambari.server.state.stack.upgrade.StageWrapperBuilder;
 import org.apache.ambari.server.state.stack.upgrade.TaskWrapper;
-import org.codehaus.jackson.map.ser.PropertyBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,20 +61,27 @@ public class UpgradeHelper {
   /**
    * Generates a list of UpgradeGroupHolder items that are used to execute an upgrade
    * @param cluster the cluster
+   * @param mhr Master Host Resolver needed to get master and secondary hosts of several components like NAMENODE
    * @param upgradePack the upgrade pack
    * @return the list of holders
    */
-  public List<UpgradeGroupHolder> createUpgrade(Cluster cluster, UpgradePack upgradePack) {
-
+  public List<UpgradeGroupHolder> createUpgrade(Cluster cluster, MasterHostResolver mhr, UpgradePack upgradePack) throws AmbariException {
     Map<String, Map<String, ProcessingComponent>> allTasks = upgradePack.getTasks();
 
     List<UpgradeGroupHolder> groups = new ArrayList<UpgradeGroupHolder>();
 
     for (Grouping group : upgradePack.getGroups()) {
+      if (ClusterGrouping.class.isInstance(group)) {
+        UpgradeGroupHolder groupHolder = getClusterGroupHolder(cluster, (ClusterGrouping) group);
+        if (null != groupHolder) {
+          groups.add(groupHolder);
+          continue;
+        }
+      }
+
       UpgradeGroupHolder groupHolder = new UpgradeGroupHolder();
       groupHolder.name = group.name;
       groupHolder.title = group.title;
-      groups.add(groupHolder);
 
       StageWrapperBuilder builder = group.getBuilder();
 
@@ -90,25 +96,55 @@ public class UpgradeHelper {
             continue;
           }
 
-          Set<String> componentHosts = getClusterHosts(cluster, service.serviceName, component);
-
-          if (0 == componentHosts.size()) {
+          HostsType hostsType = mhr.getMasterAndHosts(service.serviceName, component);
+          if (null == hostsType) {
             continue;
           }
 
+          Service svc = cluster.getService(service.serviceName);
           ProcessingComponent pc = allTasks.get(service.serviceName).get(component);
 
-          builder.add(componentHosts, service.serviceName, pc);
+          // Special case for NAMENODE
+          if (service.serviceName.equalsIgnoreCase("HDFS") && component.equalsIgnoreCase("NAMENODE")) {
+            // !!! revisit if needed
+            if (hostsType.master != null && hostsType.secondary != null) {
+              // The order is important, first do the standby, then the active namenode.
+              Set<String> order = new LinkedHashSet<String>();
+
+              // TODO Upgrade Pack, somehow, running the secondary first causes them to swap, even before the restart.
+              order.add(hostsType.master);
+              order.add(hostsType.secondary);
+
+              // Override the hosts with the ordered collection
+              hostsType.hosts = order;
+
+            } else {
+                // TODO Rolling Upgrade, enable once Namenode HA is a pre-check requirement.
+                // throw new AmbariException(MessageFormat.format("Could not find active and standby namenodes using hosts: {0}", StringUtils.join(hostsType.hosts, ", ").toString()));
+            }
+
+            builder.add(hostsType, service.serviceName, svc.isClientOnlyService(), pc);
+
+          } else {
+            builder.add(hostsType, service.serviceName, svc.isClientOnlyService(), pc);
+          }
         }
       }
 
       List<StageWrapper> proxies = builder.build();
 
-      if (LOG.isDebugEnabled()) {
+      if (!proxies.isEmpty()) {
+        groupHolder.items = proxies;
+        groups.add(groupHolder);
+      }
+    }
+
+    if (LOG.isDebugEnabled()) {
+      for (UpgradeGroupHolder group : groups) {
         LOG.debug(group.name);
 
         int i = 0;
-        for (StageWrapper proxy : proxies) {
+        for (StageWrapper proxy : group.items) {
           LOG.debug("  Stage {}", Integer.valueOf(i++));
           int j = 0;
 
@@ -117,37 +153,11 @@ public class UpgradeHelper {
           }
         }
       }
-
-      groupHolder.items = proxies;
     }
 
     return groups;
-
   }
 
-  /**
-   * @param cluster the cluster
-   * @param serviceName name of the service
-   * @param componentName name of the component
-   * @return the set of hosts for the provided service and component
-   */
-  private Set<String> getClusterHosts(Cluster cluster, String serviceName, String componentName) {
-    Map<String, Service> services = cluster.getServices();
-
-    if (!services.containsKey(serviceName)) {
-      return Collections.emptySet();
-    }
-
-    Service service = services.get(serviceName);
-    Map<String, ServiceComponent> components = service.getServiceComponents();
-
-    if (!components.containsKey(componentName) ||
-        components.get(componentName).getServiceComponentHosts().size() == 0) {
-      return Collections.emptySet();
-    }
-
-    return components.get(componentName).getServiceComponentHosts().keySet();
-  }
 
   /**
    * Short-lived objects that hold information about upgrade groups
@@ -249,6 +259,31 @@ public class UpgradeHelper {
     }
 
     return resources.iterator().next();
+  }
+
+  /**
+   * Special handling for ClusterGrouping.
+   * @param cluster the cluster
+   * @param grouping the grouping
+   * @return the holder, or {@code null} if there are no clustergrouping tasks.
+   */
+  private UpgradeGroupHolder getClusterGroupHolder(Cluster cluster, ClusterGrouping grouping) {
+
+    grouping.getBuilder().setHelpers(cluster);
+    List<StageWrapper> wrappers = grouping.getBuilder().build();
+
+    if (wrappers.size() > 0) {
+      UpgradeGroupHolder holder = new UpgradeGroupHolder();
+      holder.name = grouping.name;
+      holder.title = grouping.title;
+      holder.items = wrappers;
+
+      return holder;
+    }
+
+
+    return null;
+
   }
 
 }

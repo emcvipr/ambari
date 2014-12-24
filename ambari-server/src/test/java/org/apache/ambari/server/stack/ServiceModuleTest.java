@@ -32,8 +32,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.state.CommandScriptDefinition;
 import org.apache.ambari.server.state.ComponentInfo;
@@ -388,6 +391,43 @@ public class ServiceModuleTest {
 
     resolveService(child, parent);
     assertEquals(alertsFile, child.getModuleInfo().getAlertsFile());
+  }
+
+  @Test
+  public void testResolve_KerberosDescriptorFile() throws Exception {
+    File kerberosDescriptorFile = new File("testKerberosDescriptorFile");
+
+    // specified in child only
+    ServiceInfo info = new ServiceInfo();
+    ServiceInfo parentInfo = new ServiceInfo();
+
+    ServiceModule child = createServiceModule(info);
+    ServiceModule parent = createServiceModule(parentInfo);
+
+    // set in the module constructor from a value obtained from service directory which is mocked
+    assertEquals(kerberosDescriptorFile, child.getModuleInfo().getKerberosDescriptorFile());
+    parent.getModuleInfo().setKerberosDescriptorFile(null);
+
+    resolveService(child, parent);
+    assertEquals(kerberosDescriptorFile, child.getModuleInfo().getKerberosDescriptorFile());
+
+    // specified in parent only
+    child = createServiceModule(info);
+    parent = createServiceModule(parentInfo);
+    parent.getModuleInfo().setKerberosDescriptorFile(kerberosDescriptorFile);
+    child.getModuleInfo().setKerberosDescriptorFile(null);
+
+    resolveService(child, parent);
+    assertEquals(kerberosDescriptorFile, child.getModuleInfo().getKerberosDescriptorFile());
+
+    // specified in both
+    child = createServiceModule(info);
+    parent = createServiceModule(parentInfo);
+    parent.getModuleInfo().setKerberosDescriptorFile(new File("someOtherDir"));
+    child.getModuleInfo().setKerberosDescriptorFile(kerberosDescriptorFile);
+
+    resolveService(child, parent);
+    assertEquals(kerberosDescriptorFile, child.getModuleInfo().getKerberosDescriptorFile());
   }
 
   @Test
@@ -836,6 +876,46 @@ public class ServiceModuleTest {
   }
 
   @Test
+  public void testMerge_Configuration__ExcludedTypes() throws Exception {
+    // child
+    ServiceInfo info = new ServiceInfo();
+    Set<String> childExcludedConfigTypes = new HashSet<String>();
+    childExcludedConfigTypes.add("FOO");
+    info.setExcludedConfigTypes(childExcludedConfigTypes);
+
+    //FOO
+    Collection<PropertyInfo> fooProperties = new ArrayList<PropertyInfo>();
+
+    ConfigurationModule childConfigModule = createConfigurationModule("FOO", fooProperties);
+    Collection<ConfigurationModule> childConfigModules = new ArrayList<ConfigurationModule>();
+    childConfigModules.add(childConfigModule);
+
+    // parent
+    ServiceInfo parentInfo = new ServiceInfo();
+    Set<String> parentExcludedConfigTypes = new HashSet<String>();
+    childExcludedConfigTypes.add("BAR");
+    info.setExcludedConfigTypes(childExcludedConfigTypes);
+    parentInfo.setExcludedConfigTypes(parentExcludedConfigTypes);
+    //BAR
+    Collection<PropertyInfo> barProperties = new ArrayList<PropertyInfo>();
+
+
+    ConfigurationModule parentConfigModule = createConfigurationModule("BAR", barProperties);
+    Collection<ConfigurationModule> parentConfigModules = new ArrayList<ConfigurationModule>();
+    parentConfigModules.add(parentConfigModule);
+
+    // create service modules
+    ServiceModule service = createServiceModule(info, childConfigModules);
+    ServiceModule parentService = createServiceModule(parentInfo, parentConfigModules);
+    // resolve child with parent
+
+    resolveService(service, parentService);
+
+    //resolveService(service, parentService);
+    assertEquals(2, service.getModuleInfo().getExcludedConfigTypes().size());
+  }
+
+  @Test
   public void testServiceCheckRegistered() throws Exception {
     ServiceInfo info = new ServiceInfo();
     info.setName("service1");
@@ -918,6 +998,7 @@ public class ServiceModuleTest {
     expect(serviceDirectory.getConfigurationDirectory(dir)).andReturn(configDir).anyTimes();
     expect(serviceDirectory.getMetricsFile()).andReturn(new File("testMetricsFile")).anyTimes();
     expect(serviceDirectory.getAlertsFile()).andReturn(new File("testAlertsFile")).anyTimes();
+    expect(serviceDirectory.getKerberosDescriptorFile()).andReturn(new File("testKerberosDescriptorFile")).anyTimes();
     expect(serviceDirectory.getPackageDir()).andReturn("packageDir").anyTimes();
     replay(serviceDirectory);
 
@@ -976,7 +1057,7 @@ public class ServiceModuleTest {
   }
 
   private void resolveService(ServiceModule service, ServiceModule parent) throws AmbariException {
-    service.resolve(parent, Collections.<String, StackModule>emptyMap());
+    service.resolve(parent, Collections.<String, StackModule>emptyMap(), Collections.<String, ServiceModule>emptyMap());
     // during runtime this would be called by the Stack module when it's resolve completed
     service.finalizeModule();
     parent.finalizeModule();

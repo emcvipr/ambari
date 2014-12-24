@@ -75,6 +75,7 @@ import org.apache.ambari.server.actionmanager.StageFactory;
 import org.apache.ambari.server.agent.ExecutionCommand;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.controller.internal.RepositoryVersionResourceProvider;
 import org.apache.ambari.server.controller.internal.RequestOperationLevel;
 import org.apache.ambari.server.controller.internal.RequestStageContainer;
 import org.apache.ambari.server.controller.internal.URLStreamProvider;
@@ -144,6 +145,7 @@ import com.google.inject.Inject;
 import com.google.inject.Injector;
 import com.google.inject.Singleton;
 import com.google.inject.persist.Transactional;
+
 import org.apache.ambari.server.controller.internal.RequestResourceFilter;
 import org.apache.ambari.server.state.HostComponentAdminState;
 
@@ -207,6 +209,11 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
 
   private MaintenanceStateHelper maintenanceStateHelper;
 
+  /**
+   * The KerberosHelper to help setup for enabling for disabling Kerberos
+   */
+  private KerberosHelper kerberosHelper;
+
   final private String masterHostname;
   final private Integer masterPort;
   final private String masterProtocol;
@@ -246,7 +253,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     LOG.info("Initializing the AmbariManagementControllerImpl");
     masterHostname =  InetAddress.getLocalHost().getCanonicalHostName();
     maintenanceStateHelper = injector.getInstance(MaintenanceStateHelper.class);
-
+    kerberosHelper = injector.getInstance(KerberosHelper.class);
     if(configs != null)
     {
       if (configs.getApiSSLAuthentication()) {
@@ -356,13 +363,14 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       StackId newStackId = new StackId(request.getStackVersion());
       c.setDesiredStackVersion(newStackId);
       clusters.setCurrentStackVersion(request.getClusterName(), newStackId);
-      
+
       try {
         // Because Ambari may eventually support multiple clusters, it may be possible that a previously installed cluster
         // already inserted the Repository Version for this stack and version.
-        RepositoryVersionEntity existingRepositoryVersion = repositoryVersionDAO.findByStackAndVersion(newStackId.getStackId(),  newStackId.getStackVersion());
+        RepositoryVersionEntity existingRepositoryVersion = repositoryVersionDAO.findByStackAndVersion(newStackId.getStackId(), newStackId.getStackVersion());
         if (existingRepositoryVersion == null) {
-          repositoryVersionDAO.create(newStackId.getStackId(), newStackId.getStackVersion(), newStackId.getStackId(), "", "");
+          repositoryVersionDAO.create(newStackId.getStackId(), newStackId.getStackVersion(), newStackId.getStackId(),
+              "", RepositoryVersionResourceProvider.serializeOperatingSystems(stackInfo.getRepositories()));
         }
         c.createClusterVersion(stackId.getStackId(), stackId.getStackVersion(), getAuthName(), RepositoryVersionState.CURRENT);
       } catch (Exception e) {
@@ -1141,9 +1149,25 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     // configuration updates (create multiple configuration resources)...
     for (ClusterRequest request : requests) {
       // TODO : Is there ever a real world case where we could have multiple non-null responses?
-      response = updateCluster(request);
+
+      // ***************************************************
       // set any session attributes for this cluster request
-      clusters.addSessionAttributes(request.getClusterName(), request.getSessionAttributes());
+      Cluster cluster;
+      if (request.getClusterId() == null) {
+        cluster = clusters.getCluster(request.getClusterName());
+      } else {
+        cluster = clusters.getClusterById(request.getClusterId());
+      }
+
+      if (cluster == null) {
+        throw new AmbariException("The cluster may not be null");
+      }
+
+      cluster.addSessionAttributes(request.getSessionAttributes());
+      //
+      // ***************************************************
+
+      response = updateCluster(request);
     }
     return response;
   }
@@ -1316,7 +1340,22 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       saveClusterUpdate(request, clusterResponse);
     }
 
-    return null;
+    RequestStageContainer requestStageContainer = null;
+    Map<String, Service> services = cluster.getServices();
+    if ((services != null) && services.containsKey("KERBEROS")) {
+      // Handle either adding or removing Kerberos from the cluster. This may generate multiple stages
+      // or not depending the current state of the cluster.  The main configuration used to determine
+      // whether Kerberos is to be added or removed is cluster-config/security_enabled.
+      requestStageContainer = kerberosHelper.toggleKerberos(cluster,
+          request.getKerberosDescriptor(), null);
+    }
+
+    if (requestStageContainer != null) {
+      requestStageContainer.persist();
+      return requestStageContainer.getRequestStatusResponse();
+    } else {
+      return null;
+    }
   }
 
   /**

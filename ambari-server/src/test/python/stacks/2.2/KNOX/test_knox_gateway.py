@@ -20,12 +20,16 @@ limitations under the License.
 from stacks.utils.RMFTestCase import *
 
 class TestKnoxGateway(RMFTestCase):
+  COMMON_SERVICES_PACKAGE_DIR = "KNOX/0.5.0.2.2/package"
+  STACK_VERSION = "2.2"
 
   def test_configure_default(self):
-    self.executeScript("2.2/services/KNOX/package/scripts/knox_gateway.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/knox_gateway.py",
                        classname = "KnoxGateway",
                        command = "configure",
-                       config_file="default.json"
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
     self.assertResourceCalled('Directory', '/etc/knox/conf',
@@ -65,12 +69,12 @@ class TestKnoxGateway(RMFTestCase):
     )
     self.assertResourceCalled('Execute', '/usr/lib/knox/bin/knoxcli.sh create-master --master sa',
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
-        not_if = "/usr/bin/sudo su knox -l -s /bin/bash -c 'export {ENV_PLACEHOLDER} > /dev/null ; test -f /var/lib/knox/data/security/master'",
+        not_if = "/usr/bin/sudo su knox -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]test -f /var/lib/knox/data/security/master'",
         user = 'knox',
     )
     self.assertResourceCalled('Execute', '/usr/lib/knox/bin/knoxcli.sh create-cert --hostname c6401.ambari.apache.org',
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
-        not_if = "/usr/bin/sudo su knox -l -s /bin/bash -c 'export {ENV_PLACEHOLDER} > /dev/null ; test -f /var/lib/knox/data/security/master'",
+        not_if = "/usr/bin/sudo su knox -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]test -f /var/lib/knox/data/security/master'",
         user = 'knox',
     )
     self.assertResourceCalled('File', '/etc/knox/conf/ldap-log4j.properties',

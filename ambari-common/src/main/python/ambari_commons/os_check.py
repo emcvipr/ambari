@@ -21,30 +21,27 @@ limitations under the License.
 import os
 import sys
 import platform
-import ctypes
-
-class _OSVERSIONINFOEXW(ctypes.Structure):
-  _fields_ = [('dwOSVersionInfoSize', ctypes.c_ulong),
-              ('dwMajorVersion', ctypes.c_ulong),
-              ('dwMinorVersion', ctypes.c_ulong),
-              ('dwBuildNumber', ctypes.c_ulong),
-              ('dwPlatformId', ctypes.c_ulong),
-              ('szCSDVersion', ctypes.c_wchar*128),
-              ('wServicePackMajor', ctypes.c_ushort),
-              ('wServicePackMinor', ctypes.c_ushort),
-              ('wSuiteMask', ctypes.c_ushort),
-              ('wProductType', ctypes.c_byte),
-              ('wReserved', ctypes.c_byte)]
-
-VER_NT_WORKSTATION = 1
-VER_NT_DOMAIN_CONTROLLER = 2
-VER_NT_SERVER = 3
 
 def _get_windows_version():
   """
   Get's the OS major and minor versions.  Returns a tuple of
   (OS_MAJOR, OS_MINOR).
   """
+  import ctypes
+
+  class _OSVERSIONINFOEXW(ctypes.Structure):
+    _fields_ = [('dwOSVersionInfoSize', ctypes.c_ulong),
+                ('dwMajorVersion', ctypes.c_ulong),
+                ('dwMinorVersion', ctypes.c_ulong),
+                ('dwBuildNumber', ctypes.c_ulong),
+                ('dwPlatformId', ctypes.c_ulong),
+                ('szCSDVersion', ctypes.c_wchar*128),
+                ('wServicePackMajor', ctypes.c_ushort),
+                ('wServicePackMinor', ctypes.c_ushort),
+                ('wSuiteMask', ctypes.c_ushort),
+                ('wProductType', ctypes.c_byte),
+                ('wReserved', ctypes.c_byte)]
+
   os_version = _OSVERSIONINFOEXW()
   os_version.dwOSVersionInfoSize = ctypes.sizeof(os_version)
   retcode = ctypes.windll.Ntdll.RtlGetVersion(ctypes.byref(os_version))
@@ -68,39 +65,10 @@ REL_2008R2 = "win2008serverr2"
 REL_2012 = "win2012server"
 REL_2012R2 = "win2012serverr2"
 
-def os_distribution():
-  if platform.system() == SYSTEM_WINDOWS:
-    # windows distribution
-    major, minor, build, code = _get_windows_version()
-    if code in (VER_NT_DOMAIN_CONTROLLER, VER_NT_SERVER):
-      # we are on server os
-      release = None
-      if major == 6:
-        if minor == 0:
-          release = REL_2008
-        elif minor == 1:
-          release = REL_2008R2
-        elif minor == 2:
-          release = REL_2012
-        elif minor == 3:
-          release = REL_2012R2
-      distribution = (release, "{0}.{1}".format(major,minor),"WindowsServer")
-    else:
-      # we are on unsupported desktop os
-      distribution = ("", "","")
-  else:
-    # linux distribution
-    PYTHON_VER = sys.version_info[0] * 10 + sys.version_info[1]
-
-    if PYTHON_VER < 26:
-      distribution = platform.dist()
-    elif os.path.exists('/etc/redhat-release'):
-      distribution = platform.dist()
-    else:
-      distribution = platform.linux_distribution()
-
-  return distribution
-
+# windows machine types
+VER_NT_WORKSTATION = 1
+VER_NT_DOMAIN_CONTROLLER = 2
+VER_NT_SERVER = 3
 
 class OS_CONST_TYPE(type):
 
@@ -154,6 +122,40 @@ class OSConst:
 class OSCheck:
 
   @staticmethod
+  def os_distribution():
+    if platform.system() == SYSTEM_WINDOWS:
+      # windows distribution
+      major, minor, build, code = _get_windows_version()
+      if code in (VER_NT_DOMAIN_CONTROLLER, VER_NT_SERVER):
+        # we are on server os
+        release = None
+        if major == 6:
+          if minor == 0:
+            release = REL_2008
+          elif minor == 1:
+            release = REL_2008R2
+          elif minor == 2:
+            release = REL_2012
+          elif minor == 3:
+            release = REL_2012R2
+        distribution = (release, "{0}.{1}".format(major,minor),"WindowsServer")
+      else:
+        # we are on unsupported desktop os
+        distribution = ("", "","")
+    else:
+      # linux distribution
+      PYTHON_VER = sys.version_info[0] * 10 + sys.version_info[1]
+
+      if PYTHON_VER < 26:
+        distribution = platform.dist()
+      elif os.path.exists('/etc/redhat-release'):
+        distribution = platform.dist()
+      else:
+        distribution = platform.linux_distribution()
+    
+    return distribution
+
+  @staticmethod
   def get_os_type():
     """
     Return values:
@@ -165,7 +167,7 @@ class OSCheck:
     """
     # Read content from /etc/*-release file
     # Full release name
-    dist = os_distribution()
+    dist = OSCheck.os_distribution()
     operatingSystem = dist[0].lower()
 
     # special cases
@@ -206,7 +208,7 @@ class OSCheck:
     """
     # Read content from /etc/*-release file
     # Full release name
-    dist = os_distribution()
+    dist = OSCheck.os_distribution()
     dist = dist[1]
 
     if dist:
@@ -230,7 +232,7 @@ class OSCheck:
 
     In case cannot detect raises exception.
     """
-    dist = os_distribution()
+    dist = OSCheck.os_distribution()
     dist = dist[2].lower()
 
     if dist:

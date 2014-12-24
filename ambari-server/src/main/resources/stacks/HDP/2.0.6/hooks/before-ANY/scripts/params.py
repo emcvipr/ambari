@@ -33,9 +33,10 @@ java_home = config['hostLevelParams']['java_home']
 
 ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 
-hdp_stack_version = str(config['hostLevelParams']['stack_version'])
+stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
+hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+
 security_enabled = config['configurations']['cluster-env']['security_enabled']
-hdp_stack_version = format_hdp_stack_version(hdp_stack_version)
 hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 
 # Some datanode settings
@@ -94,8 +95,6 @@ else:
   hadoop_home = "/usr/lib/hadoop"
   hadoop_secure_dn_user = hdfs_user
 
-hadoop_root_dir = "/hadoop"
-hadoop_data_dir = "/hadoop/hdfs"
 hadoop_dir = "/etc/hadoop"
 hadoop_conf_dir = "/etc/hadoop/conf"
 hadoop_conf_empty_dir = "/etc/hadoop/conf.empty"

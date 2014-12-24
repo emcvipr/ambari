@@ -43,8 +43,8 @@ App.PigHelperComponent = Em.Component.extend({
     }
   },
   findPosition: function (curLine){
-    var pos= curLine.indexOf("%");
-    var posArr=[];
+    var pos = curLine.indexOf("%");
+    var posArr = [];
     while(pos > -1) {
       posArr.push(pos);
       pos = curLine.indexOf("%", pos+1);

@@ -39,7 +39,7 @@ public class AlertDefinitionDisabledEvent extends ClusterEvent {
    *          the alert definition being registered.
    */
   public AlertDefinitionDisabledEvent(long clusterId, long definitionId) {
-    super(AmbariEventType.ALERT_DEFINITION_REMOVAL, clusterId);
+    super(AmbariEventType.ALERT_DEFINITION_DISABLED, clusterId);
     m_definitionId = definitionId;
   }
 

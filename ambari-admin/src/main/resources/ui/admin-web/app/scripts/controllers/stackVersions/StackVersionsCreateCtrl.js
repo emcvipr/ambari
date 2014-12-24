@@ -18,56 +18,71 @@
 'use strict';
 
 angular.module('ambariAdminConsole')
-.controller('StackVersionsCreateCtrl', ['$scope', 'StackVersions', '$routeParams', '$location', function($scope, StackVersions, $routeParams, $location) {
+.controller('StackVersionsCreateCtrl', ['$scope', 'Stack', '$routeParams', '$location', 'Alert', function($scope, Stack, $routeParams, $location, Alert) {
   $scope.clusterName = $routeParams.clusterName;
+  $scope.subversionPattern = /^\d(\.\d)?(\-\d*)?$/;
   $scope.upgradeStack = {
-    value: null,
-    options: [
-      '2.2'
-    ]
+    selected: null,
+    options: []
   };
-  $scope.upgradeStack.value = $scope.upgradeStack.options[0];
+  $scope.fetchStackVersionFilterList = function () {
+    return Stack.allStackVersions()
+    .then(function (allStackVersions) {
+      var versions = [];
+      angular.forEach(allStackVersions, function (version) {
+        if (version.upgrade_packs.length > 0) {
+          versions.push(version);
+        }
+      });
+      $scope.upgradeStack.options = versions;
+      $scope.upgradeStack.selected = versions[versions.length - 1];
+      $scope.afterStackVersionChange();
+    })
+    .catch(function (data) {
+      Alert.error('Fetch stack version filter list error', data.message);
+    });
+  };
+  $scope.fetchStackVersionFilterList();
+  $scope.repositories = [];
 
-  // TODO retrieve operating systems and repo names from stack definition
-  $scope.repositories = [
-    {
-      os: 'redhat5',
-      packages: [
-        {label:'HDP', value: null},
-        {label:'HDP-UTILS', value: null}
-      ],
-      selected: false
-    },
-    {
-      os: 'redhat6',
-      packages: [
-        {label:'HDP', value: null},
-        {label:'HDP-UTILS', value: null}
-      ],
-      selected: false
-    },
-    {
-      os: 'sles11',
-      packages: [
-        {label:'HDP', value: null},
-        {label:'HDP-UTILS', value: null}
-      ],
-      selected: false
-    },
-    {
-      os: 'ubuntu12',
-      packages: [
-        {label:'HDP', value: null},
-        {label:'HDP-UTILS', value: null}
-      ],
-      selected: false
-    }
-  ];
+  $scope.selectedOS = 0;
+  $scope.toggleOSSelect = function () {
+    this.repository.selected? $scope.selectedOS++ : $scope.selectedOS--;
+  };
 
   $scope.create = function () {
-    StackVersions.add($scope.upgradeStack.value, $scope.versionName, $scope.repositories)
+    return Stack.addRepo($scope.upgradeStack.selected, $scope.repoSubversion, $scope.repositories)
     .success(function () {
+      var versionName = $scope.upgradeStack.selected.stack_version + '.' + $scope.repoSubversion;
+      var stackName = $scope.upgradeStack.selected.stack_name;
+      Alert.success('Created version ' +
+      '<a href="#/stackVersions/' + stackName + '/' + versionName + '/edit">'
+        + stackName + versionName +
+      '</a>');
       $location.path('/stackVersions');
+    })
+    .error(function (data) {
+        Alert.error('Version creation error', data.message);
+    });
+  };
+
+  $scope.afterStackVersionChange = function () {
+    Stack.getSupportedOSList($scope.upgradeStack.selected.stack_name, $scope.upgradeStack.selected.stack_version)
+    .then(function (data) {
+      var repositories = data.operatingSystems.map(function (os) {
+        return {
+          os: os.OperatingSystems.os_type,
+          packages: [
+            {label:'HDP', value: null},
+            {label:'HDP-UTILS', value: null}
+          ],
+          selected: false
+        };
+      });
+      $scope.repositories = repositories;
+    })
+    .catch(function (data) {
+      Alert.error('getSupportedOSList error', data.message);
     });
   };
 }]);

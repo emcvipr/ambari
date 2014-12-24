@@ -46,11 +46,16 @@ App.MainAdminStackAndUpgradeView = Em.View.extend({
     switch (App.get('upgradeState')) {
       case 'INIT':
         return (this.get('controller.targetVersions.length') > 0) ? Em.I18n.t('admin.stackUpgrade.state.available') : "";
+      case 'QUEUED':
       case 'PENDING':
       case 'IN_PROGRESS':
         return Em.I18n.t('admin.stackUpgrade.state.inProgress');
-      case 'STOPPED':
-        return Em.I18n.t('admin.stackUpgrade.state.stopped');
+      case 'TIMED_OUT':
+      case 'FAILED':
+      case 'HOLDING_FAILED':
+      case 'HOLDING_TIMED_OUT':
+      case 'HOLDING':
+        return Em.I18n.t('admin.stackUpgrade.state.paused');
       case 'COMPLETED':
         return Em.I18n.t('admin.stackUpgrade.state.completed');
       default:
@@ -77,12 +82,15 @@ App.MainAdminStackAndUpgradeView = Em.View.extend({
   },
 
   /**
-   * poll upgrade state,
+   * poll Upgrade state
    */
   doPolling: function () {
     var self = this;
     this.set('updateTimer', setTimeout(function () {
-      self.get('controller').loadUpgradeData(true);
+      //skip call if Upgrade wizard opened
+      if (App.router.get('updateController').get('isWorking')) {
+        self.get('controller').loadUpgradeData(true);
+      }
       self.doPolling();
     }, App.bgOperationsUpdateInterval));
   },
@@ -97,6 +105,9 @@ App.MainAdminStackAndUpgradeView = Em.View.extend({
       return this.get('controller.currentVersion');
     }.property('controller.currentVersion'),
     btnClass: 'btn-danger',
+    didInsertElement: function () {
+      this.buttonObserver();
+    },
 
     /**
      * method of controller called on click of source version button
@@ -141,9 +152,9 @@ App.MainAdminStackAndUpgradeView = Em.View.extend({
     }.property('controller.targetVersions'),
     btnClass: 'btn-success',
     versionName: function () {
-      if (this.get('versions.length') === 0) return Em.I18n.t('admin.stackUpgrade.state.notAvailable');
+      if (this.get('versions.length') === 0 && App.get('upgradeState') === 'INIT') return Em.I18n.t('admin.stackUpgrade.state.notAvailable');
       return this.get('controller.upgradeVersion');
-    }.property('controller.upgradeVersion', 'showSelect'),
+    }.property('controller.upgradeVersion', 'versions.length', 'App.upgradeState'),
     showSelect: function () {
       return this.get('versions.length') > 0 && App.get('upgradeState') === 'INIT';
     }.property('versions.length', 'App.upgradeState'),
@@ -182,12 +193,17 @@ App.MainAdminStackAndUpgradeView = Em.View.extend({
             method = 'runPreUpgradeCheck';
           }
           break;
+        case 'QUEUED':
         case 'PENDING':
         case 'IN_PROGRESS':
           label = Em.I18n.t('admin.stackUpgrade.state.upgrading');
           method = 'openUpgradeDialog';
           break;
-        case 'STOPPED':
+        case 'TIMED_OUT':
+        case 'FAILED':
+        case 'HOLDING_FAILED':
+        case 'HOLDING_TIMED_OUT':
+        case 'HOLDING':
           label = Em.I18n.t('admin.stackUpgrade.state.resume');
           method = 'resumeUpgrade';
           break;

@@ -18,13 +18,19 @@
 
 package org.apache.ambari.server.serveraction;
 
+import com.google.inject.AbstractModule;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
 import org.apache.ambari.server.actionmanager.*;
 import org.apache.ambari.server.agent.CommandReport;
-import org.apache.ambari.server.agent.ExecutionCommand;
+import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.serveraction.upgrades.ManualStageAction;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostServerActionEvent;
 import org.apache.ambari.server.utils.StageUtils;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -44,6 +50,13 @@ public class ServerActionExecutorTest {
       + SERVER_HOST_NAME + "], slave_hosts=["
       + SERVER_HOST_NAME + "]}";
 
+  private static Injector injector;
+
+  @BeforeClass
+  public static void beforeClass() throws AmbariException {
+    injector = Guice.createInjector(new MockModule());
+  }
+
   /**
    * Test a normal server action
    */
@@ -57,6 +70,7 @@ public class ServerActionExecutorTest {
       }
     };
     ActionDBAccessor db = createMockActionDBAccessor(request, stages);
+    ServerActionExecutor.init(injector);
     ServerActionExecutor executor = new ServerActionExecutor(db, 10000);
 
     // Force the task to be QUEUED
@@ -70,6 +84,41 @@ public class ServerActionExecutorTest {
     assertEquals(HostRoleStatus.COMPLETED, getTaskStatus(s));
   }
 
+  /**
+   * Test a manual stage
+   */
+  @Test
+  public void testServerActionManualStage() throws Exception {
+    final Request request = createMockRequest();
+
+    final Stage stage = new Stage((long) 1, "/tmp", "cluster1", (long) 978, "context", CLUSTER_HOST_INFO,
+        "{\"host_param\":\"param_value\"}", "{\"stage_param\":\"param_value\"}");
+
+    stage.addServerActionCommand(ManualStageAction.class.getName(),
+        Role.AMBARI_SERVER_ACTION,
+        RoleCommand.EXECUTE,
+        "cluster1", SERVER_HOST_NAME,
+        new ServiceComponentHostServerActionEvent(StageUtils.getHostName(), System.currentTimeMillis()),
+        Collections.<String, String>emptyMap(), null, 1200);
+
+    final List<Stage> stages = new ArrayList<Stage>() {
+      {
+        add(stage);
+      }
+    };
+    ActionDBAccessor db = createMockActionDBAccessor(request, stages);
+    ServerActionExecutor.init(injector);
+    ServerActionExecutor executor = new ServerActionExecutor(db, 10000);
+
+    // Force the task to be QUEUED
+    stage.getHostRoleCommand(SERVER_HOST_NAME, Role.AMBARI_SERVER_ACTION.toString()).setStatus(HostRoleStatus.QUEUED);
+
+    int cycleCount = 0;
+    while (!getTaskStatus(stage).isHoldingState() && (cycleCount++ <= MAX_CYCLE_ITERATIONS)) {
+      executor.doWork();
+    }
+    assertEquals(HostRoleStatus.HOLDING, getTaskStatus(stage));
+  }
 
   /**
    * Test a timeout server action
@@ -90,6 +139,7 @@ public class ServerActionExecutorTest {
       }
     };
     ActionDBAccessor db = createMockActionDBAccessor(request, stages);
+    ServerActionExecutor.init(injector);
     ServerActionExecutor executor = new ServerActionExecutor(db, 10000);
 
     // Force the task to be QUEUED
@@ -123,6 +173,7 @@ public class ServerActionExecutorTest {
       }
     };
     ActionDBAccessor db = createMockActionDBAccessor(request, stages);
+    ServerActionExecutor.init(injector);
     ServerActionExecutor executor = new ServerActionExecutor(db, 10000);
 
     // Force the task to be QUEUED
@@ -155,6 +206,7 @@ public class ServerActionExecutorTest {
       }
     };
     ActionDBAccessor db = createMockActionDBAccessor(request, stages);
+    ServerActionExecutor.init(injector);
     ServerActionExecutor executor = new ServerActionExecutor(db, 10000);
 
     // Force the task to be QUEUED
@@ -166,10 +218,6 @@ public class ServerActionExecutorTest {
     }
 
     assertEquals(HostRoleStatus.FAILED, getTaskStatus(s));
-  }
-
-  private HostRoleStatus getTaskStatus(List<Stage> stages, int i) {
-    return getTaskStatus(stages.get(i));
   }
 
   private HostRoleStatus getTaskStatus(Stage stage) {
@@ -241,8 +289,15 @@ public class ServerActionExecutorTest {
     stage.addServerActionCommand(MockServerAction.class.getName(), Role.AMBARI_SERVER_ACTION,
         RoleCommand.EXECUTE, "cluster1",
         new ServiceComponentHostServerActionEvent(SERVER_HOST_NAME, System.currentTimeMillis()),
-        payload, timeout);
+        payload, "command detail", timeout);
 
     return stage;
+  }
+
+  public static class MockModule extends AbstractModule {
+    @Override
+    protected void configure() {
+      bind(Clusters.class).toInstance(mock(Clusters.class));
+    }
   }
 }

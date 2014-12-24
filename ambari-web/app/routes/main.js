@@ -273,7 +273,7 @@ module.exports = Em.Route.extend({
         connectOutlets: function (router, context) {
           router.get('mainHostDetailsController').connectOutlet('mainHostAlerts');
         },
-        exit: function(router) {
+        exit: function (router) {
           router.set('mainAlertInstancesController.isUpdating', false);
         }
       }),
@@ -332,10 +332,11 @@ module.exports = Em.Route.extend({
       route: '/:alert_definition_id',
 
       connectOutlets: function (router, alertDefinition) {
+        App.router.set('mainAlertDefinitionsController.showFilterConditionsFirstLoad', true);
         router.get('mainController').connectOutlet('mainAlertDefinitionDetails', alertDefinition);
       },
 
-      exit: function(router) {
+      exit: function (router) {
         router.set('mainAlertInstancesController.isUpdating', false);
       }
     }),
@@ -507,7 +508,7 @@ module.exports = Em.Route.extend({
           router.get('mainAdminController').connectOutlet('mainAdminKerberos');
         }
       }),
-      adminAddKerberos:  require('routes/add_kerberos_routes')
+      adminAddKerberos: require('routes/add_kerberos_routes')
     }),
 
     stackAndUpgrade: Em.Route.extend({
@@ -524,14 +525,14 @@ module.exports = Em.Route.extend({
       index: Em.Route.extend({
         route: '/',
         connectOutlets: function (router) {
-          if(App.get('supports.stackUpgrade')) {
+          if (App.get('supports.stackUpgrade')) {
             router.set('mainAdminController.category', "stackVersions");
             router.get('mainAdminController').connectOutlet('mainStackVersions');
           }
         }
       }),
       version: Em.Route.extend({
-        route: '/:stack_version_id',
+        route: '/:repository_version_id',
         connectOutlets: function (router, stackVersion) {
           router.get('mainAdminController').connectOutlet('mainStackVersionsDetails', stackVersion);
         }
@@ -539,7 +540,7 @@ module.exports = Em.Route.extend({
       update: Em.Route.extend({
         route: '/updates',
         connectOutlets: function (router) {
-          if(App.get('supports.stackUpgrade')) {
+          if (App.get('supports.stackUpgrade')) {
             router.set('mainAdminController.category', "stackVersions");
             router.get('mainAdminController').connectOutlet('repoVersions');
           }
@@ -726,5 +727,15 @@ module.exports = Em.Route.extend({
   },
   gotoAlertDetails: function (router, event) {
     router.transitionTo('alerts.alertDetails', event.context);
+  },
+
+  /**
+   * Open summary page of the selected service
+   * @param {object} event
+   * @method routeToService
+   */
+  routeToService: function (router, event) {
+    var service = event.context;
+    router.transitionTo('main.services.service.summary', service);
   }
 });

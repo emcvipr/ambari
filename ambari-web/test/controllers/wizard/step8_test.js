@@ -293,9 +293,7 @@ describe('App.WizardStep8Controller', function () {
             {name: 'hive_ambari_host', value: 'h1'},
             {name: 'hive_hostname', value: 'h2'}
           ],
-          removed: Em.A(['hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_oracle_host',
-            'hive_existing_oracle_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database']),
-          hive_database_type: 'mysql',
+          removed: Em.A(['hive_existing_mysql_database', 'hive_existing_oracle_database', 'hive_existing_postgresql_database']),
           m: 'hive_database: New MySQL Database',
           host: 'h1'
         },
@@ -306,9 +304,7 @@ describe('App.WizardStep8Controller', function () {
             {name: 'hive_existing_mysql_host', value: 'h1'},
             {name: 'hive_hostname', value: 'h2'}
           ],
-          removed: Em.A(['hive_ambari_host', 'hive_ambari_database', 'hive_existing_oracle_host',
-            'hive_existing_oracle_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database']),
-          hive_database_type: 'mysql',
+          removed: Em.A(['hive_ambari_database', 'hive_existing_oracle_database', 'hive_existing_postgresql_database']),
           m: 'hive_database: Existing MySQL Database',
           host: 'h1'
         },
@@ -319,9 +315,7 @@ describe('App.WizardStep8Controller', function () {
             {name: 'hive_existing_postgresql_host', value: 'h1'},
             {name: 'hive_hostname', value: 'h2'}
           ],
-          removed: Em.A(['hive_ambari_host', 'hive_ambari_database', 'hive_existing_oracle_host',
-            'hive_existing_oracle_database', 'hive_existing_mysql_host', 'hive_existing_mysql_database']),
-          hive_database_type: 'postgres',
+          removed: Em.A(['hive_ambari_database', 'hive_existing_oracle_database', 'hive_existing_mysql_database']),
           m: 'hive_database: Existing PostgreSQL Database',
           host: 'h1'
         },
@@ -332,9 +326,7 @@ describe('App.WizardStep8Controller', function () {
             {name: 'hive_existing_oracle_host', value: 'h1'},
             {name: 'hive_hostname', value: 'h2'}
           ],
-          removed: Em.A(['hive_ambari_host', 'hive_ambari_database', 'hive_existing_mysql_host',
-            'hive_existing_mysql_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database']),
-          hive_database_type: 'oracle',
+          removed: Em.A(['hive_ambari_database', 'hive_existing_mysql_database', 'hive_existing_postgresql_database']),
           m: 'hive_database: Existing Oracle Database',
           host: 'h1'
         }
@@ -347,7 +339,6 @@ describe('App.WizardStep8Controller', function () {
           test.removed.forEach(function(name) {
             expect(Em.isNone(configs.findProperty('name', name))).to.equal(true);
           });
-          expect(configs.findProperty('name', 'hive_database_type').value).to.equal(test.hive_database_type);
           expect(configs.findProperty('name', 'hive_hostname').value).to.equal(test.host);
         });
       });
@@ -358,53 +349,43 @@ describe('App.WizardStep8Controller', function () {
         {
           globals: [
             {name: 'oozie_database', value: 'New Derby Database'},
-            {name: 'oozie_database_type', value: 'derby'},
             {name: 'oozie_ambari_host', value: 'h1'},
             {name: 'oozie_hostname', value: 'h2'}
           ],
-          removed: Em.A(['oozie_ambari_host', 'oozie_ambari_database', 'oozie_existing_mysql_host',
-            'oozie_existing_mysql_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database',
-            'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database']),
-          oozie_database_type: 'derby',
+          removed: Em.A(['oozie_ambari_database', 'oozie_existing_mysql_database', 'oozie_existing_oracle_database',
+            'oozie_existing_postgresql_database']),
           m: 'oozie_database: New Derby Database',
           host: 'h1'
         },
         {
           globals: [
             {name: 'oozie_database', value: 'Existing MySQL Database'},
-            {name: 'oozie_database_type', value: 'mysql'},
             {name: 'oozie_existing_mysql_host', value: 'h1'},
             {name: 'oozie_hostname', value: 'h2'}
           ],
-          removed: Em.A(['oozie_ambari_host', 'oozie_ambari_database', 'oozie_existing_oracle_host',
-            'oozie_existing_oracle_database', 'oozie_derby_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database']),
-          oozie_database_type: 'mysql',
+          removed: Em.A(['oozie_ambari_database', 'oozie_existing_oracle_database', 'oozie_derby_database',
+            'oozie_existing_postgresql_database']),
           m: 'oozie_database: Existing MySQL Database',
           host: 'h1'
         },
         {
           globals: [
             {name: 'oozie_database', value: 'Existing PostgreSQL Database'},
-            {name: 'oozie_database_type', value: 'postgresql'},
             {name: 'oozie_existing_postgresql_host', value: 'h1'},
             {name: 'oozie_hostname', value: 'h2'}
           ],
-          removed: Em.A(['oozie_ambari_host', 'oozie_ambari_database', 'oozie_existing_oracle_host',
-            'oozie_existing_oracle_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database']),
-          oozie_database_type: 'postgresql',
+          removed: Em.A(['oozie_ambari_database', 'oozie_existing_oracle_database', 'oozie_existing_mysql_database']),
           m: 'oozie_database: Existing PostgreSQL Database',
           host: 'h1'
         },
         {
           globals: [
             {name: 'oozie_database', value: 'Existing Oracle Database'},
-            {name: 'oozie_database_type', value: 'oracle'},
             {name: 'oozie_existing_oracle_host', value: 'h1'},
             {name: 'oozie_hostname', value: 'h2'}
           ],
-          removed: Em.A(['oozie_ambari_host', 'oozie_ambari_database', 'oozie_existing_mysql_host',
-            'oozie_existing_mysql_database', 'oozie_derby_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database']),
-          oozie_database_type: 'oracle',
+          removed: Em.A(['oozie_ambari_database', 'oozie_existing_mysql_database', 'oozie_derby_database',
+            'oozie_existing_postgresql_database']),
           m: 'oozie_database: Existing Oracle Database',
           host: 'h1'
         }
@@ -419,7 +400,6 @@ describe('App.WizardStep8Controller', function () {
           test.removed.forEach(function(name) {
             expect(Em.isNone(configs.findProperty('name', name))).to.equal(true);
           });
-          expect(configs.findProperty('name', 'oozie_database_type').value).to.equal(test.oozie_database_type);
           expect(configs.findProperty('name', 'oozie_hostname').value).to.equal(test.host);
         });
       });
@@ -905,7 +885,6 @@ describe('App.WizardStep8Controller', function () {
     });
   });
 
-
   describe('#createStormSiteObj', function() {
     it('should replace quote \'"\' to "\'" for some properties', function() {
       var configs = [
@@ -1058,10 +1037,6 @@ describe('App.WizardStep8Controller', function () {
     });
   });
 
-  describe('#formatProperties', function() {
-
-  });
-
   describe('#applyInstalledServicesConfigurationGroup', function() {
     beforeEach(function() {
       sinon.stub($, 'ajax', Em.K);
@@ -1155,7 +1130,8 @@ describe('App.WizardStep8Controller', function () {
   describe('Queued requests', function() {
 
     beforeEach(function() {
-      sinon.stub(installerStep8Controller, 'addRequestToAjaxQueue', Em.K);
+      installerStep8Controller.clearStep();
+      sinon.spy(installerStep8Controller, 'addRequestToAjaxQueue');
     });
 
     afterEach(function() {
@@ -1163,11 +1139,13 @@ describe('App.WizardStep8Controller', function () {
     });
 
     describe('#createCluster', function() {
+
       it('shouldn\'t add request to queue if not installerController used', function() {
         installerStep8Controller.reopen({content: {controllerName: 'addServiceController'}});
         installerStep8Controller.createCluster();
         expect(installerStep8Controller.addRequestToAjaxQueue.called).to.equal(false);
       });
+
       it('App.currentStackVersion should be changed if localRepo selected', function() {
         App.set('currentStackVersion', 'HDP-1.1.1');
         installerStep8Controller.reopen({content: {controllerName: 'installerController', installOptions: {localRepo: true}}});
@@ -1175,8 +1153,9 @@ describe('App.WizardStep8Controller', function () {
           data: JSON.stringify({ "Clusters": {"version": 'HDPLocal-1.1.1' }})
         };
         installerStep8Controller.createCluster();
-        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data).to.eql(data);
+        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data.data).to.equal(data.data);
       });
+
       it('App.currentStackVersion shouldn\'t be changed if localRepo ins\'t selected', function() {
         App.set('currentStackVersion', 'HDP-1.1.1');
         installerStep8Controller.reopen({content: {controllerName: 'installerController', installOptions: {localRepo: false}}});
@@ -1184,17 +1163,20 @@ describe('App.WizardStep8Controller', function () {
           data: JSON.stringify({ "Clusters": {"version": 'HDP-1.1.1' }})
         };
         installerStep8Controller.createCluster();
-        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data).to.eql(data);
+        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data.data).to.eql(data.data);
       });
+
     });
 
     describe('#createSelectedServices', function() {
+
       it('shouldn\'t do nothing if no data', function() {
         sinon.stub(installerStep8Controller, 'createSelectedServicesData', function() {return [];});
         installerStep8Controller.createSelectedServices();
         expect(installerStep8Controller.addRequestToAjaxQueue.called).to.equal(false);
         installerStep8Controller.createSelectedServicesData.restore();
       });
+
       it('should call addRequestToAjaxQueue with computed data', function() {
         var data = [
           {"ServiceInfo": { "service_name": 's1' }},
@@ -1203,9 +1185,10 @@ describe('App.WizardStep8Controller', function () {
         ];
         sinon.stub(installerStep8Controller, 'createSelectedServicesData', function() {return data;});
         installerStep8Controller.createSelectedServices();
-        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data).to.eql({data: JSON.stringify(data)});
+        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data.data).to.equal(JSON.stringify(data));
         installerStep8Controller.createSelectedServicesData.restore();
       });
+
     });
 
     describe('#registerHostsToCluster', function() {
@@ -1222,7 +1205,7 @@ describe('App.WizardStep8Controller', function () {
         ];
         sinon.stub(installerStep8Controller, 'createRegisterHostData', function() {return data;});
         installerStep8Controller.registerHostsToCluster();
-        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data).to.eql({data: JSON.stringify(data)});
+        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data.data).to.equal(JSON.stringify(data));
         installerStep8Controller.createRegisterHostData.restore();
       });
     });
@@ -1272,7 +1255,7 @@ describe('App.WizardStep8Controller', function () {
             ], selectedServices: []
         });
         installerStep8Controller.applyConfigurationsToCluster(serviceConfigTags);
-        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data).to.eql({data: data});
+        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data.data).to.equal(data);
       });
     });
 
@@ -1280,7 +1263,7 @@ describe('App.WizardStep8Controller', function () {
       it('should call addRequestToAjaxQueue', function() {
         var data = [{}, {}];
         installerStep8Controller.applyConfigurationGroups(data);
-        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data).to.eql({data: JSON.stringify(data)});
+        expect(installerStep8Controller.addRequestToAjaxQueue.args[0][0].data.data).to.equal(JSON.stringify(data));
       });
     });
 
@@ -1297,7 +1280,6 @@ describe('App.WizardStep8Controller', function () {
 
     });
 
-
     describe('#createAdditionalHostComponents', function() {
 
       beforeEach(function() {
@@ -1308,14 +1290,25 @@ describe('App.WizardStep8Controller', function () {
         installerStep8Controller.registerHostsToComponent.restore();
       });
 
-      it('should add GANGLIA MONITOR (1)', function() {
+      it('should add components with isRequiredOnAllHosts == true (1)', function() {
         installerStep8Controller.reopen({
           getRegisteredHosts: function() {
             return [{hostName: 'h1'}, {hostName: 'h2'}];
           },
           content: {
             services: [
-              Em.Object.create({serviceName: 'GANGLIA', isSelected: true, isInstalled: false})
+              Em.Object.create({
+                serviceName: 'GANGLIA', isSelected: true, isInstalled: false, serviceComponents: [
+                  Em.Object.create({
+                    componentName: 'GANGLIA_MONITOR',
+                    isRequiredOnAllHosts: true
+                  }),
+                  Em.Object.create({
+                    componentName: 'GANGLIA_SERVER',
+                    isRequiredOnAllHosts: false
+                  })
+                ]
+              })
             ]
           }
         });
@@ -1325,14 +1318,25 @@ describe('App.WizardStep8Controller', function () {
         expect(installerStep8Controller.registerHostsToComponent.args[0][1]).to.equal('GANGLIA_MONITOR');
       });
 
-      it('should add GANGLIA MONITOR (2)', function() {
+      it('should add components with isRequiredOnAllHosts == true (2)', function() {
         installerStep8Controller.reopen({
           getRegisteredHosts: function() {
             return [{hostName: 'h1', isInstalled: true}, {hostName: 'h2', isInstalled: false}];
           },
           content: {
             services: [
-              Em.Object.create({serviceName: 'GANGLIA', isSelected: true, isInstalled: true})
+              Em.Object.create({
+                serviceName: 'GANGLIA', isSelected: true, isInstalled: true, serviceComponents: [
+                  Em.Object.create({
+                    componentName: 'GANGLIA_MONITOR',
+                    isRequiredOnAllHosts: true
+                  }),
+                  Em.Object.create({
+                    componentName: 'GANGLIA_SERVER',
+                    isRequiredOnAllHosts: false
+                  })
+                ]
+              })
             ]
           }
         });
@@ -1348,7 +1352,7 @@ describe('App.WizardStep8Controller', function () {
         },
         {name: 'New PostgreSQL Database',
           component: 'POSTGRESQL_SERVER'
-        },
+        }
       ];
 
       newDatabases.forEach(function (db) {
@@ -1363,7 +1367,7 @@ describe('App.WizardStep8Controller', function () {
                 {component: 'HIVE_SERVER', hostName: 'h2'}
               ],
               services: [
-                Em.Object.create({serviceName: 'HIVE', isSelected: true, isInstalled: false})
+                Em.Object.create({serviceName: 'HIVE', isSelected: true, isInstalled: false, serviceComponents: []})
               ],
               serviceConfigProperties: [
                 {name: 'hive_database', value: db.name}
@@ -1380,6 +1384,61 @@ describe('App.WizardStep8Controller', function () {
 
     });
 
+    describe('#createNotification', function () {
+
+      beforeEach(function () {
+        sinon.stub(App, 'get', function (k) {
+          if ('testMode' === k) return false;
+          return Em.get(App, k);
+        });
+        installerStep8Controller.clearStep();
+        installerStep8Controller.set('content', {controllerName: 'installerController'});
+        installerStep8Controller.set('configs', [
+          {name: 'create_notification', value: 'yes', serviceName: 'MISC', filename: 'alert_notification'},
+          {name: 'ambari.dispatch.recipients', value: 'to@f.c', serviceName: 'MISC', filename: 'alert_notification'},
+          {name: 'mail.smtp.host', value: 'h', serviceName: 'MISC', filename: 'alert_notification'},
+          {name: 'mail.smtp.port', value: '25', serviceName: 'MISC', filename: 'alert_notification'},
+          {name: 'mail.smtp.from', value: 'from@f.c', serviceName: 'MISC', filename: 'alert_notification'},
+          {name: 'mail.smtp.starttls.enable', value: true, serviceName: 'MISC', filename: 'alert_notification'},
+          {name: 'mail.smtp.startssl.enable', value: false, serviceName: 'MISC', filename: 'alert_notification'},
+          {name: 'smtp_use_auth', value: 'true', serviceName: 'MISC', filename: 'alert_notification'},
+          {name: 'ambari.dispatch.credential.username', value: 'usr', serviceName: 'MISC', filename: 'alert_notification'},
+          {name: 'ambari.dispatch.credential.password', value: 'pwd', serviceName: 'MISC', filename: 'alert_notification'},
+          {name: 'some_p', value: 'some_v', serviceName: 'MISC', filename: 'alert_notification'}
+        ]);
+        installerStep8Controller.get('ajaxRequestsQueue').clear();
+      });
+
+      afterEach(function () {
+        App.get.restore();
+      });
+
+      it('should add request to queue', function () {
+        installerStep8Controller.createNotification();
+        expect(installerStep8Controller.get('ajaxRequestsQueue.queue.length')).to.equal(1);
+
+      });
+
+      it('sent data should be valid', function () {
+
+        installerStep8Controller.createNotification();
+        var data = installerStep8Controller.get('ajaxRequestsQueue.queue')[0].data.data.AlertTarget;
+        expect(data.global).to.be.true;
+        expect(data.notification_type).to.equal('EMAIL');
+        expect(data.alert_states).to.eql(['OK', 'WARNING', 'CRITICAL', 'UNKNOWN']);
+        expect(data.properties['ambari.dispatch.recipients']).to.eql(['to@f.c']);
+        expect(data.properties['mail.smtp.host']).to.equal('h');
+        expect(data.properties['mail.smtp.port']).to.equal('25');
+        expect(data.properties['mail.smtp.from']).to.equal('from@f.c');
+        expect(data.properties['mail.smtp.starttls.enable']).to.equal(true);
+        expect(data.properties['mail.smtp.startssl.enable']).to.equal(false);
+        expect(data.properties['ambari.dispatch.credential.username']).to.equal('usr');
+        expect(data.properties['ambari.dispatch.credential.password']).to.equal('pwd');
+        expect(data.properties['some_p']).to.equal('some_v');
+
+      });
+
+    });
 
   });
 

@@ -21,12 +21,16 @@ from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
 
 class TestHiveClient(RMFTestCase):
+  COMMON_SERVICES_PACKAGE_DIR = "HIVE/0.12.0.2.0/package"
+  STACK_VERSION = "2.0.6"
 
   def test_configure_default(self):
-    self.executeScript("2.0.6/services/HIVE/package/scripts/hive_client.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_client.py",
                        classname = "HiveClient",
                        command = "configure",
-                       config_file="default_client.json"
+                       config_file="default_client.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('Directory', '/etc/hive',
         mode = 0755
@@ -112,17 +116,19 @@ class TestHiveClient(RMFTestCase):
                               )
     self.assertResourceCalled('Execute', '/bin/sh -c \'cd /usr/lib/ambari-agent/ && curl -kf -x "" --retry 5 http://c6401.ambari.apache.org:8080/resources/DBConnectionVerification.jar -o DBConnectionVerification.jar\'',
         environment = {'no_proxy': 'c6401.ambari.apache.org'},
-        not_if = '[ -f DBConnectionVerification.jar]',
+        not_if = '[ -f /usr/lib/ambari-agent/DBConnectionVerification.jar ]',
     )
     self.assertNoMoreResources()
 
 
 
   def test_configure_secured(self):
-    self.executeScript("2.0.6/services/HIVE/package/scripts/hive_client.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_client.py",
                        classname = "HiveClient",
                        command = "configure",
-                       config_file="secured_client.json"
+                       config_file="secured_client.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('Directory', '/etc/hive',
         mode = 0755
@@ -208,6 +214,6 @@ class TestHiveClient(RMFTestCase):
                               )
     self.assertResourceCalled('Execute', '/bin/sh -c \'cd /usr/lib/ambari-agent/ && curl -kf -x "" --retry 5 http://c6401.ambari.apache.org:8080/resources/DBConnectionVerification.jar -o DBConnectionVerification.jar\'',
         environment = {'no_proxy': 'c6401.ambari.apache.org'},
-        not_if = '[ -f DBConnectionVerification.jar]',
+        not_if = '[ -f /usr/lib/ambari-agent/DBConnectionVerification.jar ]',
     )
     self.assertNoMoreResources()

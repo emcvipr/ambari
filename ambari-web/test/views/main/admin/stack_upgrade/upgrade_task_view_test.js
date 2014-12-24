@@ -22,40 +22,160 @@ require('views/main/admin/stack_upgrade/upgrade_task_view');
 
 describe('App.upgradeTaskView', function () {
   var view = App.upgradeTaskView.create({
-    content: Em.Object.create({
-      UpgradeGroup: {}
-    })
+    content: Em.Object.create(),
+    taskDetailsProperties: ['prop1']
+  });
+  view.removeObserver('content.isExpanded', view, 'doPolling');
+
+  describe("#doPolling()", function () {
+    beforeEach(function () {
+      sinon.stub(view, 'getTaskDetails', Em.K);
+      sinon.spy(view, 'doPolling');
+      this.clock = sinon.useFakeTimers();
+    });
+    afterEach(function () {
+      view.getTaskDetails.restore();
+      view.doPolling.restore();
+      this.clock.restore();
+    });
+    it("isExpanded false", function () {
+      view.set('content.isExpanded', false);
+      view.doPolling();
+      expect(view.getTaskDetails.called).to.be.false;
+    });
+    it("isExpanded true", function () {
+      view.set('content.isExpanded', true);
+      view.doPolling();
+      expect(view.getTaskDetails.calledOnce).to.be.true;
+      this.clock.tick(App.bgOperationsUpdateInterval);
+      expect(view.doPolling.calledTwice).to.be.true;
+    });
   });
 
-  describe("#iconClass", function () {
-    it("status has icon", function () {
-      view.set('statusIconMap', {
-        'S1': 'icon1'
-      });
-      view.set('content.UpgradeGroup.status', 'S1');
-      view.propertyDidChange('iconClass');
-      expect(view.get('iconClass')).to.equal('icon1');
+  describe("#getTaskDetails()", function () {
+    beforeEach(function () {
+      sinon.stub(App.ajax, 'send', Em.K);
+
     });
-    it("status undefined", function () {
-      view.set('statusIconMap', {
-        'S1': 'icon1'
+    afterEach(function () {
+      App.ajax.send.restore();
+    });
+    it("call App.ajax.send()", function () {
+      view.set('content.id', 1);
+      view.set('content.request_id', 1);
+      view.getTaskDetails();
+      expect(App.ajax.send.getCall(0).args[0]).to.eql({
+        name: 'admin.upgrade.task',
+        sender: view,
+        data: {
+          upgradeId: 1,
+          taskId: 1
+        },
+        success: 'getTaskDetailsSuccessCallback'
       });
-      view.set('content.UpgradeGroup.status', 'S2');
-      view.propertyDidChange('iconClass');
-      expect(view.get('iconClass')).to.equal('icon-question-sign');
     });
   });
 
-  describe("#isFailed", function () {
-    it("task is not failed", function () {
-      view.set('content.UpgradeGroup.status', 'COMPLETED');
-      view.propertyDidChange('isFailed');
-      expect(view.get('isFailed')).to.be.false;
+  describe("#getTaskDetailsSuccessCallback()", function () {
+    it("", function () {
+      var data = {
+        items: [
+          {
+            upgrade_items: [
+              {
+                tasks: [
+                  {
+                    Tasks: {
+                      prop1: 'value'
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+      view.getTaskDetailsSuccessCallback(data);
+      expect(view.get('content.prop1')).to.equal('value');
     });
-    it("task is not failed", function () {
-      view.set('content.UpgradeGroup.status', 'FAILED');
-      view.propertyDidChange('isFailed');
-      expect(view.get('isFailed')).to.be.true;
+  });
+
+  describe("#copyErrLog()", function () {
+    before(function () {
+      sinon.stub(view, 'toggleProperty', Em.K);
+    });
+    after(function () {
+      view.toggleProperty.restore();
+    });
+    it("", function () {
+      view.copyErrLog();
+      expect(view.toggleProperty.calledWith('errorLogOpened')).to.be.true;
+    });
+  });
+
+  describe("#copyOutLog()", function () {
+    before(function () {
+      sinon.stub(view, 'toggleProperty', Em.K);
+    });
+    after(function () {
+      view.toggleProperty.restore();
+    });
+    it("", function () {
+      view.copyOutLog();
+      expect(view.toggleProperty.calledWith('outputLogOpened')).to.be.true;
+    });
+  });
+
+  describe("#openErrorLog()", function () {
+    before(function () {
+      sinon.stub(view, 'openLogWindow', Em.K);
+    });
+    after(function () {
+      view.openLogWindow.restore();
+    });
+    it("", function () {
+      view.set('content.stderr', 'stderr');
+      view.openErrorLog();
+      expect(view.openLogWindow.calledWith('stderr')).to.be.true;
+    });
+  });
+
+  describe("#openOutLog()", function () {
+    before(function () {
+      sinon.stub(view, 'openLogWindow', Em.K);
+    });
+    after(function () {
+      view.openLogWindow.restore();
+    });
+    it("", function () {
+      view.set('content.stdout', 'stdout');
+      view.openOutLog();
+      expect(view.openLogWindow.calledWith('stdout')).to.be.true;
+    });
+  });
+
+  describe("#openLogWindow()", function () {
+    var mockWindow = {
+      document: {
+        write: Em.K,
+        close: Em.K
+      }
+    };
+    before(function () {
+      sinon.stub(window, 'open').returns(mockWindow);
+      sinon.spy(mockWindow.document, 'write');
+      sinon.spy(mockWindow.document, 'close');
+    });
+    after(function () {
+      window.open.restore();
+      mockWindow.document.write.restore();
+      mockWindow.document.close.restore();
+    });
+    it("", function () {
+      view.openLogWindow('log');
+      expect(window.open.calledOnce).to.be.true;
+      expect(mockWindow.document.write.calledWith('log')).to.be.true;
+      expect(mockWindow.document.close.calledOnce).to.be.true;
     });
   });
 });

@@ -32,7 +32,7 @@
     </div>
   </div>
   <div class="modal-footer">
-    <button type="button" {{action "cancel" content target="view"}} class="btn btn-default" >{{t 'common.cancel'}}</button>
-    <button type="button" {{action "ok" target="view"}} {{bind-attr class=":btn :btn-success udfInvalid:disabled"}}>{{t 'common.create'}}</button>
+    <button type="button" {{action "cancel" content target="view"}} class="btn btn-default">{{t 'common.cancel'}}</button>
+    <button type="button" {{action "ok" target="view"}} {{bind-attr class=":btn :btn-success isValid::disabled"}}>{{t 'common.create'}}</button>
   </div>
 {{/pig-modal}}

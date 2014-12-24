@@ -106,6 +106,10 @@ var wrapperView = Ember.View.extend({
     return this.get('value').toString() === this.get('emptyValue').toString();
   },
 
+  setValue: function (value) {
+    this.set('value', value);
+  },
+
   /**
    * Show/Hide <code>Clear filter</code> button.
    * Also this method updates computed field related to <code>fieldId</code> if it exists.
@@ -357,6 +361,9 @@ module.exports = {
     config.clearFilter = function () {
       this.set('selected', this.get('content').findProperty('value', this.get('emptyValue')));
     };
+    config.setValue = function (value) {
+      this.set('selected', this.get('content').findProperty('value', value));
+    };
     return wrapperView.extend(config);
   },
   /**
@@ -579,6 +586,11 @@ module.exports = {
       case 'select':
         return function (origin, compareValue) {
           return origin == compareValue;
+        };
+        break;
+      case 'os':
+        return function (origin, compareValue) {
+          return origin.getEach('osType').contains(compareValue)
         };
         break;
       case 'range':

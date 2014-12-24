@@ -16,21 +16,10 @@
    limitations under the License.
 -->
 
-<!-- Sample Usage of tasks.
-<task xsi:type="execute">
-  <command>echo 'Hello World'</command>
-</task>
-<task xsi:type="configure">
-  <key>prop1</key>
-  <value>value1</value>
-</task>
-<task xsi:type="manual">
-  <message>Please perform the following manual step</message>
-</task>
--->
 
 <upgrade xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <target>2.2.*.*</target>
+
   <order>
     <group name="ZOOKEEPER" title="Zookeeper">
       <service name="ZOOKEEPER">
@@ -38,32 +27,107 @@
         <component>ZOOKEEPER_CLIENT</component>
       </service>
     </group>
+
     <group name="CORE_MASTER" title="Core Masters">
       <service name="HDFS">
         <component>JOURNALNODE</component>
         <component>NAMENODE</component>
       </service>
+
+      <service name="MAPREDUCE2">
+        <component>HISTORYSERVER</component>
+      </service>
+
       <service name="YARN">
+        <component>APP_TIMELINE_SERVER</component>
         <component>RESOURCEMANAGER</component>
       </service>
+
+      <service name="HBASE">
+        <component>HBASE_MASTER</component>
+      </service>
     </group>
+
     <group name="CORE_SLAVES" title="Core Slaves" xsi:type="colocated">
       <service name="HDFS">
         <component>DATANODE</component>
       </service>
+      
       <service name="HBASE">
-        <component>REGIONSERVER</component>
+        <component>HBASE_REGIONSERVER</component>
       </service>
+
       <service name="YARN">
         <component>NODEMANAGER</component>
       </service>
-      
+
       <batch>
-        <percent>20</percent>
+        <percent>33</percent>
         <message>Please run additional tests</message>
       </batch>
     </group>
+
+    <group name="HIVE" title="Hive">
+      <service name="HIVE">
+        <component>HIVE_METASTORE</component>
+        <component>HIVE_SERVER</component>
+        <component>WEBHCAT_SERVER</component>
+      </service>
+    </group>
+
+    <group name="CLIENTS" title="Client Components">
+      <service name="HDFS">
+        <component>HDFS_CLIENT</component>
+      </service>
+
+      <service name="YARN">
+        <component>YARN_CLIENT</component>
+      </service>
+
+      <service name="MAPREDUCE2">
+        <component>MAPREDUCE2_CLIENT</component>
+       </service>
+
+       <service name="TEZ">
+         <component>TEZ_CLIENT</component>
+       </service>
+
+       <service name="HBASE">
+         <component>HBASE_CLIENT</component>
+       </service>
+
+       <service name="PIG">
+         <component name="PIG" />
+       </service>
+
+       <service name="HIVE">
+         <component>HIVE_CLIENT</component>
+         <component>HCAT</component>
+       </service>
+    </group>
+
+    <group xsi:type="cluster" name="POST_CLUSTER" title="Finalize Upgrade">
+      <!--
+      <execute-stage title="Confirm Finalize">
+        <task xsi:type="manual">
+          <message>Please confirm you are ready to finalize</message>
+        </task>
+      </execute-stage>
+      -->
+      <execute-stage service="HDFS" component="NAMENODE" title="Execute HDFS Finalize">
+        <task xsi:type="execute" hosts="master">
+          <first>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -rollingUpgrade finalize'</first>
+          <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode leave'</command>
+        </task>
+      </execute-stage>
+      <execute-stage title="Save Cluster State" service="" component="">
+        <task xsi:type="server_action" class="org.apache.ambari.server.serveraction.upgrades.FinalizeUpgradeAction">
+        </task>
+      </execute-stage>
+    </group>
+
   </order>
+  
   
   <processing>
     <service name="ZOOKEEPER">
@@ -95,6 +159,7 @@
         </upgrade>
       </component>
     </service>
+
     <service name="HDFS">
       <component name="NAMENODE">
         <pre-upgrade>
@@ -126,95 +191,179 @@
           FINALIZE rolling upgrade ...
           There is no rolling upgrade in progress or rolling upgrade has already been finalized.
           -->
-          <task xsi:type="execute">
-            <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode enter'</command>
+          <task xsi:type="execute" hosts="master">
+            <first>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode get | grep "Safe mode is ON in {{host_name}}"'</first>
+            <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode leave'</command>
             <upto>10</upto>
             <every>6</every>
           </task>
 
-          <task xsi:type="execute">
+          <task xsi:type="execute" hosts="master">
             <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -rollingUpgrade prepare'</command>
-            <onfailure>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode leave'</onfailure>   <!-- TODO, stay in safemode if in HA. -->
           </task>
 
-          <task xsi:type="execute">
+          <task xsi:type="execute" hosts="master">
             <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -rollingUpgrade query'</command>
-            <onfailure>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode leave'</onfailure>   <!-- TODO, stay in safemode if in HA. -->
-          </task>
-
-          <!-- Apparently, the HDFS Namenode restart requires safemode to be OFF when not in HA. -->
-          <task xsi:type="execute">
-            <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode leave'</command>
-            <upto>60</upto>
-            <every>1</every>
           </task>
         </pre-upgrade>
-        
+
         <upgrade>
           <task xsi:type="restart" />
-        </upgrade>        
-
-        <!-- This step should be done once the user clicks on the "Finalize" button. So the name post-upgrade is misleading. -->
-        <post-upgrade>
-          <task xsi:type="execute">
-            <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -rollingUpgrade finalize'</command>
-          </task>
-          <task xsi:type="execute">
-            <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode leave'</command>       <!-- TODO, stay in safemode if in HA. -->
-          </task>
-        </post-upgrade>
+        </upgrade>
       </component>
 
       <component name="DATANODE">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+      
+      <component name="HDFS_CLIENT">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+
+      <component name="JOURNALNODE">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+
+    </service>
+
+    <service name="MAPREDUCE2">
+      <component name="HISTORYSERVER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+      
+      <component name="MAPREDUCE2_CLIENT">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
+
+    <service name="YARN">
+      <component name="APP_TIMELINE_SERVER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+
+      <component name="RESOURCEMANAGER">
+        <!--
+        Upgrade+restart the standby ResourceManager first
+        Make the standby ResourceManager as the active
+
+        Automatic failover: This can be done by simply killing the current active ResourceManager
+        Manual failover: Make the standby ResourceManager as the active and the current active as standby
+        -->
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+
+      <component name="NODEMANAGER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+
+      <component name="YARN_CLIENT">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
+    
+    <service name="HBASE">
+      <component name="HBASE_MASTER">
         <pre-upgrade>
-          <!-- Shutdown the datanode,
+          <task xsi:type="execute" hosts="master">
+            <command>su - {{hbase-env/hbase_user}} -c 'echo "snapshot_all" | hbase shell'</command>
+          </task>
+        </pre-upgrade>
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
 
-          Will retry 50 times.
-          Property dfs.datanode.ipc.address = 0.0.0.0:8010 needs to evaluate to current host.
-          $ su hdfs -c 'hdfs dfsadmin -shutdownDatanode <DATANODE_HOST:IPC_PORT> upgrade'
-          E.g.,
-          $ su hdfs -c 'hdfs dfsadmin -shutdownDatanode c6407.ambari.apache.org:8010 upgrade'
+      <component name="HBASE_REGIONSERVER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+      
+      <component name="HBASE_CLIENT">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
+    
+    <service name="TEZ">
+      <component name="TEZ_CLIENT">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
+    
+    <service name="PIG">
+      <component name="PIG">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
 
-          Will retry 50 times.
-          $ su hdfs -c 'hdfs dfsadmin -getDatanodeInfo c6407.ambari.apache.org:8010'
-          Datanode unreachable.
+    <service name="HIVE">
+      <component name="HIVE_METASTORE">
+        <pre-upgrade>
+          <task xsi:type="manual">
+            <message>Backup the Hive Metastore database.</message>
+          </task>
+          <task xsi:type="manual">
+            <message>Run the SQL file at /usr/hdp/$version/hive/scripts/metastore/upgrade to update the Hive Metastore schema.</message>
+          </task>
+        </pre-upgrade>
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
 
-          Change the version,
-          $ hdp-select set hadoop-hdfs-datanode 2.2.0.1-885
-
-          Start the datanode,
-          $ su - hdfs -c '/usr/hdp/current/hadoop-hdfs-datanode/../hadoop/sbin/hadoop-daemon.sh start datanode'
-          starting datanode, logging to /var/log/hadoop/hdfs/hadoop-hdfs-datanode-c6407.ambari.apache.org.out
-
-          Verify it is live,
-          $ su - hdfs -c 'hdfs dfsadmin -report -live'
-          Live datanodes (1):
-          -->
-          <task xsi:type="execute">
-            <first>su {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -getDatanodeInfo {{hdfs-site/dfs.datanode.ipc.address}}'</first>
-            <command>su {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -shutdownDatanode {{hdfs-site/dfs.datanode.ipc.address}} upgrade'</command>
+      <component name="HIVE_SERVER">
+        <pre-upgrade>
+          <task xsi:type="manual">
+            <message>The HiveServer port will now change to 10010. Ensure that this port is available on each HiveServer instance.</message>
           </task>
 
-          <!-- After shutting down the datanode, this command is expected to fail with 255, so ignore only that return code. -->
-          <task xsi:type="execute">
-            <command>su {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -getDatanodeInfo {{hdfs-site/dfs.datanode.ipc.address}}'</command>
-            <ignore>255</ignore>
+          <task xsi:type="configure">
+            <type>hive-site</type>
+            <key>hive.server2.thrift.port</key>
+            <value>10010</value>
           </task>
         </pre-upgrade>
 
         <upgrade>
           <task xsi:type="restart" />
         </upgrade>
-
       </component>
 
-      <component name="JOURNALNODE">
-        <!-- Recommended after the Namenode, and only needed when HA is enabled. -->
+      <component name="WEBHCAT_SERVER">
         <upgrade>
           <task xsi:type="restart" />
         </upgrade>
       </component>
 
+      <component name="HIVE_CLIENT">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
     </service>
   </processing>
 </upgrade>

@@ -53,6 +53,11 @@ public abstract class AmbariEvent {
     ALERT_DEFINITION_REGISTRATION,
 
     /**
+     * An alert definition was updated.
+     */
+    ALERT_DEFINITION_CHANGED,
+
+    /**
      * An alert definition is removed from the system.
      */
     ALERT_DEFINITION_REMOVAL,
@@ -85,7 +90,12 @@ public abstract class AmbariEvent {
     /**
      * A host/service/component has had a maintenance mode change.
      */
-    MAINTENANCE_MODE;
+    MAINTENANCE_MODE,
+
+    /**
+     * Received a final command report for some action
+     */
+    ACTION_EXECUTION_FINISHED
   }
 
   /**

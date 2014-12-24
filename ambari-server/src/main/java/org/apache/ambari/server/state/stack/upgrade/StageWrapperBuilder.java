@@ -20,6 +20,7 @@ package org.apache.ambari.server.state.stack.upgrade;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.ambari.server.stack.HostsType;
 import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
 
 /**
@@ -30,11 +31,12 @@ public abstract class StageWrapperBuilder {
   /**
    * Adds a processing component that will be built into stage wrappers.
    *
-   * @param hosts the hosts
-   * @param service the service name
-   * @param pc the ProcessingComponent derived from the upgrade pack.
+   * @param hostsType   the hosts, along with their type
+   * @param service     the service name
+   * @param clientOnly  whether the service is client only, no service checks
+   * @param pc          the ProcessingComponent derived from the upgrade pack
    */
-  public abstract void add(Set<String> hosts, String service, ProcessingComponent pc);
+  public abstract void add(HostsType hostsType, String service, boolean clientOnly, ProcessingComponent pc);
 
   /**
    * Builds the stage wrappers.
