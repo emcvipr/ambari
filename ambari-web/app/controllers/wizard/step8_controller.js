@@ -1727,7 +1727,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
       }
     }, this);
 
-    #TODO revisit
+    //TODO revisit
     coreSiteObj.forEach(function (_coreSiteObj) {
       if (isVIPRFSSelected && _coreSiteObj.name == "fs.default.name") {
         coreSiteProperties[_coreSiteObj.name] =
