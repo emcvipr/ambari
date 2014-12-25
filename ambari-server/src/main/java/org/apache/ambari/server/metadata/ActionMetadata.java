@@ -61,6 +61,7 @@ public class ActionMetadata {
   private void fillServiceClients() {
     serviceClients.put("hdfs"       , Role.HDFS_CLIENT.toString());
     serviceClients.put("glusterfs"  , Role.GLUSTERFS_CLIENT.toString());
+    serviceClients.put("viprfs"     , Role.VIPRFS_CLIENT.toString());
     serviceClients.put("hbase"      , Role.HBASE_CLIENT.toString());
     serviceClients.put("mapreduce"  , Role.MAPREDUCE_CLIENT.toString());
     serviceClients.put("zookeeper"  , Role.ZOOKEEPER_CLIENT.toString());

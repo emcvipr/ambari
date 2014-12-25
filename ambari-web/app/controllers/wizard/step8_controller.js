@@ -1712,6 +1712,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     var coreSiteObj = this.get('configs').filterProperty('filename', 'core-site.xml'),
       coreSiteProperties = this.resolveProxyuserDependecies(coreSiteObj, installedAndSelectedServices),
       isGLUSTERFSSelected = installedAndSelectedServices.someProperty('serviceName', 'GLUSTERFS');
+      isVIPRFSSelected = installedAndSelectedServices.someProperty('serviceName', 'VIPRFS');
 
     coreSiteObj.forEach(function (_coreSiteObj) {
       if (isGLUSTERFSSelected && _coreSiteObj.name == "fs.default.name") {
@@ -1725,6 +1726,21 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
             this.get('configs').findProperty('name', 'glusterfs_defaultFS_name').value : null;
       }
     }, this);
+
+    #TODO revisit
+    coreSiteObj.forEach(function (_coreSiteObj) {
+      if (isVIPRFSSelected && _coreSiteObj.name == "fs.default.name") {
+        coreSiteProperties[_coreSiteObj.name] =
+          this.get('configs').someProperty('name', 'fs_viprfs_default_name') ?
+            this.get('configs').findProperty('name', 'fs_viprfs_default_name').value : null;
+      }
+      if (isVIPRFSSelected && _coreSiteObj.name == "fs.defaultFS") {
+        coreSiteProperties[_coreSiteObj.name] =
+          this.get('configs').someProperty('name', 'viprfs_defaultFS_name') ?
+            this.get('configs').findProperty('name', 'viprfs_defaultFS_name').value : null;
+      }
+    }, this);
+
     var attributes = App.router.get('mainServiceInfoConfigsController').getConfigAttributes(coreSiteObj);
     var configObj = {"type": "core-site", "tag": "version1", "properties": coreSiteProperties};
     if (attributes) {

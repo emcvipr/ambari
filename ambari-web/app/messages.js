@@ -342,6 +342,7 @@ Em.I18n.translations = {
   'services.ganglia.description':'Ganglia Metrics Collection system',
   'services.hdfs.description':'Apache Hadoop Distributed File System',
   'services.glusterfs.description':'Apache Hadoop Compatible File System (must be installed manually)',
+  'services.viprfs.description':'Apache Hadoop Compatible File System',
   'services.mapreduce.description':'Apache Hadoop Distributed Processing Framework',
   'services.sqoop.description':'Tool for transferring bulk data between Apache Hadoop and structured data stores such as relational databases',
   'services.pig.description':'Scripting platform for analyzing large datasets',
@@ -1884,6 +1885,8 @@ Em.I18n.translations = {
   'services.pig.clients': 'Pig clients',
   'services.glusterfs.client': 'GLUSTERFS client',
   'services.glusterfs.clients': 'GLUSTERFS clients',
+  'services.viprfs.client': 'VIPRFS client',
+  'services.viprfs.clients': 'VIPRFS clients',
   'services.sqoop.client': 'Sqoop client',
   'services.sqoop.clients': 'Sqoop clients',
 

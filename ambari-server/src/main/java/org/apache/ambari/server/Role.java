@@ -66,6 +66,8 @@ public class Role {
   public static final Role HCAT_SERVICE_CHECK = valueOf("HCAT_SERVICE_CHECK");
   public static final Role GLUSTERFS_CLIENT = valueOf("GLUSTERFS_CLIENT");
   public static final Role GLUSTERFS_SERVICE_CHECK = valueOf("GLUSTERFS_SERVICE_CHECK");
+  public static final Role VIPRFS_CLIENT = valueOf("VIPRFS_CLIENT");
+  public static final Role VIPRFS_SERVICE_CHECK = valueOf("VIPRFS_SERVICE_CHECK");
   public static final Role HDFS_CLIENT = valueOf("HDFS_CLIENT");
   public static final Role HDFS_SERVICE_CHECK = valueOf("HDFS_SERVICE_CHECK");
   public static final Role HISTORYSERVER = valueOf("HISTORYSERVER");

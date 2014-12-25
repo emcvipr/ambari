@@ -1991,7 +1991,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
     var configObject = {};
     switch (siteName) {
       case 'core-site':
-        if (this.get('content.serviceName') === 'HDFS' || this.get('content.serviceName') === 'GLUSTERFS') {
+        if (this.get('content.serviceName') === 'HDFS' || this.get('content.serviceName') === 'GLUSTERFS' || this.get('content.serviceName') === 'VIPRFS') {
           configObject = this.createCoreSiteObj(tagName);
         } else {
           return null;
@@ -2386,7 +2386,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
     try {
       this.setHostForService('HDFS', 'NAMENODE', 'namenode_host', true);
     } catch (err) {
-      console.log("No NameNode Host available.  This is expected if you're using GLUSTERFS rather than HDFS.");
+      console.log("No NameNode Host available.  This is expected if you're using GLUSTERFS or VIPRFS rather than HDFS.");
     }
 
     var hostProperties = this.get('hostComponentsmapping').filter(function (h) {
