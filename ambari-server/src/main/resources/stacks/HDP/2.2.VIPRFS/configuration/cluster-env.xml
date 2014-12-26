@@ -48,6 +48,12 @@
         <description>Path to smoke test user keytab file</description>
     </property>
     <property>
+        <name>hdfs_user</name>
+        <value>hdfs</value>
+        <property-type>USER</property-type>
+        <description>HDFS User account</description>
+    </property>
+    <property>
         <name>user_group</name>
         <value>hadoop</value>
         <property-type>GROUP</property-type>
