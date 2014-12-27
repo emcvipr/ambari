@@ -68,6 +68,7 @@ def is_secure_port(port):
     return False
 
 #hadoop params
+print "HDP Stack Version == " + hdp_stack_version
 if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
   mapreduce_libs_path = "/usr/hdp/current/hadoop-mapreduce-client/*"
   hadoop_libexec_dir = "/usr/hdp/current/hadoop-client/libexec"
