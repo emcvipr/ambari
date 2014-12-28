@@ -21,7 +21,7 @@ from resource_management import *
 
 def setup_hdp_install_directory():
   import params
-  if params.hdp_stack_version != "" and compare_versions(params.stack_version_unformatted, '2.2') >= 0:
+  if params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.2') >= 0:
     Execute(format('sudo /usr/bin/hdp-select set all `ambari-python-wrap /usr/bin/hdp-select versions | grep ^{stack_version_unformatted} | tail -1`'),
             only_if=format('ls -d /usr/hdp/{stack_version_unformatted}*')
     )
