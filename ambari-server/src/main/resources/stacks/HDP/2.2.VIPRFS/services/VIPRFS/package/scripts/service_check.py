@@ -27,7 +27,7 @@ class ViPRFSServiceCheck(Script):
 
     #TODO implement logic to print VIPRFS service status
     Execute(format("env  VIPRFS_LOG_DIR=/var/log/viprfs "
-                   "hadoop --version"),
+                   "hadoop version"),
             logoutput=True,
             tries = 3,
             try_sleep = 20
