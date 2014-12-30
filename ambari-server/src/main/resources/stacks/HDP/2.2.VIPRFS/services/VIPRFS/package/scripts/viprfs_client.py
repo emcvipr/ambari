@@ -32,6 +32,16 @@ class ViPRFSClient(Script):
     print 'Configuring VIPRFS Client...';
     import params
     env.set_params(params)
+    params.HdfsDirectory("/tmp",
+                       action="create_delayed",
+                       owner=params.hdfs_user,
+                       mode=0777
+    )
+    params.HdfsDirectory(params.smoke_hdfs_user_dir,
+                       action="create_delayed",
+                       owner=params.smoke_user,
+                       mode=params.smoke_hdfs_user_mode
+    )
 
   def status(self, env):
     print 'Querying VIPRFS Client Status...';
