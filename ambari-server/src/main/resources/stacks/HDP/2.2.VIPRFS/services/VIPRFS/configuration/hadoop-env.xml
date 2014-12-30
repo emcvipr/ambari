@@ -210,7 +210,7 @@ done
 #Add libraries required by nodemanager
 MAPREDUCE_LIBS={{mapreduce_libs_path}}
 
-export VIPRFS_LIB=/usr/lib/hadoop/lib/*
+export VIPRFS_LIBS=/usr/lib/hadoop/lib/*
 export HADOOP_CLASSPATH=${HADOOP_CLASSPATH}${JAVA_JDBC_LIBS}:${MAPREDUCE_LIBS}:${VIPRFS_LIBS}
 
 if [ -d "/usr/lib/tez" ]; then
