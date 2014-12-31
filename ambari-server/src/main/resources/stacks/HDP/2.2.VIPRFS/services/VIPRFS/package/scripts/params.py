@@ -36,7 +36,7 @@ hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
 if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
    hadoop_bin_dir = "/usr/hdp/current/hadoop-client/bin"
-else
+else:
    hadoop_bin_dir = "/usr/bin"
 
 smoke_user =  config['configurations']['cluster-env']['smokeuser']

@@ -42,12 +42,6 @@
   </property>
 
   <property>
-    <name>mapreduce.application.framework.path</name>
-    <value>/hdp/apps/${hdp.version}/mapreduce/mapreduce.tar.gz#mr-framework</value>
-    <description></description>
-  </property>
-
-  <property>
     <name>yarn.app.mapreduce.am.admin-command-opts</name>
     <value>-Dhdp.version=${hdp.version}</value>
     <description>
