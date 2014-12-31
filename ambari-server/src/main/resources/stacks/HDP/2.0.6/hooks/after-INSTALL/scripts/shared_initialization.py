@@ -22,14 +22,14 @@ from resource_management import *
 def setup_hdp_install_directory():
   import params
   if params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.2') >= 0:
-    Execute(format('sudo /usr/bin/hdp-select set all `ambari-python-wrap /usr/bin/hdp-select versions | grep ^{stack_version_unformatted} | tail -1`'),
-            only_if=format('ls -d /usr/hdp/{stack_version_unformatted}*')
+    Execute(format('sudo /usr/bin/hdp-select set all `ambari-python-wrap /usr/bin/hdp-select versions | grep ^{hdp_stack_version} | tail -1`'),
+            only_if=format('ls -d /usr/hdp/{hdp_stack_version}*')
     )
 
 def setup_config():
   import params
   stackversion = params.stack_version_unformatted
-  if params.has_namenode or stackversion.find('Gluster') >= 0:
+  if params.has_namenode or stackversion.find('Gluster') or stackversion.find('VIPRFS') >= 0:
     XmlConfig("core-site.xml",
               conf_dir=params.hadoop_conf_dir,
               configurations=params.config['configurations']['core-site'],
