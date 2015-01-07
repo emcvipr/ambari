@@ -17,7 +17,9 @@
  */
 package org.apache.ambari.server.controller.internal;
 
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.JDK_LOCATION;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_PACKAGE_FOLDER;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -64,7 +66,9 @@ import org.apache.ambari.server.orm.entities.UpgradeItemEntity;
 import org.apache.ambari.server.stack.MasterHostResolver;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.ConfigHelper;
+import org.apache.ambari.server.state.ServiceInfo;
 import org.apache.ambari.server.state.StackId;
+import org.apache.ambari.server.state.StackInfo;
 import org.apache.ambari.server.state.UpgradeHelper;
 import org.apache.ambari.server.state.UpgradeHelper.UpgradeGroupHolder;
 import org.apache.ambari.server.state.stack.UpgradePack;
@@ -91,10 +95,12 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
   protected static final String UPGRADE_CLUSTER_NAME = "Upgrade/cluster_name";
   protected static final String UPGRADE_VERSION = "Upgrade/repository_version";
   protected static final String UPGRADE_REQUEST_ID = "Upgrade/request_id";
+  protected static final String UPGRADE_FORCE_DOWNGRADE = "Upgrade/force_downgrade";
 
   private static final Set<String> PK_PROPERTY_IDS = new HashSet<String>(
       Arrays.asList(UPGRADE_REQUEST_ID, UPGRADE_CLUSTER_NAME));
   private static final Set<String> PROPERTY_IDS = new HashSet<String>();
+
 
   private static final Map<Resource.Type, String> KEY_PROPERTY_IDS = new HashMap<Resource.Type, String>();
 
@@ -120,6 +126,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     PROPERTY_IDS.add(UPGRADE_CLUSTER_NAME);
     PROPERTY_IDS.add(UPGRADE_VERSION);
     PROPERTY_IDS.add(UPGRADE_REQUEST_ID);
+    PROPERTY_IDS.add(UPGRADE_FORCE_DOWNGRADE);
 
     // !!! boo
     for (String requestPropertyId : RequestResourceProvider.PROPERTY_IDS) {
@@ -138,7 +145,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
   /**
    * Constructor.
    *
-   * @param controller
+   * @param controller  the controller
    */
   UpgradeResourceProvider(AmbariManagementController controller) {
     super(PROPERTY_IDS, KEY_PROPERTY_IDS, controller);
@@ -165,8 +172,12 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
           UpgradePack up = validateRequest(requestMap);
 
           return createUpgrade(up, requestMap);
-        };
+        }
       });
+
+    if (null == entity) {
+      throw new SystemException("Could not load upgrade");
+    }
 
     notifyCreate(Resource.Type.Upgrade, request);
 
@@ -190,7 +201,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         throw new IllegalArgumentException("The cluster name is required when querying for upgrades");
       }
 
-      Cluster cluster = null;
+      Cluster cluster;
       try {
         cluster = getManagementController().getClusters().getCluster(clusterName);
       } catch (AmbariException e) {
@@ -335,9 +346,6 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
           String configType = formattedVar.substring(0, posConfigFile);
           String propertyName = formattedVar.substring(posConfigFile + 1, formattedVar.length());
           try {
-            // TODO, some properties use 0.0.0.0 to indicate the current host.
-            // Right now, ru_execute_tasks.py is responsible for replacing 0.0.0.0 with the hostname.
-
             String configValue = configHelper.getPropertyValueFromStackDefinitions(cluster, configType, propertyName);
             task = task.replace(origVar, configValue);
           } catch (Exception err) {
@@ -364,7 +372,16 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     MasterHostResolver mhr = new MasterHostResolver(cluster);
     UpgradeHelper helper = new UpgradeHelper();
 
-    List<UpgradeGroupHolder> groups = helper.createUpgrade(cluster, mhr, pack);
+    String forceDowngrade = (String) requestMap.get(UPGRADE_FORCE_DOWNGRADE);
+
+    List<UpgradeGroupHolder> groups = null;
+
+    if (null != forceDowngrade && Boolean.parseBoolean(forceDowngrade)) {
+      groups = helper.createDowngrade(cluster, mhr, pack);
+    } else {
+      groups = helper.createUpgrade(cluster, mhr, pack);
+    }
+
     if (groups.isEmpty()) {
       throw new AmbariException("There are no upgrade groupings available");
     }
@@ -378,6 +395,8 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
       UpgradeGroupEntity groupEntity = new UpgradeGroupEntity();
       groupEntity.setName(group.name);
       groupEntity.setTitle(group.title);
+      boolean skippable = group.skippable;
+      boolean allowRetry = group.allowRetry;
 
       List<UpgradeItemEntity> itemEntities = new ArrayList<UpgradeItemEntity>();
 
@@ -397,7 +416,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
               injectVariables(configHelper, cluster, itemEntity);
 
-              makeServerSideStage(cluster, req, version, itemEntity, (ServerSideActionTask) task);
+              makeServerSideStage(cluster, req, version, itemEntity, (ServerSideActionTask) task, skippable, allowRetry);
             }
           }
         } else {
@@ -410,7 +429,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
           injectVariables(configHelper, cluster, itemEntity);
 
           // upgrade items match a stage
-          createStage(cluster, req, version, itemEntity, wrapper);
+          createStage(cluster, req, version, itemEntity, wrapper, skippable, allowRetry);
         }
 
       }
@@ -448,17 +467,18 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
   }
 
   private void createStage(Cluster cluster, RequestStageContainer request, final String version,
-      UpgradeItemEntity entity, StageWrapper wrapper) throws AmbariException {
+      UpgradeItemEntity entity, StageWrapper wrapper, boolean skippable, boolean allowRetry)
+      throws AmbariException {
 
     switch (wrapper.getType()) {
       case RESTART:
-        makeRestartStage(cluster, request, version, entity, wrapper);
+        makeRestartStage(cluster, request, version, entity, wrapper, skippable, allowRetry);
         break;
       case RU_TASKS:
-        makeActionStage(cluster, request, version, entity, wrapper);
+        makeActionStage(cluster, request, version, entity, wrapper, skippable, allowRetry);
         break;
       case SERVICE_CHECK:
-        makeServiceCheckStage(cluster, request, version, entity, wrapper);
+        makeServiceCheckStage(cluster, request, version, entity, wrapper, skippable, allowRetry);
         break;
       default:
         break;
@@ -467,7 +487,8 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
   }
 
   private void makeActionStage(Cluster cluster, RequestStageContainer request, final String version,
-      UpgradeItemEntity entity, StageWrapper wrapper) throws AmbariException {
+                               UpgradeItemEntity entity, StageWrapper wrapper,
+                               boolean skippable, boolean allowRetry) throws AmbariException {
 
     if (0 == wrapper.getHosts().size()) {
       throw new AmbariException(
@@ -478,9 +499,22 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     RequestResourceFilter filter = new RequestResourceFilter("", "",
         new ArrayList<String>(wrapper.getHosts()));
 
-
     Map<String, String> params = new HashMap<String, String>();
     params.put("tasks", entity.getTasks());
+    params.put("version", version);
+
+    // Because custom task may end up calling a script/function inside a service, it is necessary to set the
+    // service_package_folder and hooks_folder params.
+    AmbariMetaInfo ambariMetaInfo = m_metaProvider.get();
+    StackId stackId = cluster.getDesiredStackVersion();
+    StackInfo stackInfo = ambariMetaInfo.getStack(stackId.getStackName(), stackId.getStackVersion());
+    if (wrapper.getTasks() != null && wrapper.getTasks().size() > 0) {
+      String serviceName = wrapper.getTasks().get(0).getService();
+      ServiceInfo serviceInfo = ambariMetaInfo.getService(stackId.getStackName(), stackId.getStackVersion(), serviceName);
+      params.put(SERVICE_PACKAGE_FOLDER,
+          serviceInfo.getServicePackageFolder());
+      params.put(HOOKS_FOLDER, stackInfo.getStackHooksFolder());
+    }
 
     ActionExecutionContext actionContext = new ActionExecutionContext(
         cluster.getClusterName(), "ru_execute_tasks",
@@ -491,13 +525,19 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     Map<String, String> hostLevelParams = new HashMap<String, String>();
     hostLevelParams.put(JDK_LOCATION, getManagementController().getJdkResourceUrl());
 
+    ExecuteCommandJson jsons = commandExecutionHelper.get().getCommandJson(
+        actionContext, cluster);
+
     Stage stage = stageFactory.get().createNew(request.getId().longValue(),
         "/tmp/ambari",
         cluster.getClusterName(),
         cluster.getClusterId(),
         entity.getText(),
-        "{}", "{}",
-        StageUtils.getGson().toJson(hostLevelParams));
+        jsons.getClusterHostInfo(),
+        jsons.getCommandParamsForStage(),
+        jsons.getHostParamsForStage());
+
+    stage.setSkippable(skippable);
 
     long stageId = request.getLastStageId() + 1;
     if (0L == stageId) {
@@ -508,7 +548,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
     // !!! TODO verify the action is valid
 
-    actionExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage);
+    actionExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage, allowRetry);
 
     // need to set meaningful text on the command
     for (Map<String, HostRoleCommand> map : stage.getHostRoleCommands().values()) {
@@ -521,7 +561,8 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
   }
 
   private void makeRestartStage(Cluster cluster, RequestStageContainer request, final String version,
-      UpgradeItemEntity entity, StageWrapper wrapper) throws AmbariException {
+                                UpgradeItemEntity entity, StageWrapper wrapper,
+                                boolean skippable, boolean allowRetry) throws AmbariException {
 
     List<RequestResourceFilter> filters = new ArrayList<RequestResourceFilter>();
 
@@ -553,6 +594,8 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         jsons.getCommandParamsForStage(),
         jsons.getHostParamsForStage());
 
+    stage.setSkippable(skippable);
+
     long stageId = request.getLastStageId() + 1;
     if (0L == stageId) {
       stageId = 1L;
@@ -565,13 +608,14 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     Map<String, String> requestParams = new HashMap<String, String>();
     requestParams.put("command", "RESTART");
 
-    commandExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage, requestParams);
+    commandExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage, requestParams, allowRetry);
 
     request.addStages(Collections.singletonList(stage));
   }
 
   private void makeServiceCheckStage(Cluster cluster, RequestStageContainer request, String version,
-      UpgradeItemEntity entity, StageWrapper wrapper) throws AmbariException {
+                                     UpgradeItemEntity entity, StageWrapper wrapper,
+                                     boolean skippable, boolean allowRetry) throws AmbariException {
 
     List<RequestResourceFilter> filters = new ArrayList<RequestResourceFilter>();
 
@@ -579,13 +623,13 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
       filters.add(new RequestResourceFilter(tw.getService(), "", Collections.<String>emptyList()));
     }
 
-    Map<String, String> restartCommandParams = new HashMap<String, String>();
-    restartCommandParams.put("version", version);
+    Map<String, String> commandParams = new HashMap<String, String>();
+    commandParams.put("version", version);
 
     ActionExecutionContext actionContext = new ActionExecutionContext(
         cluster.getClusterName(), "SERVICE_CHECK",
         filters,
-        restartCommandParams);
+        commandParams);
     actionContext.setTimeout(Short.valueOf((short)-1));
 
     ExecuteCommandJson jsons = commandExecutionHelper.get().getCommandJson(
@@ -600,6 +644,8 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         jsons.getCommandParamsForStage(),
         jsons.getHostParamsForStage());
 
+    stage.setSkippable(skippable);
+
     long stageId = request.getLastStageId() + 1;
     if (0L == stageId) {
       stageId = 1L;
@@ -609,13 +655,14 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
     Map<String, String> requestParams = new HashMap<String, String>();
 
-    commandExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage, requestParams);
+    commandExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage, requestParams, allowRetry);
 
     request.addStages(Collections.singletonList(stage));
   }
 
   private void makeServerSideStage(Cluster cluster, RequestStageContainer request, String version,
-      UpgradeItemEntity entity, ServerSideActionTask task) throws AmbariException {
+                                   UpgradeItemEntity entity, ServerSideActionTask task,
+                                   boolean skippable, boolean allowRtery) throws AmbariException {
 
     Map<String, String> commandParams = new HashMap<String, String>();
     commandParams.put("clusterName", cluster.getClusterName());
@@ -659,6 +706,8 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         jsons.getCommandParamsForStage(),
         jsons.getHostParamsForStage());
 
+    stage.setSkippable(skippable);
+
     long stageId = request.getLastStageId() + 1;
     if (0L == stageId) {
       stageId = 1L;
@@ -674,7 +723,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         RoleCommand.EXECUTE,
         cluster.getClusterName(), host,
         new ServiceComponentHostServerActionEvent(StageUtils.getHostName(), System.currentTimeMillis()),
-        commandParams, null, 1200);
+        commandParams, null, 1200, allowRtery);
 
     request.addStages(Collections.singletonList(stage));
   }

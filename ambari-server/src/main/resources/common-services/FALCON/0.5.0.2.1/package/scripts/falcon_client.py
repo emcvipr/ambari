@@ -20,19 +20,47 @@ limitations under the License.
 from resource_management import *
 from falcon import falcon
 
+
 class FalconClient(Script):
+
+  def get_stack_to_component(self):
+    return {"HDP": "falcon-client"}
+
   def install(self, env):
     self.install_packages(env)
     self.configure(env)
-
+  
   def configure(self, env):
     import params
 
     env.set_params(params)
     falcon('client', action='config')
 
+    self.save_component_version_to_structured_out(params.stack_name)
+
   def status(self, env):
     raise ClientComponentHasNoStatus()
+
+  def pre_rolling_restart(self, env):
+    import params
+    env.set_params(params)
+
+    # this function should not execute if the version can't be determined or
+    # is not at least HDP 2.2.0.0
+    if not params.version or compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') < 0:
+      return
+
+    Logger.info("Executing Falcon Client Rolling Upgrade pre-restart")
+    Execute(format("hdp-select set hadoop-client {version}"))
+
+  def security_status(self, env):
+    import status_params
+    env.set_params(status_params)
+
+    if status_params.security_enabled:
+      self.put_structured_out({"securityState": "SECURED_KERBEROS"})
+    else:
+      self.put_structured_out({"securityState": "UNSECURED"})
 
 if __name__ == "__main__":
   FalconClient().execute()

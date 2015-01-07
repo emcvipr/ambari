@@ -18,7 +18,9 @@
 
 
 var App = require('app');
-App.MainAdminKerberosController = Em.Controller.extend({
+require('controllers/main/admin/kerberos/step4_controller');
+
+App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
   name: 'mainAdminKerberosController',
   securityEnabled: false,
   dataIsLoaded: false,
@@ -52,10 +54,9 @@ App.MainAdminKerberosController = Em.Controller.extend({
         this.hide();
       },
       bodyClass: Ember.View.extend({
-        isMapReduceInstalled: App.Service.find().mapProperty('serviceName').contains('MAPREDUCE'),
         templateName: require('templates/main/admin/security/notify_security_off_popup')
       })
-    })
+    });
   },
 
   getUpdatedSecurityStatus: function () {
@@ -87,9 +88,43 @@ App.MainAdminKerberosController = Em.Controller.extend({
         self.set('dataIsLoaded', true);
       });
     }
+  },
+
+  /**
+   * Override <code>App.KerberosWizardStep4Controller</code>
+   *
+   * @returns {$.ajax}
+   */
+  loadStackDescriptorConfigs: function () {
+    return App.ajax.send({
+      sender: this,
+      name: 'admin.kerberos.kerberos_descriptor',
+      data: {
+        stackName: App.get('currentStackName'),
+        stackVersionNumber: App.get('currentStackVersionNumber')
+      }
+    });
+  },
+
+  
+  /**
+   * Override <code>App.KerberosWizardStep4Controller</code>
+   * 
+   * @param {App.ServiceConfigProperty[]} configs
+   * @returns {App.ServiceConfigProperty[]} 
+   */
+  prepareConfigProperties: function(configs) {
+    var configProperties = configs.slice(0);
+    var installedServiceNames = ['Cluster'].concat(App.Service.find().mapProperty('serviceName'));
+    configProperties = configProperties.filter(function(item) {
+      return installedServiceNames.contains(item.get('serviceName'));
+    });
+    configProperties.forEach(function(item) {
+      if (item.get('serviceName') == 'Cluster') item.set('category', 'General');
+      else item.set('category', 'Advanced');
+    });
+    configProperties.setEach('isEditable', false);
+    return configProperties;
   }
+  
 });
-
-
-
-

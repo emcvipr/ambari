@@ -151,7 +151,7 @@ App.UpdateController = Em.Controller.extend({
   },
 
   updateHost: function (callback, error) {
-    var testUrl = App.get('isHadoop2Stack') ? '/data/hosts/HDP2/hosts.json' : '/data/hosts/hosts.json',
+    var testUrl = '/data/hosts/HDP2/hosts.json',
       self = this,
       hostDetailsFilter = '';
     var realUrl = '/hosts?<parameters>fields=Hosts/host_name,Hosts/maintenance_state,Hosts/public_host_name,Hosts/cpu_count,Hosts/ph_cpu_count,' +
@@ -267,7 +267,7 @@ App.UpdateController = Em.Controller.extend({
    * @param callback
    */
   getHostByHostComponents: function (callback) {
-    var testUrl = App.get('isHadoop2Stack') ? '/data/hosts/HDP2/hosts.json' : '/data/hosts/hosts.json';
+    var testUrl = '/data/hosts/HDP2/hosts.json';
     var realUrl = '/hosts?<parameters>minimal_response=true';
 
     App.ajax.send({
@@ -347,7 +347,7 @@ App.UpdateController = Em.Controller.extend({
 
     var conditionalFields = this.getConditionalFields(),
       conditionalFieldsString = conditionalFields.length > 0 ? ',' + conditionalFields.join(',') : '',
-      testUrl = App.get('isHadoop2Stack') ? '/data/dashboard/HDP2/master_components.json' : '/data/dashboard/services.json',
+      testUrl = '/data/dashboard/HDP2/master_components.json',
       isFlumeInstalled = App.cache['services'].mapProperty('ServiceInfo.service_name').contains('FLUME'),
       isATSInstalled = App.cache['services'].mapProperty('ServiceInfo.service_name').contains('YARN') && isATSPresent,
       flumeHandlerParam = isFlumeInstalled ? 'ServiceComponentInfo/component_name=FLUME_HANDLER|' : '',
@@ -413,10 +413,6 @@ App.UpdateController = Em.Controller.extend({
         "ServiceComponentInfo/AverageLoad," +
         "ServiceComponentInfo/Revision," +
         "ServiceComponentInfo/RegionsInTransition",
-      'MAPREDUCE': "ServiceComponentInfo/AliveNodes," +
-        "ServiceComponentInfo/GrayListedNodes," +
-        "ServiceComponentInfo/BlackListedNodes," +
-        "ServiceComponentInfo/jobtracker/*,",
       'STORM': /^2.1/.test(App.get('currentStackVersionNumber')) ? 'metrics/api/cluster/summary' : 'metrics/api/v1/cluster/summary,metrics/api/v1/topology/summary'
     };
     var services = App.cache['services'];
@@ -464,7 +460,7 @@ App.UpdateController = Em.Controller.extend({
 
   updateUnhealthyAlertInstances: function (callback) {
     var testUrl = '/data/alerts/alert_instances.json';
-    var realUrl = '/alerts?fields=*&Alert/state.in(CRITICAL,WARNING)';
+    var realUrl = '/alerts?fields=*&Alert/state.in(CRITICAL,WARNING)&Alert/maintenance_state.in(OFF)';
     var url = this.getUrl(testUrl, realUrl);
 
     App.HttpClient.get(url, App.alertInstanceMapper, {

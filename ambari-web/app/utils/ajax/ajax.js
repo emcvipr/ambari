@@ -877,46 +877,6 @@ var urls = {
     'mock': '/data/services/metrics/hbase/regionserver_rw_requests.json',
     'testInProduction': true
   },
-  'service.metrics.mapreduce.gc': {
-    'real': '/clusters/{clusterName}/hosts/{jobTrackerNode}/host_components/JOBTRACKER?fields=metrics/jvm/gcTimeMillis[{fromSeconds},{toSeconds},{stepSeconds}]',
-    'mock': '/data/services/metrics/mapreduce/gc.json',
-    'testInProduction': true
-  },
-  'service.metrics.mapreduce.jobs_status': {
-    'real': '/clusters/{clusterName}/services/MAPREDUCE/components/JOBTRACKER?fields=metrics/mapred/jobtracker/jobs_completed[{fromSeconds},{toSeconds},{stepSeconds}],metrics/mapred/jobtracker/jobs_preparing[{fromSeconds},{toSeconds},{stepSeconds}],metrics/mapred/jobtracker/jobs_failed[{fromSeconds},{toSeconds},{stepSeconds}],metrics/mapred/jobtracker/jobs_submitted[{fromSeconds},{toSeconds},{stepSeconds}],metrics/mapred/jobtracker/jobs_failed[{fromSeconds},{toSeconds},{stepSeconds}],metrics/mapred/jobtracker/jobs_running[{fromSeconds},{toSeconds},{stepSeconds}]',
-    'mock': '/data/services/metrics/mapreduce/jobs_status.json',
-    'testInProduction': true
-  },
-  'service.metrics.mapreduce.jobs_heap': {
-    'real': '/clusters/{clusterName}/hosts/{jobTrackerNode}/host_components/JOBTRACKER?fields=metrics/jvm/memNonHeapUsedM[{fromSeconds},{toSeconds},{stepSeconds}],metrics/jvm/memNonHeapCommittedM[{fromSeconds},{toSeconds},{stepSeconds}],metrics/jvm/memHeapUsedM[{fromSeconds},{toSeconds},{stepSeconds}],metrics/jvm/memHeapCommittedM[{fromSeconds},{toSeconds},{stepSeconds}]',
-    'mock': '/data/services/metrics/mapreduce/jvm_heap.json',
-    'testInProduction': true
-  },
-  'service.metrics.mapreduce.jobs_threads': {
-    'real': '/clusters/{clusterName}/hosts/{jobTrackerNode}/host_components/JOBTRACKER?fields=metrics/jvm/threadsRunnable[{fromSeconds},{toSeconds},{stepSeconds}],metrics/jvm/threadsBlocked[{fromSeconds},{toSeconds},{stepSeconds}],metrics/jvm/threadsWaiting[{fromSeconds},{toSeconds},{stepSeconds}],metrics/jvm/threadsTimedWaiting[{fromSeconds},{toSeconds},{stepSeconds}]',
-    'mock': '/data/services/metrics/mapreduce/jvm_threads.json',
-    'testInProduction': true
-  },
-  'service.metrics.mapreduce.map_slots': {
-    'real': '/clusters/{clusterName}/services/MAPREDUCE/components/JOBTRACKER?fields=metrics/mapred/jobtracker/occupied_map_slots[{fromSeconds},{toSeconds},{stepSeconds}],metrics/mapred/jobtracker/reserved_map_slots[{fromSeconds},{toSeconds},{stepSeconds}]',
-    'mock': '/data/services/metrics/mapreduce/map_slots.json',
-    'testInProduction': true
-  },
-  'service.metrics.mapreduce.reduce_slots': {
-    'real': '/clusters/{clusterName}/services/MAPREDUCE/components/JOBTRACKER?fields=metrics/mapred/jobtracker/occupied_reduce_slots[{fromSeconds},{toSeconds},{stepSeconds}],metrics/mapred/jobtracker/reserved_reduce_slots[{fromSeconds},{toSeconds},{stepSeconds}]',
-    'mock': '/data/services/metrics/mapreduce/reduce_slots.json',
-    'testInProduction': true
-  },
-  'service.metrics.mapreduce.rpc': {
-    'real': '/clusters/{clusterName}/hosts/{jobTrackerNode}/host_components/JOBTRACKER?fields=metrics/rpc/RpcQueueTime_avg_time[{fromSeconds},{toSeconds},{stepSeconds}]',
-    'mock': '/data/services/metrics/mapreduce/rpc.json',
-    'testInProduction': true
-  },
-  'service.metrics.mapreduce.tasks_running_waiting': {
-    'real': '/clusters/{clusterName}/services/MAPREDUCE/components/JOBTRACKER?fields=metrics/mapred/jobtracker/running_maps[{fromSeconds},{toSeconds},{stepSeconds}],metrics/mapred/jobtracker/running_reduces[{fromSeconds},{toSeconds},{stepSeconds}],metrics/mapred/jobtracker/waiting_maps[{fromSeconds},{toSeconds},{stepSeconds}],metrics/mapred/jobtracker/waiting_reduces[{fromSeconds},{toSeconds},{stepSeconds}]',
-    'mock': '/data/services/metrics/mapreduce/tasks_running_waiting.json',
-    'testInProduction': true
-  },
   'service.metrics.hdfs.block_status': {
     'real': '/clusters/{clusterName}/hosts/{nameNodeName}/host_components/NAMENODE?fields=metrics/dfs/FSNamesystem/PendingReplicationBlocks[{fromSeconds},{toSeconds},{stepSeconds}],metrics/dfs/FSNamesystem/UnderReplicatedBlocks[{fromSeconds},{toSeconds},{stepSeconds}]',
     'mock': '/data/services/metrics/hdfs/block_status.json',
@@ -1127,7 +1087,7 @@ var urls = {
     'mock': '/data/clusters/info.json'
   },
   'cluster.update_upgrade_version': {
-    'real': '/stacks/{stackName}/versions?fields=stackServices/StackServices,Versions',
+    'real': '/stacks/{stackName}/versions?fields=services/StackServices,Versions',
     'mock': '/data/wizard/stack/stacks.json',
     'format': function (data) {
       return {
@@ -1308,6 +1268,12 @@ var urls = {
       }
     }
   },
+  'admin.kerberos.kerberos_descriptor': {
+    // @todo: replace with real URL after API implementation
+    //        /clusters/{clusterName}?fields=Clusters/kerberos_descriptor
+    'real': '/stacks/{stackName}/versions/{stackVersionNumber}?fields=Versions/kerberos_descriptor',
+    'mock': '/data/wizard/kerberos/stack_descriptors.json'
+  },
   'admin.kerberize.stack_descriptor': {
     'real': '/stacks/{stackName}/versions/{stackVersionNumber}?fields=Versions/kerberos_descriptor',
     'mock': '/data/wizard/kerberos/stack_descriptors.json'
@@ -1412,12 +1378,8 @@ var urls = {
     },
     'mock': ''
   },
-  'admin.stack_versions.progress.request': {
-    'real': '/clusters/{clusterName}/requests/{requestId}?fields=Requests/progress_percent',
-    'mock': '/data/background_operations/host_upgrade_tasks.json'
-  },
   'admin.rolling_upgrade.pre_upgrade_check': {
-    'real': '/clusters/{clusterName}/rolling_upgrades_check?fields=*',
+    'real': '/clusters/{clusterName}/rolling_upgrades_check?fields=*&UpgradeChecks/repository_version={version}',
     'mock': '/data/stack_versions/pre_upgrade_check.json'
   },
 
@@ -1432,7 +1394,7 @@ var urls = {
     }
   },
   'wizard.service_components': {
-    'real': '{stackUrl}/services?fields=StackServices/*,serviceComponents/*,serviceComponents/dependencies/Dependencies/scope',
+    'real': '{stackUrl}/services?fields=StackServices/*,components/*,components/dependencies/Dependencies/scope',
     'mock': '/data/stacks/HDP-2.1/service_components.json',
     'format': function (data) {
       return {
@@ -1678,7 +1640,7 @@ var urls = {
     'mock': '/data/wizard/stack/stacks2.json'
   },
   'wizard.stacks_versions': {
-    'real': '/stacks/{stackName}/versions?fields=Versions,operatingSystems/repositories/Repositories',
+    'real': '/stacks/{stackName}/versions?fields=Versions,operating_systems/repositories/Repositories',
     'mock': '/data/wizard/stack/{stackName}_versions.json'
   },
   'wizard.launch_bootstrap': {
@@ -1731,7 +1693,7 @@ var urls = {
     'mock': '/data/requests/host_check/jdk_name.json'
   },
   'ambari.service.load_server_version': {
-    'real': '/services/AMBARI/components/AMBARI_SERVER?fields=RootServiceComponents/component_version,RootServiceComponents/properties/server.os_type&minimal_response=true',
+    'real': '/services/AMBARI/components/AMBARI_SERVER?fields=RootServiceComponents/component_version,RootServiceComponents/properties/server.os_family&minimal_response=true',
     'mock': '/data/ambari_components/component_version.json'
   },
   'ambari.service': {
@@ -1812,156 +1774,6 @@ var urls = {
         })
       }
     }
-  },
-
-  'mirroring.get_all_entities': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/entities/list/{type}?fields=status&user.name=ambari-qa',
-    'mock': '/data/mirroring/{type}s.xml',
-    'apiPrefix': '',
-    'format': function () {
-      return {
-        dataType: 'xml'
-      }
-    }
-  },
-
-  'mirroring.get_definition': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/entities/definition/{type}/{name}?user.name=ambari-qa',
-    'mock': '/data/mirroring/{name}_definition.xml',
-    'apiPrefix': '',
-    'format': function () {
-      return {
-        cache: true,
-        dataType: 'xml'
-      }
-    }
-  },
-
-  'mirroring.dataset.get_all_instances': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/instance/status/feed/{dataset}?start={start}&end={end}&user.name=ambari-qa',
-    'mock': '/data/mirroring/{dataset}_instances.json',
-    'apiPrefix': ''
-  },
-
-  'mirroring.create_new_dataset': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/entities/submitAndSchedule/feed?user.name=ambari-qa',
-    'mock': '/data/mirroring/succeeded.json',
-    'apiPrefix': '',
-    'type': 'POST',
-    'format': function (data) {
-      return {
-        contentType: 'text/xml',
-        dataType: 'xml',
-        data: data.entity,
-        headers: {
-          'AmbariProxy-Content-Type': 'text/xml'
-        }
-      }
-    }
-  },
-
-  'mirroring.submit_entity': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/entities/submit/{type}?user.name=ambari-qa',
-    'mock': '/data/mirroring/succeeded.json',
-    'apiPrefix': '',
-    'type': 'POST',
-    'format': function (data) {
-      return {
-        contentType: 'text/xml',
-        dataType: 'xml',
-        data: data.entity,
-        headers: {
-          'AmbariProxy-Content-Type': 'text/xml'
-        }
-      }
-    }
-  },
-
-  'mirroring.update_entity': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/entities/update/{type}/{name}?user.name=ambari-qa',
-    'mock': '/data/mirroring/succeeded.json',
-    'apiPrefix': '',
-    'type': 'POST',
-    'format': function (data) {
-      return {
-        contentType: 'text/xml',
-        dataType: 'xml',
-        data: data.entity,
-        headers: {
-          'AmbariProxy-Content-Type': 'text/xml'
-        }
-      }
-    }
-  },
-
-  'mirroring.delete_entity': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/entities/delete/{type}/{name}?user.name=ambari-qa',
-    'mock': '/data/mirroring/succeeded.json',
-    'apiPrefix': '',
-    'type': 'DELETE',
-    'format': function () {
-      return {
-        dataType: 'xml'
-      }
-    }
-  },
-
-  'mirroring.suspend_entity': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/entities/suspend/{type}/{name}?user.name=ambari-qa',
-    'mock': '/data/mirroring/succeeded.json',
-    'apiPrefix': '',
-    'type': 'POST',
-    'format': function (data) {
-      return {
-        dataType: 'xml',
-        data: data.entity
-      }
-    }
-  },
-
-  'mirroring.resume_entity': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/entities/resume/{type}/{name}?user.name=ambari-qa',
-    'mock': '/data/mirroring/succeeded.json',
-    'apiPrefix': '',
-    'type': 'POST',
-    'format': function () {
-      return {
-        dataType: 'xml'
-      }
-    }
-  },
-
-  'mirroring.schedule_entity': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/entities/schedule/{type}/{name}?user.name=ambari-qa',
-    'mock': '/data/mirroring/succeeded.json',
-    'apiPrefix': '',
-    'type': 'POST',
-    'format': function () {
-      return {
-        dataType: 'xml'
-      }
-    }
-  },
-
-  'mirroring.suspend_instance': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/instance/suspend/feed/{feed}?start={name}&user.name=ambari-qa',
-    'mock': '/data/mirroring/succeeded.json',
-    'apiPrefix': '',
-    'type': 'POST'
-  },
-
-  'mirroring.resume_instance': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/instance/resume/feed/{feed}?start={name}&user.name=ambari-qa',
-    'mock': '/data/mirroring/succeeded.json',
-    'apiPrefix': '',
-    'type': 'POST'
-  },
-
-  'mirroring.kill_instance': {
-    'real': '/proxy?url=http://{falconServer}:15000/api/instance/kill/feed/{feed}?start={name}&user.name=ambari-qa',
-    'mock': '/data/mirroring/succeeded.json',
-    'apiPrefix': '',
-    'type': 'POST'
   },
 
   'bulk_request.decommission': {
@@ -2202,6 +2014,8 @@ var urls = {
   'hosts.bulk.operations': {
     real: '/clusters/{clusterName}/hosts?fields=Hosts/host_name,Hosts/maintenance_state,' +
     'host_components/HostRoles/state,host_components/HostRoles/maintenance_state,' +
+    'Hosts/total_mem,stack_versions/HostStackVersions,stack_versions/repository_versions/RepositoryVersions/repository_version,' +
+    'stack_versions/repository_versions/RepositoryVersions/id,' +
     'host_components/HostRoles/stale_configs&minimal_response=true',
     mock: '',
     format: function (data) {

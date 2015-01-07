@@ -42,7 +42,6 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
     return {
       HBASE: App.MainDashboardServiceHbaseView,
       HDFS: App.MainDashboardServiceHdfsView,
-      MAPREDUCE: App.MainDashboardServiceMapreduceView,
       STORM: App.MainDashboardServiceStormView,
       YARN: App.MainDashboardServiceYARNView,
       FLUME: Em.View.extend({
@@ -200,9 +199,6 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
         case 'yarn':
           svc = App.YARNService.find().objectAt(0);
           break;
-        case 'mapreduce':
-          svc = App.MapReduceService.find().objectAt(0);
-          break;
         case 'hbase':
           svc = App.HBaseService.find().objectAt(0);
           break;
@@ -255,6 +251,14 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
   alertsCount: function () {
     return !!this.get('controller.content.criticalAlertsCount');
   }.property('controller.content.criticalAlertsCount'),
+
+  /**
+   * Define if service has alert definitions defined
+   * @type {Boolean}
+   */
+  hasAlertDefinitions: function () {
+    return App.AlertDefinition.getAllDefinitions().someProperty('serviceName', this.get('controller.content.serviceName'));
+  }.property('controller.content.serviceName'),
 
   restartRequiredHostsAndComponents:function () {
     return this.get('controller.content.restartRequiredHostsAndComponents');
@@ -459,9 +463,6 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
       switch (svcName.toLowerCase()) {
         case 'hdfs':
           gangliaUrl += "/?r=hour&cs=&ce=&m=&s=by+name&c=HDPSlaves&tab=m&vn=";
-          break;
-        case 'mapreduce':
-          gangliaUrl += "/?r=hour&cs=&ce=&m=&s=by+name&c=HDPJobTracker&tab=m&vn=";
           break;
         case 'hbase':
           gangliaUrl += "?r=hour&cs=&ce=&m=&s=by+name&c=HDPHBaseMaster&tab=m&vn=";

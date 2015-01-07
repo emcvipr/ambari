@@ -53,23 +53,15 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
   /**
    * used in services_config.js view to mark a config with security icon
    */
-  secureConfigs: function () {
-    if (App.get('isHadoop2Stack')) {
-      return require('data/HDP2/secure_mapping');
-    } else {
-      return require('data/secure_mapping');
-    }
-  }.property('isHadoop2Stack'),
+  secureConfigs: require('data/HDP2/secure_mapping'),
 
   /**
    * config categories with secure properties
    * use only for add service wizard when security is enabled;
    */
   secureServices: function () {
-    return (App.get('isHadoop2Stack')) ?
-      $.extend(true, [], require('data/HDP2/secure_configs')) :
-      $.extend(true, [], require('data/secure_configs'));
-  }.property('App.isHadoop2Stack'),
+    return $.extend(true, [], require('data/HDP2/secure_configs'));
+  }.property(),
 
   /**
    * uses for add service - find out is security is enabled
@@ -722,18 +714,29 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
         });
         serviceConfigs.findProperty('serviceName', 'HDFS').configs = c;
       }
+    }
 
-      // Remove Notifications from MISC if it isn't Installer Controller
-      if (this.get('wizardController.name') !== 'installerController') {
-        var miscService = serviceConfigs.findProperty('serviceName', 'MISC');
-        if (miscService) {
-          c = miscService.configs;
-          removedConfigs = c.filterProperty('category', 'Notifications');
-          removedConfigs.map(function (config) {
-            c = c.without(config);
-          });
-          miscService.configs = c;
-        }
+    // Remove Notifications from MISC if it isn't Installer Controller
+    if (this.get('wizardController.name') !== 'installerController') {
+      var miscService = serviceConfigs.findProperty('serviceName', 'MISC');
+      if (miscService) {
+        c = miscService.configs;
+        removedConfigs = c.filterProperty('category', 'Notifications');
+        removedConfigs.map(function (config) {
+          c = c.without(config);
+        });
+        miscService.configs = c;
+      }
+    }
+
+    if (!App.get('isHadoopWindowsStack')) {
+      var hdfsService =  serviceConfigs.findProperty('serviceName', 'HDFS');
+      if (hdfsService) {
+        c = hdfsService.configs;
+        c.filterProperty('category', 'MetricsSink').map(function (config) {
+          c = c.without(config);
+        });
+        serviceConfigs.findProperty('serviceName', 'HDFS').configs = c;
       }
     }
 
@@ -1181,7 +1184,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
    * @method getAmbariDatabaseSuccess
    */
   getAmbariDatabaseSuccess: function (data) {
-    var hiveDBHostname = this.get('stepConfigs').findProperty('serviceName', 'HIVE').configs.findProperty('name', 'hivemetastore_host').value;
+    var hiveDBHostname = this.get('stepConfigs').findProperty('serviceName', 'HIVE').configs.findProperty('name', 'hive_ambari_host').value;
     var ambariServiceHostComponents = data.hostComponents;
     if (!!ambariServiceHostComponents.length) {
       var ambariDBInfo = JSON.stringify(ambariServiceHostComponents[0].RootServiceHostComponents.properties);

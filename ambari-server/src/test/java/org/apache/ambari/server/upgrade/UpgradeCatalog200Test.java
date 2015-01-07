@@ -18,30 +18,12 @@
 
 package org.apache.ambari.server.upgrade;
 
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertFalse;
-import static junit.framework.Assert.assertNotNull;
-import static junit.framework.Assert.assertNull;
-import static junit.framework.Assert.assertTrue;
-import static org.easymock.EasyMock.capture;
-import static org.easymock.EasyMock.createMockBuilder;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.createStrictMock;
-import static org.easymock.EasyMock.eq;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.expectLastCall;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.reset;
-import static org.easymock.EasyMock.verify;
-
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.List;
-
-import javax.persistence.EntityManager;
-
+import com.google.inject.Binder;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.Module;
+import com.google.inject.Provider;
+import com.google.inject.persist.PersistService;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.DBAccessor.DBColumnInfo;
@@ -67,12 +49,28 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.google.inject.Binder;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.Module;
-import com.google.inject.Provider;
-import com.google.inject.persist.PersistService;
+import javax.persistence.EntityManager;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.List;
+
+import static junit.framework.Assert.assertEquals;
+import static junit.framework.Assert.assertFalse;
+import static junit.framework.Assert.assertNotNull;
+import static junit.framework.Assert.assertNull;
+import static junit.framework.Assert.assertTrue;
+import static org.easymock.EasyMock.capture;
+import static org.easymock.EasyMock.createMockBuilder;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.createStrictMock;
+import static org.easymock.EasyMock.eq;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.expectLastCall;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.reset;
+import static org.easymock.EasyMock.verify;
 
 /**
  * {@link UpgradeCatalog200} unit tests.
@@ -118,6 +116,7 @@ public class UpgradeCatalog200Test {
     Capture<DBAccessor.DBColumnInfo> hostComponentStateSecurityStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> hostComponentDesiredStateSecurityStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> hostRoleCommandRetryColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
+    Capture<DBAccessor.DBColumnInfo> stageSkippableColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
 
     Capture<DBAccessor.DBColumnInfo> viewparameterLabelColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> viewparameterPlaceholderColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
@@ -155,6 +154,10 @@ public class UpgradeCatalog200Test {
     // Host Role Command retry allowed
     dbAccessor.addColumn(eq("host_role_command"),
         capture(hostRoleCommandRetryColumnCapture));
+
+    // Stage skippable
+    dbAccessor.addColumn(eq("stage"),
+        capture(stageSkippableColumnCapture));
 
     // Host Component State: security State
     dbAccessor.addColumn(eq("hostcomponentstate"),
@@ -230,6 +233,14 @@ public class UpgradeCatalog200Test {
     assertEquals(0, upgradeRetryColumn.getDefaultValue());
     assertFalse(upgradeRetryColumn.isNullable());
 
+    // Verify added column in host_role_command table
+    DBAccessor.DBColumnInfo upgradeSkippableColumn = stageSkippableColumnCapture.getValue();
+    assertEquals("skippable", upgradeSkippableColumn.getName());
+    assertEquals(1, (int) upgradeSkippableColumn.getLength());
+    assertEquals(Integer.class, upgradeSkippableColumn.getType());
+    assertEquals(0, upgradeSkippableColumn.getDefaultValue());
+    assertFalse(upgradeSkippableColumn.isNullable());
+
     // verify security_state columns
     verifyComponentSecurityStateColumn(hostComponentStateSecurityStateColumnCapture);
     verifyComponentSecurityStateColumn(hostComponentDesiredStateSecurityStateColumnCapture);
@@ -258,12 +269,16 @@ public class UpgradeCatalog200Test {
   @Test
   public void testExecuteDMLUpdates() throws Exception {
     Method removeNagiosService = UpgradeCatalog200.class.getDeclaredMethod("removeNagiosService");
+    Method updateHiveDatabaseType = UpgradeCatalog200.class.getDeclaredMethod("updateHiveDatabaseType");
 
     UpgradeCatalog200 upgradeCatalog = createMockBuilder(
-        UpgradeCatalog200.class).addMockedMethod(removeNagiosService).createMock();
+        UpgradeCatalog200.class).addMockedMethod(removeNagiosService).addMockedMethod(updateHiveDatabaseType).createMock();
 
     upgradeCatalog.removeNagiosService();
     expectLastCall().once();
+    upgradeCatalog.updateHiveDatabaseType();
+    expectLastCall().once();
+
 
     replay(upgradeCatalog);
 

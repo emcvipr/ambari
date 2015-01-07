@@ -17,7 +17,9 @@
  */
 package org.apache.ambari.server.state;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +50,7 @@ import org.apache.ambari.server.state.stack.upgrade.Grouping;
 import org.apache.ambari.server.state.stack.upgrade.StageWrapper;
 import org.apache.ambari.server.state.stack.upgrade.StageWrapperBuilder;
 import org.apache.ambari.server.state.stack.upgrade.TaskWrapper;
+import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,22 +62,55 @@ public class UpgradeHelper {
   private static Logger LOG = LoggerFactory.getLogger(UpgradeHelper.class);
 
   /**
+   * Generates a list of UpgradeGroupHolder items that are used to execute a downgrade
+   * @param cluster     the cluster
+   * @param mhr         Master Host Resolver needed to get master and secondary
+   *                    hosts of several components like NAMENODE
+   * @param upgradePack the upgrade pack
+   * @return the list of holders
+   */
+  public List<UpgradeGroupHolder> createDowngrade(Cluster cluster, MasterHostResolver mhr, UpgradePack upgradePack) throws AmbariException {
+    return createSequence(cluster, mhr, upgradePack, false);
+  }
+
+  /**
    * Generates a list of UpgradeGroupHolder items that are used to execute an upgrade
-   * @param cluster the cluster
-   * @param mhr Master Host Resolver needed to get master and secondary hosts of several components like NAMENODE
+   * @param cluster     the cluster
+   * @param mhr         Master Host Resolver needed to get master and secondary
+   *                    hosts of several components like NAMENODE
    * @param upgradePack the upgrade pack
    * @return the list of holders
    */
   public List<UpgradeGroupHolder> createUpgrade(Cluster cluster, MasterHostResolver mhr, UpgradePack upgradePack) throws AmbariException {
+    return createSequence(cluster, mhr, upgradePack, true);
+  }
+
+
+  /**
+   * Generates a list of UpgradeGroupHolder items that are used to execute an upgrade
+   * @param cluster     the cluster
+   * @param mhr         Master Host Resolver needed to get master and secondary
+   *                    hosts of several components like NAMENODE
+   * @param upgradePack the upgrade pack
+   * @param forUpgrade  {@code true} if the sequence is for an upgrade, {@code false} if for a downgrade
+   * @return the list of holders
+   *
+   */
+  private List<UpgradeGroupHolder> createSequence(Cluster cluster,
+      MasterHostResolver mhr, UpgradePack upgradePack, boolean forUpgrade)
+      throws AmbariException {
     Map<String, Map<String, ProcessingComponent>> allTasks = upgradePack.getTasks();
 
     List<UpgradeGroupHolder> groups = new ArrayList<UpgradeGroupHolder>();
+
+    int idx = 0;
 
     for (Grouping group : upgradePack.getGroups()) {
       if (ClusterGrouping.class.isInstance(group)) {
         UpgradeGroupHolder groupHolder = getClusterGroupHolder(cluster, (ClusterGrouping) group);
         if (null != groupHolder) {
           groups.add(groupHolder);
+          idx++;
           continue;
         }
       }
@@ -82,10 +118,20 @@ public class UpgradeHelper {
       UpgradeGroupHolder groupHolder = new UpgradeGroupHolder();
       groupHolder.name = group.name;
       groupHolder.title = group.title;
+      groupHolder.skippable = group.skippable;
+      groupHolder.allowRetry = group.allowRetry;
 
       StageWrapperBuilder builder = group.getBuilder();
 
-      for (UpgradePack.OrderService service : group.services) {
+      List<UpgradePack.OrderService> services = group.services;
+
+      if (!forUpgrade) {
+        List<UpgradePack.OrderService> reverse = new ArrayList<UpgradePack.OrderService>(services);
+        Collections.reverse(reverse);
+        services = reverse;
+      }
+
+      for (UpgradePack.OrderService service : services) {
 
         if (!allTasks.containsKey(service.serviceName)) {
           continue;
@@ -117,16 +163,16 @@ public class UpgradeHelper {
 
               // Override the hosts with the ordered collection
               hostsType.hosts = order;
-
             } else {
-                // TODO Rolling Upgrade, enable once Namenode HA is a pre-check requirement.
-                // throw new AmbariException(MessageFormat.format("Could not find active and standby namenodes using hosts: {0}", StringUtils.join(hostsType.hosts, ", ").toString()));
+                throw new AmbariException(MessageFormat.format("Could not find active and standby namenodes using hosts: {0}", StringUtils.join(hostsType.hosts, ", ").toString()));
             }
 
-            builder.add(hostsType, service.serviceName, svc.isClientOnlyService(), pc);
+            builder.add(hostsType, service.serviceName, forUpgrade,
+                svc.isClientOnlyService(), pc);
 
           } else {
-            builder.add(hostsType, service.serviceName, svc.isClientOnlyService(), pc);
+            builder.add(hostsType, service.serviceName, forUpgrade,
+                svc.isClientOnlyService(), pc);
           }
         }
       }
@@ -135,7 +181,11 @@ public class UpgradeHelper {
 
       if (!proxies.isEmpty()) {
         groupHolder.items = proxies;
-        groups.add(groupHolder);
+        if (forUpgrade) {
+          groups.add(groupHolder);
+        } else {
+          groups.add(idx, groupHolder);
+        }
       }
     }
 
@@ -171,6 +221,17 @@ public class UpgradeHelper {
      * The title
      */
     public String title;
+
+    /**
+     * Indicate whether retry is allowed for the stages in this group.
+     */
+    public boolean allowRetry = true;
+
+    /**
+     * Indicates whether the stages in this group are skippable on failure.  If a
+     * stage is skippable, a failed result can be skipped without failing the entire upgrade.
+     */
+    public boolean skippable = false;
 
     /**
      * List of stages for the group

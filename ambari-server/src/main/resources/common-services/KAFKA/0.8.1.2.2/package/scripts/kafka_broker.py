@@ -19,10 +19,15 @@ limitations under the License.
 
 from resource_management import *
 import sys
+import upgrade
 
 from kafka import kafka
 
 class KafkaBroker(Script):
+
+  def get_stack_to_component(self):
+    return {"HDP": "kafka-broker"}
+
   def install(self, env):
     self.install_packages(env)
     self.configure(env)
@@ -32,7 +37,12 @@ class KafkaBroker(Script):
     env.set_params(params)
     kafka()
 
-  def start(self, env):
+  def pre_rolling_restart(self, env):
+    import params
+    env.set_params(params)
+    upgrade.prestart(env, "kafka-broker")
+
+  def start(self, env, rolling_restart=False):
     import params
     env.set_params(params)
     self.configure(env)
@@ -42,8 +52,10 @@ class KafkaBroker(Script):
             user=params.kafka_user,
             not_if=no_op_test
     )
+    
+    self.save_component_version_to_structured_out(params.stack_name)
 
-  def stop(self, env):
+  def stop(self, env, rolling_restart=False):
     import params
     env.set_params(params)
     self.configure(env)

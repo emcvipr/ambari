@@ -656,7 +656,7 @@ describe("App.MainServiceInfoConfigsController", function () {
         mainServiceInfoConfigsController.set('content', Ember.Object.create ({ serviceName: 'HDFS' }));
       });
 
-      describe("when isHadoop2Stack is true", function() {
+      describe("for hadoop 2", function() {
 
         var tests = [
           {
@@ -729,134 +729,8 @@ describe("App.MainServiceInfoConfigsController", function () {
           })
         });
       });
-
-      describe("when isHadoop2Stack is false", function() {
-
-        var tests = [
-          {
-            it: "should set dirChanged to false if none of the properties exist",
-            expect: false,
-            config: Ember.Object.create ({})
-          },
-          {
-            it: "should set dirChanged to true if dfs.name.dir is not default",
-            expect: true,
-            config: Ember.Object.create ({
-              name: 'dfs.name.dir',
-              isNotDefaultValue: true
-            })
-          },
-          {
-            it: "should set dirChanged to false if dfs.name.dir is default",
-            expect: false,
-            config: Ember.Object.create ({
-              name: 'dfs.name.dir',
-              isNotDefaultValue: false
-            })
-          },
-          {
-            it: "should set dirChanged to true if fs.checkpoint.dir is not default",
-            expect: true,
-            config: Ember.Object.create ({
-              name: 'fs.checkpoint.dir',
-              isNotDefaultValue: true
-            })
-          },
-          {
-            it: "should set dirChanged to false if fs.checkpoint.dir is default",
-            expect: false,
-            config: Ember.Object.create ({
-              name: 'fs.checkpoint.dir',
-              isNotDefaultValue: false
-            })
-          },
-          {
-            it: "should set dirChanged to true if dfs.data.dir is not default",
-            expect: true,
-            config: Ember.Object.create ({
-              name: 'dfs.data.dir',
-              isNotDefaultValue: true
-            })
-          },
-          {
-            it: "should set dirChanged to false if dfs.data.dir is default",
-            expect: false,
-            config: Ember.Object.create ({
-              name: 'dfs.data.dir',
-              isNotDefaultValue: false
-            })
-          }
-        ];
-
-        beforeEach(function() {
-          sinon.stub(App, 'get').returns(false);
-        });
-
-        afterEach(function() {
-          App.get.restore();
-        });
-
-        tests.forEach(function(test) {
-          it(test.it, function() {
-            mainServiceInfoConfigsController.set('stepConfigs', [Ember.Object.create ({ configs: [test.config], serviceName: 'HDFS' })]);
-            expect(mainServiceInfoConfigsController.isDirChanged()).to.equal(test.expect);
-          })
-        });
-      });
     });
 
-    describe("when service name is MAPREDUCE", function() {
-      beforeEach(function() {
-        mainServiceInfoConfigsController.set('content', Ember.Object.create ({ serviceName: 'MAPREDUCE' }));
-      });
-
-      var tests = [
-        {
-          it: "should set dirChanged to false if none of the properties exist",
-          expect: false,
-          config: Ember.Object.create ({})
-        },
-        {
-          it: "should set dirChanged to true if mapred.local.dir is not default",
-          expect: true,
-          config: Ember.Object.create ({
-            name: 'mapred.local.dir',
-            isNotDefaultValue: true
-          })
-        },
-        {
-          it: "should set dirChanged to false if mapred.local.dir is default",
-          expect: false,
-          config: Ember.Object.create ({
-            name: 'mapred.local.dir',
-            isNotDefaultValue: false
-          })
-        },
-        {
-          it: "should set dirChanged to true if mapred.system.dir is not default",
-          expect: true,
-          config: Ember.Object.create ({
-            name: 'mapred.system.dir',
-            isNotDefaultValue: true
-          })
-        },
-        {
-          it: "should set dirChanged to false if mapred.system.dir is default",
-          expect: false,
-          config: Ember.Object.create ({
-            name: 'mapred.system.dir',
-            isNotDefaultValue: false
-          })
-        }
-      ];
-
-      tests.forEach(function(test) {
-        it(test.it, function() {
-          mainServiceInfoConfigsController.set('stepConfigs', [Ember.Object.create ({ configs: [test.config], serviceName: 'MAPREDUCE' })]);
-          expect(mainServiceInfoConfigsController.isDirChanged()).to.equal(test.expect);
-        })
-      });
-    });
   });
 
   describe("#addDynamicProperties", function() {
@@ -902,9 +776,9 @@ describe("App.MainServiceInfoConfigsController", function () {
     ];
     var dynamicProperty = {
       "name": "templeton.hive.properties",
-      "templateName": ["hivemetastore_host"],
+      "templateName": ["hive.metastore.uris"],
       "foreignKey": null,
-      "value": "hive.metastore.local=false,hive.metastore.uris=thrift://<templateName[0]>:9083,hive.metastore.sasl.enabled=yes,hive.metastore.execute.setugi=true,hive.metastore.warehouse.dir=/apps/hive/warehouse",
+      "value": "hive.metastore.local=false,hive.metastore.uris=<templateName[0]>,hive.metastore.sasl.enabled=yes,hive.metastore.execute.setugi=true,hive.metastore.warehouse.dir=/apps/hive/warehouse",
       "filename": "webhcat-site.xml"
     };
 
@@ -987,6 +861,7 @@ describe("App.MainServiceInfoConfigsController", function () {
     it("load ui config", function() {
       expect(mainServiceInfoConfigsController.loadUiSideConfigs(t.configMapping)[0]).to.deep.equal(t.uiConfigs[0]);
       expect(mainServiceInfoConfigsController.addDynamicProperties.calledWith(t.configMappingf)).to.equal(true);
+      expect(mainServiceInfoConfigsController.getGlobConfigValueWithOverrides.calledWith(t.configMapping[0].templateName, t.configMapping[0].value, t.configMapping[0].name)).to.equal(true);
     });
   });
 

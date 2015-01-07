@@ -32,8 +32,11 @@ from resource_management.libraries.resources import PropertiesFile
 from resource_management.core.resources import File, Directory
 from resource_management.core.source import InlineTemplate
 from resource_management.core.environment import Environment
+from resource_management.core.logger import Logger
 from resource_management.core.exceptions import Fail, ClientComponentHasNoStatus, ComponentIsNotRunning
 from resource_management.core.resources.packaging import Package
+from resource_management.libraries.functions.version_select_util import get_component_version
+from resource_management.libraries.functions.version import compare_versions
 from resource_management.libraries.script.config_dictionary import ConfigDictionary, UnknownConfiguration
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -48,7 +51,7 @@ USAGE = """Usage: {0} <COMMAND> <JSON_CONFIG> <BASEDIR> <STROUTPUT> <LOGGING_LEV
 
 <COMMAND> command type (INSTALL/CONFIGURE/START/STOP/SERVICE_CHECK...)
 <JSON_CONFIG> path to command json file. Ex: /var/lib/ambari-agent/data/command-2.json
-<BASEDIR> path to service metadata dir. Ex: /var/lib/ambari-agent/cache/stacks/HDP/2.0.6/services/HDFS
+<BASEDIR> path to service metadata dir. Ex: /var/lib/ambari-agent/cache/common-services/HDFS/2.1.0.2.0/package
 <STROUTPUT> path to file with structured command output (file will be created). Ex:/tmp/my.txt
 <LOGGING_LEVEL> log level for stdout. Ex:DEBUG,INFO
 <TMP_DIR> temporary directory for executable scripts. Ex: /var/lib/ambari-agent/data/tmp
@@ -82,6 +85,20 @@ class Script(object):
   4 path to file with structured command output (file will be created)
   """
   structuredOut = {}
+  command_data_file = ""
+  basedir = ""
+  stroutfile = ""
+  logging_level = ""
+
+  # Class variable
+  tmp_dir = ""
+
+  def get_stack_to_component(self):
+    """
+    To be overridden by subclasses.
+    Returns a dictionary where the key is a stack name, and the value is the component name used in selecting the version.
+    """
+    return {}
 
   def put_structured_out(self, sout):
     Script.structuredOut.update(sout)
@@ -91,24 +108,30 @@ class Script(object):
     except IOError:
       Script.structuredOut.update({"errMsg" : "Unable to write to " + self.stroutfile})
 
+  def save_component_version_to_structured_out(self, stack_name):
+    """
+    :param stack_name: One of HDP, HDPWIN, PHD, BIGTOP.
+    :return: Append the version number to the structured out.
+    """
+    import params
+    component_version = None
+
+    stack_to_component = self.get_stack_to_component()
+    if stack_to_component:
+      if stack_name == "HDP" and params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.2') >= 0:
+        component_name = stack_to_component[stack_name] if stack_name in stack_to_component else None
+        component_version = get_component_version(stack_name, component_name)
+
+      if component_version:
+        self.put_structured_out({"version": component_version})
+
   def execute(self):
     """
     Sets up logging;
     Parses command parameters and executes method relevant to command type
     """
-    # set up logging (two separate loggers for stderr and stdout with different loglevels)
-    logger = logging.getLogger('resource_management')
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(message)s')
-    chout = logging.StreamHandler(sys.stdout)
-    chout.setLevel(logging.INFO)
-    chout.setFormatter(formatter)
-    cherr = logging.StreamHandler(sys.stderr)
-    cherr.setLevel(logging.ERROR)
-    cherr.setFormatter(formatter)
-    logger.addHandler(cherr)
-    logger.addHandler(chout)
-
+    logger, chout, cherr = Logger.initialize_logger()
+    
     # parse arguments
     if len(sys.argv) < 7:
      logger.error("Script expects at least 6 arguments")
@@ -116,13 +139,13 @@ class Script(object):
      sys.exit(1)
 
     command_name = str.lower(sys.argv[1])
-    command_data_file = sys.argv[2]
-    basedir = sys.argv[3]
+    self.command_data_file = sys.argv[2]
+    self.basedir = sys.argv[3]
     self.stroutfile = sys.argv[4]
-    logging_level = sys.argv[5]
+    self.logging_level = sys.argv[5]
     Script.tmp_dir = sys.argv[6]
 
-    logging_level_str = logging._levelNames[logging_level]
+    logging_level_str = logging._levelNames[self.logging_level]
     chout.setLevel(logging_level_str)
     logger.setLevel(logging_level_str)
 
@@ -133,7 +156,7 @@ class Script(object):
       reload_windows_env()
 
     try:
-      with open(command_data_file, "r") as f:
+      with open(self.command_data_file, "r") as f:
         pass
         Script.config = ConfigDictionary(json.load(f))
         #load passwords here(used on windows to impersonate different users)
@@ -148,7 +171,7 @@ class Script(object):
     # Run class method depending on a command type
     try:
       method = self.choose_method_to_execute(command_name)
-      with Environment(basedir) as env:
+      with Environment(self.basedir) as env:
         method(env)
     except ClientComponentHasNoStatus or ComponentIsNotRunning:
       # Support of component status checks.
@@ -233,7 +256,8 @@ class Script(object):
       config = self.get_config()
 
       install_windows_msi(os.path.join(config['hostLevelParams']['jdk_location'], "hdp.msi"),
-                          config["hostLevelParams"]["agentCacheDir"], "hdp.msi", self.get_password("hadoop"))
+                          config["hostLevelParams"]["agentCacheDir"], "hdp.msi", self.get_password("hadoop"),
+                          str(config['hostLevelParams']['stack_version']))
       pass
 
   def fail_with_error(self, message):
@@ -320,6 +344,22 @@ class Script(object):
     To be overridden by subclasses
     """
     self.fail_with_error('configure method isn\'t implemented')
+
+  def security_status(self, env):
+    """
+    To be overridden by subclasses to provide the current security state of the component.
+    Implementations are required to set the "securityState" property of the structured out data set
+    to one of the following values:
+
+      UNSECURED        - If the component is not configured for any security protocol such as
+                         Kerberos
+      SECURED_KERBEROS - If the component is configured for Kerberos
+      UNKNOWN          - If the security state cannot be determined
+      ERROR            - If the component is supposed to be secured, but there are issues with the
+                         configuration.  For example, if the component is configured for Kerberos
+                         but the configured principal and keytab file fail to kinit
+    """
+    self.put_structured_out({"securityState": "UNKNOWN"})
 
   def generate_configs_get_template_file_content(self, filename, dicts):
     config = self.get_config()

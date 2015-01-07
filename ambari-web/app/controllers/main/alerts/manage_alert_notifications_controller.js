@@ -89,9 +89,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
       label: Em.I18n.t('alerts.actions.manage_alert_notifications_popup.SMTPUseAuthentication'),
       value: false,
       defaultValue: false,
-      inversedValue: function () {
-        return !this.get('value');
-      }.property('value')
+      invertedValue: Em.computed.not('value')
     }),
     SMTPUsername: {
       label: Em.I18n.t('alerts.actions.manage_alert_notifications_popup.SMTPUsername'),
@@ -100,6 +98,11 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
     },
     SMTPPassword: {
       label: Em.I18n.t('alerts.actions.manage_alert_notifications_popup.SMTPPassword'),
+      value: '',
+      defaultValue: ''
+    },
+    retypeSMTPPassword: {
+      label: Em.I18n.t('alerts.actions.manage_alert_notifications_popup.retypeSMTPPassword'),
       value: '',
       defaultValue: ''
     },
@@ -255,8 +258,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
   addAlertNotification: function () {
     var inputFields = this.get('inputFields');
     inputFields.setProperties({
-      'global.disabled': false,
-      'allGroups.disabled': false
+      'global.disabled': false
     });
     Em.keys(inputFields).forEach(function (key) {
       inputFields.set(key + '.value', inputFields.get(key + '.defaultValue'));
@@ -291,6 +293,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
     inputFields.set('SMTPUseAuthentication.value', selectedAlertNotification.get('properties')['mail.smtp.auth']);
     inputFields.set('SMTPUsername.value', selectedAlertNotification.get('properties')['ambari.dispatch.credential.username']);
     inputFields.set('SMTPPassword.value', selectedAlertNotification.get('properties')['ambari.dispatch.credential.password']);
+    inputFields.set('retypeSMTPPassword.value', selectedAlertNotification.get('properties')['ambari.dispatch.credential.password']);
     inputFields.set('SMTPSTARTTLS.value', selectedAlertNotification.get('properties')['mail.smtp.starttls.enable']);
     inputFields.set('emailFrom.value', selectedAlertNotification.get('properties')['mail.smtp.from']);
     inputFields.set('version.value', selectedAlertNotification.get('properties')['ambari.dispatch.snmp.version']);
@@ -300,7 +303,6 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
     inputFields.set('severityFilter.value', selectedAlertNotification.get('alertStates'));
     inputFields.set('global.value', selectedAlertNotification.get('global'));
     inputFields.set('allGroups.value', selectedAlertNotification.get('global') ? 'all' : 'custom');
-    inputFields.set('allGroups.disabled', true);
     // not allow to edit global field
     inputFields.set('global.disabled', true);
     inputFields.set('description.value', selectedAlertNotification.get('description'));
@@ -340,6 +342,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
           this.emailFromValidation();
           this.smtpPortValidation();
           this.portValidation();
+          this.retypePasswordValidation();
         },
 
         isEmailMethodSelected: function () {
@@ -347,16 +350,45 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
         }.property('controller.inputFields.method.value'),
 
         nameValidation: function () {
-          this.set('parentView.hasErrors', !this.get('controller.inputFields.name.value').trim());
+          var newName = this.get('controller.inputFields.name.value').trim();
+          var errorMessage = '';
+          // on editing, save current notification name
+          if (newName && !this.get('currentName')) {
+            this.set('currentName', newName);
+          }
+          if (isEdit) {
+            // edit current alert notification
+            if (!newName) {
+              this.set('nameError', true);
+              errorMessage = Em.I18n.t('alerts.actions.manage_alert_notifications_popup.error.name.empty');
+            } else if (newName && newName != this.get('currentName') && self.get('alertNotifications').mapProperty('name').contains(newName)) {
+              this.set('nameError', true);
+              errorMessage = Em.I18n.t('alerts.actions.manage_alert_notifications_popup.error.name.existed');
+            } else {
+              this.set('nameError', false);
+            }
+          } else {
+            // add new alert notification
+            if (!newName) {
+              this.set('nameError', true);
+              errorMessage = Em.I18n.t('alerts.actions.manage_alert_notifications_popup.error.name.empty');
+            } else if (newName && self.get('alertNotifications').mapProperty('name').contains(newName)) {
+              this.set('nameError', true);
+              errorMessage = Em.I18n.t('alerts.actions.manage_alert_notifications_popup.error.name.existed');
+            } else {
+              this.set('nameError', false);
+            }
+          }
+          this.set('controller.inputFields.name.errorMsg', errorMessage);
         }.observes('controller.inputFields.name.value'),
 
         emailToValidation: function () {
           var emailTo = this.get('controller.inputFields.email.value');
           if (emailTo && !validator.isValidEmail(emailTo)) {
-            this.set('parentView.hasErrors', true);
-            this.set('controller.inputFields.email.errorMsg', 'Must be a valid email address');
+            this.set('emailToError', true);
+            this.set('controller.inputFields.email.errorMsg', Em.I18n.t('alerts.notifications.error.email'));
           } else {
-            this.set('parentView.hasErrors', false);
+            this.set('emailToError', false);
             this.set('controller.inputFields.email.errorMsg', null);
           }
         }.observes('controller.inputFields.email.value'),
@@ -364,10 +396,10 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
         emailFromValidation: function () {
           var emailFrom = this.get('controller.inputFields.emailFrom.value');
           if (emailFrom && !validator.isValidEmail(emailFrom)) {
-            this.set('parentView.hasErrors', true);
-            this.set('controller.inputFields.emailFrom.errorMsg', 'Must be a valid email address');
+            this.set('emailFromError', true);
+            this.set('controller.inputFields.emailFrom.errorMsg', Em.I18n.t('alerts.notifications.error.email'));
           } else {
-            this.set('parentView.hasErrors', false);
+            this.set('emailFromError', false);
             this.set('controller.inputFields.emailFrom.errorMsg', null);
           }
         }.observes('controller.inputFields.emailFrom.value'),
@@ -375,10 +407,10 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
         smtpPortValidation: function () {
           var value = this.get('controller.inputFields.SMTPPort.value');
           if (value && (!validator.isValidInt(value) || value < 0)) {
-            this.set('parentView.hasErrors', true);
-            this.set('controller.inputFields.SMTPPort.errorMsg', 'Invalid! Please enter positive integer.');
+            this.set('smtpPortError', true);
+            this.set('controller.inputFields.SMTPPort.errorMsg', Em.I18n.t('alerts.notifications.error.integer'));
           } else {
-            this.set('parentView.hasErrors', false);
+            this.set('smtpPortError', false);
             this.set('controller.inputFields.SMTPPort.errorMsg', null);
           }
         }.observes('controller.inputFields.SMTPPort.value'),
@@ -386,13 +418,31 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
         portValidation: function () {
           var value = this.get('controller.inputFields.port.value');
           if (value && (!validator.isValidInt(value) || value < 0)) {
-            this.set('parentView.hasErrors', true);
-            this.set('controller.inputFields.port.errorMsg', 'Invalid! Please enter positive integer.');
+            this.set('portError', true);
+            this.set('controller.inputFields.port.errorMsg', Em.I18n.t('alerts.notifications.error.integer'));
           } else {
-            this.set('parentView.hasErrors', false);
+            this.set('portError', false);
             this.set('controller.inputFields.port.errorMsg', null);
           }
         }.observes('controller.inputFields.port.value'),
+
+        retypePasswordValidation: function () {
+          var passwordValue = this.get('controller.inputFields.SMTPPassword.value');
+          var retypePasswordValue = this.get('controller.inputFields.retypeSMTPPassword.value');
+          if (passwordValue !== retypePasswordValue) {
+            this.set('passwordError', true);
+            this.set('controller.inputFields.retypeSMTPPassword.errorMsg', Em.I18n.t('alerts.notifications.error.retypePassword'));
+          } else {
+            this.set('passwordError', false);
+            this.set('controller.inputFields.retypeSMTPPassword.errorMsg', null);
+          }
+        }.observes('controller.inputFields.retypeSMTPPassword.value', 'controller.inputFields.SMTPPassword.value'),
+
+        setParentErrors: function () {
+          var hasErrors = this.get('nameError') || this.get('emailToError') || this.get('emailFromError') ||
+            this.get('smtpPortError') || this.get('portError') || this.get('passwordError');
+          this.set('parentView.hasErrors', hasErrors);
+        }.observes('nameError', 'emailToError', 'emailFromError', 'smtpPortError', 'portError', 'passwordError'),
 
 
         groupsSelectView: Em.Select.extend({

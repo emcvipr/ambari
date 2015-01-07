@@ -22,7 +22,7 @@ from multiprocessing.pool import ThreadPool
 import os
 
 import pprint
-import shell
+from ambari_commons import shell
 
 from unittest import TestCase
 import threading
@@ -41,8 +41,13 @@ from FileCache import FileCache
 from LiveStatus import LiveStatus
 from BackgroundCommandExecutionHandle import BackgroundCommandExecutionHandle
 from ambari_agent.ActionQueue import ActionQueue
+from ambari_commons import OSCheck
 from only_for_platform import get_platform, PLATFORM_WINDOWS
 
+if get_platform() != PLATFORM_WINDOWS:
+  os_distro_value = ('Suse','11','Final')
+else:
+  os_distro_value = ('win2012serverr2','6.3','WindowsServer')
 
 class TestCustomServiceOrchestrator(TestCase):
 
@@ -62,6 +67,7 @@ class TestCustomServiceOrchestrator(TestCase):
     self.config.set('python', 'custom_actions_dir', tmpdir)
 
 
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(FileCache, "__init__")
   def test_add_reg_listener_to_controller(self, FileCache_mock):
     FileCache_mock.return_value = None
@@ -73,6 +79,7 @@ class TestCustomServiceOrchestrator(TestCase):
     self.assertTrue(dummy_controller.registration_listeners.append.called)
 
 
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(CustomServiceOrchestrator, 'decompressClusterHostInfo')
   @patch("hostname.public_hostname")
   @patch("os.path.isfile")
@@ -136,6 +143,7 @@ class TestCustomServiceOrchestrator(TestCase):
     self.assertTrue(unlink_mock.called)
 
 
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch("os.path.exists")
   @patch.object(FileCache, "__init__")
   def test_resolve_script_path(self, FileCache_mock, exists_mock):
@@ -146,13 +154,13 @@ class TestCustomServiceOrchestrator(TestCase):
     # Testing existing path
     exists_mock.return_value = True
     path = orchestrator.\
-      resolve_script_path(os.path.join("HBASE", "package"), os.path.join("scripts", "hbase_master.py"), "PYTHON")
+      resolve_script_path(os.path.join("HBASE", "package"), os.path.join("scripts", "hbase_master.py"))
     self.assertEqual(os.path.join("HBASE", "package", "scripts", "hbase_master.py"), path)
     # Testing not existing path
     exists_mock.return_value = False
     try:
       orchestrator.resolve_script_path("/HBASE",
-                                       os.path.join("scripts", "hbase_master.py"), "PYTHON")
+                                       os.path.join("scripts", "hbase_master.py"))
       self.fail('ExpectedException not thrown')
     except AgentException:
       pass # Expected
@@ -245,7 +253,7 @@ class TestCustomServiceOrchestrator(TestCase):
 
     pass
 
-  @patch("shell.kill_process_with_children")
+  @patch("ambari_commons.shell.kill_process_with_children")
   @patch.object(CustomServiceOrchestrator, "resolve_script_path")
   @patch.object(CustomServiceOrchestrator, "resolve_hook_script_path")
   @patch.object(FileCache, "get_host_scripts_base_dir")
@@ -325,7 +333,8 @@ class TestCustomServiceOrchestrator(TestCase):
 
   from ambari_agent.StackVersionsFileHandler import StackVersionsFileHandler
 
-  @patch("shell.kill_process_with_children")
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch("ambari_commons.shell.kill_process_with_children")
   @patch.object(FileCache, "__init__")
   @patch.object(CustomServiceOrchestrator, "resolve_script_path")
   @patch.object(CustomServiceOrchestrator, "resolve_hook_script_path")

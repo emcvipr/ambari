@@ -131,47 +131,6 @@ describe('App.config', function () {
       })
     });
 
-    describe('Stack version < 2.0', function() {
-      before(function() {
-        setups.setupStackVersion(this, 'HDP-1.3');
-      });
-      var tests = [
-        {
-          config: {
-            name: 'mapred.capacity-scheduler.maximum-system-jobs'
-          },
-          e: false
-        },
-        {
-          config: {
-            name: 'yarn.scheduler.capacity.root.capacity'
-          },
-          e: false
-        },
-        {
-          config: {
-            name: 'mapred.capacity-scheduler.queue.default.capacity'
-          },
-          e: true
-        },
-        {
-          config: {
-            name: 'mapred.queue.default.acl-administer-jobs'
-          },
-          e: true
-        }
-      ];
-
-      tests.forEach(function(test){
-        it(testMessage.format( !!test.e ? '' : 'not', test.config.name), function() {
-          expect(App.config.get('capacitySchedulerFilter')(test.config)).to.eql(test.e);
-        });
-      });
-
-      after(function() {
-        setups.restoreStackVersion(this);
-      });
-    });
   });
 
   describe('#fileConfigsIntoTextarea', function () {
@@ -636,23 +595,23 @@ describe('App.config', function () {
 
     var cases = [
       {
-        osType: 'redhat5',
+        osFamily: 'redhat5',
         expected: false
       },
       {
-        osType: 'redhat6',
+        osFamily: 'redhat6',
         expected: true
       },
       {
-        osType: 'suse11',
+        osFamily: 'suse11',
         expected: false
       }
     ],
       title = 'should be {0} for {1}';
 
     cases.forEach(function (item) {
-      it(title.format(item.expected, item.osType), function () {
-        expect(App.config.isManagedMySQLForHiveAllowed(item.osType)).to.equal(item.expected);
+      it(title.format(item.expected, item.osFamily), function () {
+        expect(App.config.isManagedMySQLForHiveAllowed(item.osFamily)).to.equal(item.expected);
       });
     });
 
@@ -673,7 +632,7 @@ describe('App.config', function () {
           },
           {
             key: 'belongsToService',
-            e: ['HIVE', 'OOZIE']
+            e: ['HIVE', 'OOZIE', 'FALCON']
           }
         ]
       },
@@ -683,6 +642,32 @@ describe('App.config', function () {
           {
             key: 'displayType',
             e: 'password'
+          },
+          {
+            key: 'isVisible',
+            e: true
+          }
+        ]
+      },
+      {
+        name: 'ignore_groupsusers_create',
+        cases: [
+          {
+            key: 'isVisible',
+            e: false
+          }
+        ]
+      },
+      {
+        name: 'user_group',
+        cases: [
+          {
+            key: 'isVisible',
+            e: true
+          },
+          {
+            key: 'index',
+            e: 30
           }
         ]
       }
@@ -692,7 +677,16 @@ describe('App.config', function () {
     modelSetup.advancedConfigs.items.forEach(function(item) {
       properties.push(App.config.createAdvancedPropertyObject(item.StackConfigurations));
     });
-    
+    App.config.loadClusterConfigSuccess(modelSetup.advancedClusterConfigs, {url: '/cluster/configurations'}, {callback: function (items) {properties = properties.concat(items)}});
+
+    beforeEach(function () {
+      sinon.stub(App, 'get').withArgs('isHadoopWindowsStack').returns(false);
+    });
+
+    afterEach(function () {
+      App.get.restore();
+    });
+
     tests.forEach(function(test) {
       test.cases.forEach(function(testCase) {
         it('config property `{0}` `{1}` key should be`{2}`'.format(test.name, testCase.key, testCase.e), function() {
@@ -764,6 +758,35 @@ describe('App.config', function () {
         });
       });
     });
+  });
+
+  describe('#replaceConfigValues', function () {
+
+    var cases = [
+      {
+        name: 'name',
+        express: '<templateName[0]>',
+        value: '<templateName[0]>',
+        globValue: 'v',
+        expected: 'v',
+        title: 'default case'
+      },
+      {
+        name: 'templeton.hive.properties',
+        express: '<templateName[0]>',
+        value: 'hive.matestore.uris=<templateName[0]>',
+        globValue: 'thrift://h0:9933,thrift://h1:9933,thrift://h2:9933',
+        expected: 'hive.matestore.uris=thrift://h0:9933\\,thrift://h1:9933\\,thrift://h2:9933',
+        title: 'should escape commas for templeton.hive.properties'
+      }
+    ];
+
+    cases.forEach(function (item) {
+      it(item.title, function () {
+        expect(App.config.replaceConfigValues(item.name, item.express, item.value, item.globValue)).to.equal(item.expected);
+      });
+    });
+
   });
 
 });

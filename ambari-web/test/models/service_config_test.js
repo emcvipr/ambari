@@ -736,7 +736,47 @@ describe('App.ServiceConfigProperty', function () {
           isUnionAllMountPointsCalled: false,
           title: 'unionAllMountPoints shouldn\'t be called'
         }
-      ]
+      ],
+      'hivemetastore_host': {
+        localDB: {
+          masterComponentHosts: [
+            {
+              component: 'HIVE_METASTORE',
+              hostName: 'h0'
+            },
+            {
+              component: 'HIVE_METASTORE',
+              hostName: 'h1'
+            }
+          ]
+        },
+        value: ['h0', 'h1'],
+        title: 'array that contains names of hosts with Hive Metastore'
+      },
+      'hive_master_hosts': {
+        localDB: {
+          masterComponentHosts: [
+            {
+              component: 'HIVE_SERVER',
+              hostName: 'h0'
+            },
+            {
+              component: 'HIVE_METASTORE',
+              hostName: 'h0'
+            },
+            {
+              component: 'HIVE_METASTORE',
+              hostName: 'h1'
+            },
+            {
+              component: 'WEBHCAT_SERVER',
+              hostName: 'h2'
+            }
+          ]
+        },
+        value: 'h0,h1',
+        title: 'comma separated list of hosts with Hive Server and Metastore'
+      }
     };
 
     cases['kafka.ganglia.metrics.host'].forEach(function(item){
@@ -807,6 +847,18 @@ describe('App.ServiceConfigProperty', function () {
         expect(serviceConfigProperty.unionAllMountPoints.calledWith(isOnlyFirstOneNeeded, localDB)).to.equal(item.isUnionAllMountPointsCalled);
         serviceConfigProperty.unionAllMountPoints.restore();
       });
+    });
+
+    it(cases['hivemetastore_host'].title, function () {
+      serviceConfigProperty.set('name', 'hivemetastore_host');
+      serviceConfigProperty.initialValue(cases['hivemetastore_host'].localDB);
+      expect(serviceConfigProperty.get('value')).to.eql(cases['hivemetastore_host'].value);
+    });
+
+    it(cases['hive_master_hosts'].title, function () {
+      serviceConfigProperty.set('name', 'hive_master_hosts');
+      serviceConfigProperty.initialValue(cases['hive_master_hosts'].localDB);
+      expect(serviceConfigProperty.get('value')).to.equal(cases['hive_master_hosts'].value);
     });
 
   });

@@ -57,7 +57,7 @@
         <component>HBASE_REGIONSERVER</component>
       </service>
 
-      <service name="YARN">
+     <service name="YARN">
         <component>NODEMANAGER</component>
       </service>
 
@@ -68,12 +68,27 @@
     </group>
 
     <group name="HIVE" title="Hive">
+      <skippable>true</skippable>
       <service name="HIVE">
         <component>HIVE_METASTORE</component>
         <component>HIVE_SERVER</component>
         <component>WEBHCAT_SERVER</component>
       </service>
     </group>
+
+    <group name="FALCON" title="Falcon">
+      <skippable>true</skippable>
+      <service name="FALCON">
+        <component>FALCON_SERVER</component>
+        <component>FALCON_CLIENT</component>
+      </service>
+    </group>
+
+    <group name="KAFKA" title="Kafka">
+      <service name="KAFKA">
+        <component>KAFKA_BROKER</component>
+      </service>
+   </group>
 
     <group name="CLIENTS" title="Client Components">
       <service name="HDFS">
@@ -107,17 +122,16 @@
     </group>
 
     <group xsi:type="cluster" name="POST_CLUSTER" title="Finalize Upgrade">
-      <!--
       <execute-stage title="Confirm Finalize">
         <task xsi:type="manual">
           <message>Please confirm you are ready to finalize</message>
         </task>
       </execute-stage>
-      -->
+
       <execute-stage service="HDFS" component="NAMENODE" title="Execute HDFS Finalize">
         <task xsi:type="execute" hosts="master">
-          <first>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -rollingUpgrade finalize'</first>
-          <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode leave'</command>
+          <script>scripts/namenode.py</script>
+          <function>finalize_rolling_upgrade</function>
         </task>
       </execute-stage>
       <execute-stage title="Save Cluster State" service="" component="">
@@ -125,10 +139,8 @@
         </task>
       </execute-stage>
     </group>
-
   </order>
-  
-  
+
   <processing>
     <service name="ZOOKEEPER">
       <component name="ZOOKEEPER_SERVER">
@@ -163,47 +175,9 @@
     <service name="HDFS">
       <component name="NAMENODE">
         <pre-upgrade>
-          <!-- Backup the image,
-          Enter Safemode if not already in it,
-
-          $ su hdfs -c 'hdfs dfsadmin -safemode get'
-          Safe mode is OFF
-
-          $ su hdfs -c 'hdfs dfsadmin -safemode enter'
-          Safe mode is OFF
-
-          $ su hdfs -c 'hdfs dfsadmin -rollingUpgrade prepare'
-          PREPARE rolling upgrade ...
-          Proceed with rolling upgrade:
-          Block Pool ID: BP-1917654970-192.168.64.107-1416527263491
-          Start Time: Fri Nov 21 22:31:03 UTC 2014 (=1416609063176)
-          Finalize Time: <NOT FINALIZED>
-
-          $ su hdfs -c 'hdfs dfsadmin -rollingUpgrade query'
-          QUERY rolling upgrade ...
-          Proceed with rolling upgrade:
-          Block Pool ID: BP-1917654970-192.168.64.107-1416527263491
-          Start Time: Sat Nov 22 02:44:21 UTC 2014 (=1416624261594)
-          Finalize Time: <NOT FINALIZED>
-
-          This should be the last thing called on each service once the user decides to commit to finalizing the entire upgrade.
-          $ su hdfs -c 'hdfs dfsadmin -rollingUpgrade finalize'
-          FINALIZE rolling upgrade ...
-          There is no rolling upgrade in progress or rolling upgrade has already been finalized.
-          -->
           <task xsi:type="execute" hosts="master">
-            <first>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode get | grep "Safe mode is ON in {{host_name}}"'</first>
-            <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -safemode leave'</command>
-            <upto>10</upto>
-            <every>6</every>
-          </task>
-
-          <task xsi:type="execute" hosts="master">
-            <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -rollingUpgrade prepare'</command>
-          </task>
-
-          <task xsi:type="execute" hosts="master">
-            <command>su - {{hadoop-env/hdfs_user}} -c 'hdfs dfsadmin -rollingUpgrade query'</command>
+            <script>scripts/namenode.py</script>
+            <function>prepare_rolling_upgrade</function>
           </task>
         </pre-upgrade>
 
@@ -229,7 +203,6 @@
           <task xsi:type="restart" />
         </upgrade>
       </component>
-
     </service>
 
     <service name="MAPREDUCE2">
@@ -303,7 +276,7 @@
         </upgrade>
       </component>
     </service>
-    
+
     <service name="TEZ">
       <component name="TEZ_CLIENT">
         <upgrade>
@@ -347,6 +320,18 @@
             <value>10010</value>
           </task>
         </pre-upgrade>
+        
+        <pre-downgrade>
+          <task xsi:type="manual">
+            <message>The HiveServer port will now change to 10000. Ensure that this port is available on each HiveServer instance.</message>
+          </task>
+
+          <task xsi:type="configure">
+            <type>hive-site</type>
+            <key>hive.server2.thrift.port</key>
+            <value>10000</value>
+          </task>
+        </pre-downgrade>
 
         <upgrade>
           <task xsi:type="restart" />
@@ -365,5 +350,27 @@
         </upgrade>
       </component>
     </service>
+
+    <service name="FALCON">
+      <component name="FALCON_SERVER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+      <component name="FALCON_CLIENT">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
+
+    <service name="KAFKA">
+      <component name="KAFKA_BROKER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
+
   </processing>
 </upgrade>

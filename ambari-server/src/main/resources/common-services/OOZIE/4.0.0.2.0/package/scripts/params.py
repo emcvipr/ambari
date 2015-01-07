@@ -19,6 +19,7 @@ limitations under the License.
 """
 
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from resource_management.libraries.functions.default import default
 from resource_management import *
 import status_params
 import itertools
@@ -27,6 +28,8 @@ import os
 # server configurations
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
+
+stack_name = default("/hostLevelParams/stack_name", None)
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
@@ -87,7 +90,7 @@ kinit_path_local = functions.get_kinit_path(["/usr/bin", "/usr/kerberos/bin", "/
 oozie_service_keytab = config['configurations']['oozie-site']['oozie.service.HadoopAccessorService.keytab.file']
 oozie_principal = config['configurations']['oozie-site']['oozie.service.HadoopAccessorService.kerberos.principal']
 smokeuser_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
-oozie_keytab = config['configurations']['oozie-env']['oozie_keytab']
+oozie_keytab = default("/configurations/oozie-env/oozie_keytab", oozie_service_keytab)
 oozie_env_sh_template = config['configurations']['oozie-env']['content']
 
 oracle_driver_jar_name = "ojdbc6.jar"
@@ -125,6 +128,7 @@ else:
 
 driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
 driver_curl_target = format("{java_share_dir}/{jdbc_driver_jar}")
+downloaded_custom_connector = format("{tmp_dir}/{jdbc_driver_jar}")
 if jdbc_driver_name == "org.postgresql.Driver":
   target = jdbc_driver_jar
 else:

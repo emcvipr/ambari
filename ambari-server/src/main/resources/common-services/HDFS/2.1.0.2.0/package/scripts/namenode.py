@@ -20,17 +20,18 @@ limitations under the License.
 import sys
 import os
 import json
-import subprocess
-from datetime import datetime
 
 from resource_management import *
 from resource_management.libraries.functions.security_commons import build_expectations, \
-  cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties
+  cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties, \
+  FILE_TYPE_XML
 from resource_management.libraries.functions.version import compare_versions, \
   format_hdp_stack_version
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.functions.check_process_status import check_process_status
+from resource_management.core.exceptions import Fail
 
+import namenode_upgrade
 from hdfs_namenode import namenode
 from hdfs import hdfs
 import hdfs_rebalance
@@ -38,6 +39,10 @@ from utils import failover_namenode
 
 
 class NameNode(Script):
+
+  def get_stack_to_component(self):
+    return {"HDP": "hadoop-hdfs-namenode"}
+
   def install(self, env):
     import params
 
@@ -45,6 +50,12 @@ class NameNode(Script):
     env.set_params(params)
     #TODO we need this for HA because of manual steps
     self.configure(env)
+
+  def prepare_rolling_upgrade(self, env):
+    namenode_upgrade.prepare_rolling_upgrade()
+
+  def finalize_rolling_upgrade(self, env):
+    namenode_upgrade.finalize_rolling_upgrade()
 
   def pre_rolling_restart(self, env):
     Logger.info("Executing Rolling Upgrade pre-restart")
@@ -60,6 +71,8 @@ class NameNode(Script):
     env.set_params(params)
     self.configure(env)
     namenode(action="start", rolling_restart=rolling_restart, env=env)
+
+    self.save_component_version_to_structured_out(params.stack_name)
 
   def post_rolling_restart(self, env):
     Logger.info("Executing Rolling Upgrade post-restart")
@@ -120,7 +133,8 @@ class NameNode(Script):
     hdfs_expectations.update(hdfs_site_expectations)
 
     security_params = get_params_from_filesystem(status_params.hadoop_conf_dir,
-                                                 ['core-site.xml', 'hdfs-site.xml'])
+                                                 {'core-site.xml': FILE_TYPE_XML,
+                                                  'hdfs-site.xml': FILE_TYPE_XML})
     result_issues = validate_security_config_properties(security_params, hdfs_expectations)
     if not result_issues:  # If all validations passed successfully
       try:
@@ -138,18 +152,16 @@ class NameNode(Script):
                               security_params['hdfs-site']['dfs.namenode.keytab.file'],
                               security_params['hdfs-site']['dfs.namenode.kerberos.principal'],
                               status_params.hostname,
-                              status_params.tmp_dir,
-                              30)
+                              status_params.tmp_dir)
         self.put_structured_out({"securityState": "SECURED_KERBEROS"})
       except Exception as e:
         self.put_structured_out({"securityState": "ERROR"})
         self.put_structured_out({"securityStateErrorInfo": str(e)})
     else:
-      issues = ""
+      issues = []
       for cf in result_issues:
-        issues += "Configuration file " + cf + " did not pass the validation. Reason: " + \
-                  result_issues[cf]
-      self.put_structured_out({"securityIssuesFound": issues})
+        issues.append("Configuration file %s did not pass the validation. Reason: %s" % (cf, result_issues[cf]))
+      self.put_structured_out({"securityIssuesFound": ". ".join(issues)})
       self.put_structured_out({"securityState": "UNSECURED"})
 
 
@@ -187,16 +199,9 @@ class NameNode(Script):
     _print("Executing command %s\n" % command)
 
     parser = hdfs_rebalance.HdfsParser()
-    proc = subprocess.Popen(
-                            command,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            shell=True,
-                            close_fds=True,
-                            cwd=basedir
-                           )
-    for line in iter(proc.stdout.readline, ''):
-      _print('[balancer] %s %s' % (str(datetime.now()), line ))
+
+    def handle_new_line(line):
+      _print('[balancer] %s' % (line))
       pl = parser.parseLine(line)
       if pl:
         res = pl.toJson()
@@ -204,14 +209,14 @@ class NameNode(Script):
 
         self.put_structured_out(res)
       elif parser.state == 'PROCESS_FINISED' :
-        _print('[balancer] %s %s' % (str(datetime.now()), 'Process is finished' ))
+        _print('[balancer] %s' % ('Process is finished' ))
         self.put_structured_out({'completePercent' : 1})
-        break
+        return
 
-    proc.stdout.close()
-    proc.wait()
-    if proc.returncode != None and proc.returncode != 0:
-      raise Fail('Hdfs rebalance process exited with error. See the log output')
+    Execute(command,
+            on_new_line = handle_new_line,
+            logoutput = False,
+    )
 
 def _print(line):
   sys.stdout.write(line)

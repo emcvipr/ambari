@@ -15,10 +15,10 @@
           },
           "reporting": {
             "ok": {
-              "text": "HTTP {0} response in {2:.4f} seconds"
+              "text": "HTTP {0} response in {2:.3f} seconds"
             },
             "warning":{
-              "text": "HTTP {0} response in {2:.4f} seconds"
+              "text": "HTTP {0} response in {2:.3f} seconds"
             },
             "critical": {
               "text": "Connection failed to {1}"
@@ -34,7 +34,7 @@
         "scope": "ANY",
         "source": {
           "type": "SCRIPT",
-          "path": "OOZIE/4.0.0.2.0/package/files/alert_check_oozie_server.py"
+          "path": "OOZIE/4.0.0.2.0/package/alerts/alert_check_oozie_server.py"
         }
       }
     ]

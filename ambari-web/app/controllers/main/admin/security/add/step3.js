@@ -38,6 +38,7 @@ App.MainAdminSecurityAddStep3Controller = Em.Controller.extend({
       'NODEMANAGER': 'yarn_user',
       'ZOOKEEPER_SERVER': 'zk_user',
       'HIVE_SERVER': 'hive_user',
+      'HIVE_METASTORE': 'hive_user',
       'OOZIE_SERVER': 'oozie_user',
       'NAGIOS_SERVER': 'nagios_user',
       'HBASE_MASTER': 'hbase_user',
@@ -84,8 +85,7 @@ App.MainAdminSecurityAddStep3Controller = Em.Controller.extend({
         componentName: 'HIVE_SERVER',
         principal: 'hive_metastore_http_principal_name',
         keytab: 'hive_metastore_http_keytab',
-        displayName: Em.I18n.t('admin.addSecurity.hive.user.httpUser'),
-        isHadoop2Stack: true
+        displayName: Em.I18n.t('admin.addSecurity.hive.user.httpUser')
       },
       {
         componentName: 'OOZIE_SERVER',
@@ -103,29 +103,25 @@ App.MainAdminSecurityAddStep3Controller = Em.Controller.extend({
         componentName: 'HISTORYSERVER',
         principal: 'jobhistory_http_principal_name',
         keytab: 'jobhistory_http_keytab',
-        displayName: Em.I18n.t('admin.addSecurity.historyServer.user.httpUser'),
-        isHadoop2Stack: true
+        displayName: Em.I18n.t('admin.addSecurity.historyServer.user.httpUser')
       },
       {
         componentName: 'RESOURCEMANAGER',
         principal: 'resourcemanager_http_principal_name',
         keytab: 'resourcemanager_http_keytab',
-        displayName: Em.I18n.t('admin.addSecurity.rm.user.httpUser'),
-        isHadoop2Stack: true
+        displayName: Em.I18n.t('admin.addSecurity.rm.user.httpUser')
       },
       {
         componentName: 'NODEMANAGER',
         principal: 'nodemanager_http_principal_name',
         keytab: 'nodemanager_http_keytab',
-        displayName: Em.I18n.t('admin.addSecurity.nm.user.httpUser'),
-        isHadoop2Stack: true
+        displayName: Em.I18n.t('admin.addSecurity.nm.user.httpUser')
       },
       {
         componentName: 'APP_TIMELINE_SERVER',
         principal: 'apptimelineserver_http_principal_name',
         keytab: 'apptimelineserver_http_keytab',
-        displayName: Em.I18n.t('admin.addSecurity.user.yarn.atsHTTPUser'),
-        isHadoop2Stack: true
+        displayName: Em.I18n.t('admin.addSecurity.user.yarn.atsHTTPUser')
       },
       {
         componentName: 'STORM_UI_SERVER',
@@ -284,8 +280,6 @@ App.MainAdminSecurityAddStep3Controller = Em.Controller.extend({
 
     this.get('componentToConfigMap').forEach(function (component) {
       //add specific components that supported only in Hadoop2 stack
-      if (component.isHadoop2Stack && !App.get('isHadoop2Stack')) return;
-
       if (component.isHadoop22Stack && !App.get('isHadoop22Stack')) return;
 
       if (hostComponents.someProperty('componentName', component.componentName)) {
@@ -353,9 +347,9 @@ App.MainAdminSecurityAddStep3Controller = Em.Controller.extend({
    * @param hadoopGroupId
    */
   setHostComponentsSecureValue: function (result, host, addedPrincipalsHost, securityUsers, hadoopGroupId) {
-    var componentsToDisplay = ['NAMENODE', 'SECONDARY_NAMENODE', 'DATANODE', 'JOBTRACKER', 'ZOOKEEPER_SERVER', 'HIVE_SERVER', 'TASKTRACKER',
-      'OOZIE_SERVER', 'NAGIOS_SERVER', 'HBASE_MASTER', 'HBASE_REGIONSERVER', 'HISTORYSERVER', 'RESOURCEMANAGER', 'NODEMANAGER', 'JOURNALNODE',
-      'SUPERVISOR', 'NIMBUS', 'STORM_UI_SERVER','FALCON_SERVER', 'KNOX_GATEWAY', 'APP_TIMELINE_SERVER'];
+    var componentsToDisplay = ['NAMENODE', 'SECONDARY_NAMENODE', 'DATANODE', 'JOBTRACKER', 'ZOOKEEPER_SERVER', 'HIVE_SERVER', 'HIVE_METASTORE',
+      'TASKTRACKER', 'OOZIE_SERVER', 'NAGIOS_SERVER', 'HBASE_MASTER', 'HBASE_REGIONSERVER', 'HISTORYSERVER', 'RESOURCEMANAGER', 'NODEMANAGER',
+      'JOURNALNODE', 'SUPERVISOR', 'NIMBUS', 'STORM_UI_SERVER','FALCON_SERVER', 'KNOX_GATEWAY', 'APP_TIMELINE_SERVER'];
     if (App.get('isHadoop22Stack')) {
       componentsToDisplay.push('DRPC_SERVER');
     }
@@ -446,7 +440,7 @@ App.MainAdminSecurityAddStep3Controller = Em.Controller.extend({
    * @return {*}
    */
   changeDisplayName: function (name) {
-    if (name === 'HiveServer2') {
+    if (name === 'HiveServer2' || name === 'Hive Metastore') {
       return 'Hive Metastore and HiveServer2';
     } else {
       return name;

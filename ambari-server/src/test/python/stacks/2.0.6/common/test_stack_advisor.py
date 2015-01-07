@@ -18,6 +18,7 @@ limitations under the License.
 
 import socket
 from unittest import TestCase
+from mock.mock import patch, MagicMock
 
 class TestHDP206StackAdvisor(TestCase):
 
@@ -35,6 +36,32 @@ class TestHDP206StackAdvisor(TestCase):
       stack_advisor_impl = imp.load_module('stack_advisor_impl', fp, hdp206StackAdvisorPath, ('.py', 'rb', imp.PY_SOURCE))
     clazz = getattr(stack_advisor_impl, hdp206StackAdvisorClassName)
     self.stackAdvisor = clazz()
+
+    # substitute method in the instance
+    self.get_system_min_uid_real = self.stackAdvisor.get_system_min_uid
+    self.stackAdvisor.get_system_min_uid = self.get_system_min_uid_magic
+
+  @patch('__builtin__.open')
+  @patch('os.path.exists')
+  def get_system_min_uid_magic(self, exists_mock, open_mock):
+    class MagicFile(object):
+      def read(self):
+        return """
+        #test line UID_MIN 200
+        UID_MIN 500
+        """
+
+      def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+      def __enter__(self):
+        return self
+
+    exists_mock.return_value = True
+    open_mock.return_value = MagicFile()
+    return self.get_system_min_uid_real()
+
+
 
   def test_recommendationCardinalityALL(self):
     servicesInfo = [
@@ -328,6 +355,11 @@ class TestHDP206StackAdvisor(TestCase):
       "ramPerContainer": 256
     }
     expected = {
+      "yarn-env": {
+        "properties": {
+          "min_user_id": "500"
+        }
+      },
       "yarn-site": {
         "properties": {
           "yarn.nodemanager.resource.memory-mb": "1280",
@@ -466,3 +498,90 @@ class TestHDP206StackAdvisor(TestCase):
         pass
       actualItems.append(next)
     self.checkEqual(expectedItems, actualItems)
+
+  def test_recommendHbaseEnvConfigurations(self):
+    servicesList = ["HBASE"]
+    configurations = {}
+    components = []
+    hosts = {
+      "items" : [
+        {
+          "Hosts" : {
+            "cpu_count" : 6,
+            "total_mem" : 50331648,
+            "disk_info" : [
+              {"mountpoint" : "/"},
+              {"mountpoint" : "/dev/shm"},
+              {"mountpoint" : "/vagrant"},
+              {"mountpoint" : "/"},
+              {"mountpoint" : "/dev/shm"},
+              {"mountpoint" : "/vagrant"}
+            ]
+          }
+        }
+      ]
+    }
+    expected = {
+      "hbase-env": {
+        "properties": {
+          "hbase_master_heapsize": "8192",
+          "hbase_regionserver_heapsize": "8192",
+          }
+      }
+    }
+
+    clusterData = self.stackAdvisor.getConfigurationClusterSummary(servicesList, hosts, components)
+    self.assertEquals(clusterData['hbaseRam'], 8)
+
+    self.stackAdvisor.recommendHbaseEnvConfigurations(configurations, clusterData, None, None)
+    self.assertEquals(configurations, expected)
+
+  def test_recommendHDFSConfigurations(self):
+    configurations = {}
+    clusterData = {
+      "totalAvailableRam": 2048
+    }
+    expected = {
+      'hadoop-env': {
+        'properties': {
+          'namenode_heapsize': '1024',
+          'namenode_opt_newsize' : '256',
+          'namenode_opt_maxnewsize' : '256'
+        }
+      }
+    }
+
+    self.stackAdvisor.recommendHDFSConfigurations(configurations, clusterData, '', '')
+    self.assertEquals(configurations, expected)
+
+  def test_validateHDFSConfigurationsEnv(self):
+    configurations = {}
+
+    # 1) ok: namenode_heapsize > recommended
+    recommendedDefaults = {'namenode_heapsize': '1024',
+                           'namenode_opt_newsize' : '256',
+                           'namenode_opt_maxnewsize' : '256'}
+    properties = {'namenode_heapsize': '2048',
+                  'namenode_opt_newsize' : '300',
+                  'namenode_opt_maxnewsize' : '300'}
+    res_expected = []
+
+    res = self.stackAdvisor.validateHDFSConfigurationsEnv(properties, recommendedDefaults, configurations, '', '')
+    self.assertEquals(res, res_expected)
+
+    # 2) fail: namenode_heapsize, namenode_opt_maxnewsize < recommended
+    properties['namenode_heapsize'] = '1022'
+    properties['namenode_opt_maxnewsize'] = '255'
+    res_expected = [{'config-type': 'hadoop-env',
+                     'message': 'Value is less than the recommended default of 1024',
+                     'type': 'configuration',
+                     'config-name': 'namenode_heapsize',
+                     'level': 'WARN'},
+                    {'config-name': 'namenode_opt_maxnewsize',
+                     'config-type': 'hadoop-env',
+                     'level': 'WARN',
+                     'message': 'Value is less than the recommended default of 256',
+                     'type': 'configuration'}]
+
+    res = self.stackAdvisor.validateHDFSConfigurationsEnv(properties, recommendedDefaults, configurations, '', '')
+    self.assertEquals(res, res_expected)

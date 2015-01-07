@@ -95,10 +95,10 @@
           },
           "reporting": {
             "ok": {
-              "text": "HTTP {0} response in {2:.4f} seconds"
+              "text": "HTTP {0} response in {2:.3f} seconds"
             },
             "warning":{
-              "text": "HTTP {0} response in {2:.4f} seconds"
+              "text": "HTTP {0} response in {2:.3f} seconds"
             },
             "critical": {
               "text": "Connection failed to {1}"
@@ -330,7 +330,7 @@
         "enabled": true,
         "source": {
           "type": "SCRIPT",
-          "path": "HDFS/2.1.0.2.0/package/files/alert_checkpoint_time.py"
+          "path": "HDFS/2.1.0.2.0/package/alerts/alert_checkpoint_time.py"
         }
       },
       {
@@ -343,7 +343,7 @@
         "ignore_host": true,
         "source": {
           "type": "SCRIPT",
-          "path": "HDFS/2.1.0.2.0/package/files/alert_ha_namenode_health.py"
+          "path": "HDFS/2.1.0.2.0/package/alerts/alert_ha_namenode_health.py"
         }
       }
     ],
@@ -447,10 +447,10 @@
           },
           "reporting": {
             "ok": {
-              "text": "HTTP {0} response in {2:.4f} seconds"
+              "text": "HTTP {0} response in {2:.3f} seconds"
             },
             "warning":{
-              "text": "HTTP {0} response in {2:.4f} seconds"
+              "text": "HTTP {0} response in {2:.3f} seconds"
             },
             "critical": {
               "text": "Connection failed to {1}"

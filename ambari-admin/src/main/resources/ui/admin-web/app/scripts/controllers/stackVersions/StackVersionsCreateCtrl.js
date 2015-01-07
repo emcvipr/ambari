@@ -30,7 +30,7 @@ angular.module('ambariAdminConsole')
     .then(function (allStackVersions) {
       var versions = [];
       angular.forEach(allStackVersions, function (version) {
-        if (version.upgrade_packs.length > 0) {
+        if (version.upgrade_packs.length > 0 && version.active) {
           versions.push(version);
         }
       });
@@ -69,7 +69,9 @@ angular.module('ambariAdminConsole')
   $scope.afterStackVersionChange = function () {
     Stack.getSupportedOSList($scope.upgradeStack.selected.stack_name, $scope.upgradeStack.selected.stack_version)
     .then(function (data) {
-      var repositories = data.operatingSystems.map(function (os) {
+      //TODO map data.operating_systems after API is fixed
+      var operatingSystems = data.operating_systems || data.operatingSystems;
+      var repositories = operatingSystems.map(function (os) {
         return {
           os: os.OperatingSystems.os_type,
           packages: [
@@ -84,5 +86,9 @@ angular.module('ambariAdminConsole')
     .catch(function (data) {
       Alert.error('getSupportedOSList error', data.message);
     });
+  };
+
+  $scope.updateCurrentVersionInput = function () {
+    $scope.currentVersionInput = $scope.upgradeStack.selected.displayName + '.' + angular.element('[name="version"]')[0].value;
   };
 }]);

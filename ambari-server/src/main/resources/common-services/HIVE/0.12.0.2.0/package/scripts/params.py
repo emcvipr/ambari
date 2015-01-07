@@ -19,6 +19,7 @@ limitations under the License.
 """
 
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from resource_management.libraries.functions.default import default
 from resource_management import *
 import status_params
 import os
@@ -26,6 +27,11 @@ import os
 # server configurations
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
+
+stack_name = default("/hostLevelParams/stack_name", None)
+
+# node hostname
+hostname = config["hostname"]
 
 # This is expected to be of the form #.#.#.#
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
@@ -118,9 +124,12 @@ elif hive_jdbc_driver == "oracle.jdbc.driver.OracleDriver":
 check_db_connection_jar_name = "DBConnectionVerification.jar"
 check_db_connection_jar = format("/usr/lib/ambari-agent/{check_db_connection_jar_name}")
 hive_jdbc_drivers_list = ["com.mysql.jdbc.Driver","org.postgresql.Driver","oracle.jdbc.driver.OracleDriver"]
+downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
+prepackaged_ojdbc_symlink = format("{hive_lib}/ojdbc6.jar")
 
 #common
-hive_metastore_host = config['clusterHostInfo']['hive_metastore_host'][0]
+hive_metastore_hosts = config['clusterHostInfo']['hive_metastore_host']
+hive_metastore_host = hive_metastore_hosts[0]
 hive_metastore_port = get_port_from_url(config['configurations']['hive-site']['hive.metastore.uris']) #"9083"
 hive_var_lib = '/var/lib/hive'
 ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
@@ -148,7 +157,10 @@ hive_log_dir = config['configurations']['hive-env']['hive_log_dir']
 hive_pid_dir = status_params.hive_pid_dir
 hive_pid = status_params.hive_pid
 #Default conf dir for client
-hive_conf_dirs_list = [hive_server_conf_dir, hive_client_conf_dir]
+hive_conf_dirs_list = [hive_client_conf_dir]
+
+if hostname in hive_metastore_hosts or hostname in hive_server_hosts:
+  hive_conf_dirs_list.append(hive_server_conf_dir)
 
 if 'role' in config and config['role'] in ["HIVE_SERVER", "HIVE_METASTORE"]:
   hive_config_dir = hive_server_conf_dir
@@ -229,9 +241,8 @@ hive_hdfs_user_dir = format("/user/{hive_user}")
 hive_hdfs_user_mode = 0700
 hive_apps_whs_dir = config['configurations']['hive-site']["hive.metastore.warehouse.dir"]
 #for create_hdfs_directory
-hostname = config["hostname"]
 hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
-hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name']
+hdfs_principal_name = default('/configurations/hadoop-env/hdfs_principal_name', 'missing_principal').replace("_HOST", hostname)
 
 # Tez-related properties
 tez_user = config['configurations']['tez-env']['tez_user']
@@ -298,7 +309,7 @@ import functools
 HdfsDirectory = functools.partial(
   HdfsDirectory,
   conf_dir = hadoop_conf_dir,
-  hdfs_user = hdfs_principal_name if security_enabled else hdfs_user,
+  hdfs_user = hdfs_user,
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,

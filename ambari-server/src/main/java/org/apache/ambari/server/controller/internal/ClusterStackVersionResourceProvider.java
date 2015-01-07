@@ -363,7 +363,7 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
       actionContext.setTimeout(Short.valueOf(configuration.getDefaultAgentTaskTimeout()));
 
       try {
-        actionExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage);
+        actionExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage, false);
       } catch (AmbariException e) {
         throw new SystemException("Can not modify stage", e);
       }
@@ -387,6 +387,7 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
         cluster.transitionClusterVersion(stackId, desiredRepoVersion, RepositoryVersionState.INSTALLING);
       }
       cluster.inferHostVersions(existingCSVer);
+      cluster.recalculateClusterVersionState(desiredRepoVersion);
 
       req.persist();
 

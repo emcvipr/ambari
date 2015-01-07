@@ -31,7 +31,7 @@
           <name>METRIC_COLLECTOR</name>
           <displayName>Metric Collector</displayName>
           <category>MASTER</category>
-          <cardinality>1+</cardinality>
+          <cardinality>1</cardinality>
           <dependencies>
             <dependency>
               <name>ZOOKEEPER/ZOOKEEPER_SERVER</name>
@@ -72,6 +72,9 @@
             </package>
             <package>
               <name>ambari-metrics-monitor</name>
+            </package>
+            <package>
+              <name>ambari-metrics-hadoop-sink</name>
             </package>
             <package>
               <name>hadoop_2_2_*</name>

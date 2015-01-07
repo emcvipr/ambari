@@ -27,17 +27,9 @@ App.AddSecurityConfigs = Em.Mixin.create({
 
   kerberosDescriptor: {},
 
-  secureProperties: function () {
-    if (App.get('isHadoop2Stack')) {
-      return require('data/HDP2/secure_properties').configProperties;
-    } else {
-      return require('data/secure_properties').configProperties;
-    }
-  }.property('App.isHadoop2Stack'),
+  secureProperties: require('data/HDP2/secure_properties').configProperties,
 
-  secureMapping: function () {
-    return (App.get('isHadoop2Stack')) ? require('data/HDP2/secure_mapping') : require('data/secure_mapping');
-  }.property('App.isHadoop2Stack'),
+  secureMapping: require('data/HDP2/secure_mapping'),
 
   serviceUsersBinding: 'App.router.mainAdminSecurityController.serviceUsers',
 
@@ -46,11 +38,6 @@ App.AddSecurityConfigs = Em.Mixin.create({
       serviceName: 'OOZIE',
       componentName: 'OOZIE_SERVER',
       configName: 'oozieserver_host'
-    },
-    {
-      serviceName: 'HIVE',
-      componentName: 'HIVE_METASTORE',
-      configName: 'hivemetastore_host'
     },
     {
       serviceName: 'HIVE',
@@ -256,7 +243,7 @@ App.AddSecurityConfigs = Em.Mixin.create({
       if (_config.hasOwnProperty('dependedServiceName')) {
         value = this.checkServiceForConfigValue(value, _config.dependedServiceName);
       }
-      value = this.getConfigValue(_config.templateName, value);
+      value = this.getConfigValue(_config.templateName, value, _config.name);
       uiConfig.push({
         "id": "site property",
         "name": _config.name,
@@ -299,9 +286,10 @@ App.AddSecurityConfigs = Em.Mixin.create({
    * Set all site property that are derived from other puppet-variable
    * @param templateName
    * @param expression
+   * @param name
    * @return {String|null}
    */
-  getConfigValue: function (templateName, expression) {
+  getConfigValue: function (templateName, expression, name) {
     var express = expression.match(/<(.*?)>/g);
     var value = expression;
     if (Em.isNone(express)) return expression;
@@ -309,9 +297,13 @@ App.AddSecurityConfigs = Em.Mixin.create({
     express.forEach(function (_express) {
       var index = parseInt(_express.match(/\[([\d]*)(?=\])/)[1]);
       var configs = this.get('configs').findProperty('name', templateName[index]);
+      var configValue = templateName[index] == 'hive_metastore' ?
+        configs.value.map(function (hostName) {
+        return 'thrift://' + hostName + ':9083';
+      }).join(',') : configs.value;
 
       if (!!value) {
-        value = (configs) ? value.replace(_express, configs.value) : null;
+        value = (configs) ? App.config.replaceConfigValues(name, _express, value, configValue) : null;
       }
     }, this);
     return value;
@@ -357,9 +349,14 @@ App.AddSecurityConfigs = Em.Mixin.create({
     if (templateValue) {
       templateValue.forEach(function (_value) {
         var index = parseInt(_value.match(/\[([\d]*)(?=\])/)[1]);
-        var cfgValue = this.get('configs').findProperty('name', config.templateName[index]);
+        var cfg = this.get('configs').findProperty('name', config.templateName[index]);
 
-        config.value = (cfgValue) ? config.value.replace(_value, cfgValue.value) : null;
+        if (cfg) {
+          var cfgValue = config.templateName[index] == 'hive_metastore' ? cfg.value.join(',') : cfg.value;
+          config.value = config.value.replace(_value, cfgValue);
+        } else {
+          config.value = null;
+        }
       }, this);
       return true;
     }

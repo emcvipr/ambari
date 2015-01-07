@@ -305,6 +305,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
           break;
       }
 
+      hive_properties.push('hive_master_hosts');
       hive_properties.forEach(function (property) {
         configs = configs.without(configs.findProperty('name', property));
       });
@@ -440,9 +441,9 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     if (!templetonHiveProperty) {
       configs.pushObject({
         "name": "templeton.hive.properties",
-        "templateName": ["hivemetastore_host"],
+        "templateName": ["hive.metastore.uris"],
         "foreignKey": null,
-        "value": "hive.metastore.local=false,hive.metastore.uris=thrift://<templateName[0]>:9083,hive.metastore.sasl.enabled=yes,hive.metastore.execute.setugi=true,hive.metastore.warehouse.dir=/apps/hive/warehouse",
+        "value": "hive.metastore.local=false,hive.metastore.uris=<templateName[0]>,hive.metastore.sasl.enabled=yes,hive.metastore.execute.setugi=true,hive.metastore.warehouse.dir=/apps/hive/warehouse",
         "filename": "webhcat-site.xml"
       });
     }
@@ -507,7 +508,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
         var preReplaceValue = null;
         if (value !== null) {   // if the property depends on more than one template name like <templateName[0]>/<templateName[1]> then don't proceed to the next if the prior is null or not found in the global configs
           preReplaceValue = value;
-          value = this._replaceConfigValues(name, _express, value, globValue);
+          value = App.config.replaceConfigValues(name, _express, value, globValue);
         }
         if (globalObj.overrides != null) {
           globalObj.overrides.forEach(function (override) {
@@ -515,9 +516,9 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
             var hostsArray = override.hosts;
             hostsArray.forEach(function (host) {
               if (!(host in overrideHostToValue)) {
-                overrideHostToValue[host] = this._replaceConfigValues(name, _express, preReplaceValue, ov);
+                overrideHostToValue[host] = App.config.replaceConfigValues(name, _express, preReplaceValue, ov);
               } else {
-                overrideHostToValue[host] = this._replaceConfigValues(name, _express, overrideHostToValue[host], ov);
+                overrideHostToValue[host] = App.config.replaceConfigValues(name, _express, overrideHostToValue[host], ov);
               }
             }, this);
           }, this);
@@ -554,20 +555,6 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
       });
     }
     return valueWithOverrides;
-  },
-
-  /**
-   * replace some values in config property
-   * @param {string} name
-   * @param {string} express
-   * @param {string} value
-   * @param {string} globValue
-   * @return {string}
-   * @private
-   * @method _replaceConfigValues
-   */
-  _replaceConfigValues: function (name, express, value, globValue) {
-    return value.replace(express, globValue);
   },
 
   /**
@@ -1485,9 +1472,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
       Object.keys(service.get('configTypes')).forEach(function (type) {
         if (!this.get('serviceConfigTags').someProperty('type', type)) {
           var serviceVersionNotes = Em.I18n.t('dashboard.configHistory.table.notes.default').format(service.get('displayName'));
-          if (service.get('serviceName') === 'MAPREDUCE' && (type === 'capacity-scheduler' || type === 'mapred-queue-acls')) {
-            return;
-          } else if (type === 'core-site') {
+          if (type === 'core-site') {
             coreSiteObject.service_config_version_note = serviceVersionNotes;
             this.get('serviceConfigTags').pushObject(coreSiteObject);
           } else if (type === 'storm-site') {
@@ -1793,7 +1778,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     var miscConfigs = this.get('configs').filterProperty('serviceName', 'MISC'),
       createNotification = miscConfigs.findProperty('name', 'create_notification').value;
     if (createNotification !== 'yes') return;
-      var predefinedNotificationConfigNames = require('data/site_properties').configProperties.filterProperty('filename', 'alert_notification').mapProperty('name'),
+      var predefinedNotificationConfigNames = require('data/HDP2/site_properties').configProperties.filterProperty('filename', 'alert_notification').mapProperty('name'),
       configsForNotification = this.get('configs').filterProperty('filename', 'alert_notification');
     var properties = {},
       names = [

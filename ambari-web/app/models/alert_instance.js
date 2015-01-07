@@ -42,9 +42,12 @@ App.AlertInstance = DS.Model.extend({
    * @type {string}
    */
   status: function () {
+    var isMaintenanceStateOn = this.get('maintenanceState') === 'ON';
     var state = this.get('state');
+    var stateClass = isMaintenanceStateOn ? 'PENDING' : state;
     var shortState = this.get('shortState')[state];
-    return '<span class="label alert-state-single-host alert-state-' + state + '">' + shortState + '</span>';
+    var maintenanceIcon = isMaintenanceStateOn ? '<span class="icon-medkit"></span> ' : '';
+    return '<div class="label alert-state-single-host alert-state-' + stateClass + '">' + maintenanceIcon + shortState + '</div>';
   }.property('state'),
 
   /**
@@ -139,6 +142,14 @@ App.AlertInstance = DS.Model.extend({
   isAmbariServiceName: function () {
     return this.get('serviceName') === 'AMBARI';
   }.property('serviceName'),
+
+  /**
+   * Text minified to length 50 or less chars
+   * @type {String}
+   */
+  textMinified: function () {
+    return this.get('text') ? (this.get('text').length > 52 ? this.get('text').substring(0, 50) + '...' : this.get('text')) : '';
+  }.property('text'),
 
   shortState: {
     'CRITICAL': 'CRIT',

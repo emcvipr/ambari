@@ -131,25 +131,13 @@ App.QuickViewLinks = Em.View.extend({
       }];
       this.set('quickLinks', quickLinks);
       this.set('isLoaded', true);
-      /**
-       * MAPREDUCE is only service that use 2 different masters in quick links
-       * so we must work with this service as with one-master-service but set up
-       * two hosts for two components. (JOBTRACKER and HISTORYSERVER)
-       */
-    } else if (hosts.length == 1 || this.get('content.serviceName') == "MAPREDUCE") {
+    } else if (hosts.length == 1) {
 
       quickLinks = this.get('content.quickLinks').map(function (item) {
         var protocol = self.setProtocol(item.get('service_id'), self.get('configProperties'), self.ambariProperties());
         if (item.get('template')) {
           var port = item.get('http_config') && self.setPort(item, protocol);
-          /**
-           * setting other host for mapreduce (only for MAPREDUCE and JobHistory Server)!!!
-           */
-          if (self.get('content.serviceName') == "MAPREDUCE" && item.get('label') == "JobHistory Server") {
-            item.set('url', item.get('template').fmt(protocol, hosts[1], port));
-          } else {
-            item.set('url', item.get('template').fmt(protocol, hosts[0], port));
-          }
+          item.set('url', item.get('template').fmt(protocol, hosts[0], port));
         }
         return item;
       });
@@ -273,15 +261,12 @@ App.QuickViewLinks = Em.View.extend({
           hosts[0] = this.findComponentHost(response.items, 'RESOURCEMANAGER');
         }
         break;
-      case "MAPREDUCE":
-        hosts[0] = this.findComponentHost(response.items, "JOBTRACKER");
-        hosts[1] = this.findComponentHost(response.items, "HISTORYSERVER");
-        break;
       case "STORM":
         hosts[0] = this.findComponentHost(response.items, "STORM_UI_SERVER");
         break;
       default:
-        if (App.StackService.find().findProperty('serviceName', serviceName).get('hasMaster')) {
+        var service = App.StackService.find().findProperty('serviceName', serviceName);
+        if (service && service.get('hasMaster')) {
           hosts[0] = this.findComponentHost(response.items, this.get('content.hostComponents') && this.get('content.hostComponents').findProperty('isMaster', true).get('componentName'));
         }
         break;
@@ -294,7 +279,7 @@ App.QuickViewLinks = Em.View.extend({
    * becides GANGLIA, NAGIOS, YARN, MAPREDUCE2. These properties use
    * their properties to know protocol
    */
-  servicesSupportsHttps: ["HDFS", "HBASE", "MAPREDUCE"],
+  servicesSupportsHttps: ["HDFS", "HBASE"],
 
   /**
    * setProtocol - if cluster is secure for some services (GANGLIA, NAGIOS, MAPREDUCE2, YARN and servicesSupportsHttps)
@@ -308,13 +293,8 @@ App.QuickViewLinks = Em.View.extend({
   setProtocol: function (service_id, configProperties, ambariProperties) {
     var hadoopSslEnabled = false;
     if (configProperties && configProperties.length > 0) {
-      var coreSite = configProperties.findProperty('type', 'core-site');
       var hdfsSite = configProperties.findProperty('type', 'hdfs-site');
-      if (App.get('isHadoop2Stack')) {
-        hadoopSslEnabled = (Em.get(hdfsSite, 'properties') && hdfsSite.properties['dfs.http.policy'] === 'HTTPS_ONLY');
-      } else {
-        hadoopSslEnabled = (Em.get(coreSite, 'properties') && coreSite.properties['hadoop.ssl.enabled'] == true);
-      }
+      hadoopSslEnabled = (hdfsSite && Em.get(hdfsSite, 'properties') && hdfsSite.properties['dfs.http.policy'] === 'HTTPS_ONLY');
     }
     switch (service_id) {
       case "GANGLIA":
@@ -324,7 +304,7 @@ App.QuickViewLinks = Em.View.extend({
         return (ambariProperties && ambariProperties['nagios.https'] == true) ? "https" : "http";
         break;
       case "YARN":
-        var yarnProperties = configProperties.findProperty('type', 'yarn-site');
+        var yarnProperties = configProperties && configProperties.findProperty('type', 'yarn-site');
         if (yarnProperties && yarnProperties.properties) {
           if (yarnProperties.properties['yarn.http.policy'] === 'HTTPS_ONLY') {
             return "https";
@@ -335,7 +315,7 @@ App.QuickViewLinks = Em.View.extend({
         return hadoopSslEnabled ? "https" : "http";
         break;
       case "MAPREDUCE2":
-        var mapred2Properties = configProperties.findProperty('type', 'mapred-site');
+        var mapred2Properties = configProperties && configProperties.findProperty('type', 'mapred-site');
         if (mapred2Properties && mapred2Properties.properties) {
           if (mapred2Properties.properties['mapreduce.jobhistory.http.policy'] === 'HTTPS_ONLY') {
             return "https";
@@ -384,7 +364,6 @@ App.QuickViewLinks = Em.View.extend({
       case "hdfs":
       case "yarn":
       case "mapreduce2":
-      case "mapreduce":
       case "hbase":
       case "oozie":
       case "ganglia":

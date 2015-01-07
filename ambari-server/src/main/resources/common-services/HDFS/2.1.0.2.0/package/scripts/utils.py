@@ -58,7 +58,7 @@ def failover_namenode():
   """
   import params
   check_service_cmd = format("hdfs haadmin -getServiceState {namenode_id}")
-  code, out = call(check_service_cmd, verbose=True, logoutput=True, user=params.hdfs_user)
+  code, out = call(check_service_cmd, logoutput=True, user=params.hdfs_user)
 
   state = "unknown"
   if code == 0 and out:
@@ -73,11 +73,20 @@ def failover_namenode():
 
     # Wait until it transitions to standby
     check_standby_cmd = format("hdfs haadmin -getServiceState {namenode_id} | grep standby")
-    Execute(check_standby_cmd,
-            user=params.hdfs_user,
-            tries=30,
-            try_sleep=6,
-            logoutput=True)
+
+    # process may already be down.  try one time, then proceed
+    code, out = call(check_standby_cmd, user=params.hdfs_user, logoutput=True)
+    Logger.info(format("Rolling Upgrade - check for standby returned {code}"))
+
+    if code == 255 and out:
+      Logger.info("Rolling Upgrade - namenode is already down")
+    else:
+      Execute(check_standby_cmd,
+              user=params.hdfs_user,
+              tries=30,
+              try_sleep=6,
+              logoutput=True)
+
   else:
     Logger.info("Rolling Upgrade - Host %s is the standby namenode." % str(params.hostname))
 
@@ -94,11 +103,11 @@ def kill_zkfc(zkfc_user):
     zkfc_pid_file = get_service_pid_file("zkfc", zkfc_user)
     if zkfc_pid_file:
       check_process = format("ls {zkfc_pid_file} > /dev/null 2>&1 && ps -p `cat {zkfc_pid_file}` > /dev/null 2>&1")
-      code, out = call(check_process, verbose=True)
+      code, out = call(check_process)
       if code == 0:
         Logger.debug("ZKFC is running and will be killed to initiate namenode failover.")
         kill_command = format("{check_process} && kill -9 `cat {zkfc_pid_file}` > /dev/null 2>&1")
-        checked_call(kill_command, verbose=True)
+        Execute(kill_command)
 
 
 def get_service_pid_file(name, user):

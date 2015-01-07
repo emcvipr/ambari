@@ -37,7 +37,9 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import javax.persistence.EntityManager;
 
+import org.apache.ambari.server.api.query.render.AlertStateSummary;
 import org.apache.ambari.server.api.query.render.AlertSummaryGroupedRenderer;
+import org.apache.ambari.server.api.query.render.AlertSummaryGroupedRenderer.AlertDefinitionSummary;
 import org.apache.ambari.server.api.query.render.AlertSummaryRenderer;
 import org.apache.ambari.server.api.services.Result;
 import org.apache.ambari.server.api.services.ResultImpl;
@@ -59,6 +61,7 @@ import org.apache.ambari.server.orm.entities.AlertHistoryEntity;
 import org.apache.ambari.server.state.AlertState;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.MaintenanceState;
 import org.easymock.Capture;
 import org.easymock.EasyMock;
 import org.junit.Assert;
@@ -243,16 +246,12 @@ public class AlertResourceProviderTest {
     TreeNode<Resource> summaryResources = summaryResultTree.getChild("alerts_summary");
 
     Resource summaryResource = summaryResources.getObject();
+    AlertStateSummary alertStateSummary = (AlertStateSummary) summaryResource.getPropertyValue("alerts_summary");
 
-    Integer okCount = (Integer) summaryResource.getPropertyValue("alerts_summary/OK/count");
-    Integer warningCount = (Integer) summaryResource.getPropertyValue("alerts_summary/WARNING/count");
-    Integer criticalCount = (Integer) summaryResource.getPropertyValue("alerts_summary/CRITICAL/count");
-    Integer unknownCount = (Integer) summaryResource.getPropertyValue("alerts_summary/UNKNOWN/count");
-
-    Assert.assertEquals(10, okCount.intValue());
-    Assert.assertEquals(2, warningCount.intValue());
-    Assert.assertEquals(1, criticalCount.intValue());
-    Assert.assertEquals(3, unknownCount.intValue());
+    Assert.assertEquals(10, alertStateSummary.Ok.Count);
+    Assert.assertEquals(2, alertStateSummary.Warning.Count);
+    Assert.assertEquals(1, alertStateSummary.Critical.Count);
+    Assert.assertEquals(3, alertStateSummary.Unknown.Count);
   }
 
   /**
@@ -271,6 +270,110 @@ public class AlertResourceProviderTest {
 
     Request request = PropertyHelper.getReadRequest(
         AlertResourceProvider.ALERT_ID, AlertResourceProvider.ALERT_DEFINITION_NAME,
+        AlertResourceProvider.ALERT_LABEL, AlertResourceProvider.ALERT_STATE,
+        AlertResourceProvider.ALERT_ORIGINAL_TIMESTAMP,
+        AlertResourceProvider.ALERT_TEXT);
+
+    Predicate predicate = new PredicateBuilder().property(
+        AlertResourceProvider.ALERT_CLUSTER_NAME).equals("c1").toPredicate();
+
+    AlertResourceProvider provider = createProvider();
+    Set<Resource> results = provider.getResources(request, predicate);
+
+    verify(m_dao);
+
+    AlertSummaryGroupedRenderer renderer = new AlertSummaryGroupedRenderer();
+    ResultImpl result = new ResultImpl(true);
+    TreeNode<Resource> resources = result.getResultTree();
+
+    AtomicInteger alertResourceId = new AtomicInteger(1);
+    for (Resource resource : results) {
+      resources.addChild(resource, "Alert " + alertResourceId.getAndIncrement());
+    }
+
+    Result groupedSummary = renderer.finalizeResult(result);
+    Assert.assertNotNull(groupedSummary);
+
+    // pull out the alerts_summary child set by the renderer
+    TreeNode<Resource> summaryResultTree = groupedSummary.getResultTree();
+    TreeNode<Resource> summaryResources = summaryResultTree.getChild("alerts_summary_grouped");
+
+    Resource summaryResource = summaryResources.getObject();
+    List<AlertDefinitionSummary> summaryList = (List<AlertDefinitionSummary>) summaryResource.getPropertyValue("alerts_summary_grouped");
+    Assert.assertEquals(4, summaryList.size());
+
+    AlertDefinitionSummary nnSummary = null;
+    AlertDefinitionSummary rmSummary = null;
+    AlertDefinitionSummary hiveSummary = null;
+    AlertDefinitionSummary flumeSummary = null;
+
+    for (AlertDefinitionSummary summary : summaryList) {
+      if (summary.Name.equals("hdfs_namenode")) {
+        nnSummary = summary;
+      } else if (summary.Name.equals("yarn_resourcemanager")) {
+        rmSummary = summary;
+      } else if (summary.Name.equals("hive_server")) {
+        hiveSummary = summary;
+      } else if (summary.Name.equals("flume_handler")) {
+        flumeSummary = summary;
+      }
+    }
+
+    Assert.assertNotNull(nnSummary);
+    Assert.assertNotNull(rmSummary);
+    Assert.assertNotNull(hiveSummary);
+    Assert.assertNotNull(flumeSummary);
+
+    Assert.assertEquals(10, nnSummary.State.Ok.Count);
+    Assert.assertEquals(ALERT_VALUE_TEXT, nnSummary.State.Ok.AlertText);
+    Assert.assertEquals(0, nnSummary.State.Warning.Count);
+    Assert.assertEquals(0, nnSummary.State.Critical.Count);
+    Assert.assertEquals(0, nnSummary.State.Unknown.Count);
+
+    Assert.assertEquals(0, rmSummary.State.Ok.Count);
+    Assert.assertEquals(2, rmSummary.State.Warning.Count);
+    Assert.assertEquals(ALERT_VALUE_TEXT, rmSummary.State.Warning.AlertText);
+    Assert.assertEquals(0, rmSummary.State.Critical.Count);
+    Assert.assertEquals(0, rmSummary.State.Unknown.Count);
+
+    Assert.assertEquals(0, hiveSummary.State.Ok.Count);
+    Assert.assertEquals(0, hiveSummary.State.Warning.Count);
+    Assert.assertEquals(1, hiveSummary.State.Critical.Count);
+    Assert.assertEquals(ALERT_VALUE_TEXT, hiveSummary.State.Critical.AlertText);
+    Assert.assertEquals(0, hiveSummary.State.Unknown.Count);
+
+    Assert.assertEquals(0, flumeSummary.State.Ok.Count);
+    Assert.assertEquals(0, flumeSummary.State.Warning.Count);
+    Assert.assertEquals(0, flumeSummary.State.Critical.Count);
+    Assert.assertEquals(3, flumeSummary.State.Unknown.Count);
+    Assert.assertEquals(ALERT_VALUE_TEXT, flumeSummary.State.Unknown.AlertText);
+  }
+
+  /**
+   * Tests that the {@link AlertSummaryGroupedRenderer} correctly transforms the
+   * alert data when it has maintenace mode alerts.
+   *
+   * @throws Exception
+   */
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testGetClusterGroupedSummaryMaintenanceCounts() throws Exception {
+    // turn on MM for all alerts in the WARNING state
+    List<AlertCurrentEntity> currents = getMockEntitiesManyStates();
+    for (AlertCurrentEntity current : currents) {
+      if (current.getAlertHistory().getAlertState() == AlertState.WARNING) {
+        current.setMaintenanceState(MaintenanceState.ON);
+      }
+    }
+
+    expect(m_dao.findCurrentByCluster(captureLong(new Capture<Long>()))).andReturn(
+        currents).anyTimes();
+
+    replay(m_dao);
+
+    Request request = PropertyHelper.getReadRequest(
+        AlertResourceProvider.ALERT_ID,
+        AlertResourceProvider.ALERT_DEFINITION_NAME,
         AlertResourceProvider.ALERT_LABEL, AlertResourceProvider.ALERT_STATE,
         AlertResourceProvider.ALERT_ORIGINAL_TIMESTAMP);
 
@@ -303,6 +406,9 @@ public class AlertResourceProviderTest {
     Assert.assertEquals(4, summaryList.size());
   }
 
+  /**
+   * @return
+   */
   private AlertResourceProvider createProvider() {
     return new AlertResourceProvider(m_amc);
   }
@@ -381,6 +487,7 @@ public class AlertResourceProviderTest {
       current.setAlertId(alertId.getAndIncrement());
       current.setOriginalTimestamp(timestamp.getAndAdd(10000));
       current.setLatestTimestamp(timestamp.getAndAdd(10000));
+      current.setLatestText(ALERT_VALUE_TEXT);
 
       AlertHistoryEntity history = new AlertHistoryEntity();
       history.setAlertId(alertId.getAndIncrement());

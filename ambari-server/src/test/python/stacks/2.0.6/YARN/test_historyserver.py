@@ -26,20 +26,28 @@ origin_exists = os.path.exists
   side_effect=lambda *args: origin_exists(args[0])
   if args[0][-2:] == "j2" else True))
 class TestHistoryServer(RMFTestCase):
-
+  COMMON_SERVICES_PACKAGE_DIR = "YARN/2.1.0.2.0/package"
+  STACK_VERSION = "2.0.6"
+  
   def test_configure_default(self):
-    self.executeScript("2.0.6/services/YARN/package/scripts/historyserver.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
                        classname="HistoryServer",
                        command="configure",
-                       config_file="default.json")
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
     self.assert_configure_default()
     self.assertNoMoreResources()
 
   def test_start_default(self):
-    self.executeScript("2.0.6/services/YARN/package/scripts/historyserver.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
                        classname="HistoryServer",
                        command="start",
-                       config_file="default.json")
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
     self.assert_configure_default()
 
     pid_check_cmd = 'ls /var/run/hadoop-mapreduce/mapred/mapred-mapred-historyserver.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop-mapreduce/mapred/mapred-mapred-historyserver.pid` >/dev/null 2>&1'
@@ -57,10 +65,13 @@ class TestHistoryServer(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_stop_default(self):
-    self.executeScript("2.0.6/services/YARN/package/scripts/historyserver.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
                        classname="HistoryServer",
                        command="stop",
-                       config_file="default.json")
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
 
     self.assertResourceCalled('Execute', 'export HADOOP_LIBEXEC_DIR=/usr/lib/hadoop/libexec && /usr/lib/hadoop-mapreduce/sbin/mr-jobhistory-daemon.sh --config /etc/hadoop/conf stop historyserver',
                               user='mapred')
@@ -70,18 +81,24 @@ class TestHistoryServer(RMFTestCase):
 
   def test_configure_secured(self):
 
-    self.executeScript("2.0.6/services/YARN/package/scripts/historyserver.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
                        classname="HistoryServer",
                        command="configure",
-                       config_file="secured.json")
+                       config_file="secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
     self.assert_configure_secured()
     self.assertNoMoreResources()
 
   def test_start_secured(self):
-    self.executeScript("2.0.6/services/YARN/package/scripts/historyserver.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
                        classname="HistoryServer",
                        command="start",
-                       config_file="secured.json")
+                       config_file="secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
 
     self.assert_configure_secured()
 
@@ -100,10 +117,13 @@ class TestHistoryServer(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_stop_secured(self):
-    self.executeScript("2.0.6/services/YARN/package/scripts/historyserver.py",
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
                        classname="HistoryServer",
                        command="stop",
-                       config_file="secured.json")
+                       config_file="secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
 
     self.assertResourceCalled('Execute', 'export HADOOP_LIBEXEC_DIR=/usr/lib/hadoop/libexec && /usr/lib/hadoop-mapreduce/sbin/mr-jobhistory-daemon.sh --config /etc/hadoop/conf stop historyserver',
                               user='mapred')
@@ -511,3 +531,111 @@ class TestHistoryServer(RMFTestCase):
                               owner = 'mapred',
                               group = 'hadoop',
                               )
+
+  @patch("resource_management.libraries.functions.security_commons.build_expectations")
+  @patch("resource_management.libraries.functions.security_commons.get_params_from_filesystem")
+  @patch("resource_management.libraries.functions.security_commons.validate_security_config_properties")
+  @patch("resource_management.libraries.functions.security_commons.cached_kinit_executor")
+  @patch("resource_management.libraries.script.Script.put_structured_out")
+  def test_security_status(self, put_structured_out_mock, cached_kinit_executor_mock, validate_security_config_mock, get_params_mock, build_exp_mock):
+    # Test that function works when is called with correct parameters
+
+    security_params = {
+      "mapred-site": {
+        'mapreduce.jobhistory.keytab': "/path/to/keytab1",
+        'mapreduce.jobhistory.principal': "principal1",
+        'mapreduce.jobhistory.webapp.spnego-keytab-file': "/path/to/keytab2",
+        'mapreduce.jobhistory.webapp.spnego-principal': "principal2"
+      }
+    }
+    result_issues = []
+
+    get_params_mock.return_value = security_params
+    validate_security_config_mock.return_value = result_issues
+
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
+                       classname="HistoryServer",
+                       command="security_status",
+                       config_file="secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
+
+    import status_params
+
+    get_params_mock.assert_called_with(status_params.hadoop_conf_dir, {'mapred-site.xml': 'XML'})
+    build_exp_mock.assert_called_with('mapred-site',
+                                      None,
+                                      [
+                                        'mapreduce.jobhistory.keytab',
+                                        'mapreduce.jobhistory.principal',
+                                        'mapreduce.jobhistory.webapp.spnego-keytab-file',
+                                        'mapreduce.jobhistory.webapp.spnego-principal'
+                                        ],
+                                      None)
+    put_structured_out_mock.assert_called_with({"securityState": "SECURED_KERBEROS"})
+    self.assertTrue(cached_kinit_executor_mock.call_count, 2)
+    cached_kinit_executor_mock.assert_called_with(status_params.kinit_path_local,
+                                                  status_params.mapred_user,
+                                                  security_params['mapred-site']['mapreduce.jobhistory.webapp.spnego-keytab-file'],
+                                                  security_params['mapred-site']['mapreduce.jobhistory.webapp.spnego-principal'],
+                                                  status_params.hostname,
+                                                  status_params.tmp_dir)
+
+    # Testing that the exception throw by cached_executor is caught
+    cached_kinit_executor_mock.reset_mock()
+    cached_kinit_executor_mock.side_effect = Exception("Invalid command")
+
+    try:
+      self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
+                         classname="HistoryServer",
+                         command="security_status",
+                         config_file="secured.json",
+                         hdp_stack_version = self.STACK_VERSION,
+                         target = RMFTestCase.TARGET_COMMON_SERVICES
+      )
+    except:
+      self.assertTrue(True)
+
+    # Testing with a security_params which doesn't contain mapred-site
+    empty_security_params = {}
+    cached_kinit_executor_mock.reset_mock()
+    get_params_mock.reset_mock()
+    put_structured_out_mock.reset_mock()
+    get_params_mock.return_value = empty_security_params
+
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
+                       classname="HistoryServer",
+                       command="security_status",
+                       config_file="secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
+    put_structured_out_mock.assert_called_with({"securityIssuesFound": "Keytab file or principal not set."})
+
+    # Testing with not empty result_issues
+    result_issues_with_params = {'mapred-site': "Something bad happened"}
+
+    validate_security_config_mock.reset_mock()
+    get_params_mock.reset_mock()
+    validate_security_config_mock.return_value = result_issues_with_params
+    get_params_mock.return_value = security_params
+
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
+                       classname="HistoryServer",
+                       command="security_status",
+                       config_file="secured.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
+    put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
+
+    # Testing with security_enable = false
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",
+                       classname="HistoryServer",
+                       command="security_status",
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
+    put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})

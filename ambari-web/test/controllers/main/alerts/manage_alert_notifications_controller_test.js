@@ -234,6 +234,9 @@ describe('App.ManageAlertNotificationsController', function () {
         SMTPPassword: {
           value: ''
         },
+        retypeSMTPPassword: {
+          value: ''
+        },
         SMTPSTARTTLS: {
           value: ''
         },
@@ -272,8 +275,7 @@ describe('App.ManageAlertNotificationsController', function () {
           disabled: true
         },
         allGroups: {
-          value: 'all',
-          disabled: true
+          value: 'all'
         },
         method: {
           value: 'EMAIL'
@@ -300,6 +302,9 @@ describe('App.ManageAlertNotificationsController', function () {
           value: 'user'
         },
         SMTPPassword: {
+          value: 'pass'
+        },
+        retypeSMTPPassword: {
           value: 'pass'
         },
         SMTPSTARTTLS: {
@@ -347,13 +352,19 @@ describe('App.ManageAlertNotificationsController', function () {
         view = controller.showCreateEditPopup().get('bodyClass').create({
           controller: Em.Object.create({
             inputFields: {
+              name: {},
               global: {},
-              allGroups: {}
+              allGroups: {},
+              SMTPPassword: {},
+              retypeSMTPPassword: {}
             }
           }),
           groupSelect: Em.Object.create({
             selection: [],
             content: [{}, {}]
+          }),
+          parentView: Em.Object.create({
+            hasErrors: false
           })
         });
 
@@ -389,6 +400,63 @@ describe('App.ManageAlertNotificationsController', function () {
           view.set('controller.inputFields.allGroups.value', 'custom');
           view.clearAllGroups();
           expect(view.get('groupSelect.selection')).to.eql([]);
+
+        });
+
+      });
+
+      describe('#nameValidation', function () {
+
+        it('should check inputFields.name.value', function () {
+          view.set('controller.inputFields.name.value', '');
+          expect(view.get('controller.inputFields.name.errorMsg')).to.equal(Em.I18n.t('alerts.actions.manage_alert_notifications_popup.error.name.empty'));
+          expect(view.get('parentView.hasErrors')).to.be.true;
+        });
+
+        it('should check inputFields.name.value', function () {
+          view.set('controller.inputFields.name.errorMsg', 'error');
+          view.set('controller.inputFields.name.value', 'test');
+          expect(view.get('controller.inputFields.name.errorMsg')).to.equal('');
+        });
+
+        it('should check inputFields.name.value', function () {
+          view.set('isEdit', true);
+          view.set('controller.inputFields.name.value', '');
+          expect(view.get('controller.inputFields.name.errorMsg')).to.equal(Em.I18n.t('alerts.actions.manage_alert_notifications_popup.error.name.empty'));
+          expect(view.get('parentView.hasErrors')).to.be.true;
+        });
+
+        it('should check inputFields.name.value', function () {
+          view.set('isEdit', true);
+          view.set('controller.inputFields.name.errorMsg', 'error');
+          view.set('controller.inputFields.name.value', 'test');
+          expect(view.get('controller.inputFields.name.errorMsg')).to.equal('');
+        });
+
+      });
+
+      describe('#retypePasswordValidation', function () {
+
+        it('should check inputFields.retypeSMTPPassword.value', function () {
+
+          view.set('controller.inputFields.retypeSMTPPassword.errorMsg', null);
+          view.set('controller.inputFields.SMTPPassword.value', 'pass');
+          view.set('controller.inputFields.retypeSMTPPassword.value', 'pas');
+
+          expect(view.get('controller.inputFields.retypeSMTPPassword.errorMsg')).to.equal(Em.I18n.t('alerts.notifications.error.retypePassword'));
+          expect(view.get('parentView.hasErrors')).to.be.true;
+
+        });
+
+        it('should check inputFields.retypeSMTPPassword.value', function () {
+
+          view.set('parentView.hasErrors', true);
+          view.set('controller.inputFields.retypeSMTPPassword.errorMsg', 'error');
+          view.set('controller.inputFields.SMTPPassword.value', 'pass');
+          view.set('controller.inputFields.retypeSMTPPassword.value', 'pass');
+
+          expect(view.get('controller.inputFields.retypeSMTPPassword.errorMsg')).to.equal(null);
+          expect(view.get('parentView.hasErrors')).to.be.false;
 
         });
 

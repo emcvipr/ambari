@@ -17,7 +17,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 '''
-__all__ = ["RMFTestCase", "Template", "StaticFile", "InlineTemplate", "UnknownConfigurationMock"]
+__all__ = ["RMFTestCase", "Template", "StaticFile", "InlineTemplate", "UnknownConfigurationMock", "FunctionMock"]
 
 from unittest import TestCase
 import json
@@ -116,8 +116,12 @@ class RMFTestCase(TestCase):
     
     # Reload params import, otherwise it won't change properties during next import
     if 'params' in sys.modules:  
-      del(sys.modules["params"]) 
-    
+      del(sys.modules["params"])
+
+    # Reload status_params import, otherwise it won't change properties during next import
+    if 'status_params' in sys.modules:
+      del(sys.modules["status_params"])
+
     # run
     with Environment(basedir, test_mode=True) as RMFTestCase.env:
       with patch('resource_management.core.shell.checked_call', return_value=shell_mock_value): # we must always mock any shell calls
@@ -136,6 +140,10 @@ class RMFTestCase(TestCase):
   @staticmethod
   def _getSrcFolder():
     return os.path.join(os.path.abspath(os.path.dirname(__file__)),os.path.normpath("../../../../"))
+  
+  @staticmethod
+  def _getCommonServicesFolder():
+    return os.path.join(RMFTestCase._getSrcFolder(), PATH_TO_COMMON_SERVICES)
       
   @staticmethod
   def _get_attr(module, attr):
@@ -172,6 +180,8 @@ class RMFTestCase(TestCase):
           val = oct(v)
         elif  isinstance( v, UnknownConfiguration):
           val = "UnknownConfigurationMock()"
+        elif hasattr(v, '__call__') and hasattr(v, '__name__'):
+          val = "FunctionMock('{0}')".format(v.__name__)
         else:
           val = self._ppformat(v)
         # If value is multiline, format it
@@ -196,7 +206,7 @@ class RMFTestCase(TestCase):
     print(self.reindent("self.assertNoMoreResources()", intendation))
   
   def assertResourceCalled(self, resource_type, name, **kwargs):
-    with patch.object(UnknownConfiguration, '__getattr__', return_value=lambda: "UnknownConfiguration()"): 
+    with patch.object(UnknownConfiguration, '__getattr__', return_value=lambda: "UnknownConfiguration()"):
       self.assertNotEqual(len(RMFTestCase.env.resource_list), 0, "There was no more resources executed!")
       resource = RMFTestCase.env.resource_list.pop(0)
       
@@ -240,4 +250,15 @@ class UnknownConfigurationMock():
   
   def __repr__(self):
     return "UnknownConfigurationMock()"
+  
+class FunctionMock():
+  def __init__(self, name):
+    self.name = name
+    
+  def __ne__(self, other):
+    return not self.__eq__(other)
+    
+  def __eq__(self, other):
+    return hasattr(other, '__call__') and hasattr(other, '__name__') and self.name == other.__name__
+      
 

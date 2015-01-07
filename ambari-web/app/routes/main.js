@@ -154,83 +154,6 @@ module.exports = Em.Route.extend({
     }
   }),
 
-  apps: Em.Route.extend({
-    route: '/apps',
-    connectOutlets: function (router) {
-      if (App.get('isHadoop2Stack')) {
-        Em.run.next(function () {
-          router.transitionTo('main.dashboard.index');
-        });
-      } else {
-        router.get('mainAppsController').loadRuns();
-        router.get('mainController').connectOutlet('mainApps');
-      }
-    }
-  }),
-
-  mirroring: Em.Route.extend({
-    route: '/mirroring',
-    index: Ember.Route.extend({
-      route: '/'
-    }),
-
-    connectOutlets: function (router) {
-      router.get('mainController').connectOutlet('mainMirroring');
-    },
-
-    gotoShowJobs: function (router, context) {
-      var dataset = context || router.get('mainMirroringController.selectedDataset') || App.Dataset.find().objectAt(0);
-      if (dataset) {
-        router.transitionTo('showDatasetJobs', dataset);
-      } else {
-        router.transitionTo('index');
-      }
-    },
-
-    showDatasetJobs: Em.Route.extend({
-      route: '/:dataset_id',
-      connectOutlets: function (router, dataset) {
-        router.get('mainDatasetJobsController').set('content', dataset);
-        router.get('mainMirroringController').set('selectedDataset', dataset);
-      }
-    }),
-
-    editDatasetRoute: Em.Route.extend({
-      route: '/edit/:dataset_id',
-      connectOutlets: function (router, dataset) {
-        router.get('mainMirroringEditDataSetController').showEditPopup(dataset);
-      }
-    }),
-
-    editDataset: function (router, event) {
-      router.transitionTo('editDatasetRoute', event.view.get('dataset'));
-    },
-
-    addNewDataset: function (router) {
-      router.transitionTo('addNewDatasetRoute');
-    },
-
-    addNewDatasetRoute: Em.Route.extend({
-      route: '/dataset/add',
-      enter: function (router) {
-        var controller = router.get('mainMirroringEditDataSetController');
-        controller.showAddPopup();
-      }
-    }),
-
-    manageClustersRoute: Em.Route.extend({
-      route: '/dataset/clusters/edit',
-      enter: function (router) {
-        var controller = router.get('mainMirroringController');
-        controller.manageClusters();
-      }
-    }),
-
-    manageClusters: function (router) {
-      router.transitionTo('manageClustersRoute');
-    }
-  }),
-
   views: require('routes/views'),
 
   hosts: Em.Route.extend({
@@ -522,28 +445,29 @@ module.exports = Em.Route.extend({
 
     adminStackVersions: Em.Route.extend({
       route: '/versions',
+      enter: function (router) {
+        if (App.get('supports.stackUpgrade')) {
+          router.set('mainAdminController.category', "stackVersions");
+        } else {
+          router.transitionTo('admin.stackAndUpgrade');
+        }
+      },
       index: Em.Route.extend({
         route: '/',
         connectOutlets: function (router) {
-          if (App.get('supports.stackUpgrade')) {
-            router.set('mainAdminController.category', "stackVersions");
-            router.get('mainAdminController').connectOutlet('mainStackVersions');
-          }
+          router.get('mainAdminController').connectOutlet('mainStackVersions');
         }
       }),
       version: Em.Route.extend({
         route: '/:repository_version_id',
-        connectOutlets: function (router, stackVersion) {
-          router.get('mainAdminController').connectOutlet('mainStackVersionsDetails', stackVersion);
+        connectOutlets: function (router, repoVersion) {
+          router.get('mainAdminController').connectOutlet('mainStackVersionsDetails', repoVersion);
         }
       }),
       update: Em.Route.extend({
         route: '/updates',
         connectOutlets: function (router) {
-          if (App.get('supports.stackUpgrade')) {
-            router.set('mainAdminController.category', "stackVersions");
-            router.get('mainAdminController').connectOutlet('repoVersions');
-          }
+          router.get('mainAdminController').connectOutlet('repoVersions');
         }
       })
     }),

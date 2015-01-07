@@ -23,6 +23,7 @@ from math import ceil
 
 from stack_advisor import DefaultStackAdvisor
 
+
 class HDP206StackAdvisor(DefaultStackAdvisor):
 
   def getComponentLayoutValidations(self, services, hosts):
@@ -81,7 +82,9 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
   def getServiceConfigurationRecommenderDict(self):
     return {
       "YARN": self.recommendYARNConfigurations,
-      "MAPREDUCE2": self.recommendMapReduce2Configurations
+      "MAPREDUCE2": self.recommendMapReduce2Configurations,
+      "HDFS": self.recommendHDFSConfigurations,
+      "HBASE": self.recommendHbaseEnvConfigurations
     }
 
   def putProperty(self, config, configType):
@@ -93,9 +96,11 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
   def recommendYARNConfigurations(self, configurations, clusterData, services, hosts):
     putYarnProperty = self.putProperty(configurations, "yarn-site")
+    putYarnEnvProperty = self.putProperty(configurations, "yarn-env")
     putYarnProperty('yarn.nodemanager.resource.memory-mb', int(round(clusterData['containers'] * clusterData['ramPerContainer'])))
     putYarnProperty('yarn.scheduler.minimum-allocation-mb', int(clusterData['ramPerContainer']))
     putYarnProperty('yarn.scheduler.maximum-allocation-mb', int(round(clusterData['containers'] * clusterData['ramPerContainer'])))
+    putYarnEnvProperty('min_user_id', self.get_system_min_uid())
 
   def recommendMapReduce2Configurations(self, configurations, clusterData, services, hosts):
     putMapredProperty = self.putProperty(configurations, "mapred-site")
@@ -106,6 +111,19 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putMapredProperty('mapreduce.map.java.opts', "-Xmx" + str(int(round(0.8 * clusterData['mapMemory']))) + "m")
     putMapredProperty('mapreduce.reduce.java.opts', "-Xmx" + str(int(round(0.8 * clusterData['reduceMemory']))) + "m")
     putMapredProperty('mapreduce.task.io.sort.mb', min(int(round(0.4 * clusterData['mapMemory'])), 1024))
+ 
+  def recommendHDFSConfigurations(self, configurations, clusterData, services, hosts):
+    putHDFSProperty = self.putProperty(configurations, "hadoop-env")
+    putHDFSProperty('namenode_heapsize', max(int(clusterData['totalAvailableRam'] / 2), 1024))
+    putHDFSProperty = self.putProperty(configurations, "hadoop-env")
+    putHDFSProperty('namenode_opt_newsize', max(int(clusterData['totalAvailableRam'] / 8), 128))
+    putHDFSProperty = self.putProperty(configurations, "hadoop-env")
+    putHDFSProperty('namenode_opt_maxnewsize', max(int(clusterData['totalAvailableRam'] / 8), 256))
+
+  def recommendHbaseEnvConfigurations(self, configurations, clusterData, services, hosts):
+    putHbaseProperty = self.putProperty(configurations, "hbase-env")
+    putHbaseProperty('hbase_regionserver_heapsize', int(clusterData['hbaseRam']) * 1024)
+    putHbaseProperty('hbase_master_heapsize', int(clusterData['hbaseRam']) * 1024)
 
   def getConfigurationClusterSummary(self, servicesList, hosts, components):
 
@@ -207,8 +225,10 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
   def getServiceConfigurationValidators(self):
     return {
+      "HDFS": {"hadoop-env": self.validateHDFSConfigurationsEnv},
       "MAPREDUCE2": {"mapred-site": self.validateMapReduce2Configurations},
-      "YARN": {"yarn-site": self.validateYARNConfigurations}
+      "YARN": {"yarn-site": self.validateYARNConfigurations},
+      "HBASE": {"hbase-env": self.validateHbaseEnvConfigurations}
     }
 
   def validateServiceConfigurations(self, serviceName):
@@ -289,6 +309,17 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
                         {"config-name": 'yarn.scheduler.minimum-allocation-mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'yarn.scheduler.minimum-allocation-mb')},
                         {"config-name": 'yarn.scheduler.maximum-allocation-mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'yarn.scheduler.maximum-allocation-mb')} ]
     return self.toConfigurationValidationProblems(validationItems, "yarn-site")
+ 
+  def validateHbaseEnvConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
+    validationItems = [ {"config-name": 'hbase_regionserver_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'hbase_regionserver_heapsize')},
+                        {"config-name": 'hbase_master_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'hbase_master_heapsize')} ]
+    return self.toConfigurationValidationProblems(validationItems, "hbase-env")
+
+  def validateHDFSConfigurationsEnv(self, properties, recommendedDefaults, configurations, services, hosts):
+    validationItems = [ {"config-name": 'namenode_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'namenode_heapsize')},
+                        {"config-name": 'namenode_opt_newsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'namenode_opt_newsize')},
+                        {"config-name": 'namenode_opt_maxnewsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'namenode_opt_maxnewsize')}]
+    return self.toConfigurationValidationProblems(validationItems, "hadoop-env")
 
   def getMastersWithMultipleInstances(self):
     return ['ZOOKEEPER_SERVER', 'HBASE_MASTER']
@@ -320,6 +351,41 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       'HIVE_METASTORE': {6: 1, 31: 2, "else": 4},
       'WEBHCAT_SERVER': {6: 1, 31: 2, "else": 4},
       }
+
+  def get_system_min_uid(self):
+    login_defs = '/etc/login.defs'
+    uid_min_tag = 'UID_MIN'
+    comment_tag = '#'
+    uid_min = uid_default = '1000'
+    uid = None
+
+    if os.path.exists(login_defs):
+      with open(login_defs, 'r') as f:
+        data = f.read().split('\n')
+        # look for uid_min_tag in file
+        uid = filter(lambda x: uid_min_tag in x, data)
+        # filter all lines, where uid_min_tag was found in comments
+        uid = filter(lambda x: x.find(comment_tag) > x.find(uid_min_tag) or x.find(comment_tag) == -1, uid)
+
+      if uid is not None and len(uid) > 0:
+        uid = uid[0]
+        comment = uid.find(comment_tag)
+        tag = uid.find(uid_min_tag)
+        if comment == -1:
+          uid_tag = tag + len(uid_min_tag)
+          uid_min = uid[uid_tag:].strip()
+        elif comment > tag:
+          uid_tag = tag + len(uid_min_tag)
+          uid_min = uid[uid_tag:comment].strip()
+
+    # check result for value
+    try:
+      int(uid_min)
+    except ValueError:
+      return uid_default
+
+    return uid_min
+
 
 # Validation helper methods
 def getSiteProperties(configurations, siteName):

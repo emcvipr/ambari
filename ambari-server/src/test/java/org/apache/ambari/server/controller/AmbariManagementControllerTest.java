@@ -1487,6 +1487,7 @@ public class AmbariManagementControllerTest {
     Cluster c = clusters.getCluster("foo");
     StackId stackId = new StackId("HDP-0.1");
     c.setDesiredStackVersion(stackId);
+    c.setCurrentStackVersion(stackId);
     helper.getOrCreateRepositoryVersion(stackId.getStackName(), stackId.getStackVersion());
     c.createClusterVersion(stackId.getStackName(), stackId.getStackVersion(), "admin", RepositoryVersionState.CURRENT);
 
@@ -1509,6 +1510,7 @@ public class AmbariManagementControllerTest {
     Cluster c = clusters.getCluster("c1");
     StackId stackID = new StackId("HDP-0.1");
     c.setDesiredStackVersion(stackID);
+    c.setCurrentStackVersion(stackID);
     helper.getOrCreateRepositoryVersion(stackID.getStackName(), stackID.getStackVersion());
     c.createClusterVersion(stackID.getStackName(), stackID.getStackVersion(), "admin", RepositoryVersionState.CURRENT);
 
@@ -7800,7 +7802,7 @@ public class AmbariManagementControllerTest {
             RoleCommand.START,
             new ServiceComponentHostStartEvent(Role.HBASE_MASTER.toString(),
                     hostName1, System.currentTimeMillis()),
-            clusterName, "HBASE");
+            clusterName, "HBASE", false);
 
     stages.add(new Stage(requestId1, "/a2", clusterName, 1L, context,
       CLUSTER_HOST_INFO, "", ""));
@@ -7808,7 +7810,7 @@ public class AmbariManagementControllerTest {
     stages.get(1).addHostRoleExecutionCommand(hostName1, Role.HBASE_CLIENT,
             RoleCommand.START,
             new ServiceComponentHostStartEvent(Role.HBASE_CLIENT.toString(),
-                    hostName1, System.currentTimeMillis()), clusterName, "HBASE");
+                    hostName1, System.currentTimeMillis()), clusterName, "HBASE", false);
 
     stages.add(new Stage(requestId1, "/a3", clusterName, 1L, context,
       CLUSTER_HOST_INFO, "", ""));
@@ -7816,7 +7818,7 @@ public class AmbariManagementControllerTest {
     stages.get(2).addHostRoleExecutionCommand(hostName1, Role.HBASE_CLIENT,
             RoleCommand.START,
             new ServiceComponentHostStartEvent(Role.HBASE_CLIENT.toString(),
-                    hostName1, System.currentTimeMillis()), clusterName, "HBASE");
+                    hostName1, System.currentTimeMillis()), clusterName, "HBASE", false);
 
     Request request = new Request(stages, clusters);
     actionDB.persistActions(request);
@@ -7828,7 +7830,7 @@ public class AmbariManagementControllerTest {
     stages.get(0).addHostRoleExecutionCommand(hostName1, Role.HBASE_CLIENT,
             RoleCommand.START,
             new ServiceComponentHostStartEvent(Role.HBASE_CLIENT.toString(),
-                    hostName1, System.currentTimeMillis()), clusterName, "HBASE");
+                    hostName1, System.currentTimeMillis()), clusterName, "HBASE", false);
 
     stages.add(new Stage(requestId2, "/a5", clusterName, 1L, context,
       CLUSTER_HOST_INFO, "", ""));
@@ -7836,7 +7838,7 @@ public class AmbariManagementControllerTest {
     stages.get(1).addHostRoleExecutionCommand(hostName1, Role.HBASE_CLIENT,
             RoleCommand.START,
             new ServiceComponentHostStartEvent(Role.HBASE_CLIENT.toString(),
-                    hostName1, System.currentTimeMillis()), clusterName, "HBASE");
+                    hostName1, System.currentTimeMillis()), clusterName, "HBASE", false);
 
     request = new Request(stages, clusters);
     actionDB.persistActions(request);
@@ -9104,6 +9106,13 @@ public class AmbariManagementControllerTest {
       componentHostRequests.add(new ServiceComponentHostRequest("c1", null, "DATANODE", "host2", "DISABLED"));
       updateHostComponents(amc, componentHostRequests, mapRequestProps, false);
       org.junit.Assert.assertEquals(State.DISABLED, sch.getState());
+      
+      // State should not be changed if componentHostRequests are empty
+      componentHostRequests.clear();
+      mapRequestProps.put(RequestOperationLevel.OPERATION_CLUSTER_ID,"c1");
+      updateHostComponents(amc, componentHostRequests, mapRequestProps, false);
+      org.junit.Assert.assertEquals(State.DISABLED, sch.getState());
+      mapRequestProps.clear();
 
       // ServiceComponentHost remains in disabled after service stop
       assertEquals(sch.getServiceComponentName(),"DATANODE");

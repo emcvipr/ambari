@@ -22,28 +22,8 @@
 
 <configuration>
   <property>
-    <name>tickTime</name>
-    <value>2000</value>
-    <description>The length of a single tick in milliseconds, which is the basic time unit used by ZooKeeper</description>
-  </property>
-  <property>
-    <name>initLimit</name>
-    <value>10</value>
-    <description>Ticks to allow for sync at Init.</description>
-  </property>
-  <property>
-    <name>syncLimit</name>
-    <value>5</value>
-    <description>Ticks to allow for sync at Runtime.</description>
-  </property>
-  <property>
-    <name>clientPort</name>
-    <value>2181</value>
-    <description>Port for running ZK Server.</description>
-  </property>
-  <property>
     <name>dataDir</name>
-    <value>C:\\\\hadoop\\\\zookeeper</value>
+    <value>c:\hadoop\zookeeper</value>
     <description>Data directory for ZooKeeper.</description>
   </property>
 </configuration>

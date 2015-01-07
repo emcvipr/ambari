@@ -103,11 +103,7 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
    */
   getThresholdsProperty: function (type, property) {
     var warning = this.get('content.reporting').findProperty('type', type);
-    if (warning && warning.get(property)) {
-      return warning.get(property);
-    } else {
-      return null;
-    }
+    return warning && warning.get(property) ? warning.get(property) : null;
   },
 
   /**
@@ -138,7 +134,6 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
     }
 
     configs.setEach('isDisabled', !this.get('canEdit'));
-    configs.setEach('allConfigs', configs);
 
     this.set('configs', configs);
   },
@@ -309,18 +304,21 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
       App.AlertConfigProperties.Description.create({
         value: isWizard ? '' : alertDefinition.get('description')
       }),
+      App.AlertConfigProperties.Interval.create({
+        value: isWizard ? '' : alertDefinition.get('interval')
+      }),
       App.AlertConfigProperties.Thresholds.OkThreshold.create({
         label: 'Thresholds',
         showInputForValue: false,
         text: isWizard ? '' : this.getThresholdsProperty('ok', 'text'),
         value: isWizard ? '' : this.getThresholdsProperty('ok', 'value')
       }),
-      App.AlertConfigProperties.Thresholds.WarningThreshold.create({
+      App.AlertConfigProperties.Thresholds.WarningThreshold.create(App.AlertConfigProperties.Thresholds.PercentageMixin, {
         text: isWizard ? '' : this.getThresholdsProperty('warning', 'text'),
         value: isWizard ? '' : this.getThresholdsProperty('warning', 'value'),
         valueMetric: '%'
       }),
-      App.AlertConfigProperties.Thresholds.CriticalThreshold.create({
+      App.AlertConfigProperties.Thresholds.CriticalThreshold.create(App.AlertConfigProperties.Thresholds.PercentageMixin, {
         text: isWizard ? '' : this.getThresholdsProperty('critical', 'text'),
         value: isWizard ? '' : this.getThresholdsProperty('critical', 'value'),
         valueMetric: '%'
@@ -497,7 +495,7 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
       var largeValue = Em.get(this.get('configs').findProperty('name', 'critical_threshold'), 'value');
       var largeValid = Em.get(this.get('configs').findProperty('name', 'critical_threshold'), 'isValid');
     }
-    return smallValid && largeValid ? !(smallValue <= largeValue) : false;
+    return smallValid && largeValid ? Number(smallValue) > Number(largeValue) : false;
   }.property('configs.@each.value'),
 
   /**

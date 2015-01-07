@@ -20,6 +20,8 @@
 angular.module('ambariAdminConsole')
 .factory('Cluster', ['$http', '$q', 'Settings', function($http, $q, Settings) {
   return {
+    repoStatusCache : {},
+
     getAllClusters: function() {
       var deferred = $q.defer();
       $http.get(Settings.baseUrl + '/clusters', {mock: 'cluster/clusters.json'})
@@ -128,6 +130,7 @@ angular.module('ambariAdminConsole')
       });
     },
     getRepoVersionStatus: function (clusterName, repoId ) {
+      var me = this;
       var deferred = $q.defer();
       var url = Settings.baseUrl + '/clusters/' + clusterName +
         '/stack_versions?fields=*&ClusterStackVersions/repository_version=' + repoId;
@@ -138,16 +141,22 @@ angular.module('ambariAdminConsole')
         if (data.length > 0) {
           var hostStatus = data[0].ClusterStackVersions.host_states;
           var currentHosts = hostStatus['CURRENT'].length;
+          var installedHosts = hostStatus['INSTALLED'].length;
           var totalHosts = 0;
+          // collect hosts on all status
           angular.forEach(hostStatus, function(status) {
             totalHosts += status.length;
           });
-          response.status = currentHosts > 0? 'current' : '';
+          response.status = currentHosts > 0? 'current' :
+                            installedHosts > 0? 'installed' : '';
           response.currentHosts = currentHosts;
+          response.installedHosts = installedHosts;
           response.totalHosts = totalHosts;
+          response.stackVersionId = data[0].ClusterStackVersions.id;
         } else {
-          response.repoState = '';
+          response.status = '';
         }
+        me.repoStatusCache[repoId] = response.status;
         deferred.resolve(response);
       })
       .catch(function (data) {

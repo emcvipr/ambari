@@ -25,6 +25,9 @@ from resource_management import *
 from resource_management.libraries.functions import get_unique_id_and_date
 from resource_management.libraries.functions.decorator import retry
 from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
+from resource_management.libraries.functions.security_commons import build_expectations, \
+  cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties, \
+  FILE_TYPE_JAAS_CONF
 from resource_management.libraries.functions.format import format
 from resource_management.core.shell import call
 
@@ -41,12 +44,16 @@ def call_and_match_output(command, regex_expression, err_message):
   """
   # TODO Rolling Upgrade, does this work in Ubuntu? If it doesn't see dynamic_variable_interpretation.py to see how stdout was redirected
   # to a temporary file, which was then read.
-  code, out = call(command, verbose=True)
+  code, out = call(command)
   if not (out and re.search(regex_expression, out, re.IGNORECASE)):
     raise Fail(err_message)
 
 
 class ZookeeperServer(Script):
+
+  def get_stack_to_component(self):
+    return {"HDP": "zookeeper-server"}
+
   def install(self, env):
     self.install_packages(env)
     self.configure(env)
@@ -70,6 +77,8 @@ class ZookeeperServer(Script):
     self.configure(env)
     zookeeper_service(action = 'start')
 
+    self.save_component_version_to_structured_out(params.stack_name)
+
   def post_rolling_restart(self, env):
     Logger.info("Executing Rolling Upgrade post-restart")
     import params
@@ -84,7 +93,7 @@ class ZookeeperServer(Script):
     quorum_err_message = "Failed to establish zookeeper quorum"
     call_and_match_output(create_command, 'Created', quorum_err_message)
     call_and_match_output(list_command, r"\[.*?" + unique + ".*?\]", quorum_err_message)
-    call(delete_command, verbose=True)
+    call(delete_command)
 
   def stop(self, env, rolling_restart=False):
     import params
@@ -95,6 +104,60 @@ class ZookeeperServer(Script):
     import status_params
     env.set_params(status_params)
     check_process_status(status_params.zk_pid_file)
+
+  def security_status(self, env):
+    import status_params
+
+    env.set_params(status_params)
+
+    if status_params.security_enabled:
+      # Expect the following files to be available in status_params.config_dir:
+      #   zookeeper_jaas.conf
+      #   zookeeper_client_jaas.conf
+      try:
+        props_value_check = None
+        props_empty_check = ['Server/keyTab', 'Server/principal']
+        props_read_check = ['Server/keyTab']
+        zk_env_expectations = build_expectations('zookeeper_jaas', props_value_check, props_empty_check,
+                                                 props_read_check)
+
+        zk_expectations = {}
+        zk_expectations.update(zk_env_expectations)
+
+        security_params = get_params_from_filesystem(status_params.config_dir,
+                                                   {'zookeeper_jaas.conf': FILE_TYPE_JAAS_CONF})
+
+        result_issues = validate_security_config_properties(security_params, zk_expectations)
+        if not result_issues:  # If all validations passed successfully
+          # Double check the dict before calling execute
+          if ( 'zookeeper_jaas' not in security_params
+               or 'Server' not in security_params['zookeeper_jaas']
+               or 'keyTab' not in security_params['zookeeper_jaas']['Server']
+               or 'principal' not in security_params['zookeeper_jaas']['Server']):
+            self.put_structured_out({"securityState": "ERROR"})
+            self.put_structured_out({"securityIssuesFound": "Keytab file or principal are not set property."})
+            return
+
+          cached_kinit_executor(status_params.kinit_path_local,
+                                status_params.zk_user,
+                                security_params['zookeeper_jaas']['Server']['keyTab'],
+                                security_params['zookeeper_jaas']['Server']['principal'],
+                                status_params.hostname,
+                                status_params.tmp_dir,
+                                30)
+          self.put_structured_out({"securityState": "SECURED_KERBEROS"})
+        else:
+          issues = []
+          for cf in result_issues:
+            issues.append("Configuration file %s did not pass the validation. Reason: %s" % (cf, result_issues[cf]))
+          self.put_structured_out({"securityIssuesFound": ". ".join(issues)})
+          self.put_structured_out({"securityState": "UNSECURED"})
+      except Exception as e:
+        self.put_structured_out({"securityState": "ERROR"})
+        self.put_structured_out({"securityStateErrorInfo": str(e)})
+    else:
+      self.put_structured_out({"securityState": "UNSECURED"})
+
 
 if __name__ == "__main__":
   ZookeeperServer().execute()

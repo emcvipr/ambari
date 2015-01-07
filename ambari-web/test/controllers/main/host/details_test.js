@@ -634,8 +634,9 @@ describe('App.MainHostDetailsController', function () {
       });
       var data = {Clusters: {desired_configs: {'core-site': {tag: 1}}}};
       App.HostComponent.find().clear();
-      App.set('currentStackVersion', 'HDP-2.0.2');
+      App.set('isStackServicesLoaded', true);
       expect(controller.constructConfigUrlParams(data)).to.eql(['(type=core-site&tag=1)']);
+      App.set('isStackServicesLoaded', false);
       App.store.load(App.HostComponent, {
         id: 'SECONDARY_NAMENODE_host1',
         component_name: 'SECONDARY_NAMENODE'
@@ -769,7 +770,7 @@ describe('App.MainHostDetailsController', function () {
         id: 'HDFS',
         service_name: 'HDFS'
       });
-      App.set('currentStackVersion', 'HDP-2.0.2');
+      App.set('isStackServicesLoaded', true);
       expect(controller.setZKConfigs(configs, 'host1:2181', [])).to.be.true;
       expect(configs).to.eql({"core-site": {
         "ha.zookeeper.quorum": "host1:2181"
@@ -778,7 +779,7 @@ describe('App.MainHostDetailsController', function () {
         id: 'SECONDARY_NAMENODE_host1',
         component_name: 'SECONDARY_NAMENODE'
       });
-      App.set('currentStackVersion', 'HDP-2.0.1');
+      App.set('isStackServicesLoaded', false);
     });
     it('hbase-site is present', function () {
       var configs = {'hbase-site': {}};
@@ -1003,10 +1004,6 @@ describe('App.MainHostDetailsController', function () {
       controller.runDecommission('host1', 'YARN');
       expect(controller.doDecommission.calledWith('host1', 'YARN', "RESOURCEMANAGER", "NODEMANAGER")).to.be.true;
     });
-    it('MAPREDUCE service', function () {
-      controller.runDecommission('host1', 'MAPREDUCE');
-      expect(controller.doDecommission.calledWith('host1', 'MAPREDUCE', "JOBTRACKER", "TASKTRACKER")).to.be.true;
-    });
     it('HBASE service', function () {
       sinon.stub(controller, 'warnBeforeDecommission', Em.K);
       controller.runDecommission('host1', 'HBASE');
@@ -1019,13 +1016,11 @@ describe('App.MainHostDetailsController', function () {
 
     beforeEach(function () {
       sinon.stub(controller, "doRecommissionAndStart", Em.K);
-      sinon.stub(controller, "doRecommissionAndRestart", Em.K);
       sinon.stub(controller, "showBackgroundOperationsPopup", Em.K);
     });
 
     afterEach(function () {
       controller.doRecommissionAndStart.restore();
-      controller.doRecommissionAndRestart.restore();
       controller.showBackgroundOperationsPopup.restore();
     });
 
@@ -1037,11 +1032,6 @@ describe('App.MainHostDetailsController', function () {
     it('YARN service', function () {
       controller.runRecommission('host1', 'YARN');
       expect(controller.doRecommissionAndStart.calledWith('host1', 'YARN', "RESOURCEMANAGER", "NODEMANAGER")).to.be.true;
-      expect(controller.showBackgroundOperationsPopup.calledOnce).to.be.true;
-    });
-    it('MAPREDUCE service', function () {
-      controller.runRecommission('host1', 'MAPREDUCE');
-      expect(controller.doRecommissionAndRestart.calledWith('host1', 'MAPREDUCE', "JOBTRACKER", "TASKTRACKER")).to.be.true;
       expect(controller.showBackgroundOperationsPopup.calledOnce).to.be.true;
     });
     it('HBASE service', function () {
@@ -1215,13 +1205,6 @@ describe('App.MainHostDetailsController', function () {
       ]};
       expect(controller.decommissionSuccessCallback(data)).to.be.true;
       expect(controller.showBackgroundOperationsPopup.calledOnce).to.be.true;
-    });
-  });
-
-  describe('#doRecommissionAndRestart()', function () {
-    it('Query should be sent', function () {
-      controller.doRecommissionAndRestart('', '', '', '');
-      expect(App.ajax.send.calledOnce).to.be.true;
     });
   });
 

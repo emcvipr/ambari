@@ -18,20 +18,37 @@ limitations under the License.
 """
 
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from resource_management.libraries.functions.default import default
 from resource_management import *
 
 from status_params import *
 
 config = Script.get_config()
 
+stack_name = default("/hostLevelParams/stack_name", None)
+
+# New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade
+version = default("/commandParams/version", None)
+
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
-#hadoop params
+# hadoop params
 if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
   hadoop_bin_dir = "/usr/hdp/current/hadoop-client/bin"
-  falcon_webapp_dir = "/usr/hdp/current/falcon-client/webapp"
-  falcon_home = "/usr/hdp/current/falcon-client"
+
+  # if this is a server action, then use the server binaries; smoke tests
+  # use the client binaries
+  server_role_dir_mapping = { 'FALCON_SERVER' : 'falcon-server',
+    'FALCON_SERVICE_CHECK' : 'falcon-client' }
+
+  command_role = default("/role", "")
+  if command_role not in server_role_dir_mapping:
+    command_role = 'FALCON_SERVICE_CHECK'
+
+  falcon_root = server_role_dir_mapping[command_role]
+  falcon_webapp_dir = format('/usr/hdp/current/{falcon_root}/webapp')
+  falcon_home = format('/usr/hdp/current/{falcon_root}')
 else:
   hadoop_bin_dir = "/usr/bin"
   falcon_webapp_dir = '/var/lib/falcon/webapp'

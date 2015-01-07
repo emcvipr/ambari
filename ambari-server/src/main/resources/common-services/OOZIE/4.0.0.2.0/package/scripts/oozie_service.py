@@ -23,7 +23,15 @@ from resource_management import *
 def oozie_service(action = 'start'): # 'start' or 'stop'
   import params
 
-  kinit_if_needed = format("{kinit_path_local} -kt {oozie_keytab} {oozie_principal};") if params.security_enabled else ""
+  if params.security_enabled:
+    if params.oozie_principal is None:
+      oozie_principal_with_host = 'missing_principal'
+    else:
+      oozie_principal_with_host = params.oozie_principal.replace("_HOST", params.hostname)
+    kinit_if_needed = format("{kinit_path_local} -kt {oozie_keytab} {oozie_principal_with_host};")
+  else:
+    kinit_if_needed = ""
+
   no_op_test = format("ls {pid_file} >/dev/null 2>&1 && ps -p `cat {pid_file}` >/dev/null 2>&1")
   
   if action == 'start':
@@ -39,8 +47,8 @@ def oozie_service(action = 'start'): # 'start' or 'stop'
     cmd1 =  format("cd {oozie_tmp_dir} && {oozie_home}/bin/ooziedb.sh create -sqlfile oozie.sql -run")
     cmd2 =  format("{kinit_if_needed} {put_shared_lib_to_hdfs_cmd} ; hadoop --config {hadoop_conf_dir} dfs -chmod -R 755 {oozie_hdfs_user_dir}/share")
 
-    if not os.path.isfile(params.jdbc_driver_jar) and params.jdbc_driver_name == "org.postgresql.Driver":
-      print format("ERROR: jdbc file {jdbc_driver_jar} is unavailable. Please, follow next steps:\n" \
+    if not os.path.isfile(params.target) and params.jdbc_driver_name == "org.postgresql.Driver":
+      print format("ERROR: jdbc file {target} is unavailable. Please, follow next steps:\n" \
         "1) Download postgresql-9.0-801.jdbc4.jar.\n2) Create needed directory: mkdir -p {oozie_home}/libserver/\n" \
         "3) Copy postgresql-9.0-801.jdbc4.jar to newly created dir: cp /path/to/jdbc/postgresql-9.0-801.jdbc4.jar " \
         "{oozie_home}/libserver/\n4) Copy postgresql-9.0-801.jdbc4.jar to libext: cp " \

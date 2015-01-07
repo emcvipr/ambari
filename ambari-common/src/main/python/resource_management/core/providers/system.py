@@ -244,10 +244,9 @@ class ExecuteProvider(Provider):
   def action_run(self):
     if self.resource.creates:
       if os.path.exists(self.resource.creates):
+        Logger.info("Skipping %s due to creates" % self.resource)
         return
-
-    Logger.debug("Executing %s" % self.resource)
-
+      
     env = self.resource.environment
           
     for i in range (0, self.resource.tries):
@@ -258,8 +257,8 @@ class ExecuteProvider(Provider):
                             wait_for_finish=self.resource.wait_for_finish,
                             timeout=self.resource.timeout,
                             path=self.resource.path,
-                            output_file=self.resource.output_file,
-                            sudo=self.resource.sudo)
+                            sudo=self.resource.sudo,
+                            on_new_line=self.resource.on_new_line)
         break
       except Fail as ex:
         if i == self.resource.tries-1: # last try

@@ -174,7 +174,7 @@ describe('App.upgradeGroupView', function () {
     });
   });
 
-  describe("#ignoreAvailable", function () {
+  describe("#isHoldingState", function () {
     var testCases = [
       {
         data: {
@@ -206,21 +206,32 @@ describe('App.upgradeGroupView', function () {
         view.reopen({
           failedItem: test.data.failedItem
         });
-        view.propertyDidChange('ignoreAvailable');
-        expect(view.get('ignoreAvailable')).to.equal(test.result);
+        view.propertyDidChange('isHoldingState');
+        expect(view.get('isHoldingState')).to.equal(test.result);
       });
     });
   });
 
   describe("#setUpgradeItemStatus()", function () {
     before(function () {
-      sinon.stub(App.ajax, 'send', Em.K);
+      sinon.stub(App.ajax, 'send', function () {
+        return {
+          done: function (callback) {
+            callback();
+          }
+        }
+      });
     });
     after(function () {
       App.ajax.send.restore();
     });
     it("", function () {
-      view.setUpgradeItemStatus(Em.Object.create({request_id: 1, stage_id: 1, group_id: 1}), 'PENDING');
+      var item = Em.Object.create({
+        request_id: 1,
+        stage_id: 1,
+        group_id: 1
+      })
+      view.setUpgradeItemStatus(item, 'PENDING');
       expect(App.ajax.send.getCall(0).args[0]).to.eql({
         name: 'admin.upgrade.upgradeItem.setState',
         sender: view,
@@ -230,7 +241,8 @@ describe('App.upgradeGroupView', function () {
           groupId: 1,
           status: 'PENDING'
         }
-      })
+      });
+      expect(item.get('status')).to.equal('PENDING');
     });
   });
 

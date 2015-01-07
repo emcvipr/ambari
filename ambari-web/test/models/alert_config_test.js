@@ -54,9 +54,9 @@ describe('App.AlertConfigProperties', function () {
 
     describe('#valueWasChanged', function () {
 
-      it('value change should effect displayValue', function () {
+      it('value change should effect displayValue for AGGREGATE type', function () {
 
-        model = App.AlertConfigProperties.Threshold.create({
+        model = App.AlertConfigProperties.Threshold.create(App.AlertConfigProperties.Thresholds.PercentageMixin, {
           value: '0.4',
           valueMetric: '%',
           text: 'text',
@@ -67,10 +67,11 @@ describe('App.AlertConfigProperties', function () {
         expect(model.get('displayValue')).to.eql('40');
       });
 
-      it('value change should not effect displayValue', function () {
+      it('value change should not effect displayValue for not AGGREGATE type', function () {
 
         model = App.AlertConfigProperties.Threshold.create({
           value: '0.4',
+          valueMetric: '%',
           text: 'text',
           showInputForValue: false,
           showInputForText: false

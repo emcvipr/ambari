@@ -32,6 +32,7 @@ import org.apache.ambari.server.controller.internal.AlertResourceProvider;
 import org.apache.ambari.server.controller.internal.ResourceImpl;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.state.AlertState;
+import org.apache.ambari.server.state.MaintenanceState;
 import org.codehaus.jackson.annotate.JsonProperty;
 
 /**
@@ -51,18 +52,24 @@ import org.codehaus.jackson.annotate.JsonProperty;
  *       "summary" : {
  *         "CRITICAL": {
  *           "count": 1,
- *           "original_timestamp": 1415372992337
+ *           "maintenance_count" : 1,
+ *           "original_timestamp": 1415372992337,
+ *           "latest_text" : "TCP Connection Failure"
  *         },
  *         "OK": {
  *           "count": 1,
- *           "original_timestamp": 1415372992337
+ *           "maintenance_count" : 0,
+ *           "original_timestamp": 1415372992337,
+ *           "latest_text" : "TCP OK"
  *         },
  *         "UNKNOWN": {
  *           "count": 0,
+ *           "maintenance_count" : 0,
  *           "original_timestamp": 0
  *         },
  *        "WARN": {
  *          "count": 0,
+ *          "maintenance_count" : 0,
  *          "original_timestamp": 0
  *         }
  *       }
@@ -73,18 +80,22 @@ import org.codehaus.jackson.annotate.JsonProperty;
  *       "summary" : {
  *         "CRITICAL": {
  *           "count": 1,
+ *           "maintenance_count" : 0,
  *           "original_timestamp": 1415372992337
  *         },
  *         "OK": {
  *           "count": 1,
+ *           "maintenance_count" : 0,
  *           "original_timestamp": 1415372992337
  *         },
  *         "UNKNOWN": {
  *           "count": 0,
+ *           "maintenance_count" : 0,
  *           "original_timestamp": 0
  *         },
  *        "WARN": {
  *          "count": 0,
+ *          "maintenance_count" : 0,
  *          "original_timestamp": 0
  *         }
  *       }
@@ -124,6 +135,8 @@ public class AlertSummaryGroupedRenderer extends AlertSummaryRenderer {
       String definitionName = (String) resource.getPropertyValue(AlertResourceProvider.ALERT_DEFINITION_NAME);
       AlertState state = (AlertState) resource.getPropertyValue(AlertResourceProvider.ALERT_STATE);
       Long originalTimestampObject = (Long) resource.getPropertyValue(AlertResourceProvider.ALERT_ORIGINAL_TIMESTAMP);
+      MaintenanceState maintenanceState = (MaintenanceState) resource.getPropertyValue(AlertResourceProvider.ALERT_MAINTENANCE_STATE);
+      String alertText = (String) resource.getPropertyValue(AlertResourceProvider.ALERT_TEXT);
 
       // NPE sanity
       if (null == state) {
@@ -134,6 +147,12 @@ public class AlertSummaryGroupedRenderer extends AlertSummaryRenderer {
       long originalTimestamp = 0;
       if (null != originalTimestampObject) {
         originalTimestamp = originalTimestampObject.longValue();
+      }
+
+      // NPE sanity
+      boolean isMaintenanceModeEnabled = false;
+      if (null != maintenanceState && maintenanceState != MaintenanceState.OFF) {
+        isMaintenanceModeEnabled = true;
       }
 
       // create the group summary info if it doesn't exist yet
@@ -147,44 +166,40 @@ public class AlertSummaryGroupedRenderer extends AlertSummaryRenderer {
       }
 
       // set and increment the correct values based on state
+      final AlertStateValues alertStateValues;
       switch (state) {
         case CRITICAL: {
-          groupSummaryInfo.State.Critical.Count++;
-
-          if (originalTimestamp > groupSummaryInfo.State.Critical.Timestamp) {
-            groupSummaryInfo.State.Critical.Timestamp = originalTimestamp;
-          }
-
+          alertStateValues = groupSummaryInfo.State.Critical;
           break;
         }
         case OK: {
-          groupSummaryInfo.State.Ok.Count++;
-
-          if (originalTimestamp > groupSummaryInfo.State.Ok.Timestamp) {
-            groupSummaryInfo.State.Ok.Timestamp = originalTimestamp;
-          }
-
+          alertStateValues = groupSummaryInfo.State.Ok;
           break;
         }
         case WARNING: {
-          groupSummaryInfo.State.Warning.Count++;
-
-          if (originalTimestamp > groupSummaryInfo.State.Warning.Timestamp) {
-            groupSummaryInfo.State.Warning.Timestamp = originalTimestamp;
-          }
-
+          alertStateValues = groupSummaryInfo.State.Warning;
           break;
         }
         default:
         case UNKNOWN: {
-          groupSummaryInfo.State.Unknown.Count++;
-
-          if (originalTimestamp > groupSummaryInfo.State.Unknown.Timestamp) {
-            groupSummaryInfo.State.Unknown.Timestamp = originalTimestamp;
-          }
-
+          alertStateValues = groupSummaryInfo.State.Unknown;
           break;
         }
+      }
+
+      // update the maintenance count if in MM is enabled, otherwise the
+      // regular count
+      if (isMaintenanceModeEnabled) {
+        alertStateValues.MaintenanceCount++;
+      } else {
+        alertStateValues.Count++;
+      }
+
+      // check to see if this alerts time is sooner; if so, keep track of it
+      // and of its text
+      if (originalTimestamp > alertStateValues.Timestamp) {
+        alertStateValues.Timestamp = originalTimestamp;
+        alertStateValues.AlertText = alertText;
       }
     }
 
@@ -219,6 +234,8 @@ public class AlertSummaryGroupedRenderer extends AlertSummaryRenderer {
 
     properties.add(AlertResourceProvider.ALERT_ID);
     properties.add(AlertResourceProvider.ALERT_DEFINITION_NAME);
+    properties.add(AlertResourceProvider.ALERT_MAINTENANCE_STATE);
+    properties.add(AlertResourceProvider.ALERT_TEXT);
   }
 
   /**
@@ -226,45 +243,14 @@ public class AlertSummaryGroupedRenderer extends AlertSummaryRenderer {
    * track of each alert definition's summary information as the result set is
    * being iterated over.
    */
-  private final static class AlertDefinitionSummary {
+  public final static class AlertDefinitionSummary {
     @JsonProperty(value = "definition_id")
-    private long Id;
+    public long Id;
 
     @JsonProperty(value = "definition_name")
-    private String Name;
+    public String Name;
 
     @JsonProperty(value = "summary")
-    private final AlertStateSummary State = new AlertStateSummary();
-  }
-
-  /**
-   * The {@link AlertStateSummary} class holds information about each possible
-   * alert state.
-   */
-  private final static class AlertStateSummary {
-    @JsonProperty(value = "OK")
-    private final AlertStateValues Ok = new AlertStateValues();
-
-    @JsonProperty(value = "WARNING")
-    private final AlertStateValues Warning = new AlertStateValues();
-
-    @JsonProperty(value = "CRITICAL")
-    private final AlertStateValues Critical = new AlertStateValues();
-
-    @JsonProperty(value = "UNKNOWN")
-    private final AlertStateValues Unknown = new AlertStateValues();
-  }
-
-  /**
-   * The {@link AlertStateValues} class holds various information about an alert
-   * state, such as the number of instances of that state and the most recent
-   * timestamp.
-   */
-  private final static class AlertStateValues {
-    @JsonProperty(value = "count")
-    private int Count = 0;
-
-    @JsonProperty(value = "original_timestamp")
-    private long Timestamp = 0;
+    public final AlertStateSummary State = new AlertStateSummary();
   }
 }

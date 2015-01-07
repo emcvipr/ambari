@@ -18,13 +18,17 @@ limitations under the License.
 
 """
 
-import os, sys
-path = os.path.abspath(__file__)
-path = os.path.join(os.path.dirname(os.path.dirname(path)), "psutil/build/")
+import platform, os, sys
 
-for dir in os.walk(path).next()[1]:
-  if 'lib' in dir:
-    sys.path.append(os.path.join(path, dir))
+path = os.path.abspath(__file__)
+path = os.path.join(os.path.dirname(os.path.dirname(path)), "psutil", "build")
+
+IS_WINDOWS = platform.system() == "Windows"
+
+if not IS_WINDOWS:
+  for dir in os.walk(path).next()[1]:
+    if 'lib' in dir:
+      sys.path.append(os.path.join(path, dir))
 
 try:
   import psutil
