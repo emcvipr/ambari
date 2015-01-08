@@ -34,6 +34,8 @@ public class StackRoleCommandOrder {
   private final static String GENERAL_DEPS_KEY = "general_deps";
   private final static String GLUSTERFS_DEPS_KEY = "optional_glusterfs";
   private final static String NO_GLUSTERFS_DEPS_KEY = "optional_no_glusterfs";
+  private final static String VIPRFS_DEPS_KEY = "optional_viprfs";
+  private final static String NO_VIPRFS_DEPS_KEY = "optional_no_viprfs";
   private final static String NAMENODE_HA_DEPS_KEY = "namenode_optional_ha";
   private final static String RESOURCEMANAGER_HA_DEPS_KEY = "resourcemanager_optional_ha";
 
@@ -86,7 +88,7 @@ public class StackRoleCommandOrder {
     HashMap<String, Object> parentData = parent.getContent();
 
     List<String> keys = Arrays.asList(GENERAL_DEPS_KEY, GLUSTERFS_DEPS_KEY,
-        NO_GLUSTERFS_DEPS_KEY, NAMENODE_HA_DEPS_KEY, RESOURCEMANAGER_HA_DEPS_KEY);
+        NO_GLUSTERFS_DEPS_KEY, VIPRFS_DEPS_KEY, NO_VIPRFS_DEPS_KEY, NAMENODE_HA_DEPS_KEY, RESOURCEMANAGER_HA_DEPS_KEY);
 
     for (String key : keys) {
       if (parentData.containsKey(key) && content.containsKey(key)) {

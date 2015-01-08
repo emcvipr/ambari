@@ -121,6 +121,7 @@ public interface Service {
   public enum Type {
     HDFS,
     GLUSTERFS,
+    VIPRFS,
     MAPREDUCE,
     HBASE,
     HIVE,
