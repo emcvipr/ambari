@@ -211,19 +211,15 @@ public class RoleCommandOrder {
       Map<String,Object> glusterfsSection =
         (Map<String, Object>) userData.get(GLUSTERFS_DEPS_KEY);
       addDependencies(glusterfsSection);
-    } else {
-      Map<String,Object> noGlusterFSSection =
-        (Map<String, Object>) userData.get(NO_GLUSTERFS_DEPS_KEY);
-      addDependencies(noGlusterFSSection);
     }
-    if (hasVIPRFS) {
+    else if (hasVIPRFS) {
       Map<String,Object> viprfsSection =
         (Map<String, Object>) userData.get(VIPRFS_DEPS_KEY);
       addDependencies(viprfsSection);
     } else {
-      Map<String,Object> noViprFSSection =
-        (Map<String, Object>) userData.get(NO_VIPRFS_DEPS_KEY);
-      addDependencies(noViprFSSection);
+      Map<String,Object> noGlusterFSSection =
+        (Map<String, Object>) userData.get(NO_GLUSTERFS_DEPS_KEY);
+      addDependencies(noGlusterFSSection);
     }
     if (isNameNodeHAEnabled) {
       Map<String,Object> NAMENODEHASection =

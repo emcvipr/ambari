@@ -42,8 +42,8 @@
   "optional_viprfs": {
     "JOBTRACKER-UPGRADE": ["VIPRFS_CLIENT-UPGRADE"]
   },
-  "_comment" : "Dependencies that are used when VIPRFS is not present in cluster",
-  "optional_no_viprfs": {
+  "_comment" : "Dependencies that are used when HCFS is not present in cluster",
+  "optional_no_glusterfs": {
     "SECONDARY_NAMENODE-START": ["NAMENODE-START"],
     "RESOURCEMANAGER-START": ["NAMENODE-START", "DATANODE-START"],
     "NODEMANAGER-START": ["NAMENODE-START", "DATANODE-START", "RESOURCEMANAGER-START"],
