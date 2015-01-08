@@ -44,7 +44,7 @@ App.StackService = DS.Model.extend({
 
   // Is the service a distributed filesystem
   isDFS: function () {
-    var dfsServices = ['HDFS', 'GLUSTERFS'];
+    var dfsServices = ['HDFS', 'GLUSTERFS', 'VIPRFS'];
     return dfsServices.contains(this.get('serviceName'));
   }.property('serviceName'),
 
@@ -175,6 +175,7 @@ App.StackService.FIXTURES = [];
 App.StackService.displayOrder = [
   'HDFS',
   'GLUSTERFS',
+  'VIPRFS',
   'MAPREDUCE2',
   'YARN',
   'TEZ',
@@ -241,6 +242,11 @@ App.StackService.configCategories = function () {
       ]);
       break;
     case 'GLUSTERFS':
+      serviceConfigCategories.pushObjects([
+        App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'})
+      ]);
+      break;
+    case 'VIPRFS':
       serviceConfigCategories.pushObjects([
         App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'})
       ]);

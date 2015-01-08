@@ -359,6 +359,7 @@ App.format = {
     'DRPC': 'DRPC',
     'FLUME_HANDLER': 'Flume',
     'GLUSTERFS': 'GLUSTERFS',
+    'VIPRFS': 'VIPRFS',
     'HBASE': 'HBase',
     'HBASE_REGIONSERVER': 'RegionServer',
     'HCAT': 'HCat Client',
