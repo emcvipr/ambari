@@ -23,6 +23,49 @@
       <displayName>HBase</displayName>
       <version>0.98.4.2.2.0.0</version>
 
+      <components>
+        <component>
+          <name>HBASE_MASTER</name>
+          <displayName>HBase Master</displayName>
+          <category>MASTER</category>
+          <cardinality>1+</cardinality>
+          <dependencies>
+            <dependency>
+              <name>VIPRFS/VIPRFS_CLIENT</name>
+              <scope>host</scope>
+              <auto-deploy>
+                <enabled>true</enabled>
+              </auto-deploy>
+            </dependency>
+            <dependency>
+              <name>ZOOKEEPER/ZOOKEEPER_SERVER</name>
+              <scope>cluster</scope>
+              <auto-deploy>
+                <enabled>true</enabled>
+                <co-locate>HBASE/HBASE_MASTER</co-locate>
+              </auto-deploy>
+            </dependency>
+          </dependencies>
+        </component>
+        <component>
+          <name>HBASE_REGIONSERVER</name>
+          <displayName>RegionServer</displayName>
+          <category>SLAVE</category>
+          <cardinality>1+</cardinality>
+        </component>
+        <component>
+          <name>HBASE_CLIENT</name>
+          <displayName>HBase Client</displayName>
+          <category>CLIENT</category>
+          <cardinality>1+</cardinality>
+        </component>
+      </components>
+      
+      <requiredServices>
+        <service>ZOOKEEPER</service>
+        <service>VIPRFS</service>
+      </requiredServices>
+
       <osSpecifics>
         <osSpecific>
           <osFamily>redhat5,redhat6,suse11</osFamily>
@@ -45,3 +88,5 @@
     </service>
   </services>
 </metainfo>
+
+
