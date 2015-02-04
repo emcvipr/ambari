@@ -76,6 +76,8 @@ describe('App.AlertDefinition', function () {
 
     Em.A([
       {summary: {CRITICAL: {count: 1, maintenanceCount: 0}}, e: true},
+      {summary: {CRITICAL: {count: 0, maintenanceCount: 1}}, e: false},
+      {summary: {CRITICAL: {count: 1, maintenanceCount: 1}}, e: true},
       {summary: {WARNING: {count: 1, maintenanceCount: 0}}, e: true},
       {summary: {OK: {count: 1, maintenanceCount: 0}}, e: false},
       {summary: {UNKNOWN: {count: 1, maintenanceCount: 0}}, e: false},
@@ -164,6 +166,46 @@ describe('App.AlertDefinition', function () {
       App.format.role.restore();
     });
 
+
+  });
+
+  describe('REOPEN', function () {
+
+    describe('#getSortDefinitionsByStatus', function () {
+
+      Em.A([
+          {
+            a: App.AlertDefinition.createRecord({summary: {OK: {count: 1, maintenanceCount: 0}, WARNING: {count: 1, maintenanceCount: 0}}}),
+            b: App.AlertDefinition.createRecord({summary: {WARNING: {count: 1, maintenanceCount: 0}}}),
+            order: true,
+            e: -1
+          },
+          {
+            a: App.AlertDefinition.createRecord({summary: {OK: {count: 1, maintenanceCount: 0}, WARNING: {count: 2, maintenanceCount: 0}}}),
+            b: App.AlertDefinition.createRecord({summary: {OK: {count: 1, maintenanceCount: 0}, WARNING: {count: 1, maintenanceCount: 0}}}),
+            order: true,
+            e: -1
+          },
+          {
+            a: App.AlertDefinition.createRecord({summary: {OK: {count: 1, maintenanceCount: 0}, WARNING: {count: 1, maintenanceCount: 0}}}),
+            b: App.AlertDefinition.createRecord({summary: {WARNING: {count: 1, maintenanceCount: 0}}}),
+            order: false,
+            e: 1
+          },
+          {
+            a: App.AlertDefinition.createRecord({summary: {OK: {count: 1, maintenanceCount: 0}, WARNING: {count: 2, maintenanceCount: 0}}}),
+            b: App.AlertDefinition.createRecord({summary: {OK: {count: 1, maintenanceCount: 0}, WARNING: {count: 1, maintenanceCount: 0}}}),
+            order: false,
+            e: 1
+          }
+        ]).forEach(function(test, i) {
+          it('test #' + (i + 1), function () {
+            var func = App.AlertDefinition.getSortDefinitionsByStatus(test.order);
+            expect(func(test.a, test.b)).to.equal(test.e);
+          });
+        });
+
+    });
 
   });
 

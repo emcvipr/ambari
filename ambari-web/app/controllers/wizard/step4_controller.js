@@ -30,6 +30,21 @@ App.WizardStep4Controller = Em.ArrayController.extend({
   content: [],
 
   /**
+   * Check / Uncheck 'Select All' checkbox with one argument; Check / Uncheck all other checkboxes with more arguments
+   * @type {bool}
+   */
+  isAllChecked: function(key, value) {
+    if (arguments.length > 1) {
+      this.filterProperty('isInstalled', false).setEach('isSelected', value);
+      return value;
+    } else {
+      return this.filterProperty('isInstalled', false).
+        filterProperty('isHiddenOnSelectServicePage', false).
+        everyProperty('isSelected', true);
+    }
+  }.property('@each.isSelected'),
+
+  /**
    * Is Submit button disabled
    * @type {bool}
    */
@@ -46,46 +61,11 @@ App.WizardStep4Controller = Em.ArrayController.extend({
   errorStack: [],
 
   /**
-   * Check whether all properties are selected
-   * @type {bool}
-   */
-  isAll: function () {
-    return this.filterProperty('isInstalled', false).
-      filterProperty('isHiddenOnSelectServicePage', false).
-      everyProperty('isSelected', true);
-  }.property('@each.isSelected'),
-
-  /**
-   * Check whether none properties(minimum) are selected
-   * @type {bool}
-   */
-  isMinimum: function () {
-    return this.filterProperty('isInstalled', false).
-      filterProperty('isHiddenOnSelectServicePage', false).
-      everyProperty('isSelected', false);
-  }.property('@each.isSelected'),
-
-  /**
    * Drop errorStack content on selected state changes.
    **/
   clearErrors: function() {
     this.set('errorStack', []);
   }.observes('@each.isSelected'),
-  /**
-   * Onclick handler for <code>select all</code> link
-   * @method selectAll
-   */
-  selectAll: function () {
-    this.filterProperty('isInstalled', false).setEach('isSelected', true);
-  },
-
-  /**
-   * Onclick handler for <code>select minimum</code> link
-   * @method selectMinimum
-   */
-  selectMinimum: function () {
-    this.filterProperty('isInstalled', false).setEach('isSelected', false);
-  },
 
   /**
    * Check if multiple distributed file systems were selected
@@ -98,17 +78,56 @@ App.WizardStep4Controller = Em.ArrayController.extend({
   },
 
   /**
+   * Check whether user selected Ambari Metrics service to install and go to next step
+   * @method ambariMetricsValidation
+   */
+  ambariMetricsValidation: function () {
+    //TODO Change 'AMS' to the actual serviceName after it's changed
+    var ambariMetricsService = this.findProperty('serviceName', 'AMS');
+    if (ambariMetricsService && !ambariMetricsService.get('isSelected')) {
+      this.addValidationError({
+        id: 'ambariMetricsCheck',
+        type: 'WARNING',
+        callback: this.ambariMetricsCheckPopup
+      });
+    }
+  },
+
+  /**
+   * Check whether Ranger is selected and show installation requirements if yes
+   * @method rangerValidation
+   */
+  rangerValidation: function () {
+    var rangerService = this.findProperty('serviceName', 'RANGER');
+    if (rangerService && rangerService.get('isSelected')) {
+      this.addValidationError({
+        id: 'rangerRequirements',
+        type: 'WARNING',
+        callback: this.rangerRequirementsPopup
+      });
+    }
+  },
+
+  /**
    * Onclick handler for <code>Next</code> button.
    * @method submit
    */
   submit: function () {
     if (!this.get('isSubmitDisabled')) {
+      this.unSelectServices();
       this.setGroupedServices();
       if (this.validate()) {
         this.set('errorStack', []);
         App.router.send('next');
       }
     }
+  },
+
+  /**
+   * Set isSelected based on property doNotShowAndInstall
+   */
+  unSelectServices: function () {
+    this.filterProperty('isSelected',true).filterProperty('doNotShowAndInstall', true).setEach('isSelected', false);
   },
 
   /**
@@ -123,6 +142,10 @@ App.WizardStep4Controller = Em.ArrayController.extend({
   validate: function() {
     this.serviceDependencyValidation();
     this.fileSystemServiceValidation();
+    if (this.get('wizardController.name') == 'installerController') {
+      this.ambariMetricsValidation();
+    }
+    this.rangerValidation();
     if (!!this.get('errorStack').filterProperty('isShown', false).length) {
       this.showError(this.get('errorStack').findProperty('isShown', false));
       return false;
@@ -209,7 +232,7 @@ App.WizardStep4Controller = Em.ArrayController.extend({
    * @method isDFSStack
    */
   isDFSStack: function () {
-	var bDFSStack = false;
+	  var bDFSStack = false;
     var dfsServices = ['HDFS', 'GLUSTERFS'];
     var availableServices = this.filterProperty('isInstalled',false);
     availableServices.forEach(function(service){
@@ -227,25 +250,25 @@ App.WizardStep4Controller = Em.ArrayController.extend({
    * @method isFileSystemCheckFailed
    */
   fileSystemServiceValidation: function() {
-	if(this.isDFSStack()){
-	  var primaryDFS = this.findProperty('isPrimaryDFS',true);
-	  var primaryDfsDisplayName = primaryDFS.get('displayNameOnSelectServicePage');
-	  var primaryDfsServiceName = primaryDFS.get('serviceName');
-	  if (this.multipleDFSs()) {
-	    var dfsServices = this.filterProperty('isDFS',true).filterProperty('isSelected',true).mapProperty('serviceName');
-	    var services = dfsServices.map(function (item){
-	      return  {
-	        serviceName: item,
-	        selected: item === primaryDfsServiceName
-	      };
-	    });
-	    this.addValidationError({
-	      id: 'multipleDFS',
-	      callback: this.needToAddServicePopup,
-	      callbackParams: [services, 'multipleDFS', primaryDfsDisplayName]
-	    });
-	  }
-	}
+    if(this.isDFSStack()){
+      var primaryDFS = this.findProperty('isPrimaryDFS',true);
+      var primaryDfsDisplayName = primaryDFS.get('displayNameOnSelectServicePage');
+      var primaryDfsServiceName = primaryDFS.get('serviceName');
+      if (this.multipleDFSs()) {
+        var dfsServices = this.filterProperty('isDFS',true).filterProperty('isSelected',true).mapProperty('serviceName');
+        var services = dfsServices.map(function (item){
+          return  {
+            serviceName: item,
+            selected: item === primaryDfsServiceName
+          };
+        });
+        this.addValidationError({
+          id: 'multipleDFS',
+          callback: this.needToAddServicePopup,
+          callbackParams: [services, 'multipleDFS', primaryDfsDisplayName]
+        });
+      }
+    }
   },
 
   /**
@@ -334,6 +357,47 @@ App.WizardStep4Controller = Em.ArrayController.extend({
         this.hide();
       }
     });
-  }
+  },
 
+  /**
+   * Show popup with info about not selected Ambari Metrics service
+   * @return {App.ModalPopup}
+   * @method ambariMetricsCheckPopup
+   */
+  ambariMetricsCheckPopup: function () {
+    var self = this;
+    return App.ModalPopup.show({
+      header: Em.I18n.t('installer.step4.ambariMetricsCheck.popup.header'),
+      body: Em.I18n.t('installer.step4.ambariMetricsCheck.popup.body'),
+      primary: Em.I18n.t('common.proceedAnyway'),
+      onPrimary: function () {
+        self.onPrimaryPopupCallback();
+        this.hide();
+      }
+    });
+  },
+
+  /**
+   * Show popup with installation requirements for Ranger service
+   * @return {App.ModalPopup}
+   * @method rangerRequirementsPopup
+   */
+  rangerRequirementsPopup: function () {
+    var self = this;
+    return App.ModalPopup.show({
+      header: Em.I18n.t('installer.step4.rangerRequirements.popup.header'),
+      bodyClass: Em.View.extend({
+        templateName: require('templates/wizard/step4/step4_ranger_requirements_popup')
+      }),
+      primary: Em.I18n.t('common.proceed'),
+      isChecked: false,
+      disablePrimary: function () {
+        return !this.get('isChecked');
+      }.property('isChecked'),
+      onPrimary: function () {
+        self.onPrimaryPopupCallback();
+        this.hide();
+      }
+    });
+  }
 });

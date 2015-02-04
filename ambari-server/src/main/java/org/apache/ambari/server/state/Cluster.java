@@ -27,8 +27,11 @@ import java.util.concurrent.locks.ReadWriteLock;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.ClusterResponse;
 import org.apache.ambari.server.controller.ServiceConfigVersionResponse;
-import org.apache.ambari.server.orm.entities.PrivilegeEntity;
 import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
+import org.apache.ambari.server.orm.entities.HostEntity;
+import org.apache.ambari.server.orm.entities.HostVersionEntity;
+import org.apache.ambari.server.orm.entities.PrivilegeEntity;
+import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.state.configgroup.ConfigGroup;
 import org.apache.ambari.server.state.scheduler.RequestExecution;
 
@@ -90,7 +93,7 @@ public interface Cluster {
   /**
    * Remove ServiceComponentHost from cluster
    * @param svcCompHost
-   */  
+   */
   public void removeServiceComponentHost(ServiceComponentHost svcCompHost) throws AmbariException;
 
 
@@ -155,9 +158,25 @@ public interface Cluster {
    * May be called multiple times.
    * As of now, only transition from INSTALLING to INSTALLING/INSTALLED/INSTALL_FAILED/OUT_OF_SYNC
    * is supported
+   *
+   * @param repositoryVersion repository version (e.g. 2.2.1.0-100)
+   *
    * @throws AmbariException
    */
   void recalculateClusterVersionState(String repositoryVersion) throws AmbariException;
+
+  /**
+   * For a given host, will either either update an existing Host Version Entity for the given version, or create
+   * one if it doesn't exist. The object will be created with a state of
+   * {@link org.apache.ambari.server.state.RepositoryVersionState#UPGRADING}
+   *
+   * @param host Host Entity object
+   * @param repositoryVersion Repository Version that the host is transitioning to
+   * @param stack Stack information with the version
+   * @return Returns either the newly created or the updated Host Version Entity.
+   * @throws AmbariException
+   */
+  public HostVersionEntity transitionHostVersionState(HostEntity host, final RepositoryVersionEntity repositoryVersion, final StackId stack) throws AmbariException;
 
   /**
    * Update state of all cluster stack versions for cluster based on states of host versions.
@@ -170,7 +189,7 @@ public interface Cluster {
 
   /**
    * Create a cluster version for the given stack and version, whose initial state must either
-   * be either {@link RepositoryVersionState#CURRENT} (if no other cluster version exists) or
+   * be either {@link RepositoryVersionState#UPGRADING} (if no other cluster version exists) or
    * {@link RepositoryVersionState#INSTALLING} (if at exactly one CURRENT cluster version already exists).
    * @param stack Stack name
    * @param version Stack version
@@ -193,19 +212,33 @@ public interface Cluster {
   /**
    * Gets whether the cluster is still initializing or has finished with its
    * deployment requests.
-   * 
+   *
    * @return either {@link State#INIT} or {@link State#INSTALLED}, never
    *         {@code null}.
    */
   public State getProvisioningState();
-  
+
   /**
    * Sets the provisioning state of the cluster.
-   * 
+   *
    * @param provisioningState
    *          the provisioning state, not {@code null}.
    */
   public void setProvisioningState(State provisioningState);
+
+  /**
+   * Gets the cluster's security type.
+   *
+   * @return this Cluster's security type
+   */
+  public SecurityType getSecurityType();
+
+  /**
+   * Sets this Cluster's security type.
+   *
+   * @param securityType a SecurityType to set
+   */
+  public void setSecurityType(SecurityType securityType);
 
   /**
    * Gets all configs that match the specified type.  Result is not the
@@ -246,7 +279,7 @@ public interface Cluster {
    * @return <code>true</code> if the config was added, or <code>false</code>
    * if the config is already set as the current
    */
-  public ServiceConfigVersionResponse addDesiredConfig(String user, Set<Config> configs);
+  public ServiceConfigVersionResponse addDesiredConfig(String user, Set<Config> configs) throws AmbariException;
 
   /**
    * Adds and sets a DESIRED configuration to be applied to a cluster.  There
@@ -257,7 +290,7 @@ public interface Cluster {
    * @return <code>true</code> if the config was added, or <code>false</code>
    * if the config is already set as the current
    */
-  ServiceConfigVersionResponse addDesiredConfig(String user, Set<Config> configs, String serviceConfigVersionNote);
+  ServiceConfigVersionResponse addDesiredConfig(String user, Set<Config> configs, String serviceConfigVersionNote) throws AmbariException;
 
   ServiceConfigVersionResponse createServiceConfigVersion(String serviceName, String user, String note,
                                                           ConfigGroup configGroup);

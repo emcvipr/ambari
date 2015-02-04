@@ -168,15 +168,15 @@ describe('App', function () {
     });
 
     it('if hadoop stack version higher than 2 then isHaEnabled should be true', function () {
-      App.set('isStackServicesLoaded', true);
+      App.propertyDidChange('isHaEnabled');
       expect(App.get('isHaEnabled')).to.equal(true);
-      App.set('isStackServicesLoaded', false);
     });
     it('if cluster has SECONDARY_NAMENODE then isHaEnabled should be false', function () {
       App.store.load(App.HostComponent, {
         id: 'SECONDARY_NAMENODE',
         component_name: 'SECONDARY_NAMENODE'
       });
+      App.propertyDidChange('isHaEnabled');
       expect(App.get('isHaEnabled')).to.equal(false);
     });
   });
@@ -408,6 +408,13 @@ describe('App', function () {
       App.set('upgradeState', "IN_PROGRESS");
       App.set('isAdmin', true);
       expect(App.isAccessible('upgrade_ADMIN')).to.be.true;
+    });
+    it("Upgrade running, upgrade element should not be blocked", function() {
+      App.set('upgradeState', "IN_PROGRESS");
+      App.set('isAdmin', true);
+      App.set('supports.opsDuringRollingUpgrade', true);
+      expect(App.isAccessible('ADMIN')).to.be.true;
+      App.set('supports.opsDuringRollingUpgrade', false);
     });
     it("ADMIN type, isAdmin true", function() {
       App.set('upgradeState', "INIT");

@@ -60,13 +60,51 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
   },
 
   getUpdatedSecurityStatus: function () {
-    this.setSecurityStatus();
+    this.getSecurityStatus();
     return this.get('securityEnabled');
+  },
+
+  /**
+   * performs cluster check before kerbefos security
+   * wizard starts if <code>preKerberizeCheck<code> supports is true
+   * otherwise runs <code>startKerberosWizard<code>
+   * @method checkAndStartKerberosWizard
+   */
+  checkAndStartKerberosWizard: function() {
+    if (App.get('supports.preKerberizeCheck')) {
+      App.ajax.send({
+        name: "admin.kerberos_security.checks",
+        sender: this,
+        success: "runSecurityCheckSuccess"
+      });
+    } else {
+      this.startKerberosWizard();
+    }
+  },
+
+  /**
+   * success callback of <code>checkAndStartKerberosWizard()</code>
+   * if there are some fails - it shows popup else open security wizard
+   * @param data {object}
+   * @param opt {object}
+   * @param params {object}
+   * @returns {App.ModalPopup|undefined}
+   */
+  runSecurityCheckSuccess: function (data, opt, params) {
+    //TODO correct check
+    if (data.items.someProperty('UpgradeChecks.status', "FAIL")) {
+      var header = Em.I18n.t('popup.clusterCheck.Security.header').format(params.label);
+      var title = Em.I18n.t('popup.clusterCheck.Security.title');
+      var alert = Em.I18n.t('popup.clusterCheck.Security.alert');
+      App.showClusterCheckPopup(data, header, title, alert);
+    } else {
+      this.startKerberosWizard();
+    }
   },
 
   startKerberosWizard: function () {
     this.setAddSecurityWizardStatus('RUNNING');
-    App.router.transitionTo('adminAddKerberos');
+    App.router.transitionTo('adminKerberos.adminAddKerberos');
   },
 
   /**
@@ -78,34 +116,59 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
       this.set('dataIsLoaded', true);
     } else {
       //get Security Status From Server
-      var self = this;
-      var tags = [{siteName: 'cluster-env'}];
-      App.router.get('configurationController').getConfigsByTags(tags).done(function (data) {
-        var configs = data[0].properties;
-        if (configs) {
-          self.set('securityEnabled', configs['security_enabled'] === 'true');
-        }
-        self.set('dataIsLoaded', true);
+      this.getSecurityStatus();
+    }
+  },
+
+  getSecurityStatus: function () {
+    if (App.get('testMode')) {
+      this.set('securityEnabled', !App.get('testEnableSecurity'));
+      this.set('dataIsLoaded', true);
+    } else {
+      //get Security Status From Server
+      App.ajax.send({
+        name: 'admin.security_status',
+        sender: this,
+        success: 'getSecurityStatusSuccessCallback',
+        error: 'errorCallback'
       });
     }
+  },
+
+  getSecurityStatusSuccessCallback: function(data) {
+    this.set('dataIsLoaded', true);
+    var securityType = data.Clusters.security_type;
+    this.set('securityEnabled', securityType === 'KERBEROS');
+  },
+
+  errorCallback: function (jqXHR) {
+    this.set('dataIsLoaded', true);
+    // Show the error popup if the API call received a response from the server.
+    // jqXHR.status will be empty when browser cancels the request. Refer to AMBARI-5921 for more info
+    if (!!jqXHR.status) {
+      this.showSecurityErrorPopup();
+    }
+  },
+
+  showSecurityErrorPopup: function () {
+    App.ModalPopup.show({
+      header: Em.I18n.t('common.error'),
+      secondary: false,
+      bodyClass: Ember.View.extend({
+        template: Ember.Handlebars.compile('<p>{{t admin.security.status.error}}</p>')
+      })
+    });
   },
 
   /**
    * Override <code>App.KerberosWizardStep4Controller</code>
    *
-   * @returns {$.ajax}
+   * @param {App.ServiceConfigProperty[]} properties
    */
-  loadStackDescriptorConfigs: function () {
-    return App.ajax.send({
-      sender: this,
-      name: 'admin.kerberos.kerberos_descriptor',
-      data: {
-        stackName: App.get('currentStackName'),
-        stackVersionNumber: App.get('currentStackVersionNumber')
-      }
-    });
+  setStepConfigs: function (properties) {
+    this.get('stepConfigs').clear();
+    this._super(properties);
   },
-
   
   /**
    * Override <code>App.KerberosWizardStep4Controller</code>
@@ -115,13 +178,34 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
    */
   prepareConfigProperties: function(configs) {
     var configProperties = configs.slice(0);
+    var siteProperties = App.config.get('preDefinedSiteProperties');
     var installedServiceNames = ['Cluster'].concat(App.Service.find().mapProperty('serviceName'));
     configProperties = configProperties.filter(function(item) {
       return installedServiceNames.contains(item.get('serviceName'));
     });
-    configProperties.forEach(function(item) {
-      if (item.get('serviceName') == 'Cluster') item.set('category', 'General');
-      else item.set('category', 'Advanced');
+    configProperties.setEach('isSecureConfig', false);
+    configProperties.forEach(function(property, item, allConfigs) {
+      if (property.get('observesValueFrom')) {
+        var observedValue = allConfigs.findProperty('name', property.get('observesValueFrom')).get('value');
+        property.set('value', observedValue);
+        property.set('defaultValue', observedValue);
+      }
+      if (property.get('serviceName') == 'Cluster') {
+        property.set('category', 'Global');
+      } else {
+        property.set('category', property.get('serviceName'));
+      }
+      // All user identity should be grouped under "Ambari Principals" category
+      if (property.get('identityType') == 'user') property.set('category', 'Ambari Principals');
+      var siteProperty = siteProperties.findProperty('name', property.get('name'));
+      if (siteProperty) {
+        if (siteProperty.category === property.get('category')) {
+          property.set('displayName',siteProperty.displayName);
+          if (siteProperty.index) {
+            property.set('index', siteProperty.index);
+          }
+        }
+      }
     });
     configProperties.setEach('isEditable', false);
     return configProperties;

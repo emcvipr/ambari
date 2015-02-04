@@ -17,21 +17,21 @@ limitations under the License.
 
 """
 
+import os
 from resource_management import *
-
 
 def ldap():
     import params
 
-    File(format("{params.knox_conf_dir}/ldap-log4j.properties"),
-         mode=0644,
+    File(os.path.join(params.knox_conf_dir, 'ldap-log4j.properties'),
+         mode=params.mode,
          group=params.knox_group,
          owner=params.knox_user,
          content=params.ldap_log4j
     )
 
-    File(format("{params.knox_conf_dir}/users.ldif"),
-         mode=0644,
+    File(os.path.join(params.knox_conf_dir, 'users.ldif'),
+         mode=params.mode,
          group=params.knox_group,
          owner=params.knox_user,
          content=params.users_ldif

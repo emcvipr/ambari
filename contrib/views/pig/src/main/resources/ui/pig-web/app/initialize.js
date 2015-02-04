@@ -38,11 +38,24 @@ App.JobAdapter = App.ApplicationAdapter.extend({
   }
 });
 
+App.JobSerializer = DS.RESTSerializer.extend({
+  normalizeHash: {
+    jobs: function(hash) {
+      delete hash.inProgress;
+      return hash;
+    },
+    job: function(hash) {
+      delete hash.inProgress;
+      return hash;
+    }
+  }
+});
+
 App.FileSerializer = DS.RESTSerializer.extend({
   primaryKey:'filePath'
 });
 
-App.IsodateTransform = DS.Transform.extend({  
+App.IsodateTransform = DS.Transform.extend({
   deserialize: function (serialized) {
     if (serialized) {
       return moment.unix(serialized).toDate();
@@ -80,6 +93,7 @@ require('router');
 // mixins
 require("mixins/fileHandler");
 require("mixins/pagination");
+require("mixins/routeError");
 
 //routes
 require("routes/pig");

@@ -52,7 +52,7 @@ class TestHiveMetastore(RMFTestCase):
                               user = 'hive'
     )
 
-    self.assertResourceCalled('Execute', '/usr/jdk64/jdk1.7.0_45/bin/java -cp /usr/lib/ambari-agent/DBConnectionVerification.jar:/usr/share/java/mysql-connector-java.jar org.apache.ambari.server.DBConnectionVerification \'jdbc:mysql://c6402.ambari.apache.org/hive?createDatabaseIfNotExist=true\' hive aaa com.mysql.jdbc.Driver',
+    self.assertResourceCalled('Execute', '/usr/jdk64/jdk1.7.0_45/bin/java -cp /usr/lib/ambari-agent/DBConnectionVerification.jar:/usr/lib/hive/lib//mysql-connector-java.jar org.apache.ambari.server.DBConnectionVerification \'jdbc:mysql://c6402.ambari.apache.org/hive?createDatabaseIfNotExist=true\' hive aaa com.mysql.jdbc.Driver',
         path = ['/usr/sbin:/sbin:/usr/local/bin:/bin:/usr/bin'],
         tries = 5,
         try_sleep = 10,
@@ -75,7 +75,10 @@ class TestHiveMetastore(RMFTestCase):
     self.assertResourceCalled('Execute', 'sudo kill -9 `cat /var/run/hive/hive.pid`',
                               not_if = '! (ls /var/run/hive/hive.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive.pid` >/dev/null 2>&1) || ( sleep 5 && ! (ls /var/run/hive/hive.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive.pid` >/dev/null 2>&1) )',
                               )
-    self.assertResourceCalled('Execute', '! (ls /var/run/hive/hive.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive.pid` >/dev/null 2>&1)',)
+    self.assertResourceCalled('Execute', '! (ls /var/run/hive/hive.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive.pid` >/dev/null 2>&1)',
+      tries = 20,
+      try_sleep = 3,
+    )
     self.assertResourceCalled('File', '/var/run/hive/hive.pid',
                               action = ['delete'],
                               )
@@ -109,7 +112,7 @@ class TestHiveMetastore(RMFTestCase):
                               user = 'hive'
     )
 
-    self.assertResourceCalled('Execute', '/usr/jdk64/jdk1.7.0_45/bin/java -cp /usr/lib/ambari-agent/DBConnectionVerification.jar:/usr/share/java/mysql-connector-java.jar org.apache.ambari.server.DBConnectionVerification \'jdbc:mysql://c6402.ambari.apache.org/hive?createDatabaseIfNotExist=true\' hive asd com.mysql.jdbc.Driver',
+    self.assertResourceCalled('Execute', '/usr/jdk64/jdk1.7.0_45/bin/java -cp /usr/lib/ambari-agent/DBConnectionVerification.jar:/usr/lib/hive/lib//mysql-connector-java.jar org.apache.ambari.server.DBConnectionVerification \'jdbc:mysql://c6402.ambari.apache.org/hive?createDatabaseIfNotExist=true\' hive asd com.mysql.jdbc.Driver',
                               path=['/usr/sbin:/sbin:/usr/local/bin:/bin:/usr/bin'], tries=5, try_sleep=10
     )
 
@@ -130,7 +133,10 @@ class TestHiveMetastore(RMFTestCase):
     self.assertResourceCalled('Execute', 'sudo kill -9 `cat /var/run/hive/hive.pid`',
       not_if = '! (ls /var/run/hive/hive.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive.pid` >/dev/null 2>&1) || ( sleep 5 && ! (ls /var/run/hive/hive.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive.pid` >/dev/null 2>&1) )',
     )
-    self.assertResourceCalled('Execute', '! (ls /var/run/hive/hive.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive.pid` >/dev/null 2>&1)',)
+    self.assertResourceCalled('Execute', '! (ls /var/run/hive/hive.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive.pid` >/dev/null 2>&1)',
+      tries = 20,
+      try_sleep = 3,
+    )
     self.assertResourceCalled('File', '/var/run/hive/hive.pid',
       action = ['delete'],
     )

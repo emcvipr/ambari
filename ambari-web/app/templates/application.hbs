@@ -44,6 +44,24 @@
                   {{allAlertsCount}} {{pluralize allAlertsCount singular="alert" plural="alerts"}}</span>
                 {{/if}}
               {{/with}}
+              {{#if App.upgradeInProgress}}
+                {{#if App.router.mainAdminStackAndUpgradeController.isDowngrade}}
+                  <span class="label upgrade-in-progress" {{action "openUpgradeDialog" target="App.router.mainAdminStackAndUpgradeController"}}>
+                     <i class="icon-cog"></i>&nbsp;{{t admin.stackVersions.version.downgrade.running}}</span>
+                {{else}}
+                  <span class="label upgrade-in-progress" {{action "openUpgradeDialog" target="App.router.mainAdminStackAndUpgradeController"}}>
+                     <i class="icon-cog"></i>&nbsp;{{t admin.stackVersions.version.upgrade.running}}</span>
+                {{/if}}
+              {{/if}}
+              {{#if App.upgradeHolding}}
+                {{#if App.router.mainAdminStackAndUpgradeController.isDowngrade}}
+                  <span class="label upgrade-holding" {{action "openUpgradeDialog" target="App.router.mainAdminStackAndUpgradeController"}}>
+                  <i class="icon-pause"></i>&nbsp;{{t admin.stackVersions.version.downgrade.pause}}</span>
+                {{else}}
+                  <span class="label upgrade-holding" {{action "openUpgradeDialog" target="App.router.mainAdminStackAndUpgradeController"}}>
+                  <i class="icon-pause"></i>&nbsp;{{t admin.stackVersions.version.upgrade.pause}}</span>
+                {{/if}}
+              {{/if}}
             </a>
           {{else}}
             <a class="logo"><img src="/img/logo-white.png" alt="Apache Ambari" title="Apache Ambari"></a>

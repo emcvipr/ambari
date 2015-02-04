@@ -299,8 +299,8 @@ App.AddSecurityConfigs = Em.Mixin.create({
       var configs = this.get('configs').findProperty('name', templateName[index]);
       var configValue = templateName[index] == 'hive_metastore' ?
         configs.value.map(function (hostName) {
-        return 'thrift://' + hostName + ':9083';
-      }).join(',') : configs.value;
+          return 'thrift://' + hostName + ':9083';
+        }).join(',') : configs.value;
 
       if (!!value) {
         value = (configs) ? App.config.replaceConfigValues(name, _express, value, configValue) : null;
@@ -387,8 +387,8 @@ App.AddSecurityConfigs = Em.Mixin.create({
    *
    * @returns {$.Deferred}
    */
-  getStackDescriptorConfigs: function () {
-    return this.loadStackDescriptorConfigs().pipe(this.createServicesStackDescriptorConfigs.bind(this));
+  getDescriptorConfigs: function () {
+    return this.loadDescriptorConfigs().pipe(this.createServicesStackDescriptorConfigs.bind(this));
   },
 
   /**
@@ -400,55 +400,68 @@ App.AddSecurityConfigs = Em.Mixin.create({
     var self = this;
     var configs = [];
     var clusterConfigs = [];
-    var kerberosDescriptor = items.Versions.kerberos_descriptor;
+    var kerberosDescriptor = items.artifact_data;
     this.set('kerberosDescriptor', kerberosDescriptor);
     // generate configs for root level properties object, currently realm, keytab_dir
-    clusterConfigs = clusterConfigs.concat(this.expandKerberosStackDescriptorProps(kerberosDescriptor.properties));
+    clusterConfigs = clusterConfigs.concat(this.expandKerberosStackDescriptorProps(kerberosDescriptor.properties, 'Cluster', 'stackConfigs'));
     // generate configs for root level identities object, currently spnego property
     clusterConfigs = clusterConfigs.concat(this.createConfigsByIdentities(kerberosDescriptor.identities, 'Cluster'));
-    clusterConfigs.setEach('serviceName', 'Cluster');
-    // generate properties for services object
     kerberosDescriptor.services.forEach(function (service) {
       var serviceName = service.name;
+      // generate configs for service level identity objects
+      configs = configs.concat(self.createResourceConfigs(service, serviceName));
+      // generate configs for service component level identity  object
       service.components.forEach(function (component) {
-        var componentName = component.name;
-        if (component.identities) {
-          var identityConfigs = self.createConfigsByIdentities(component.identities, componentName);
-          identityConfigs.setEach('serviceName', serviceName);
-          configs = configs.concat(identityConfigs);
-        }
+        configs = configs.concat(self.createResourceConfigs(component, serviceName));
       });
     });
-    // unite cluster and service configs
+    // unite cluster, service and component configs
     configs = configs.concat(clusterConfigs);
     self.processConfigReferences(kerberosDescriptor, configs);
-    // return configs with uniq names
-    return configs.reduce(function (p, c) {
-      if (!p.findProperty('name', c.get('name'))) p.push(c);
-      return p;
-    }, []);
+    return configs;
+  },
+
+  /**
+   *
+   * @param {Object} resource
+   * @param {String} serviceName
+   * @return {Array}
+   */
+  createResourceConfigs: function (resource, serviceName) {
+    var identityConfigs = [];
+    var resourceConfigs = [];
+    if (resource.identities) {
+      identityConfigs = this.createConfigsByIdentities(resource.identities, serviceName);
+    }
+    if (resource.configurations) {
+      resource.configurations.forEach(function (_configuration) {
+        for (var key in _configuration) {
+          resourceConfigs = resourceConfigs.concat(this.expandKerberosStackDescriptorProps(_configuration[key], serviceName, key));
+        }
+      }, this);
+    }
+    return identityConfigs.concat(resourceConfigs);
   },
 
   /**
    * Create service properties based on component identity
    *
    * @param {object[]} identities
-   * @param {string} componentName
+   * @param {string} serviceName
    * @returns {App.ServiceConfigProperty[]}
    */
-  createConfigsByIdentities: function (identities, componentName) {
+  createConfigsByIdentities: function (identities, serviceName) {
     var self = this;
     var configs = [];
-
     identities.forEach(function (identity) {
       var defaultObject = {
         isOverridable: false,
         isVisible: true,
         isSecureConfig: true,
-        componentName: componentName,
-        name: identity.name
+        serviceName: serviceName,
+        name: identity.name,
+        identityType: identity.principal && identity.principal.type
       };
-
       self.parseIdentityObject(identity).forEach(function (item) {
         configs.push(App.ServiceConfigProperty.create($.extend({}, defaultObject, item)));
       });
@@ -481,7 +494,8 @@ App.AddSecurityConfigs = Em.Mixin.create({
       }
       configObject.defaultValue = configObject.value = itemValue;
       configObject.filename = prop.configuration ? prop.configuration.split('/')[0] : 'cluster-env';
-      configObject.name = configObject.displayName = prop.configuration ? prop.configuration.split('/')[1] : name + '_' + item;
+      configObject.name = prop.configuration ? prop.configuration.split('/')[1] : name + '_' + item;
+      configObject.displayName = configObject.filename == "cluster-env" ? App.format.normalizeName(configObject.name) : configObject.name;
       result.push(configObject);
     });
     return result;
@@ -491,9 +505,11 @@ App.AddSecurityConfigs = Em.Mixin.create({
    * Wrap kerberos properties to App.ServiceConfigProperty model class instances.
    *
    * @param {object} kerberosProperties
+   * @param {string} serviceName
+   * @param {string} filename
    * @returns {App.ServiceConfigProperty[]}
    */
-  expandKerberosStackDescriptorProps: function (kerberosProperties) {
+  expandKerberosStackDescriptorProps: function (kerberosProperties, serviceName, filename) {
     var configs = [];
 
     for (var propertyName in kerberosProperties) {
@@ -501,8 +517,9 @@ App.AddSecurityConfigs = Em.Mixin.create({
         name: propertyName,
         value: kerberosProperties[propertyName],
         defaultValue: kerberosProperties[propertyName],
-        serviceName: 'Cluster',
-        displayName: propertyName,
+        serviceName: serviceName,
+        filename: filename,
+        displayName: serviceName == "Cluster" ? App.format.normalizeName(propertyName) : propertyName,
         isOverridable: false,
         isEditable: propertyName != 'realm',
         isSecureConfig: true
@@ -556,45 +573,111 @@ App.AddSecurityConfigs = Em.Mixin.create({
    */
   updateKerberosDescriptor: function (kerberosDescriptor, configs) {
     configs.forEach(function (_config) {
-      if (Object.keys(kerberosDescriptor.properties).contains(_config.name)) {
-        for (var key in kerberosDescriptor.properties) {
-          if (key === _config.name) {
-            kerberosDescriptor.properties[key] = _config.value;
-          }
-        }
-      } else if (_config.name.endsWith('_principal') || _config.name.endsWith('_keytab')) {
-        var identities = kerberosDescriptor.identities;
-        identities.forEach(function (_identity) {
-          if (_config.name.startsWith(_identity.name)) {
-            if (_config.name.endsWith('_principal')) {
-              _identity.principal.value = _config.value;
-            } else if (_config.name.endsWith('_keytab')) {
-              _identity.keytab.file = _config.value;
-            }
-          }
-        }, this);
-      } else {
+      var isConfigUpdated;
+      var isStackResouce = true;
+      isConfigUpdated = this.updateResourceIdentityConfigs(kerberosDescriptor, _config, isStackResouce);
+      if (!isConfigUpdated) {
         kerberosDescriptor.services.forEach(function (_service) {
-          _service.components.forEach(function (_component) {
-            if (_component.identities) {
-              _component.identities.forEach(function (_identity) {
-                if (_identity.principal && _identity.principal.configuration && _identity.principal.configuration.endsWith(_config.name)) {
-                  _identity.principal.value = _config.value;
-                } else if (_identity.keytab && _identity.keytab.configuration && _identity.keytab.configuration.endsWith(_config.name)) {
-                  _identity.keytab.file = _config.value;
-                }
-              }, this);
-            }
-          }, this);
+          isConfigUpdated = this.updateResourceIdentityConfigs(_service, _config);
+          if (!isConfigUpdated) {
+            _service.components.forEach(function (_component) {
+              isConfigUpdated = this.updateResourceIdentityConfigs(_component, _config);
+            }, this);
+          }
         }, this);
       }
     }, this);
   },
 
   /**
-   * Make request for stack descriptor configs.
+   * Updates the identity configs or configurations at a resource. A resource could be
+   * 1) Stack
+   * 2) Service
+   * 3) Component
+   * @param resource
+   * @param config
+   * @param isStackResource
+   * @return boolean
+   */
+  updateResourceIdentityConfigs: function (resource, config, isStackResource) {
+    var isConfigUpdated;
+    var identities = resource.identities;
+    var properties = !!isStackResource ? resource.properties : resource.configurations;
+    isConfigUpdated = this.updateDescriptorConfigs(properties, config);
+    if (!isConfigUpdated) {
+      if (identities) {
+        isConfigUpdated = this.updateDescriptorIdentityConfig(identities, config);
+      }
+    }
+    return isConfigUpdated;
+  },
+
+  /**
    *
+   * @param configurations
+   * @param config
+   * @return boolean
+   */
+  updateDescriptorConfigs: function (configurations, config) {
+    var isConfigUpdated;
+    if (!!configurations) {
+      if (Array.isArray(configurations)) {
+        configurations.forEach(function (_configuration) {
+          for (var key in _configuration) {
+            if (Object.keys(_configuration[key]).contains(config.name) && config.filename === key) {
+              _configuration[key][config.name] = config.value;
+              isConfigUpdated = true
+            }
+          }
+        }, this);
+      } else if (Object.keys(configurations).contains(config.name) && config.filename === 'stackConfigs') {
+        configurations[config.name] = config.value;
+        isConfigUpdated = true
+      }
+    }
+    return isConfigUpdated;
+  },
+
+
+  /**
+   *
+   * @param identities
+   * @param config
+   * @return boolean
+   */
+  updateDescriptorIdentityConfig: function (identities, config) {
+    var isConfigUpdated = false;
+    identities.forEach(function (identity) {
+      var keys = Em.keys(identity).without('name');
+      keys.forEach(function (item) {
+        var prop = identity[item];
+        if (prop.configuration && prop.configuration.split('/')[0] === config.filename &&
+          prop.configuration.split('/')[1] === config.name) {
+          prop[{keytab: 'file', principal: 'value'}[item]] = config.value;
+          isConfigUpdated = true;
+        }
+      });
+    }, this);
+    return isConfigUpdated;
+  },
+
+  /**
+   * Make request for stack descriptor configs if cluster  is not secure
+   * or cluster descriptor configs if cluster is secure
    * @returns {$.ajax}
+   * @method loadStackDescriptorConfigs
+   */
+  loadDescriptorConfigs: function() {
+    if (App.router.get('mainAdminKerberosController.securityEnabled')) {
+      return this.loadClusterDescriptorConfigs();
+    } else {
+      return this.loadStackDescriptorConfigs();
+    }
+  },
+  /**
+   * Make request for stack descriptor configs.
+   * @returns {$.ajax}
+   * @method loadStackDescriptorConfigs
    */
   loadStackDescriptorConfigs: function () {
     return App.ajax.send({
@@ -604,6 +687,18 @@ App.AddSecurityConfigs = Em.Mixin.create({
         stackName: App.get('currentStackName'),
         stackVersionNumber: App.get('currentStackVersionNumber')
       }
+    });
+  },
+
+  /**
+   * Make request for cluster descriptor configs.
+   * @returns {$.ajax}
+   * @method loadClusterDescriptorConfigs
+   */
+  loadClusterDescriptorConfigs: function () {
+    return App.ajax.send({
+      sender: this,
+      name: 'admin.kerberize.cluster_descriptor'
     });
   }
 });

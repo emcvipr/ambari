@@ -37,6 +37,7 @@ App.sessionKeepAliveInterval  = 60000;
 App.bgOperationsUpdateInterval = 6000;
 App.componentsUpdateInterval = 6000;
 App.contentUpdateInterval = 15000;
+App.hostStatusCountersUpdateInterval = 10000;
 App.alertDefinitionsUpdateInterval = 10000;
 App.alertInstancesUpdateInterval = 10000;
 App.alertGroupsUpdateInterval = 10000;
@@ -50,6 +51,9 @@ App.healthIconClassRed = 'icon-warning-sign'; // bootstrap icon class for master
 App.healthIconClassOrange = 'icon-minus-sign'; // bootstrap icon class for slave down/decommissioned host/host-component
 App.healthIconClassYellow = 'icon-question-sign'; // bootstrap icon class for heartbeat lost service/host/host-component
 App.isManagedMySQLForHiveEnabled = false;
+App.healthStatusRed = '#ff0000';
+App.healthStatusGreen = '#5AB400';
+App.healthStatusOrange = '#FF8E00';
 
 // experimental features are automatically enabled if running on brunch server
 App.enableExperimental = false;
@@ -59,8 +63,11 @@ App.supports = {
   stackUpgrade: true,
   autoRollbackHA: false,
   alwaysEnableManagedMySQLForHive: false,
-  automatedKerberos: false,
-  customizeAgentUserAccount: false
+  preKerberizeCheck: false,
+  automatedKerberos: true,
+  customizeAgentUserAccount: false,
+  installGanglia: false,
+  opsDuringRollingUpgrade: false
 };
 
 if (App.enableExperimental) {

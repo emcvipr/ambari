@@ -142,6 +142,8 @@ public class Configuration {
       "authentication.ldap.managerDn";
   public static final String LDAP_MANAGER_PASSWORD_KEY =
       "authentication.ldap.managerPassword";
+  public static final String LDAP_DN_ATTRIBUTE_KEY =
+      "authentication.ldap.dnAttribute";
   public static final String LDAP_USERNAME_ATTRIBUTE_KEY =
       "authentication.ldap.usernameAttribute";
   public static final String LDAP_USER_BASE_KEY =
@@ -174,11 +176,6 @@ public class Configuration {
   public static final String SERVER_JDBC_RCA_USER_PASSWD_KEY = "server.jdbc.rca.user.passwd";
   public static final String SERVER_JDBC_RCA_DRIVER_KEY = "server.jdbc.rca.driver";
   public static final String SERVER_JDBC_RCA_URL_KEY = "server.jdbc.rca.url";
-  public static final String SCOM_JDBC_SINK_USER_NAME_KEY = "scom.sink.db.username";
-  public static final String SCOM_JDBC_SINK_USER_PASSWD_KEY = "scom.sink.db.password";
-  public static final String SCOM_JDBC_SINK_DRIVER_KEY = "scom.sink.db.driver";
-  public static final String SCOM_JDBC_SINK_URL_KEY = "scom.sink.db.url";
-  public static final String SCOM_JDBC_SINK_INT_AUTH_KEY = "scom.sink.db.use.integrated.auth";
   public static final String SERVER_JDBC_GENERATE_TABLES_KEY = "server.jdbc.generateTables";
   public static final String JDBC_UNIT_NAME = "ambari-server";
   public static final String JDBC_LOCAL_URL = "jdbc:postgresql://localhost/";
@@ -252,6 +249,13 @@ public class Configuration {
   public static final String DEF_ARCHIVE_CONTENT_TYPE;
 
   /**
+   * Kerberos related configuration options
+   */
+  public static final String KDC_PORT_KEY = "default.kdcserver.port";
+  public static final String KDC_PORT_KEY_DEFAULT = "88";
+  public static final String KDC_CONNECTION_CHECK_TIMEOUT_KEY = "kdcserver.connection.check.timeout";
+  public static final String KDC_CONNECTION_CHECK_TIMEOUT_DEFAULT = "10000";
+  /**
    * This key defines whether stages of parallel requests are executed in
    * parallel or sequentally. Only stages from different requests
    * running on not interfering host sets may be executed in parallel.
@@ -272,8 +276,6 @@ public class Configuration {
   private static final String SERVER_JDBC_USER_PASSWD_DEFAULT = "bigdata";
   private static final String SERVER_JDBC_RCA_USER_NAME_DEFAULT = "mapred";
   private static final String SERVER_JDBC_RCA_USER_PASSWD_DEFAULT = "mapred";
-  private static final String SCOM_JDBC_SINK_USER_NAME_DEFAULT = "hadoop";
-  private static final String SCOM_JDBC_SINK_USER_PASSWD_DEFAULT = "hadoop";
   private static final String SRVR_TWO_WAY_SSL_DEFAULT = "false";
   private static final String SRVR_KSTR_DIR_DEFAULT = ".";
   private static final String API_CSRF_PREVENTION_DEFAULT = "true";
@@ -295,6 +297,7 @@ public class Configuration {
   private static final String LDAP_PRIMARY_URL_DEFAULT = "localhost:33389";
   private static final String LDAP_BASE_DN_DEFAULT = "dc=ambari,dc=apache,dc=org";
   private static final String LDAP_USERNAME_ATTRIBUTE_DEFAULT = "uid";
+  private static final String LDAP_DN_ATTRIBUTE_DEFAULT = "dn";
   private static final String LDAP_USER_BASE_DEFAULT =
       "ou=people,dc=ambari,dc=apache,dc=org";
   private static final String LDAP_USER_OBJECT_CLASS_DEFAULT = "person";
@@ -429,6 +432,10 @@ public class Configuration {
 
     configsMap.put(SHARED_RESOURCES_DIR_KEY, properties.getProperty(
        SHARED_RESOURCES_DIR_KEY, SHARED_RESOURCES_DIR_DEFAULT));
+    
+    configsMap.put(KDC_PORT_KEY, properties.getProperty(
+        KDC_PORT_KEY, KDC_PORT_KEY_DEFAULT));
+    
 
     File passFile = new File(configsMap.get(SRVR_KSTR_DIR_KEY) + File.separator
         + configsMap.get(SRVR_CRT_PASS_FILE_KEY));
@@ -809,33 +816,6 @@ public class Configuration {
     return readPasswordFromFile(passwdProp, SERVER_JDBC_RCA_USER_PASSWD_DEFAULT);
   }
 
-  public String getSinkDatabaseDriver() {
-    return properties.getProperty(SCOM_JDBC_SINK_DRIVER_KEY);
-  }
-
-  public String getSinkDatabaseUrl() {
-    return properties.getProperty(SCOM_JDBC_SINK_URL_KEY);
-  }
-
-  public boolean getSinkUseIntegratedAuth() {
-      return "true".equalsIgnoreCase(properties.getProperty(SCOM_JDBC_SINK_INT_AUTH_KEY));
-  }
-
-  public String getSinkDatabaseUser() {
-    return properties.getProperty(SCOM_JDBC_SINK_USER_NAME_KEY, SCOM_JDBC_SINK_USER_NAME_DEFAULT);
-  }
-
-  public String getSinkDatabasePassword() {
-    String passwdProp = properties.getProperty(SCOM_JDBC_SINK_USER_PASSWD_KEY);
-    if (passwdProp != null) {
-      String dbpasswd = readPasswordFromStore(passwdProp);
-      if (dbpasswd != null) {
-        return dbpasswd;
-      }
-    }
-    return readPasswordFromFile(passwdProp, SCOM_JDBC_SINK_USER_PASSWD_DEFAULT);
-  }
-
   private String readPasswordFromFile(String filePath, String defaultPassword) {
     if (filePath == null) {
       LOG.debug("DB password file not specified - using default");
@@ -910,6 +890,7 @@ public class Configuration {
 
     ldapServerProperties.setUserBase(properties.getProperty(LDAP_USER_BASE_KEY, LDAP_USER_BASE_DEFAULT));
     ldapServerProperties.setUserObjectClass(properties.getProperty(LDAP_USER_OBJECT_CLASS_KEY, LDAP_USER_OBJECT_CLASS_DEFAULT));
+    ldapServerProperties.setDnAttribute(properties.getProperty(LDAP_DN_ATTRIBUTE_KEY, LDAP_DN_ATTRIBUTE_DEFAULT));
 
     ldapServerProperties.setGroupBase(properties.
         getProperty(LDAP_GROUP_BASE_KEY, LDAP_GROUP_BASE_DEFAULT));
@@ -1248,5 +1229,26 @@ public class Configuration {
    */
   public String getAlertTemplateFile() {
     return properties.getProperty(ALERT_TEMPLATE_FILE);
+  }
+  
+  /**
+   * Gets the default KDC port to use when no port is specified in KDC hostname
+   * 
+   * @return the default KDC port to use.
+   */
+  public String getDefaultKdcPort() {
+    return properties.getProperty(KDC_PORT_KEY, KDC_PORT_KEY_DEFAULT);
+  }
+
+  /**
+   * Gets the inactivity timeout value, in milliseconds, for socket connection
+   * made to KDC Server for its reachability verification.
+   * 
+   * @return the timeout value as configured in {@code ambari.properties} 
+   * 				 or {@code 10000 ms} for default.
+   */
+  public int getKdcConnectionCheckTimeout() {
+    return Integer.parseInt(properties.getProperty(
+        KDC_CONNECTION_CHECK_TIMEOUT_KEY, KDC_CONNECTION_CHECK_TIMEOUT_DEFAULT));
   }
 }

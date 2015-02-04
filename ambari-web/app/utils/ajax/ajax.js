@@ -1060,7 +1060,7 @@ var urls = {
     'testInProduction': true
   },
   'admin.security_status': {
-    'real': '/clusters/{clusterName}?fields=Clusters/desired_configs',
+    'real': '/clusters/{clusterName}?fields=Clusters/security_type',
     'mock': '',
     'format': function () {
       return {
@@ -1268,15 +1268,35 @@ var urls = {
       }
     }
   },
-  'admin.kerberos.kerberos_descriptor': {
-    // @todo: replace with real URL after API implementation
-    //        /clusters/{clusterName}?fields=Clusters/kerberos_descriptor
-    'real': '/stacks/{stackName}/versions/{stackVersionNumber}?fields=Versions/kerberos_descriptor',
+  'get.cluster.artifact': {
+    'real': '/clusters/{clusterName}/artifacts/{artifactName}?fields=artifact_data',
     'mock': '/data/wizard/kerberos/stack_descriptors.json'
   },
   'admin.kerberize.stack_descriptor': {
-    'real': '/stacks/{stackName}/versions/{stackVersionNumber}?fields=Versions/kerberos_descriptor',
+    'real': '/stacks/{stackName}/versions/{stackVersionNumber}/artifacts/kerberos_descriptor?fields=artifact_data',
     'mock': '/data/wizard/kerberos/stack_descriptors.json'
+  },
+  'admin.kerberize.cluster_descriptor': {
+    'real': '/clusters/{clusterName}/artifacts/kerberos_descriptor?fields=artifact_data',
+    'mock': '/data/wizard/kerberos/stack_descriptors.json'
+  },
+  'admin.kerberos.cluster.artifact.create': {
+    'type': 'POST',
+    'real': '/clusters/{clusterName}/artifacts/{artifactName}',
+    'format' : function (data) {
+      return {
+        data: JSON.stringify(data.data)
+      }
+    }
+  },
+  'admin.kerberos.cluster.artifact.update': {
+    'type': 'PUT',
+    'real': '/clusters/{clusterName}/artifacts/{artifactName}',
+    'format' : function (data) {
+      return {
+        data: JSON.stringify(data.data)
+      }
+    }
   },
   'admin.poll.kerberize.cluster.request': {
     'real': '/clusters/{clusterName}/requests/{requestId}?fields=stages/Stage/context,stages/Stage/status,stages/Stage/progress_percent,stages/tasks/*,Requests/*',
@@ -1335,14 +1355,29 @@ var urls = {
     'mock': '/data/stack_versions/upgrade_task.json'
   },
   'admin.upgrade.start': {
-    'real': '/clusters/{clusterName}/upgrades/{id}',
+    'real': '/clusters/{clusterName}/upgrades',
     'mock': '/data/stack_versions/start_upgrade.json',
     'type': 'POST',
     'format': function (data) {
       return {
         data: JSON.stringify({
           "Upgrade": {
-            "repository_version": data.version
+            "repository_version": data.value
+          }
+        })
+      }
+    }
+  },
+  'admin.downgrade.start': {
+    'real': '/clusters/{clusterName}/upgrades',
+    'mock': '/data/stack_versions/start_upgrade.json',
+    'type': 'POST',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          "Upgrade": {
+            "repository_version": data.value,
+            "force_downgrade": true
           }
         })
       }
@@ -1378,9 +1413,51 @@ var urls = {
     },
     'mock': ''
   },
+
+  'admin.stack_versions.edit.repo': {
+    'real': '/stacks/{stackName}/versions/{stackVersion}/repository_versions/{repoVersionId}',
+    'mock': '',
+    'type': 'PUT',
+    'format': function (data) {
+      return {
+        data: JSON.stringify(data.repoVersion)
+      }
+    }
+  },
+  'admin.stack_versions.validate.repo': {
+    'real': '/stacks/{stackName}/versions/{stackVersion}/operating_systems/{osType}/repositories/{repoId}?validate_only=true',
+    'mock': '',
+    'type': 'POST',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          "Repositories": {
+            "base_url": data.baseUrl
+          }
+        })
+      }
+    }
+  },
+
   'admin.rolling_upgrade.pre_upgrade_check': {
-    'real': '/clusters/{clusterName}/rolling_upgrades_check?fields=*&UpgradeChecks/repository_version={version}',
+    'real': '/clusters/{clusterName}/rolling_upgrades_check?fields=*&UpgradeChecks/repository_version={value}',
     'mock': '/data/stack_versions/pre_upgrade_check.json'
+  },
+
+  'admin.kerberos_security.checks': {
+    //TODO when api will be known
+    'real': '',
+    'mock': '/data/stack_versions/pre_upgrade_check.json'
+  },
+
+  'admin.kerberos_security.test_connection': {
+    'real': '/kdc_check/{kdcHostname}',
+    'mock': '',
+    'format': function () {
+      return {
+        dataType: 'text'
+      };
+    }
   },
 
   'wizard.advanced_repositories.valid_url': {
@@ -1970,7 +2047,7 @@ var urls = {
   },
   'custom_action.request': {
     'real': '/requests/{requestId}/tasks/{taskId}',
-    'mock': '',
+    'mock': '/data/requests/1.json',
     'format': function (data) {
       return {
         requestId: data.requestId,
@@ -2188,6 +2265,15 @@ var formatRequest = function (data) {
 };
 
 /**
+ * Error messages for KDC administrator credentials error
+ * is used for checking if error message is caused by bad KDC credentials
+ * @type {{missingKDC: string, invalidKDC: string}}
+ */
+var specialMsg = {
+  "missingKDC": "Missing KDC administrator credentials.",
+  "invalidKDC": "Invalid KDC administrator credentials."
+};
+/**
  * Wrapper for all ajax requests
  *
  * @type {Object}
@@ -2247,7 +2333,10 @@ var ajax = Em.Object.extend({
       }
     };
     opt.error = function (request, ajaxOptions, error) {
-      if (config.error) {
+      var KDCErrorMsg = this.getKDCErrorMgs(request);
+      if (!Em.isNone(KDCErrorMsg)) {
+        this.defaultErrorKDCHandler(opt, KDCErrorMsg);
+      } else if (config.error) {
         config.sender[config.error](request, ajaxOptions, error, opt, params);
       } else {
         this.defaultErrorHandler(request, opt.url, opt.type);
@@ -2276,7 +2365,6 @@ var ajax = Em.Object.extend({
   defaultErrorHandler: function (jqXHR, url, method, showStatus) {
     method = method || 'GET';
     var self = this;
-    var api = " received on " + method + " method for API: " + url;
     try {
       var json = $.parseJSON(jqXHR.responseText);
       var message = json.message;
@@ -2285,7 +2373,6 @@ var ajax = Em.Object.extend({
     if (!showStatus) {
       showStatus = 500;
     }
-    var statusCode = jqXHR.status + " status code";
     if (jqXHR.status === showStatus && !this.get('modalPopup')) {
       this.set('modalPopup', App.ModalPopup.show({
         header: Em.I18n.t('common.error'),
@@ -2294,16 +2381,43 @@ var ajax = Em.Object.extend({
           this.hide();
           self.set('modalPopup', null);
         },
-        bodyClass: Ember.View.extend({
-          classNames: ['api-error'],
-          templateName: require('templates/utils/ajax'),
-          api: api,
-          statusCode: statusCode,
-          message: message,
-          showMessage: !!message
+        bodyClass: App.AjaxDefaultErrorPopupBodyView.extend({
+          type: method,
+          url: url,
+          status: jqXHR.status,
+          message: message
         })
       }));
     }
+  },
+
+  /**
+   * defines if it's admin session expiration error
+   * and if so returns short error message
+   * @param jqXHR
+   * @returns {string|null}
+   */
+  getKDCErrorMgs: function(jqXHR) {
+    try {
+      var message = $.parseJSON(jqXHR.responseText).message;
+    } catch (err) {}
+    if (jqXHR.status === 400 && message) {
+      return message.contains(specialMsg.missingKDC) ? specialMsg.missingKDC
+        : message.contains(specialMsg.invalidKDC) ? specialMsg.invalidKDC : null;
+    } else {
+      return null;
+    }
+
+  },
+
+  /**
+   * default handler for admin session expiration error
+   * @param {object} opt
+   * @param {string} msg
+   * @returns {*}
+   */
+  defaultErrorKDCHandler: function(opt, msg) {
+    return App.showInvalidKDCPopup(opt, msg);
   }
 
 });

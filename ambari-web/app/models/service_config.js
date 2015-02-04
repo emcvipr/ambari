@@ -276,7 +276,7 @@ App.ServiceConfigProperty = Em.Object.extend({
     return result;
   }.property('displayType'),
 
-  initialValue: function (localDB) {
+  initialValue: function (localDB, dependencies) {
     var masterComponentHostsInDB = localDB.masterComponentHosts;
     //console.log("value in initialvalue: " + JSON.stringify(masterComponentHostsInDB));
     var hostsInfo = localDB.hosts; // which we are setting in installerController in step3.
@@ -472,11 +472,6 @@ App.ServiceConfigProperty = Em.Object.extend({
       case 'hadoop_host':
         this.set('value', masterComponentHostsInDB.filterProperty('component', 'NAMENODE').mapProperty('hostName'));
         break;
-      case 'sink_existing_mssql_server_host':
-      case 'sink_existing_mssql_server_2_host':
-        var nameNodeHost = masterComponentHostsInDB.findProperty('component', 'NAMENODE').hostName;
-        this.set('value', nameNodeHost).set('defaultValue', nameNodeHost);
-        break;
       case 'hive_existing_mysql_host':
       case 'hive_existing_postgresql_host':
       case 'hive_existing_oracle_host':
@@ -486,18 +481,10 @@ App.ServiceConfigProperty = Em.Object.extend({
         this.set('value', hiveServerHost).set('defaultValue', hiveServerHost);
         break;
       case 'hive.metastore.uris':
-        var hiveMSHosts = masterComponentHostsInDB.filterProperty('component', 'HIVE_METASTORE').mapProperty('hostName'),
-            hiveMSHostPort = hiveMSHosts,
-            regex = "\\w*:(\\d+)",
-            portValue = this.get('defaultValue').match(new RegExp(regex));
-
-        if (!portValue) return;
-        if (portValue[1]) {
-          for (var i = 0; i < hiveMSHosts.length; i++) {
-            hiveMSHostPort[i] = "thrift://" + hiveMSHosts[i] + ":" + portValue[1];
-          }
+        var hiveMSUris = this.getHiveMetastoreUris(masterComponentHostsInDB, dependencies['hive.metastore.uris']);
+        if (hiveMSUris) {
+          this.setDefaultValue("(.*)", hiveMSUris);
         }
-        this.setDefaultValue("(.*)", hiveMSHostPort);
         break;
       case 'oozie_existing_mysql_host':
       case 'oozie_existing_postgresql_host':
@@ -553,6 +540,13 @@ App.ServiceConfigProperty = Em.Object.extend({
           this.setDefaultValue("(\\w*)", zkHosts);
         }
         break;
+      case 'yarn.resourcemanager.zk-address':
+        var value = masterComponentHostsInDB.findProperty('component', 'ZOOKEEPER_SERVER').hostName + ':' + dependencies.clientPort;
+        this.setProperties({
+          value: value,
+          defaultValue: value
+        });
+        break;
       case 'zookeeper.connect':
       case 'hive.zookeeper.quorum':
       case 'templeton.zookeeper.hosts':
@@ -571,11 +565,11 @@ App.ServiceConfigProperty = Em.Object.extend({
         this.setDefaultValue("(.*)", zkHostPort);
         break;
       case 'templeton.hive.properties':
-        var hiveMetaStoreHost = masterComponentHostsInDB.findProperty('component', 'HIVE_METASTORE').hostName;
+        var hiveMSUris = this.getHiveMetastoreUris(masterComponentHostsInDB, dependencies['hive.metastore.uris']).replace(',', '\\,');
         if (/\/\/localhost:/g.test(this.get('value'))) {
-          this.set('defaultValue', this.get('value') + ', hive.metastore.execute.setugi=true');
-          this.setDefaultValue("(localhost)", hiveMetaStoreHost);
+          this.set('defaultValue', this.get('value') + ',hive.metastore.execute.setugi=true');
         }
+        this.setDefaultValue("(hive\\.metastore\\.uris=)([^\\,]+)", "$1" + hiveMSUris);
         break;
       case 'dfs.name.dir':
       case 'dfs.namenode.name.dir':
@@ -606,7 +600,37 @@ App.ServiceConfigProperty = Em.Object.extend({
         var falconServerHost = masterComponentHostsInDB.findProperty('component', 'FALCON_SERVER').hostName;
         this.setDefaultValue('localhost', falconServerHost);
         break;
+      case 'RANGER_HOST':
+        var rangerAdminHost = masterComponentHostsInDB.findProperty('component', 'RANGER_ADMIN');
+        if(rangerAdminHost) {
+          this.set('value', rangerAdminHost.hostName);
+        } else {
+          this.set('isVisible', 'false');
+          this.set('isRequired', 'false');
+        }
+        break;
     }
+  },
+
+  /**
+   * Get hive.metastore.uris initial value
+   * @param hosts
+   * @param defaultValue
+   * @returns {string}
+   */
+  getHiveMetastoreUris: function (hosts, defaultValue) {
+    var hiveMSHosts = hosts.filterProperty('component', 'HIVE_METASTORE').mapProperty('hostName'),
+      hiveMSUris = hiveMSHosts,
+      regex = "\\w*:(\\d+)",
+      portValue = defaultValue && defaultValue.match(new RegExp(regex));
+
+    if (!portValue) return '';
+    if (portValue[1]) {
+      for (var i = 0; i < hiveMSHosts.length; i++) {
+        hiveMSUris[i] = "thrift://" + hiveMSHosts[i] + ":" + portValue[1];
+      }
+    }
+    return hiveMSUris.join(',');
   },
 
   /**
@@ -830,7 +854,11 @@ App.ServiceConfigProperty = Em.Object.extend({
   viewClass: function () {
     switch (this.get('displayType')) {
       case 'checkbox':
-        return App.ServiceConfigCheckbox;
+        if (this.get('dependentConfigPattern')) {
+          return App.ServiceConfigCheckboxWithDependencies;
+        } else {
+          return App.ServiceConfigCheckbox;
+        }
       case 'password':
         return App.ServiceConfigPasswordField;
       case 'combobox':
@@ -858,6 +886,8 @@ App.ServiceConfigProperty = Em.Object.extend({
         return App.ServiceConfigMasterHostsView;
       case 'slaveHosts':
         return App.ServiceConfigSlaveHostsView;
+      case 'supportTextConnection':
+        return App.checkConnectionView;
       default:
         if (this.get('unit')) {
           return App.ServiceConfigTextFieldWithUnit;

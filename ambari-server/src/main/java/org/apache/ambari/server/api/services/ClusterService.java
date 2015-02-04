@@ -19,6 +19,8 @@
 package org.apache.ambari.server.api.services;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -167,6 +169,177 @@ public class ClusterService extends BaseService {
 
     hasPermission(Request.Type.DELETE, clusterName);
     return handleRequest(headers, null, ui, Request.Type.DELETE, createClusterResource(clusterName));
+  }
+
+  /**
+   * Handles: GET /clusters/{clusterID}/artifacts
+   * Get all artifacts associated with the cluster.
+   *
+   * @param body         request body
+   * @param headers      http headers
+   * @param ui           uri info
+   * @param clusterName  cluster name
+   *
+   * @return artifact collection resource representation
+   */
+  @GET
+  @Path("{clusterName}/artifacts")
+  @Produces("text/plain")
+  public Response getArtifacts(String body,
+                               @Context HttpHeaders headers,
+                               @Context UriInfo ui,
+                               @PathParam("clusterName") String clusterName) {
+
+    hasPermission(Request.Type.GET, clusterName);
+    return handleRequest(headers, body, ui, Request.Type.GET,
+        createArtifactResource(clusterName, null));
+  }
+
+  /**
+   * Handles: GET /clusters/{clusterID}/artifacts/{artifactName}
+   * Get an artifact resource instance.
+   *
+   * @param body          request body
+   * @param headers       http headers
+   * @param ui            uri info
+   * @param clusterName   cluster name
+   * @param artifactName  artifact name
+   *
+   * @return  artifact instance resource representation
+   */
+  @GET
+  @Path("{clusterName}/artifacts/{artifactName}")
+  @Produces("text/plain")
+  public Response getArtifact(String body,
+                              @Context HttpHeaders headers,
+                              @Context UriInfo ui,
+                              @PathParam("clusterName") String clusterName,
+                              @PathParam("artifactName") String artifactName) {
+
+    hasPermission(Request.Type.GET, clusterName);
+    return handleRequest(headers, body, ui, Request.Type.GET,
+        createArtifactResource(clusterName, artifactName));
+  }
+
+  /**
+   * Handles: POST /clusters/{clusterID}/artifacts/{artifactName}
+   * Create a cluster artifact.
+   *
+   * @param body          request body
+   * @param headers       http headers
+   * @param ui            uri info
+   * @param clusterName   cluster name
+   * @param artifactName  artifact name
+   * @return
+   */
+  @POST
+  @Path("{clusterName}/artifacts/{artifactName}")
+  @Produces("text/plain")
+  public Response createArtifact(String body,
+                                 @Context HttpHeaders headers,
+                                 @Context UriInfo ui,
+                                 @PathParam("clusterName") String clusterName,
+                                 @PathParam("artifactName") String artifactName) {
+
+    hasPermission(Request.Type.POST, clusterName);
+    return handleRequest(headers, body, ui, Request.Type.POST,
+        createArtifactResource(clusterName, artifactName));
+  }
+
+  /**
+   * Handles: PUT /clusters/{clusterID}/artifacts
+   * Update all artifacts matching the provided predicate.
+   *
+   * @param headers      http headers
+   * @param ui           uri info
+   * @param clusterName  cluster name
+   *
+   * @return information regarding the updated artifacts
+   */
+  @PUT
+  @Path("{clusterName}/artifacts")
+  @Produces("text/plain")
+  public Response updateArtifacts(String body,
+                                  @Context HttpHeaders headers,
+                                  @Context UriInfo ui,
+                                  @PathParam("clusterName") String clusterName) {
+
+    hasPermission(Request.Type.PUT, clusterName);
+    return handleRequest(headers, body, ui, Request.Type.PUT,
+        createArtifactResource(clusterName, null));
+  }
+
+  /**
+   * Handles: PUT /clusters/{clusterID}/artifacts/{artifactName}
+   * Update a specific artifact.
+   *
+   * @param headers       http headers
+   * @param ui            uri info
+   * @param clusterName   cluster name
+   * @param artifactName  artifactName
+   *
+   * @return information regarding the updated artifact
+   */
+  @PUT
+  @Path("{clusterName}/artifacts/{artifactName}")
+  @Produces("text/plain")
+  public Response updateArtifact(String body,
+                                 @Context HttpHeaders headers,
+                                @Context UriInfo ui,
+                                @PathParam("clusterName") String clusterName,
+                                @PathParam("artifactName") String artifactName) {
+
+    hasPermission(Request.Type.PUT, clusterName);
+    return handleRequest(headers, body, ui, Request.Type.PUT,
+        createArtifactResource(clusterName, artifactName));
+  }
+
+  /**
+   * Handles: DELETE /clusters/{clusterID}/artifacts/{artifactName}
+   * Delete a specific artifact.
+   *
+   * @param headers       http headers
+   * @param ui            uri info
+   * @param clusterName   cluster name
+   * @param artifactName  artifactName
+   *
+   * @return information regarding the deleted artifact
+   */
+  @DELETE
+  @Path("{clusterName}/artifacts/{artifactName}")
+  @Produces("text/plain")
+  public Response deleteArtifact(String body,
+                                 @Context HttpHeaders headers,
+                                 @Context UriInfo ui,
+                                 @PathParam("clusterName") String clusterName,
+                                 @PathParam("artifactName") String artifactName) {
+
+    hasPermission(Request.Type.DELETE, clusterName);
+    return handleRequest(headers, body, ui, Request.Type.DELETE,
+        createArtifactResource(clusterName, artifactName));
+  }
+
+  /**
+   * Handles: DELETE /clusters/{clusterID}/artifacts
+   * Delete all artifacts matching the provided predicate.
+   *
+   * @param headers      http headers
+   * @param ui           uri info
+   * @param clusterName  cluster name
+   *
+   * @return information regarding the deleted artifacts
+   */
+  @DELETE
+  @Path("{clusterName}/artifacts")
+  @Produces("text/plain")
+  public Response deleteArtifacts(String body,
+                                  @Context HttpHeaders headers,
+                                  @Context UriInfo ui,
+                                  @PathParam("clusterName") String clusterName) {
+
+    hasPermission(Request.Type.DELETE, clusterName);
+    return handleRequest(headers, body, ui, Request.Type.DELETE,
+        createArtifactResource(clusterName, null));
   }
 
   /**
@@ -434,7 +607,7 @@ public class ClusterService extends BaseService {
    * Gets the services for upgrades.
    *
    * @param request the request
-   * @param cluserName the cluster name
+   * @param clusterName the cluster name
    *
    * @return the upgrade services
    */
@@ -473,6 +646,22 @@ public class ClusterService extends BaseService {
   ResourceInstance createClusterResource(String clusterName) {
     return createResource(Resource.Type.Cluster,
         Collections.singletonMap(Resource.Type.Cluster, clusterName));
+  }
+
+  /**
+   * Create an artifact resource instance.
+   *
+   * @param clusterName  cluster name
+   * @param artifactName artifact name
+   *
+   * @return an artifact resource instance
+   */
+  ResourceInstance createArtifactResource(String clusterName, String artifactName) {
+    Map<Resource.Type, String> mapIds = new HashMap<Resource.Type, String>();
+    mapIds.put(Resource.Type.Cluster, clusterName);
+    mapIds.put(Resource.Type.Artifact, artifactName);
+
+    return createResource(Resource.Type.Artifact, mapIds);
   }
 
   /**

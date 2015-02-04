@@ -25,8 +25,8 @@ describe('App.HostStackVersion', function () {
   describe("#displayStatus", function () {
     var testCases = [
       {
-        status: 'INIT',
-        result: Em.I18n.t('hosts.host.stackVersions.status.init')
+        status: 'OUT_OF_SYNC',
+        result: Em.I18n.t('hosts.host.stackVersions.status.out_of_sync')
       },
       {
         status: 'INSTALLED',
@@ -41,8 +41,20 @@ describe('App.HostStackVersion', function () {
         result: Em.I18n.t('hosts.host.stackVersions.status.install_failed')
       },
       {
-        status: '',
-        result: Em.I18n.t('common.unknown')
+        status: 'UPGRADE_FAILED',
+        result: Em.I18n.t('hosts.host.stackVersions.status.upgrade_failed')
+      },
+      {
+        status: 'UPGRADING',
+        result: Em.I18n.t('hosts.host.stackVersions.status.upgrading')
+      },
+      {
+        status: 'CURRENT',
+        result: Em.I18n.t('hosts.host.stackVersions.status.current')
+      },
+      {
+        status: 'ANY',
+        result: 'Any'
       }
     ];
     afterEach(function () {
@@ -62,7 +74,7 @@ describe('App.HostStackVersion', function () {
   describe("#installEnabled", function () {
     var testCases = [
       {
-        status: 'INIT',
+        status: 'OUT_OF_SYNC',
         result: true
       },
       {
@@ -113,6 +125,26 @@ describe('App.HostStackVersion', function () {
         status: 'INSTALLED'
       });
       expect(App.HostStackVersion.find(1).get('isCurrent')).to.be.false;
+    });
+  });
+
+  describe("#isInstalling", function () {
+    afterEach(function () {
+      App.HostStackVersion.find().clear();
+    });
+    it("status is INSTALLING", function () {
+      App.store.load(App.HostStackVersion, {
+        id: 1,
+        status: 'INSTALLING'
+      });
+      expect(App.HostStackVersion.find(1).get('isInstalling')).to.be.true;
+    });
+    it("status is not INSTALLING", function () {
+      App.store.load(App.HostStackVersion, {
+        id: 1,
+        status: 'INSTALLED'
+      });
+      expect(App.HostStackVersion.find(1).get('isInstalling')).to.be.false;
     });
   });
 });

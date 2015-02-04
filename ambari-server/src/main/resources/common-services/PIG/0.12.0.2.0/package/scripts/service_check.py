@@ -42,6 +42,7 @@ class PigServiceCheck(Script):
       conf_dir = params.hadoop_conf_dir,
       # for kinit run
       keytab = params.smoke_user_keytab,
+      principal = params.smokeuser_principal,
       security_enabled = params.security_enabled,
       kinit_path_local = params.kinit_path_local,
       bin_dir = params.hadoop_bin_dir
@@ -75,16 +76,17 @@ class PigServiceCheck(Script):
         conf_dir = params.hadoop_conf_dir,
         # for kinit run
         keytab = params.smoke_user_keytab,
+        principal = params.smokeuser_principal,
         security_enabled = params.security_enabled,
         kinit_path_local = params.kinit_path_local,
         bin_dir = params.hadoop_bin_dir
       )
 
       # Check for Pig-on-Tez
-      copy_tarballs_to_hdfs('tez', params.smokeuser, params.hdfs_user, params.user_group)
+      copy_tarballs_to_hdfs('tez', 'hadoop-client', params.smokeuser, params.hdfs_user, params.user_group)
 
       if params.security_enabled:
-        kinit_cmd = format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser};")
+        kinit_cmd = format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser_principal};")
         Execute(kinit_cmd,
                 user=params.smokeuser
         )

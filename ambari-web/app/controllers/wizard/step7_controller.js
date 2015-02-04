@@ -67,8 +67,8 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
    * uses for add service - find out is security is enabled
    */
   securityEnabled: function () {
-    return App.router.get('mainAdminSecurityController.securityEnabled');
-  }.property('App.router.mainAdminSecurityController.securityEnabled'),
+    return App.router.get('mainAdminKerberosController.securityEnabled');
+  }.property('App.router.mainAdminKerberosController.securityEnabled'),
   /**
    * If miscConfigChange Modal is shown
    * @type {bool}
@@ -705,14 +705,25 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
           this.setSecureConfigs(serviceConfigObj, serviceName);
         }
       }, this);
-      // Remove SNameNode if HA is enabled
+      // if HA is enabled -> Remove SNameNode, hbase.rootdir should use Name Service ID
       if (App.get('isHaEnabled')) {
-        var c = serviceConfigs.findProperty('serviceName', 'HDFS').configs;
-        var removedConfigs = c.filterProperty('category', 'SECONDARY_NAMENODE');
+        var c = serviceConfigs.findProperty('serviceName', 'HDFS').configs,
+          nameServiceId = c.findProperty('name', 'dfs.nameservices'),
+          removedConfigs = c.filterProperty('category', 'SECONDARY_NAMENODE');
         removedConfigs.map(function (config) {
           c = c.without(config);
         });
         serviceConfigs.findProperty('serviceName', 'HDFS').configs = c;
+
+        if(this.get('selectedServiceNames').contains('HBASE') && nameServiceId){
+          var hRootDir = serviceConfigs.findProperty('serviceName', 'HBASE').configs.findProperty('name','hbase.rootdir'),
+            valueToChange = hRootDir.get('value').replace(/\/\/.*:/i, '//' + nameServiceId.get('value') + ':');
+
+          hRootDir.setProperties({
+            'value':  valueToChange,
+            'defaultValue' : valueToChange
+          });
+        }
       }
     }
 
@@ -726,17 +737,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
           c = c.without(config);
         });
         miscService.configs = c;
-      }
-    }
-
-    if (!App.get('isHadoopWindowsStack')) {
-      var hdfsService =  serviceConfigs.findProperty('serviceName', 'HDFS');
-      if (hdfsService) {
-        c = hdfsService.configs;
-        c.filterProperty('category', 'MetricsSink').map(function (config) {
-          c = c.without(config);
-        });
-        serviceConfigs.findProperty('serviceName', 'HDFS').configs = c;
       }
     }
 
@@ -854,7 +854,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
     var self = this;
 
     configsByTags.forEach(function (configSite) {
-      configsMap[configSite.type] = configSite.properties;
+      configsMap[configSite.type] = configSite.properties || {};
     });
     configs.forEach(function (_config) {
       var nonServiceTab = require('data/service_configs');
@@ -897,29 +897,27 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
   },
 
   /**
-   * Check if Oozie, Hive or MetricsSink use existing database then need
+   * Check if Oozie or Hive use existing database then need
    * to restore missed properties
    *
    * @param {Object[]} configs
    **/
   setServiceDatabaseConfigs: function (configs) {
     var serviceNames = this.get('installedServiceNames').filter(function (serviceName) {
-      return ['OOZIE', 'HIVE', 'HDFS'].contains(serviceName);
+      return ['OOZIE', 'HIVE'].contains(serviceName);
     });
     serviceNames.forEach(function (serviceName) {
       var propertyPrefix = serviceName.toLowerCase();
-      if (/HDFS/gi.test(serviceName)) propertyPrefix = 'sink';
       var dbTypeConfig = configs.findProperty('name', propertyPrefix + '_database');
       if (!/existing/gi.test(dbTypeConfig.value)) return;
       var dbHostName = propertyPrefix + '_hostname';
       var database = dbTypeConfig.value.match(/MySQL|PostgreSQL|Oracle|Derby|MSSQL/gi)[0];
       var dbPrefix = database.toLowerCase();
       if (database.toLowerCase() == 'mssql') {
-        dbHostName = 'sink.dbservername';
         if (/integrated/gi.test(dbTypeConfig.value)) {
-          dbPrefix = 'mssql_server';
-        } else {
           dbPrefix = 'mssql_server_2';
+        } else {
+          dbPrefix = 'mssql_server';
         }
       }
       var propertyName = propertyPrefix + '_existing_' + dbPrefix + '_host';
@@ -1149,12 +1147,13 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
    */
   activateSpecialConfigs: function () {
     if (this.get('addMiscTabToPage')) {
+      var serviceToShow = this.get('selectedServiceNames').concat('MISC');
       var miscConfigs = this.get('stepConfigs').findProperty('serviceName', 'MISC').configs;
       if (this.get('wizardController.name') == "addServiceController") {
         miscConfigs.findProperty('name', 'smokeuser').set('value', this.get('content.smokeuser')).set('isEditable', false);
         miscConfigs.findProperty('name', 'user_group').set('value', this.get('content.group')).set('isEditable', false);
       }
-      App.config.miscConfigVisibleProperty(miscConfigs, this.get('selectedServiceNames'));
+      App.config.miscConfigVisibleProperty(miscConfigs, serviceToShow);
     }
     var wizardController = this.get('wizardController');
     if (wizardController.get('name') === "kerberosWizardController")  {

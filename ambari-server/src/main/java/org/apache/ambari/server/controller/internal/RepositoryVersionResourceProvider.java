@@ -18,14 +18,11 @@
 package org.apache.ambari.server.controller.internal;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ObjectNotFoundException;
@@ -46,22 +43,17 @@ import org.apache.ambari.server.orm.dao.ClusterVersionDAO;
 import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
 import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
 import org.apache.ambari.server.orm.entities.OperatingSystemEntity;
-import org.apache.ambari.server.orm.entities.RepositoryEntity;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.state.OperatingSystemInfo;
-import org.apache.ambari.server.state.RepositoryInfo;
+import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.StackInfo;
-import org.apache.ambari.server.state.stack.UpgradePack;
+import org.apache.ambari.server.state.stack.upgrade.RepositoryVersionHelper;
+import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.Multimap;
+import com.google.common.collect.Lists;
 import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.google.inject.Inject;
 
 /**
@@ -109,7 +101,8 @@ public class RepositoryVersionResourceProvider extends AbstractResourceProvider 
     }
   };
 
-  private static Gson gson = new Gson();
+  @Inject
+  private Gson gson;
 
   @Inject
   private RepositoryVersionDAO repositoryVersionDAO;
@@ -119,6 +112,9 @@ public class RepositoryVersionResourceProvider extends AbstractResourceProvider 
 
   @Inject
   private AmbariMetaInfo ambariMetaInfo;
+
+  @Inject
+  private RepositoryVersionHelper repositoryVersionHelper;
 
   /**
    * Create a new resource provider.
@@ -235,31 +231,32 @@ public class RepositoryVersionResourceProvider extends AbstractResourceProvider 
             throw new ObjectNotFoundException("There is no repository version with id " + id);
           }
 
-          if (propertyMap.get(SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID) != null) {
-
+          if (StringUtils.isNotBlank(ObjectUtils.toString(propertyMap.get(REPOSITORY_VERSION_UPGRADE_PACK_PROPERTY_ID)))) {
             final List<ClusterVersionEntity> clusterVersionEntities =
                 clusterVersionDAO.findByStackAndVersion(entity.getStack(), entity.getVersion());
 
             if (!clusterVersionEntities.isEmpty()) {
               final ClusterVersionEntity firstClusterVersion = clusterVersionEntities.get(0);
-              throw new AmbariException("Repository version can't be updated as it is " +
+              throw new AmbariException("Upgrade pack can't be changed for repository version which is " +
                 firstClusterVersion.getState().name() + " on cluster " + firstClusterVersion.getClusterEntity().getClusterName());
             }
 
-            if (propertyMap.get(SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID) != null) {
-              final Object operatingSystems = propertyMap.get(SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID);
-              final String operatingSystemsJson = gson.toJson(operatingSystems);
-              try {
-                parseOperatingSystems(operatingSystemsJson);
-              } catch (Exception ex) {
-                throw new AmbariException("Json structure for operating systems is incorrect", ex);
-              }
-              entity.setOperatingSystems(operatingSystemsJson);
-            }
-
+            final String upgradePackage = propertyMap.get(REPOSITORY_VERSION_UPGRADE_PACK_PROPERTY_ID).toString();
+            entity.setUpgradePackage(upgradePackage);
           }
 
-          if (propertyMap.get(REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID) != null) {
+          if (StringUtils.isNotBlank(ObjectUtils.toString(propertyMap.get(SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID)))) {
+            final Object operatingSystems = propertyMap.get(SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID);
+            final String operatingSystemsJson = gson.toJson(operatingSystems);
+            try {
+              repositoryVersionHelper.parseOperatingSystems(operatingSystemsJson);
+            } catch (Exception ex) {
+              throw new AmbariException("Json structure for operating systems is incorrect", ex);
+            }
+            entity.setOperatingSystems(operatingSystemsJson);
+          }
+
+          if (StringUtils.isNotBlank(ObjectUtils.toString(propertyMap.get(REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID)))) {
             entity.setDisplayName(propertyMap.get(REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID).toString());
           }
 
@@ -295,10 +292,17 @@ public class RepositoryVersionResourceProvider extends AbstractResourceProvider 
       final List<ClusterVersionEntity> clusterVersionEntities =
           clusterVersionDAO.findByStackAndVersion(entity.getStack(), entity.getVersion());
 
-      if (!clusterVersionEntities.isEmpty()) {
-        final ClusterVersionEntity firstClusterVersion = clusterVersionEntities.get(0);
-        throw new SystemException("Repository version can't be deleted as it is " +
-          firstClusterVersion.getState().name() + " on cluster " + firstClusterVersion.getClusterEntity().getClusterName());
+      final List<RepositoryVersionState> forbiddenToDeleteStates = Lists.newArrayList(
+          RepositoryVersionState.CURRENT,
+          RepositoryVersionState.INSTALLED,
+          RepositoryVersionState.INSTALLING,
+          RepositoryVersionState.UPGRADED,
+          RepositoryVersionState.UPGRADING);
+      for (ClusterVersionEntity clusterVersionEntity : clusterVersionEntities) {
+        if (clusterVersionEntity.getRepositoryVersion().getId().equals(id) && forbiddenToDeleteStates.contains(clusterVersionEntity.getState())) {
+          throw new SystemException("Repository version can't be deleted as it is " +
+              clusterVersionEntity.getState().name() + " on cluster " + clusterVersionEntity.getClusterEntity().getClusterName());
+        }
       }
 
       entitiesToBeRemoved.add(entity);
@@ -370,120 +374,13 @@ public class RepositoryVersionResourceProvider extends AbstractResourceProvider 
     final Object operatingSystems = properties.get(SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID);
     final String operatingSystemsJson = gson.toJson(operatingSystems);
     try {
-      parseOperatingSystems(operatingSystemsJson);
+      repositoryVersionHelper.parseOperatingSystems(operatingSystemsJson);
     } catch (Exception ex) {
       throw new AmbariException("Json structure for operating systems is incorrect", ex);
     }
     entity.setOperatingSystems(operatingSystemsJson);
-    entity.setUpgradePackage(getUpgradePackageName(stackName, stackVersion, entity.getVersion()));
+    entity.setUpgradePackage(repositoryVersionHelper.getUpgradePackageName(stackName, stackVersion, entity.getVersion()));
     return entity;
-  }
-
-
-  /**
-   * Scans the given stack for upgrade packages which can be applied to update the cluster to given repository version.
-   *
-   * @param stackName stack name
-   * @param stackVersion stack version
-   * @param repositoryVersion target repository version
-   * @return upgrade pack name
-   * @throws AmbariException if no upgrade packs suit the requirements
-   */
-  private String getUpgradePackageName(String stackName, String stackVersion, String repositoryVersion) throws AmbariException {
-    final Map<String, UpgradePack> upgradePacks = ambariMetaInfo.getUpgradePacks(stackName, stackVersion);
-    for (Entry<String, UpgradePack> upgradePackEntry : upgradePacks.entrySet()) {
-      final UpgradePack upgradePack = upgradePackEntry.getValue();
-      final String upgradePackName = upgradePackEntry.getKey();
-      // check that upgrade pack has <target> node
-      if (StringUtils.isBlank(upgradePack.getTarget())) {
-        LOG.error("Upgrade pack " + upgradePackName + " is corrupted, it should contain <target> node");
-        continue;
-      }
-
-      // check that upgrade pack can be applied to selected stack
-      // converting 2.2.*.* -> 2\.2(\.\d+)?(\.\d+)?(-\d+)?
-      String regexPattern = upgradePack.getTarget();
-      regexPattern = regexPattern.replaceAll("\\.", "\\\\."); // . -> \.
-      regexPattern = regexPattern.replaceAll("\\\\\\.\\*", "(\\\\\\.\\\\d+)?"); // \.* -> (\.\d+)?
-      regexPattern = regexPattern.concat("(-\\d+)?");
-      if (Pattern.matches(regexPattern, repositoryVersion)) {
-        return upgradePackName;
-      }
-    }
-    throw new AmbariException("There were no suitable upgrade packs for stack " + stackName + " " + stackVersion);
-  }
-
-  /**
-   * Parses operating systems json to a list of entities. Expects json like:
-   * <pre>
-   * [
-   *    {
-   *       "repositories":[
-   *          {
-   *             "Repositories/base_url":"http://s3.amazonaws.com/dev.hortonworks.com/HDP/centos5/2.x/updates/2.2.0.0",
-   *             "Repositories/repo_name":"HDP-UTILS",
-   *             "Repositories/repo_id":"HDP-UTILS-1.1.0.20"
-   *          },
-   *          {
-   *             "Repositories/base_url":"http://s3.amazonaws.com/dev.hortonworks.com/HDP/centos5/2.x/updates/2.2.0.0",
-   *             "Repositories/repo_name":"HDP",
-   *             "Repositories/repo_id":"HDP-2.2"
-   *          }
-   *       ],
-   *       "OperatingSystems/os_type":"redhat5"
-   *    }
-   * ]
-   * </pre>
-   * @param repositoriesJson operating systems json
-   * @return list of operating system entities
-   * @throws Exception if any kind of json parsing error happened
-   */
-  public static List<OperatingSystemEntity> parseOperatingSystems(String repositoriesJson) throws Exception {
-    final List<OperatingSystemEntity> operatingSystems = new ArrayList<OperatingSystemEntity>();
-    final JsonArray rootJson = new JsonParser().parse(repositoriesJson).getAsJsonArray();
-    for (JsonElement operatingSystemJson: rootJson) {
-      final OperatingSystemEntity operatingSystemEntity = new OperatingSystemEntity();
-      operatingSystemEntity.setOsType(operatingSystemJson.getAsJsonObject().get(OperatingSystemResourceProvider.OPERATING_SYSTEM_OS_TYPE_PROPERTY_ID).getAsString());
-      for (JsonElement repositoryJson: operatingSystemJson.getAsJsonObject().get(SUBRESOURCE_REPOSITORIES_PROPERTY_ID).getAsJsonArray()) {
-        final RepositoryEntity repositoryEntity = new RepositoryEntity();
-        repositoryEntity.setBaseUrl(repositoryJson.getAsJsonObject().get(RepositoryResourceProvider.REPOSITORY_BASE_URL_PROPERTY_ID).getAsString());
-        repositoryEntity.setName(repositoryJson.getAsJsonObject().get(RepositoryResourceProvider.REPOSITORY_REPO_NAME_PROPERTY_ID).getAsString());
-        repositoryEntity.setRepositoryId(repositoryJson.getAsJsonObject().get(RepositoryResourceProvider.REPOSITORY_REPO_ID_PROPERTY_ID).getAsString());
-        operatingSystemEntity.getRepositories().add(repositoryEntity);
-      }
-      operatingSystems.add(operatingSystemEntity);
-    }
-    return operatingSystems;
-  }
-
-  /**
-   * Serializes repository info to json for storing to DB.
-   * Produces json like:
-   *
-   * @param repositories list of repository infos
-   * @return serialized list of operating systems
-   */
-  public static String serializeOperatingSystems(List<RepositoryInfo> repositories) {
-    final JsonArray rootJson = new JsonArray();
-    final Multimap<String, RepositoryInfo> operatingSystems = ArrayListMultimap.create();
-    for (RepositoryInfo repository: repositories) {
-      operatingSystems.put(repository.getOsType(), repository);
-    }
-    for (Entry<String, Collection<RepositoryInfo>> operatingSystem : operatingSystems.asMap().entrySet()) {
-      final JsonObject operatingSystemJson = new JsonObject();
-      final JsonArray repositoriesJson = new JsonArray();
-      for (RepositoryInfo repository : operatingSystem.getValue()) {
-        final JsonObject repositoryJson = new JsonObject();
-        repositoryJson.addProperty(RepositoryResourceProvider.REPOSITORY_BASE_URL_PROPERTY_ID, repository.getBaseUrl());
-        repositoryJson.addProperty(RepositoryResourceProvider.REPOSITORY_REPO_NAME_PROPERTY_ID, repository.getRepoName());
-        repositoryJson.addProperty(RepositoryResourceProvider.REPOSITORY_REPO_ID_PROPERTY_ID, repository.getRepoId());
-        repositoriesJson.add(repositoryJson);
-      }
-      operatingSystemJson.add(SUBRESOURCE_REPOSITORIES_PROPERTY_ID, repositoriesJson);
-      operatingSystemJson.addProperty(OperatingSystemResourceProvider.OPERATING_SYSTEM_OS_TYPE_PROPERTY_ID, operatingSystem.getKey());
-      rootJson.add(operatingSystemJson);
-    }
-    return gson.toJson(rootJson);
   }
 
   protected StackId getStackInformationFromUrl(Map<String, Object> propertyMap) {

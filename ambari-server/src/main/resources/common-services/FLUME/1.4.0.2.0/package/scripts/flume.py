@@ -23,7 +23,52 @@ import os
 from resource_management import *
 from resource_management.libraries.functions.flume_agent_helper import is_flume_process_live
 from resource_management.libraries.functions.flume_agent_helper import find_expected_agent_names
+from ambari_commons import OSConst
+from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 
+@OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
+def flume(action = None):
+  import params
+
+  if action == 'config':
+    # remove previously defined meta's
+    for n in find_expected_agent_names(params.flume_conf_dir):
+      os.unlink(os.path.join(params.flume_conf_dir, n, 'ambari-meta.json'))
+
+    flume_agents = {}
+    if params.flume_conf_content is not None:
+      flume_agents = build_flume_topology(params.flume_conf_content)
+
+    for agent in flume_agents.keys():
+      flume_agent_conf_dir = os.path.join(params.flume_conf_dir, agent)
+      flume_agent_conf_file = os.path.join(flume_agent_conf_dir, 'flume.conf')
+      flume_agent_meta_file = os.path.join(flume_agent_conf_dir, 'ambari-meta.json')
+      flume_agent_log4j_file = os.path.join(flume_agent_conf_dir, 'log4j.properties')
+      flume_agent_env_file = os.path.join(flume_agent_conf_dir, 'flume-env.ps1')
+
+      Directory(flume_agent_conf_dir)
+
+      PropertiesFile(flume_agent_conf_file,
+                     properties=flume_agents[agent])
+
+      File(flume_agent_log4j_file,
+           content=Template('log4j.properties.j2', agent_name = agent))
+
+      File(flume_agent_meta_file,
+           content = json.dumps(ambari_meta(agent, flume_agents[agent])))
+
+      File(flume_agent_env_file,
+           owner=params.flume_user,
+           content=InlineTemplate(params.flume_env_sh_template)
+      )
+
+      if params.has_metric_collector:
+        File(os.path.join(flume_agent_conf_dir, "flume-metrics2.properties"),
+             owner=params.flume_user,
+             content=Template("flume-metrics2.properties.j2")
+        )
+
+@OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
 def flume(action = None):
   import params
 
@@ -77,9 +122,8 @@ def flume(action = None):
       _set_desired_state('STARTED')
 
     # It is important to run this command as a background process.
-    
-    
-    flume_base = as_user(format("{flume_bin} agent --name {{0}} --conf {{1}} --conf-file {{2}} {{3}}"), params.flume_user, env={'JAVA_HOME': params.java_home}) + " &"
+
+    flume_base = as_user(format("{flume_bin} agent --name {{0}} --conf {{1}} --conf-file {{2}} {{3}} > {flume_log_dir}/{{4}}.out 2>&1"), params.flume_user, env={'JAVA_HOME': params.java_home}) + " &"
 
     for agent in cmd_target_names():
       flume_agent_conf_dir = params.flume_conf_dir + os.sep + agent
@@ -99,7 +143,7 @@ def flume(action = None):
           extra_args = '-Dflume.monitoring.type=org.apache.hadoop.metrics2.sink.flume.FlumeTimelineMetricsSink'
 
         flume_cmd = flume_base.format(agent, flume_agent_conf_dir,
-           flume_agent_conf_file, extra_args)
+           flume_agent_conf_file, extra_args, agent)
 
         Execute(flume_cmd, 
           wait_for_finish=False,
@@ -107,8 +151,12 @@ def flume(action = None):
         )
 
         # sometimes startup spawns a couple of threads - so only the first line may count
+
         pid_cmd = format('pgrep -o -u {flume_user} -f ^{java_home}.*{agent}.* > {flume_agent_pid_file}')
-        Execute(pid_cmd, logoutput=True, tries=20, try_sleep=6)
+        Execute(pid_cmd,
+                logoutput=True,
+                tries=20,
+                try_sleep=10)
 
     pass
   elif action == 'stop':

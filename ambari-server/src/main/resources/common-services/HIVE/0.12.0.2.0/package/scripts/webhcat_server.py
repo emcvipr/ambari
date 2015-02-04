@@ -31,7 +31,8 @@ class WebHCatServer(Script):
     return {"HDP": "hive-webhcat"}
 
   def install(self, env):
-    self.install_packages(env)
+    import params
+    self.install_packages(env, exclude_packages=params.hive_exclude_packages)
 
 
   def configure(self, env):
@@ -45,8 +46,6 @@ class WebHCatServer(Script):
     env.set_params(params)
     self.configure(env) # FOR SECURITY
     webhcat_service(action = 'start')
-
-    self.save_component_version_to_structured_out(params.stack_name)
 
 
   def stop(self, env, rolling_restart=False):

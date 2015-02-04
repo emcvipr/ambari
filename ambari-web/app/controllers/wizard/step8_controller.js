@@ -123,8 +123,8 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
    * @type {bool}
    */
   securityEnabled: function () {
-    return App.router.get('mainAdminSecurityController.securityEnabled');
-  }.property('App.router.mainAdminSecurityController.securityEnabled'),
+    return App.router.get('mainAdminKerberosController.securityEnabled');
+  }.property('App.router.mainAdminKerberosController.securityEnabled'),
 
   /**
    * Selected config group
@@ -169,6 +169,26 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
   clusterNames: [],
 
   /**
+   * Number of completed cluster delete requests
+   * @type {number}
+   */
+  clusterDeleteRequestsCompleted: 0,
+
+  /**
+   * Indicates if all cluster delete requests are completed
+   * @type {boolean}
+   */
+  isAllClusterDeleteRequestsCompleted: function () {
+    return this.get('clusterDeleteRequestsCompleted') == this.get('clusterNames.length');
+  }.property('clusterDeleteRequestsCompleted'),
+
+  /**
+   * Error popup body views for clusters that couldn't be deleted
+   * @type {App.AjaxDefaultErrorPopupBodyView[]}
+   */
+  clusterDeleteErrorViews: [],
+
+  /**
    * Clear current step data
    * @method clearStep
    */
@@ -181,6 +201,8 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     this.set('ajaxQueueLength', 0);
     this.set('ajaxRequestsQueue', App.ajaxQueue.create());
     this.set('ajaxRequestsQueue.finishedCallback', this.ajaxQueueFinished);
+    this.get('clusterDeleteErrorViews').clear();
+    this.set('clusterDeleteRequestsCompleted', 0);
   },
 
   /**
@@ -221,38 +243,6 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
   },
 
   /**
-   * Remove unused Sink configs
-   * @param {Ember.Enumerable} configs
-   * @returns {Ember.Enumerable}
-   * @method removeSinkConfigs
-   */
-  removeSinkConfigs: function (configs) {
-    var sinkDb = configs.findProperty('name', 'sink_database');
-    var sinkDbType = configs.findProperty('name', 'sink_database_type');
-    if (sinkDbType) {
-      var sink_properties = Em.A([]);
-
-      switch (sinkDb.value) {
-        case 'Existing MSSQL Server database with integrated authentication':
-          configs.findProperty('name', 'sink.dbservername').value = configs.findProperty('name', 'sink_existing_mssql_server_host').value;
-          sinkDbType.value = 'mssql';
-          sink_properties = Em.A(['sink_existing_mssql_server_2_database', 'sink_existing_mssql_server_2_host']);
-          break;
-        case 'Existing MSSQL Server database with sql auth':
-          configs.findProperty('name', 'sink.dbservername').value = configs.findProperty('name', 'sink_existing_mssql_server_2_host').value;
-          sinkDbType.value = 'mssql';
-          sink_properties = Em.A(['sink_existing_mssql_server_database', 'sink_existing_mssql_server_host']);
-          break;
-      }
-
-      sink_properties.forEach(function (property) {
-        configs = configs.without(configs.findProperty('name', property));
-      });
-    }
-    return configs;
-  },
-
-  /**
    * Remove unused Hive configs
    * @param {Ember.Enumerable} configs
    * @returns {Ember.Enumerable}
@@ -288,15 +278,15 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
           hive_properties = Em.A(['hive_ambari_database', 'hive_existing_oracle_database', 'hive_existing_mysql_database',
             'hive_existing_mssql_server_database', 'hive_existing_mssql_server_2_database']);
           break;
+        case 'Existing MSSQL Server database with SQL authentication':
+          configs.findProperty('name', 'hive_hostname').value = configs.findProperty('name', 'hive_existing_mssql_server_host').value;
+          hive_properties = Em.A(['hive_ambari_database', 'hive_existing_oracle_database', 'hive_existing_postgresql_database',
+            'hive_existing_mysql_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_database']);
+          break;
         case 'Existing MSSQL Server database with integrated authentication':
           configs.findProperty('name', 'hive_hostname').value = configs.findProperty('name', 'hive_existing_mssql_server_2_host').value;
           hive_properties = Em.A(['hive_ambari_database', 'hive_existing_oracle_database', 'hive_existing_postgresql_database',
             'hive_existing_mysql_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_2_database']);
-          break;
-        case 'Existing MSSQL Server database with sql auth':
-          configs.findProperty('name', 'hive_hostname').value = configs.findProperty('name', 'hive_existing_mssql_server_host').value;
-          hive_properties = Em.A(['hive_ambari_database', 'hive_existing_oracle_database', 'hive_existing_postgresql_database',
-            'hive_existing_mysql_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_database']);
           break;
         default:
           configs.findProperty('name', 'hive_hostname').value = configs.findProperty('name', 'hive_existing_oracle_host').value;
@@ -340,13 +330,13 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
           oozie_properties = Em.A(['oozie_ambari_database', 'oozie_existing_oracle_database', 'oozie_existing_mysql_database',
             'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_2_database']);
           break;
-        case 'Existing MSSQL Server database with integrated authentication':
-          configs.findProperty('name', 'oozie_hostname').value = configs.findProperty('name', 'oozie_existing_mysql_host').value;
+        case 'Existing MSSQL Server database with SQL authentication':
+          configs.findProperty('name', 'oozie_hostname').value = configs.findProperty('name', 'oozie_existing_mssql_server_host').value;
           oozie_properties = Em.A(['oozie_existing_oracle_database', 'oozie_existing_postgresql_database',
             'oozie_existing_mysql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_2_database']);
           break;
-        case 'Existing MSSQL Server database with sql auth':
-          configs.findProperty('name', 'oozie_hostname').value = configs.findProperty('name', 'oozie_existing_mysql_host').value;
+        case 'Existing MSSQL Server database with integrated authentication':
+          configs.findProperty('name', 'oozie_hostname').value = configs.findProperty('name', 'oozie_existing_mssql_server_2_host').value;
           oozie_properties = Em.A(['oozie_existing_oracle_database', 'oozie_existing_postgresql_database',
             'oozie_existing_mysql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_database']);
           break;
@@ -372,9 +362,6 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     var configs = this.get('content.serviceConfigProperties');
     if (configs.someProperty('name', 'hive_database')) {
       configs = this.removeHiveConfigs(configs);
-    }
-    if (configs.someProperty('name', 'sink_database')) {
-      configs = this.removeSinkConfigs(configs);
     }
     if (configs.someProperty('name', 'oozie_database')) {
       configs = this.removeOozieConfigs(configs);
@@ -745,32 +732,13 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
         hostsCount + ' ' + Em.I18n.t('installer.step8.hosts'));
   },
 
-/**
-   * Set displayed MetricsSink DB value based on DB type
-   * @method loadSinkDbValue
-   */
-  loadSinkDbValue: function () {
-    var db, serviceConfigProperties = this.get('wizardController').getDBProperty('serviceConfigProperties'),
-    sinkDb = serviceConfigProperties.findProperty('name', 'sink_database');
-    if (sinkDb.value === 'Existing MSSQL Server database with integrated authentication') {
-      db = serviceConfigProperties.findProperty('name', 'sink_existing_mssql_server_database');
-      return db.value + ' (' + sinkDb.value + ')';
-    }
-    else {
-      if (sinkDb.value === 'Existing MSSQL Server database with sql auth') {
-        db = serviceConfigProperties.findProperty('name', 'sink_existing_mssql_server_2_database');
-        return db.value + ' (' + sinkDb.value + ')';
-      }
-    }
-  },
-
   /**
    * Set displayed Hive DB value based on DB type
    * @method loadHiveDbValue
    */
   loadHiveDbValue: function () {
-    var db, serviceConfigPreoprties = this.get('wizardController').getDBProperty('serviceConfigProperties'),
-      hiveDb = serviceConfigPreoprties.findProperty('name', 'hive_database');
+    var db, serviceConfigProperties = this.get('wizardController').getDBProperty('serviceConfigProperties'),
+      hiveDb = serviceConfigProperties.findProperty('name', 'hive_database');
     if (hiveDb.value === 'New MySQL Database') {
       return 'MySQL (New Database)';
     } else if (hiveDb.value === 'New PostgreSQL Database') {
@@ -778,27 +746,27 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     }
     else {
       if (hiveDb.value === 'Existing MySQL Database') {
-        db = serviceConfigPreoprties.findProperty('name', 'hive_existing_mysql_database');
+        db = serviceConfigProperties.findProperty('name', 'hive_existing_mysql_database');
         return db.value + ' (' + hiveDb.value + ')';
       }
       else {
         if (hiveDb.value === Em.I18n.t('services.service.config.hive.oozie.postgresql')) {
-          db = serviceConfigPreoprties.findProperty('name', 'hive_existing_postgresql_database');
+          db = serviceConfigProperties.findProperty('name', 'hive_existing_postgresql_database');
           return db.value + ' (' + hiveDb.value + ')';
         }
         else {
-          if (hiveDb.value === 'Existing MSSQL Server database with integrated authentication') {
-            db = serviceConfigPreoprties.findProperty('name', 'hive_existing_mssql_server_database');
+          if (hiveDb.value === 'Existing MSSQL Server database with SQL authentication') {
+            db = serviceConfigProperties.findProperty('name', 'hive_existing_mssql_server_database');
             return db.value + ' (' + hiveDb.value + ')';
           }
           else {
-            if (hiveDb.value === 'Existing MSSQL Server database with sql auth') {
-              db = serviceConfigPreoprties.findProperty('name', 'hive_existing_mssql_server_2_database');
+            if (hiveDb.value === 'Existing MSSQL Server database with integrated authentication') {
+              db = serviceConfigProperties.findProperty('name', 'hive_existing_mssql_server_2_database');
               return db.value + ' (' + hiveDb.value + ')';
             }
             else {
               // existing oracle database
-              db = serviceConfigPreoprties.findProperty('name', 'hive_existing_oracle_database');
+              db = serviceConfigProperties.findProperty('name', 'hive_existing_oracle_database');
               return db.value + ' (' + hiveDb.value + ')';
             }
           }
@@ -858,12 +826,12 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
           return db.value + ' (' + oozieDb.value + ')';
         }
         else {
-          if (oozieDb.value === 'Existing MSSQL Server database with integrated authentication') {
+          if (oozieDb.value === 'Existing MSSQL Server database with SQL authentication') {
             db = this.get('wizardController').getDBProperty('serviceConfigProperties').findProperty('name', 'oozie_existing_mssql_server_database');
             return db.value + ' (' + oozieDb.value + ')';
           }
           else {
-            if (oozieDb.value === 'Existing MSSQL Server database with sql auth') {
+            if (oozieDb.value === 'Existing MSSQL Server database with integrated authentication') {
               db = this.get('wizardController').getDBProperty('serviceConfigProperties').findProperty('name', 'oozie_existing_mssql_server_2_database');
               return db.value + ' (' + oozieDb.value + ')';
             }
@@ -935,8 +903,12 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
    */
   submitProceed: function () {
     var self = this;
-    this.set('isSubmitDisabled', true);
-    this.set('isBackBtnDisabled', true);
+    this.setProperties({
+      isSubmitDisabled: true,
+      isBackBtnDisabled: true,
+      clusterDeleteRequestsCompleted: 0
+    });
+    this.get('clusterDeleteErrorViews').clear();
     if (this.get('content.controllerName') == 'addHostController') {
       App.router.get('addHostController').setLowerStepsDisable(4);
     }
@@ -978,7 +950,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
       if (self.get('content.controllerName') == 'installerController' && (!App.get('testMode')) && clusterNames.length) {
         self.deleteClusters(clusterNames);
       } else {
-        self.deleteClustersCallback(null, null, {isLast: true});
+        self.startDeploy();
       }
     });
   },
@@ -1026,6 +998,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
    * @method deleteClusters
    */
   deleteClusters: function (clusterNames) {
+    this.get('clusterDeleteErrorViews').clear();
     clusterNames.forEach(function (clusterName, index) {
       App.ajax.send({
         name: 'common.delete.cluster',
@@ -1034,39 +1007,124 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
           name: clusterName,
           isLast: index == clusterNames.length - 1
         },
-        success: 'deleteClustersCallback',
-        error: 'deleteClustersCallback'
+        success: 'deleteClusterSuccessCallback',
+        error: 'deleteClusterErrorCallback'
       });
     }, this);
 
   },
 
-  deleteClustersCallback: function (response, request, data) {
-    if (data.isLast) {
-      this.createCluster();
-      this.createSelectedServices();
-      if (this.get('content.controllerName') !== 'addHostController') {
-        if (this.get('wizardController').getDBProperty('fileNamesToUpdate') && this.get('wizardController').getDBProperty('fileNamesToUpdate').length) {
-          this.updateConfigurations(this.get('wizardController').getDBProperty('fileNamesToUpdate'));
-        }
-        this.createConfigurations();
-        this.applyConfigurationsToCluster(this.get('serviceConfigTags'));
+  /**
+   * Method to execute after successful cluster deletion
+   * @method deleteClusterSuccessCallback
+   */
+  deleteClusterSuccessCallback: function () {
+    this.incrementProperty('clusterDeleteRequestsCompleted');
+    if (this.get('isAllClusterDeleteRequestsCompleted')) {
+      if (this.get('clusterDeleteErrorViews.length')) {
+        this.showDeleteClustersErrorPopup();
+      } else {
+        this.startDeploy();
       }
-      this.createComponents();
-      this.registerHostsToCluster();
-      this.createConfigurationGroups();
-      this.createMasterHostComponents();
-      this.createSlaveAndClientsHostComponents();
-      if (this.get('content.controllerName') === 'addServiceController') {
-        this.createAdditionalClientComponents();
-      }
-      this.createAdditionalHostComponents();
-
-      this.set('ajaxQueueLength', this.get('ajaxRequestsQueue.queue.length'));
-      this.get('ajaxRequestsQueue').start();
     }
   },
 
+  /**
+   * Method to execute after failed cluster deletion
+   * @param {object} request
+   * @param {string} ajaxOptions
+   * @param {string} error
+   * @param {object} opt
+   * @method deleteClusterErrorCallback
+   */
+  deleteClusterErrorCallback: function (request, ajaxOptions, error, opt) {
+    this.incrementProperty('clusterDeleteRequestsCompleted');
+    try {
+      var json = $.parseJSON(request.responseText);
+      var message = json.message;
+    } catch (err) {
+    }
+    this.get('clusterDeleteErrorViews').pushObject(App.AjaxDefaultErrorPopupBodyView.create({
+      url: opt.url,
+      type: opt.type,
+      status: request.status,
+      message: message
+    }));
+    if (this.get('isAllClusterDeleteRequestsCompleted')) {
+      this.showDeleteClustersErrorPopup();
+    }
+  },
+
+  /**
+   * Show error popup if cluster deletion failed
+   * @method showDeleteClustersErrorPopup
+   */
+  showDeleteClustersErrorPopup: function () {
+    var self = this;
+    this.setProperties({
+      isSubmitDisabled: false,
+      isBackBtnDisabled: false
+    });
+    App.ModalPopup.show({
+      header: Em.I18n.t('common.error'),
+      secondary: false,
+      onPrimary: function () {
+        this.hide();
+      },
+      bodyClass: Em.ContainerView.extend({
+        childViews: self.get('clusterDeleteErrorViews')
+      })
+    });
+  },
+
+  /**
+   * updates kerberosDescriptorConfigs
+   * @method updateKerberosDescriptor
+   */
+  updateKerberosDescriptor: function() {
+    var kerberosDescriptor = App.db.get('KerberosWizard', 'kerberosDescriptorConfigs');
+    this.addRequestToAjaxQueue({
+      name: 'admin.kerberos.cluster.artifact.update',
+      data: {
+        artifactName: 'kerberos_descriptor',
+        data: {
+          artifact_data: kerberosDescriptor
+        }
+      }
+    });
+  },
+  /**
+   * Start deploy process
+   * @method startDeploy
+   */
+  startDeploy: function () {
+    this.createCluster();
+    this.createSelectedServices();
+    if (this.get('content.controllerName') !== 'addHostController') {
+      if (this.get('content.controllerName') === 'addServiceController') {
+        if (this.get('securityEnabled')) {
+          this.updateKerberosDescriptor();
+        }
+      }
+      if (this.get('wizardController').getDBProperty('fileNamesToUpdate') && this.get('wizardController').getDBProperty('fileNamesToUpdate').length) {
+        this.updateConfigurations(this.get('wizardController').getDBProperty('fileNamesToUpdate'));
+      }
+      this.createConfigurations();
+      this.applyConfigurationsToCluster(this.get('serviceConfigTags'));
+    }
+    this.createComponents();
+    this.registerHostsToCluster();
+    this.createConfigurationGroups();
+    this.createMasterHostComponents();
+    this.createSlaveAndClientsHostComponents();
+    if (this.get('content.controllerName') === 'addServiceController') {
+      this.createAdditionalClientComponents();
+    }
+    this.createAdditionalHostComponents();
+
+    this.set('ajaxQueueLength', this.get('ajaxRequestsQueue.queue.length'));
+    this.get('ajaxRequestsQueue').start();
+  },
 
   /**
    * *******************************************************************
@@ -1464,6 +1522,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
       coreSiteObject.tag = tag;
       var coreSiteConfigs = this.get('configs').filterProperty('filename', 'core-site.xml');
       if (this.isConfigsChanged(coreSiteObject.properties, coreSiteConfigs)) {
+        coreSiteObject.service_config_version_note = Em.I18n.t('dashboard.configHistory.table.notes.addService');
         this.get('serviceConfigTags').pushObject(coreSiteObject);
       }
     }

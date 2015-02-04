@@ -17,46 +17,30 @@
  */
 package org.apache.ambari.server.events.listeners.upgrade;
 
-import com.google.common.eventbus.AllowConcurrentEvents;
+import java.util.List;
+
+import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.EagerSingleton;
+import org.apache.ambari.server.actionmanager.HostRoleStatus;
+import org.apache.ambari.server.bootstrap.DistributeRepositoriesStructuredOutput;
+import org.apache.ambari.server.events.ActionFinalReportReceivedEvent;
+import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
+import org.apache.ambari.server.orm.dao.HostVersionDAO;
+import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
+import org.apache.ambari.server.orm.entities.HostVersionEntity;
+import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
+import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.RepositoryVersionState;
+import org.apache.ambari.server.utils.StageUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.google.common.eventbus.Subscribe;
 import com.google.gson.JsonSyntaxException;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.inject.Singleton;
-import org.apache.ambari.server.AmbariException;
-import org.apache.ambari.server.EagerSingleton;
-import org.apache.ambari.server.actionmanager.HostRoleStatus;
-import org.apache.ambari.server.bootstrap.DistributeRepositoriesStructuredOutput;
-import org.apache.ambari.server.controller.RootServiceResponseFactory.Services;
-import org.apache.ambari.server.events.ActionFinalReportReceivedEvent;
-import org.apache.ambari.server.events.AlertReceivedEvent;
-import org.apache.ambari.server.events.AlertStateChangeEvent;
-import org.apache.ambari.server.events.publishers.AlertEventPublisher;
-import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
-import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
-import org.apache.ambari.server.orm.dao.AlertsDAO;
-import org.apache.ambari.server.orm.dao.ClusterVersionDAO;
-import org.apache.ambari.server.orm.dao.HostVersionDAO;
-import org.apache.ambari.server.orm.entities.AlertCurrentEntity;
-import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
-import org.apache.ambari.server.orm.entities.AlertHistoryEntity;
-import org.apache.ambari.server.orm.entities.HostVersionEntity;
-import org.apache.ambari.server.state.Alert;
-import org.apache.ambari.server.state.AlertState;
-import org.apache.ambari.server.state.Cluster;
-import org.apache.ambari.server.state.Clusters;
-import org.apache.ambari.server.state.Host;
-import org.apache.ambari.server.state.MaintenanceState;
-import org.apache.ambari.server.state.RepositoryVersionState;
-import org.apache.ambari.server.state.Service;
-import org.apache.ambari.server.state.ServiceComponentHost;
-import org.apache.ambari.server.utils.StageUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * The {@link org.apache.ambari.server.events.listeners.upgrade.DistributeRepositoriesActionListener} class
@@ -80,9 +64,7 @@ public class DistributeRepositoriesActionListener {
   private Provider<Clusters> clusters;
 
   @Inject
-  private Provider<ClusterVersionDAO> clusterVersionDAO;
-
-  private AmbariEventPublisher publisher;
+  private RepositoryVersionDAO repoVersionDAO;
 
 
   /**
@@ -92,7 +74,6 @@ public class DistributeRepositoriesActionListener {
    */
   @Inject
   public DistributeRepositoriesActionListener(AmbariEventPublisher publisher) {
-    this.publisher = publisher;
     publisher.register(this);
   }
 
@@ -108,70 +89,87 @@ public class DistributeRepositoriesActionListener {
       LOG.debug(event.toString());
     }
 
-    RepositoryVersionState newHostState;
+    RepositoryVersionState newHostState = RepositoryVersionState.INSTALL_FAILED;
+    Long clusterId = event.getClusterId();
+    if (clusterId == null) {
+      LOG.error("Distribute Repositories expected a cluster Id for host " + event.getHostname());
+      return;
+    }
 
     String repositoryVersion = null;
-    Long clusterId = event.getClusterId();
 
     if (event.getCommandReport() == null) {
-      // Something has gone wrong on host
-      // That's why we mark all host stack versions that are at
-      // INSTALLING state as failed
-      // This decision should not be a problem because there should not be more
-      // then 1 concurrent host stack version installation
-      LOG.warn("Command report is null, marking action as INSTALL_FAILED");
-      newHostState = RepositoryVersionState.INSTALL_FAILED;
+      LOG.error("Command report is null, marking action as INSTALL_FAILED");
     } else {
       // Parse structured output
       try {
         DistributeRepositoriesStructuredOutput structuredOutput = StageUtils.getGson().fromJson(
                 event.getCommandReport().getStructuredOut(),
                 DistributeRepositoriesStructuredOutput.class);
+
+        repositoryVersion = structuredOutput.getInstalledRepositoryVersion();
+
         if (event.getCommandReport().getStatus().equals(HostRoleStatus.COMPLETED.toString())) {
           newHostState = RepositoryVersionState.INSTALLED;
-        } else {
-          newHostState = RepositoryVersionState.INSTALL_FAILED;
+
+          if (null != structuredOutput.getActualVersion() &&
+              null != structuredOutput.getInstalledRepositoryVersion() &&
+              null != structuredOutput.getStackId() &&
+              !structuredOutput.getActualVersion().equals(structuredOutput.getInstalledRepositoryVersion())) {
+
+            // !!! getInstalledRepositoryVersion() from the agent is the one
+            // entered in the UI.  getActualVersion() is computed.
+
+            RepositoryVersionEntity version = repoVersionDAO.findByStackAndVersion(
+                structuredOutput.getStackId(), structuredOutput.getInstalledRepositoryVersion());
+
+            if (null != version) {
+              LOG.info("Repository version {} was found, but {} is the actual value",
+                  structuredOutput.getInstalledRepositoryVersion(),
+                  structuredOutput.getActualVersion());
+              // !!! the entered version is not correct
+              version.setVersion(structuredOutput.getActualVersion());
+              repoVersionDAO.merge(version);
+              repositoryVersion = structuredOutput.getActualVersion();
+            } else {
+              // !!! extra check that the actual version is correct
+              version = repoVersionDAO.findByStackAndVersion(
+                  structuredOutput.getStackId(), structuredOutput.getActualVersion());
+
+              LOG.debug("Repository version {} was not found, check for {}.  Found={}",
+                  structuredOutput.getInstalledRepositoryVersion(),
+                  structuredOutput.getActualVersion(),
+                  Boolean.valueOf(null != version));
+
+              if (null != version) {
+                repositoryVersion = structuredOutput.getActualVersion();
+              }
+            }
+          }
         }
-        repositoryVersion = structuredOutput.getInstalledRepositoryVersion();
       } catch (JsonSyntaxException e) {
         LOG.error("Can not parse structured output %s", e);
-        newHostState = RepositoryVersionState.INSTALL_FAILED;
       }
     }
+
     List<HostVersionEntity> hostVersions = hostVersionDAO.get().findByHost(event.getHostname());
+    // We have to iterate over all host versions. Otherwise server-side command aborts (that do not
+    // provide exact host stack version info) would be ignored
     for (HostVersionEntity hostVersion : hostVersions) {
       if (repositoryVersion != null && ! hostVersion.getRepositoryVersion().getVersion().equals(repositoryVersion)) {
-        // Are we going to update state of a concrete host stack version?
         continue;
       }
-      // Typically, there will be single execution of code below
+      // If we know exact host stack version, there will be single execution of a code below
       if (hostVersion.getState() == RepositoryVersionState.INSTALLING) {
         hostVersion.setState(newHostState);
 
-        if (clusterId != null) { // Update state of a cluster stack version
-          try {
-            Cluster cluster = clusters.get().getClusterById(clusterId);
-            cluster.recalculateClusterVersionState(hostVersion.getRepositoryVersion().getVersion());
-          } catch (AmbariException e) {
-            LOG.error("Can not get cluster with Id " + clusterId, e);
-          }
-        } else {
-          LOG.warn("Can not determine cluster for stack version state update");
-          // Recalculate state of all clusters to ensure consistency
-          try {
-            Set<Cluster> clustersForHost = clusters.get().getClustersForHost(event.getHostname());
-            for (Cluster cluster : clustersForHost) {
-              cluster.recalculateClusterVersionState(hostVersion.getRepositoryVersion().getVersion());
-            }
-          } catch (AmbariException e) {
-            LOG.error("Can not update state of clusters", e);
-          }
+        // Update state of a cluster stack version
+        try {
+          Cluster cluster = clusters.get().getClusterById(clusterId);
+          cluster.recalculateClusterVersionState(hostVersion.getRepositoryVersion().getVersion());
+        } catch (AmbariException e) {
+          LOG.error("Cannot get cluster with Id " + clusterId.toString(), e);
         }
-      } else {
-        LOG.error(
-                String.format("Can not transition host stack version state from %s to %s for" +
-                                "host %s",
-                        hostVersion.getState(), newHostState, event.getHostname()));
       }
     }
   }

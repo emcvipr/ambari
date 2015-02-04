@@ -217,8 +217,6 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     this.addObserver('controller.clearFilters', this, this.clearFiltersObs);
     this.clearFiltersObs();
     this.addObserver('selectAllHosts', this, this.toggleAllHosts);
-    this.set('controller.isCountersUpdating', true);
-    this.get('controller').updateStatusCounters();
     this.addObserver('filteringComplete', this, this.overlayObserver);
     this.addObserver('startIndex', this, 'updatePagination');
     this.addObserver('displayLength', this, 'updatePagination');
@@ -231,10 +229,6 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
       this.refresh();
     }
   }.observes('tableFilteringComplete'),
-
-  willDestroyElement: function() {
-    this.set('controller.isCountersUpdating', false);
-  },
 
   /**
    * Set <code>selected</code> property for each App.Host
@@ -585,12 +579,31 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     }.property('content.hostComponents.length'),
 
     /**
+     * true if host has only one repoversion
+     * in this case expander in version column is hidden
+     * @returns {Boolean}
+     */
+    hasSingleVersion: function() {
+      return this.get('content.stackVersions.length') < 2;
+    }.property('content.stackVersions.length'),
+
+    /**
+     * this version is always shown others hidden unless expander is open
+     * host may have no stack versions
+     * @returns {String}
+     */
+    currentVersion: function() {
+      var currentRepoVersion = this.get('content.stackVersions').findProperty('isCurrent') || this.get('content.stackVersions').objectAt(0);
+      return currentRepoVersion ? currentRepoVersion.get('repoVersion') + " (" + currentRepoVersion.get('displayStatus') + ")" : "";
+    }.property('content.stackVersions'),
+
+    /**
      * String with list of host components <code>displayName</code>
      * @returns {String}
      */
     versionlabels: function () {
-      return this.get('content.stackVersions').map(function (version) {
-        return Em.I18n.t('hosts.host.stackVersions.table.labels').format(version.get('version'), version.get('displayStatus'));
+      return this.get('content.stackVersions').filterProperty('isCurrent', false).map(function (version) {
+        return version.get('repoVersion');
       }).join("<br />");
     }.property('content.stackVersions.length'),
 
@@ -997,25 +1010,26 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     filterView: filters.componentFieldView.extend({
       templateName: require('templates/main/host/version_filter'),
       selectedVersion: null,
-      selecteStatus: null,
+      selectedStatus: null,
       value: [],
 
       versionSelectView: filters.createSelectView({
         classNames: ['notActive'],
         fieldType: 'filter-input-width',
+        filterPropertyName: 'repository_versions/RepositoryVersions/repository_version',
         content: function () {
           return  [
             {
               value: '',
-              label: Em.I18n.t('common.all')
+              label: Em.I18n.t('hosts.host.stackVersions.table.allVersions')
             }
-          ].concat(App.HostStackVersion.find().mapProperty('version').uniq().map(function (version) {
+          ].concat(this.get('controller.allHostStackVersions').mapProperty('repoVersion').uniq().map(function (version) {
             return {
               value: version,
               label: version
             }
           }));
-        }.property('App.router.clusterController.isLoaded'),
+        }.property('App.router.clusterController.isLoaded', 'controller.allHostStackVersions.length'),
         onChangeValue: function () {
           this.set('parentView.selectedVersion', this.get('value'));
         }
@@ -1023,6 +1037,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
       statusSelectView: filters.createSelectView({
         classNames: ['notActive'],
         fieldType: 'filter-input-width',
+        filterPropertyName: 'HostStackVersions/state',
         content: function () {
           return [
             {
@@ -1049,13 +1064,13 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
         var filterProperties = [];
         if (this.get('selectedVersion')) {
           filterProperties.push({
-            property: 'version',
+            property: 'repository_versions/RepositoryVersions/repository_version',
             value: this.get('selectedVersion')
           });
         }
         if (this.get('selectedStatus')) {
           filterProperties.push({
-            property: 'state',
+            property: 'HostStackVersions/state',
             value: this.get('selectedStatus')
           });
         }
@@ -1071,6 +1086,18 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
         });
       }
     }),
+    setValue: function (value) {
+      var versionSelectView = this.get('childViews')[0];
+
+      //restore selected options in Select views
+      versionSelectView.get('childViews').forEach(function (view) {
+        var filter = value.findProperty('property', view.get('filterPropertyName'));
+        if (filter && view.get('content').findProperty('value', filter.value)) {
+          view.set('selected', view.get('content').findProperty('value', filter.value));
+        }
+      }, this);
+      this._super(value);
+    },
     onChangeValue: function () {
       this.get('parentView').updateFilter(this.get('column'), this.get('value'), 'sub-resource');
     },

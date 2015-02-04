@@ -32,6 +32,8 @@ App.KerberosWizardController = App.WizardController.extend({
    */
   hideBackButton: true,
 
+  kerberosDescriptorConfigs: null,
+
   content: Em.Object.create({
     controllerName: 'kerberosWizardController',
     serviceName: 'KERBEROS',
@@ -41,13 +43,12 @@ App.KerberosWizardController = App.WizardController.extend({
     services: [],
     advancedServiceConfig: null,
     serviceConfigProperties: [],
-    kerberosDescriptorConfigs: null,
     failedTask: null
   }),
 
   setCurrentStep: function (currentStep, completed) {
     this._super(currentStep, completed);
-    if (App.testMode) {
+    if (App.get('testMode')) {
       return;
     }
     App.clusterStatus.setClusterStatus({
@@ -58,12 +59,23 @@ App.KerberosWizardController = App.WizardController.extend({
     });
   },
 
+  setStepsEnable: function () {
+    for (var i = 1; i <= this.get('totalSteps'); i++) {
+      var step = this.get('isStepDisabled').findProperty('step', i);
+      if (i <= this.get('currentStep') && App.get('router.clusterController.isLoaded')) {
+        step.set('value', false);
+      } else {
+        step.set('value', i != this.get('currentStep'));
+      }
+    }
+  }.observes('currentStep', 'App.router.clusterController.isLoaded'),
+
   /**
    * return new object extended from clusterStatusTemplate
    * @return Object
    */
   getCluster: function () {
-    return jQuery.extend({}, this.get('clusterStatusTemplate'), {name: App.router.getClusterName()});
+    return jQuery.extend({}, this.get('clusterStatusTemplate'), {name: App.get('router').getClusterName()});
   },
 
   /**
@@ -75,7 +87,7 @@ App.KerberosWizardController = App.WizardController.extend({
     var self = this;
     var siteName = 'cluster-env';
     var tags = [{siteName: siteName}];
-    App.router.get('configurationController').getConfigsByTags(tags).done(function (data) {
+    App.get('router.configurationController').getConfigsByTags(tags).done(function (data) {
       var properties = self.updateClusterEnvData(data[0].properties);
       var clusterConfig = {"type": siteName, "tag": 'version' + (new Date).getTime(), "properties": properties};
       var clusterConfigData = {
@@ -89,7 +101,7 @@ App.KerberosWizardController = App.WizardController.extend({
   },
 
   updateClusterEnvData: function (configs) {
-    var kerberosDescriptor = this.get('content.kerberosDescriptorConfigs');
+    var kerberosDescriptor = this.kerberosDescriptorConfigs;
     configs['security_enabled'] = true;
     configs['kerberos_domain'] = kerberosDescriptor.properties.realm;
     return configs;
@@ -166,7 +178,7 @@ App.KerberosWizardController = App.WizardController.extend({
 
   loadKerberosDescriptorConfigs: function () {
     var kerberosDescriptorConfigs = this.getDBProperty('kerberosDescriptorConfigs');
-    this.set('content.kerberosDescriptorConfigs', kerberosDescriptorConfigs);
+    this.kerberosDescriptorConfigs =  kerberosDescriptorConfigs;
   },
 
 
@@ -196,7 +208,7 @@ App.KerberosWizardController = App.WizardController.extend({
 
   saveKerberosDescriptorConfigs: function (kerberosDescriptorConfigs) {
     this.setDBProperty('kerberosDescriptorConfigs',kerberosDescriptorConfigs);
-    this.set('content.kerberosDescriptorConfigs', kerberosDescriptorConfigs);
+    this.kerberosDescriptorConfigs =  kerberosDescriptorConfigs;
   },
 
 
@@ -213,7 +225,7 @@ App.KerberosWizardController = App.WizardController.extend({
       {
         type: 'sync',
         callback: function () {
-          var kerberosStep2controller = App.router.get('kerberosWizardStep2Controller');
+          var kerberosStep2controller = App.get('router.kerberosWizardStep2Controller');
           this.loadAdvancedConfigs(kerberosStep2controller);
           this.loadServiceConfigProperties();
           this.load('hosts');
@@ -263,7 +275,17 @@ App.KerberosWizardController = App.WizardController.extend({
     this.saveRequestIds(undefined);
     this.saveTasksRequestIds(undefined);
   },
-
+  /**
+   * shows popup with to warn user
+   * @param primary
+   * @param isCritical
+   */
+  warnBeforeExitPopup: function(primary, isCritical) {
+    var primaryText = Em.I18n.t('common.exitAnyway');
+    var msg = isCritical ? Em.I18n.t('admin.kerberos.wizard.exit.critical.msg')
+      : Em.I18n.t('admin.kerberos.wizard.exit.warning.msg');
+    return App.showConfirmationPopup(primary, msg, null, null, primaryText, isCritical);
+  },
   /**
    * Clear all temporary data
    */
@@ -272,6 +294,6 @@ App.KerberosWizardController = App.WizardController.extend({
     this.setCurrentStep('1');
     // kerberos wizard namespace in the localStorage should be emptied
     this.resetDbNamespace();
-    App.router.get('updateController').updateAll();
+    App.get('router.updateController').updateAll();
   }
 });

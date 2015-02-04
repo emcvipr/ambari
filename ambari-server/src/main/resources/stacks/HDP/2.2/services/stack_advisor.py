@@ -23,6 +23,8 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
     parentRecommendConfDict = super(HDP22StackAdvisor, self).getServiceConfigurationRecommenderDict()
     childRecommendConfDict = {
       "HDFS": self.recommendHDFSConfigurations,
+      "HIVE": self.recommendHIVEConfigurations,
+      "HBASE": self.recommendHBASEConfigurations,
       "MAPREDUCE2": self.recommendMapReduce2Configurations,
       "TEZ": self.recommendTezConfigurations,
       "AMS": self.recommendAmsConfigurations,
@@ -37,14 +39,47 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
     putYarnProperty('yarn.nodemanager.resource.cpu-vcores', clusterData['cpu'])
 
   def recommendHDFSConfigurations(self, configurations, clusterData, services, hosts):
-    putHdfsPropery = self.putProperty(configurations, "hdfs-site")
-    putHdfsPropery("dfs.datanode.max.transfer.threads", 16384 if clusterData["hBaseInstalled"] else 4096)
+    putHdfsProperty = self.putProperty(configurations, "hdfs-site")
+    putHdfsProperty("dfs.datanode.max.transfer.threads", 16384 if clusterData["hBaseInstalled"] else 4096)
     putHDFSProperty = self.putProperty(configurations, "hadoop-env")
     putHDFSProperty('namenode_heapsize', max(int(clusterData['totalAvailableRam'] / 2), 1024))
     putHDFSProperty = self.putProperty(configurations, "hadoop-env")
     putHDFSProperty('namenode_opt_newsize', max(int(clusterData['totalAvailableRam'] / 8), 128))
     putHDFSProperty = self.putProperty(configurations, "hadoop-env")
     putHDFSProperty('namenode_opt_maxnewsize', max(int(clusterData['totalAvailableRam'] / 8), 256))
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    if ('ranger-hdfs-plugin-properties' in services['configurations']) and ('ranger-hdfs-plugin-enabled' in services['configurations']['ranger-hdfs-plugin-properties']['properties']):
+      rangerPluginEnabled = services['configurations']['ranger-hdfs-plugin-properties']['properties']['ranger-hdfs-plugin-enabled']
+      if ("RANGER" in servicesList) and (rangerPluginEnabled.lower() == 'Yes'.lower()):
+        putHDFSProperty("dfs.permissions.enabled",'true')
+
+  def recommendHIVEConfigurations(self, configurations, clusterData, services, hosts):
+    super(HDP22StackAdvisor, self).recommendHiveConfigurations(configurations, clusterData, services, hosts)
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    if 'ranger-hive-plugin-properties' in services['configurations'] and ('ranger-hive-plugin-enabled' in services['configurations']['ranger-hive-plugin-properties']['properties']):
+      rangerPluginEnabled = services['configurations']['ranger-hive-plugin-properties']['properties']['ranger-hive-plugin-enabled']
+      if ("RANGER" in servicesList) :
+        if (rangerPluginEnabled.lower() == "Yes".lower()):
+          putHiveProperty = self.putProperty(configurations, "hiveserver2-site")
+          putHiveProperty("hive.security.authorization.manager", 'com.xasecure.authorization.hive.authorizer.XaSecureHiveAuthorizerFactory')
+          putHiveProperty("hive.security.authenticator.manager", 'org.apache.hadoop.hive.ql.security.SessionStateUserAuthenticator')
+        elif (rangerPluginEnabled.lower() == "No".lower()):
+          putHiveProperty = self.putProperty(configurations, "hiveserver2-site")
+          putHiveProperty("hive.security.authorization.manager", 'org.apache.hadoop.hive.ql.security.authorization.DefaultHiveAuthorizationProvider')
+          putHiveProperty("hive.security.authenticator.manager", 'org.apache.hadoop.hive.ql.security.HadoopDefaultAuthenticator')
+
+  def recommendHBASEConfigurations(self, configurations, clusterData, services, hosts):
+    super(HDP22StackAdvisor, self).recommendHbaseEnvConfigurations(configurations, clusterData, services, hosts)
+    putHbaseSiteProperty = self.putProperty(configurations, "hbase-site")
+    putHbaseSiteProperty("hbase.regionserver.global.memstore.upperLimit", '0.4')
+
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    if 'ranger-hbase-plugin-properties' in services['configurations'] and ('ranger-hbase-plugin-enabled' in services['configurations']['ranger-hbase-plugin-properties']['properties']):
+      rangerPluginEnabled = services['configurations']['ranger-hbase-plugin-properties']['properties']['ranger-hbase-plugin-enabled']
+      if ("RANGER" in servicesList) and (rangerPluginEnabled.lower() == "Yes".lower()):
+        putHbaseSiteProperty("hbase.security.authorization", 'true')
+        putHbaseSiteProperty("hbase.coprocessor.master.classes", 'com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor')
+        putHbaseSiteProperty("hbase.coprocessor.region.classes", 'com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor')
 
   def recommendTezConfigurations(self, configurations, clusterData, services, hosts):
     putTezProperty = self.putProperty(configurations, "tez-site")
@@ -56,52 +91,14 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
     putTezProperty("tez.runtime.io.sort.mb", min(int(taskResourceMemory * 0.4), 2047))
     putTezProperty("tez.runtime.unordered.output.buffer.size-mb", int(taskResourceMemory * 0.075))
 
-  def recommendAmsConfigurations(self, configurations, clusterData, services, hosts):
-    putAmsHbaseSiteProperty = self.putProperty(configurations, "ams-hbase-site")
-    putTimelineServiceProperty = self.putProperty(configurations, "ams-site")
-    putHbaseEnvProperty = self.putProperty(configurations, "ams-hbase-env")
-
-    amsCollectorHosts = self.getComponentHostNames(services, "AMS", "METRIC_COLLECTOR")
-
-    # TODO recommend configuration for multiple AMS collectors
-    if len(amsCollectorHosts) > 1:
-      pass
-    else:
-      totalHostsCount = len(hosts["items"])
-      # TODO Tune values according to performance testing results
-      if totalHostsCount > 400:
-        putAmsHbaseSiteProperty("hfile.block.cache.size", 0.3)
-        putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.upperLimit", 0.5)
-        putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.lowerLimit", 0.4)
-        putTimelineServiceProperty("timeline.metrics.host.aggregator.ttl", 86400)
-
-        putHbaseEnvProperty("hbase_master_heapsize", "8096m")
-        putHbaseEnvProperty("hbase_regionserver_heapsize", "8096m")
-      elif totalHostsCount > 100:
-        putAmsHbaseSiteProperty("hfile.block.cache.size", 0.3)
-        putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.upperLimit", 0.5)
-        putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.lowerLimit", 0.4)
-        putTimelineServiceProperty("timeline.metrics.host.aggregator.ttl", 86400)
-
-        putHbaseEnvProperty("hbase_master_heapsize", "2048m")
-        putHbaseEnvProperty("hbase_regionserver_heapsize", "2048m")
-      else:
-        putAmsHbaseSiteProperty("hfile.block.cache.size", 0.3)
-        putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.upperLimit", 0.5)
-        putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.lowerLimit", 0.4)
-        putTimelineServiceProperty("timeline.metrics.host.aggregator.ttl", 86400)
-
-        putHbaseEnvProperty("hbase_master_heapsize", "1024m")
-        putHbaseEnvProperty("hbase_regionserver_heapsize", "1024m")
-
   def getServiceConfigurationValidators(self):
     parentValidators = super(HDP22StackAdvisor, self).getServiceConfigurationValidators()
     childValidators = {
       "HDFS": {"hdfs-site": self.validateHDFSConfigurations,
                "hadoop-env": self.validateHDFSConfigurationsEnv},
+      "HIVE": {"hiveserver2-site": self.validateHIVEConfigurations},
+      "HBASE": {"hbase-site": self.validateHBASEConfigurations},
       "MAPREDUCE2": {"mapred-site": self.validateMapReduce2Configurations},
-      "AMS": {"ams-hbase-site": self.validateAmsHbaseSiteConfigurations,
-              "ams-hbase-env": self.validateAmsHbaseEnvConfigurations},
       "TEZ": {"tez-site": self.validateTezConfigurations}
     }
     parentValidators.update(childValidators)
@@ -113,60 +110,6 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
                         {"config-name": 'tez.runtime.io.sort.mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'tez.runtime.io.sort.mb')},
                         {"config-name": 'tez.runtime.unordered.output.buffer.size-mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'tez.runtime.unordered.output.buffer.size-mb')},]
     return self.toConfigurationValidationProblems(validationItems, "tez-site")
-
-  def validateAmsHbaseSiteConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
-
-    amsCollectorHosts = self.getComponentHostNames(services, "AMS", "METRIC_COLLECTOR")
-    recommendedDiskSpace = 10485760
-    # TODO validate configuration for multiple AMS collectors
-    if len(amsCollectorHosts) > 1:
-      pass
-    else:
-      totalHostsCount = len(hosts["items"])
-      if totalHostsCount > 400:
-        recommendedDiskSpace  = 104857600  # * 1k == 100 Gb
-      elif totalHostsCount > 100:
-        recommendedDiskSpace  = 52428800  # * 1k == 50 Gb
-      elif totalHostsCount > 10:
-        recommendedDiskSpace  = 20971520  # * 1k == 20 Gb
-
-
-    validationItems = []
-    for collectorHostName in amsCollectorHosts:
-      for host in hosts["items"]:
-        if host["Hosts"]["host_name"] == collectorHostName:
-          validationItems.extend([ {"config-name": 'hbase.rootdir', "item": self.validatorEnoughDiskSpace(properties, 'hbase.rootdir', host["Hosts"], recommendedDiskSpace)}])
-          break
-
-    return self.toConfigurationValidationProblems(validationItems, "ams-hbase-site")
-
-  def validateAmsHbaseEnvConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
-    regionServerItem = self.validatorLessThenDefaultValue(properties, recommendedDefaults, "hbase_regionserver_heapsize")
-    masterItem = self.validatorLessThenDefaultValue(properties, recommendedDefaults, "hbase_master_heapsize")
-
-    if masterItem is None:
-      hbase_master_heapsize = formatXmxSizeToBytes(properties["hbase_master_heapsize"])
-
-      # TODO Add AMS Collector Xmx property to ams-env
-      # Collector 512m + HBASE Master heapsize
-      # For standalone HBase, master's heap memory is used by regionserver as well
-      requiredMemory = 536870912 + hbase_master_heapsize
-
-      amsCollectorHosts = self.getComponentHostNames(services, "AMS", "METRIC_COLLECTOR")
-      for collectorHostName in amsCollectorHosts:
-        for host in hosts["items"]:
-          if host["Hosts"]["host_name"] == collectorHostName:
-            if host["Hosts"]["total_mem"] * 1024 < requiredMemory:  # in bytes
-              message = "Not enough total RAM on the host {0}, " \
-                        "at least {1} MB required" \
-                        .format(collectorHostName, requiredMemory/1048576)  # MB
-              regionServerItem = self.getWarnItem(message)
-              masterItem = self.getWarnItem(message)
-              break
-
-    validationItems = [{"config-name": "hbase_regionserver_heapsize", "item": regionServerItem},
-                       {"config-name": "hbase_master_heapsize", "item": masterItem}]
-    return self.toConfigurationValidationProblems(validationItems, "ams-hbase-env")
 
   def recommendMapReduce2Configurations(self, configurations, clusterData, services, hosts):
     putMapredProperty = self.putProperty(configurations, "mapred-site")
@@ -184,7 +127,8 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
                         {"config-name": 'mapreduce.task.io.sort.mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'mapreduce.task.io.sort.mb')},
                         {"config-name": 'mapreduce.map.memory.mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'mapreduce.map.memory.mb')},
                         {"config-name": 'mapreduce.reduce.memory.mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'mapreduce.reduce.memory.mb')},
-                        {"config-name": 'yarn.app.mapreduce.am.resource.mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'yarn.app.mapreduce.am.resource.mb')}]
+                        {"config-name": 'yarn.app.mapreduce.am.resource.mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'yarn.app.mapreduce.am.resource.mb')},
+                        {"config-name": 'yarn.app.mapreduce.am.command-opts', "item": self.validateXmxValue(properties, recommendedDefaults, 'yarn.app.mapreduce.am.command-opts')}]
     return self.toConfigurationValidationProblems(validationItems, "mapred-site")
 
   def validateHDFSConfigurationsEnv(self, properties, recommendedDefaults, configurations, services, hosts):
@@ -192,7 +136,7 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
                         {"config-name": 'namenode_opt_newsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'namenode_opt_newsize')},
                         {"config-name": 'namenode_opt_maxnewsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'namenode_opt_maxnewsize')}]
     return self.toConfigurationValidationProblems(validationItems, "hadoop-env")
-
+  
   def validateHDFSConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
     # We can not access property hadoop.security.authentication from the
     # other config (core-site). That's why we are using another heuristics here
@@ -213,6 +157,16 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
     VALID_TRANSFER_PROTECTION_VALUES = ['authentication', 'integrity', 'privacy']
 
     validationItems = []
+    #Adding Ranger Plugin logic here 
+    ranger_plugin_properties = getSiteProperties(configurations, "ranger-hdfs-plugin-properties")
+    ranger_plugin_enabled = ranger_plugin_properties['ranger-hdfs-plugin-enabled']
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    if ("RANGER" in servicesList) and (ranger_plugin_enabled.lower() == 'Yes'.lower()):
+      if hdfs_site['dfs.permissions.enabled'] != 'true':
+        validationItems.append({"config-name": 'dfs.permissions.enabled',
+                                    "item": self.getWarnItem(
+                                      "dfs.permissions.enabled needs to be set to true if Ranger HDFS Plugin is enabled.")})
+
     if (not wire_encryption_enabled and   # If wire encryption is enabled at Hadoop, it disables all our checks
           core_site['hadoop.security.authentication'] == 'kerberos' and
           core_site['hadoop.security.authorization'] == 'true'):
@@ -299,6 +253,100 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
                                       data_transfer_protection_value, VALID_TRANSFER_PROTECTION_VALUES))})
     return self.toConfigurationValidationProblems(validationItems, "hdfs-site")
 
+  def validateHIVEConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
+    super(HDP22StackAdvisor, self).validateHiveConfigurations(properties, recommendedDefaults, configurations, services, hosts)
+    hive_server2 = properties
+    validationItems = [] 
+    #Adding Ranger Plugin logic here 
+    ranger_plugin_properties = getSiteProperties(configurations, "ranger-hive-plugin-properties")
+    ranger_plugin_enabled = ranger_plugin_properties['ranger-hive-plugin-enabled']
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    ##Add stack validations only if Ranger is enabled.
+    if ("RANGER" in servicesList):
+      ##Add stack validations for  Ranger plugin enabled.
+      if (ranger_plugin_enabled.lower() == 'Yes'.lower()):
+        prop_name = 'hive.security.authorization.manager'
+        prop_val = "com.xasecure.authorization.hive.authorizer.XaSecureHiveAuthorizerFactory"
+        if hive_server2[prop_name] != prop_val:
+          validationItems.append({"config-name": prop_name,
+                                  "item": self.getWarnItem(
+                                  "If Ranger HIVE Plugin is enabled."\
+                                  " {0} needs to be set to {1}".format(prop_name,prop_val))})
+        prop_name = 'hive.security.authenticator.manager'
+        prop_val = "org.apache.hadoop.hive.ql.security.SessionStateUserAuthenticator"
+        if hive_server2[prop_name] != prop_val:
+          validationItems.append({"config-name": prop_name,
+                                  "item": self.getWarnItem(
+                                  "If Ranger HIVE Plugin is enabled."\
+                                  " {0} needs to be set to {1}".format(prop_name,prop_val))})
+      ##Add stack validations for  Ranger plugin disabled.
+      elif (ranger_plugin_enabled.lower() == 'No'.lower()):
+        prop_name = 'hive.security.authorization.manager'
+        prop_val = "org.apache.hadoop.hive.ql.security.authorization.DefaultHiveAuthorizationProvider"
+        if hive_server2[prop_name] != prop_val:
+          validationItems.append({"config-name": prop_name,
+                                  "item": self.getWarnItem(
+                                  "If Ranger HIVE Plugin is disabled."\
+                                  " {0} needs to be set to {1}".format(prop_name,prop_val))})
+        prop_name = 'hive.security.authenticator.manager'
+        prop_val = "org.apache.hadoop.hive.ql.security.HadoopDefaultAuthenticator"
+        if hive_server2[prop_name] != prop_val:
+          validationItems.append({"config-name": prop_name,
+                                  "item": self.getWarnItem(
+                                  "If Ranger HIVE Plugin is disabled."\
+                                  " {0} needs to be set to {1}".format(prop_name,prop_val))})
+    return self.toConfigurationValidationProblems(validationItems, "hiveserver2-site")
+
+  def validateHBASEConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
+    super(HDP22StackAdvisor, self).validateHbaseEnvConfigurations(properties, recommendedDefaults, configurations, services, hosts)
+    hbase_site = properties
+    validationItems = []
+
+    prop_name1 = 'hbase.regionserver.global.memstore.upperLimit'
+    prop_name2 = 'hfile.block.cache.size'
+    props_max_sum = 0.8
+
+    if not is_number(hbase_site[prop_name1]):
+      validationItems.append({"config-name": prop_name1,
+                              "item": self.getWarnItem(
+                              "{0} should be float value".format(prop_name1))})
+    elif not is_number(hbase_site[prop_name2]):
+      validationItems.append({"config-name": prop_name2,
+                              "item": self.getWarnItem(
+                              "{0} should be float value".format(prop_name2))})
+    elif float(hbase_site[prop_name1]) + float(hbase_site[prop_name2]) > props_max_sum:
+      validationItems.append({"config-name": prop_name1,
+                              "item": self.getWarnItem(
+                              "{0} and {1} sum should not exceed {2}".format(prop_name1, prop_name2, props_max_sum))})
+
+    #Adding Ranger Plugin logic here 
+    ranger_plugin_properties = getSiteProperties(configurations, "ranger-hbase-plugin-properties")
+    ranger_plugin_enabled = ranger_plugin_properties['ranger-hbase-plugin-enabled']
+    prop_name = 'hbase.security.authorization'
+    prop_val = "true"
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    if ("RANGER" in servicesList) and (ranger_plugin_enabled.lower() == 'Yes'.lower()):
+      if hbase_site[prop_name] != prop_val:
+        validationItems.append({"config-name": prop_name,
+                                "item": self.getWarnItem(
+                                "If Ranger HBASE Plugin is enabled."\
+                                "{0} needs to be set to {1}".format(prop_name,prop_val))})
+      prop_name = "hbase.coprocessor.master.classes"
+      prop_val = "com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor"
+      if hbase_site[prop_name] != prop_val:
+        validationItems.append({"config-name": prop_name,
+                                "item": self.getWarnItem(
+                                "If Ranger HBASE Plugin is enabled."\
+                                " {0} needs to be set to {1}".format(prop_name,prop_val))})
+      prop_name = "hbase.coprocessor.region.classes"
+      prop_val = "com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor"
+      if hbase_site[prop_name] != prop_val:
+        validationItems.append({"config-name": prop_name,
+                                "item": self.getWarnItem(
+                                "If Ranger HBASE Plugin is enabled."\
+                                " {0} needs to be set to {1}".format(prop_name,prop_val))})
+    return self.toConfigurationValidationProblems(validationItems, "hbase-site")
+
   def getMastersWithMultipleInstances(self):
     result = super(HDP22StackAdvisor, self).getMastersWithMultipleInstances()
     result.extend(['METRIC_COLLECTOR'])
@@ -323,3 +371,12 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
     result = super(HDP22StackAdvisor, self).getComponentLayoutSchemes()
     result['METRIC_COLLECTOR'] = {"else": 2}
     return result
+
+def is_number(s):
+  try:
+    float(s)
+    return True
+  except ValueError:
+    pass
+
+  return False

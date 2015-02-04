@@ -22,6 +22,7 @@ import com.google.inject.Inject;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.agent.CommandReport;
+import org.apache.ambari.server.agent.ExecutionCommand;
 import org.apache.ambari.server.serveraction.AbstractServerAction;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
@@ -95,6 +96,15 @@ public abstract class KerberosServerAction extends AbstractServerAction {
    */
   @Inject
   private Clusters clusters = null;
+
+  /**
+   * The KerberosOperationHandlerFactory to use to obtain KerberosOperationHandler instances
+   * <p/>
+   * This is needed to help with test cases to mock a KerberosOperationHandler
+   */
+  @Inject
+  private KerberosOperationHandlerFactory kerberosOperationHandlerFactory;
+
 
   /**
    * Given a (command parameter) Map and a property name, attempts to safely retrieve the requested
@@ -213,32 +223,62 @@ public abstract class KerberosServerAction extends AbstractServerAction {
   }
 
   /**
+   * Returns the relevant cluster's name
+   * <p/>
+   * Using the data from the execution command, retrieve the relevant cluster's name.
+   *
+   * @return a String declaring the relevant cluster's name
+   * @throws AmbariException if the cluster's name is not available
+   */
+  protected String getClusterName() throws AmbariException {
+    ExecutionCommand executionCommand = getExecutionCommand();
+    String clusterName = (executionCommand == null) ? null : executionCommand.getClusterName();
+
+    if ((clusterName == null) || clusterName.isEmpty()) {
+      throw new AmbariException("Failed to retrieve the cluster name from the execution command");
+    }
+
+    return clusterName;
+  }
+
+  /**
+   * Returns the relevant Cluster object
+   *
+   * @return the relevant Cluster
+   * @throws AmbariException if the Cluster object cannot be retrieved
+   */
+  protected Cluster getCluster() throws AmbariException {
+    Cluster cluster = clusters.getCluster(getClusterName());
+
+    if (cluster == null) {
+      throw new AmbariException(String.format("Failed to retrieve cluster for %s", getClusterName()));
+    }
+
+    return cluster;
+  }
+
+  /**
+   * The Clusters object for this KerberosServerAction
+   *
+   * @return a Clusters object
+   */
+  protected Clusters getClusters() {
+    return clusters;
+  }
+
+
+  /**
    * Given a (command parameter) Map, attempts to safely retrieve the "data_directory" property.
    *
    * @param commandParameters a Map containing the dictionary of data to interrogate
    * @return a String indicating the data directory or null (if not found or set)
    */
   protected KerberosCredential getAdministratorCredential(Map<String, String> commandParameters) throws AmbariException {
-    Cluster cluster = clusters.getCluster(getExecutionCommand().getClusterName());
-
-    if (cluster == null) {
-      throw new AmbariException("Failed get the Cluster object");
-    }
+    Cluster cluster = getCluster();
 
     // Create the key like we did when we encrypted the data, based on the Cluster objects hashcode.
     byte[] key = Integer.toHexString(cluster.hashCode()).getBytes();
     return KerberosCredential.decrypt(getCommandParameterValue(commandParameters, ADMINISTRATOR_CREDENTIAL), key);
-  }
-
-  /**
-   * Attempts to safely retrieve a property with the specified name from the this action's relevant
-   * command parameters Map.
-   *
-   * @param propertyName a String declaring the name of the item from commandParameters to retrieve
-   * @return the value of the requested property, or null if not found or set
-   */
-  protected String getCommandParameterValue(String propertyName) {
-    return getCommandParameterValue(getCommandParameters(), propertyName);
   }
 
   /**
@@ -271,6 +311,9 @@ public abstract class KerberosServerAction extends AbstractServerAction {
     CommandReport commandReport = null;
     Map<String, String> commandParameters = getCommandParameters();
 
+    actionLog.writeStdOut("Processing identities...");
+    LOG.info("Processing identities...");
+
     if (commandParameters != null) {
       // Grab the relevant data from this action's command parameters map
       KerberosCredential administratorCredential = getAdministratorCredential(commandParameters);
@@ -286,6 +329,7 @@ public abstract class KerberosServerAction extends AbstractServerAction {
           if (!dataDirectory.isDirectory() || !dataDirectory.canRead()) {
             String message = String.format("Failed to process the identities, the data directory is not accessible: %s",
                 dataDirectory.getAbsolutePath());
+            actionLog.writeStdErr(message);
             LOG.error(message);
             throw new AmbariException(message);
           }
@@ -297,23 +341,33 @@ public abstract class KerberosServerAction extends AbstractServerAction {
             if (!indexFile.canRead()) {
               String message = String.format("Failed to process the identities, cannot read the index file: %s",
                   indexFile.getAbsolutePath());
+              actionLog.writeStdErr(message);
               LOG.error(message);
               throw new AmbariException(message);
             }
 
-            KerberosOperationHandler handler = KerberosOperationHandlerFactory.getKerberosOperationHandler(kdcType);
+            KerberosOperationHandler handler = kerberosOperationHandlerFactory.getKerberosOperationHandler(kdcType);
             if (handler == null) {
               String message = String.format("Failed to process the identities, a KDC operation handler was not found for the KDC type of : %s",
                   kdcType.toString());
+              actionLog.writeStdErr(message);
               LOG.error(message);
               throw new AmbariException(message);
+            }
+
+            try {
+              handler.open(administratorCredential, defaultRealm, getConfiguration("kerberos-env"));
+            } catch (KerberosOperationException e) {
+              String message = String.format("Failed to process the identities, could not properly open the KDC operation handler: %s",
+                  e.getMessage());
+              actionLog.writeStdErr(message);
+              LOG.error(message);
+              throw new AmbariException(message, e);
             }
 
             // Create the data file reader to parse and iterate through the records
             KerberosActionDataFileReader reader = null;
             try {
-              handler.open(administratorCredential, defaultRealm);
-
               reader = new KerberosActionDataFileReader(indexFile);
               for (Map<String, String> record : reader) {
                 // Process the current record
@@ -332,6 +386,7 @@ public abstract class KerberosServerAction extends AbstractServerAction {
             } catch (IOException e) {
               String message = String.format("Failed to process the identities, cannot read the index file: %s",
                   indexFile.getAbsolutePath());
+              actionLog.writeStdErr(message);
               LOG.error(message, e);
               throw new AmbariException(message, e);
             } finally {
@@ -349,7 +404,7 @@ public abstract class KerberosServerAction extends AbstractServerAction {
               // exception since there is little we can or care to do about it now.
               try {
                 handler.close();
-              } catch (AmbariException e) {
+              } catch (KerberosOperationException e) {
                 // Ignore this...
               }
             }
@@ -358,10 +413,13 @@ public abstract class KerberosServerAction extends AbstractServerAction {
       }
     }
 
+    actionLog.writeStdOut("Processing identities completed.");
+    LOG.info("Processing identities completed.");
+
     // If commandReport is null, we can assume this operation was a success, so return a successful
     // CommandReport; else return the previously created CommandReport.
     return (commandReport == null)
-        ? createCommandReport(0, HostRoleStatus.COMPLETED, "{}", null, null)
+        ? createCommandReport(0, HostRoleStatus.COMPLETED, "{}", actionLog.getStdOut(), actionLog.getStdErr())
         : commandReport;
   }
 
@@ -417,9 +475,14 @@ public abstract class KerberosServerAction extends AbstractServerAction {
       String host = record.get(KerberosActionDataFile.HOSTNAME);
 
       if (principal != null) {
-        // Evaluate the principal "pattern" found in the record to generate the "evaluated p[rincipal"
+        // Evaluate the principal "pattern" found in the record to generate the "evaluated principal"
         // by replacing the _HOST and _REALM variables.
         String evaluatedPrincipal = principal.replace("_HOST", host).replace("_REALM", defaultRealm);
+
+        String message = String.format("Processing identity for %s", evaluatedPrincipal);
+        actionLog.writeStdOut(message);
+        LOG.info(message);
+
         commandReport = processIdentity(record, evaluatedPrincipal, operationHandler, requestSharedDataContext);
       }
     }

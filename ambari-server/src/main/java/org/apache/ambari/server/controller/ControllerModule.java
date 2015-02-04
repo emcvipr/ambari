@@ -68,6 +68,7 @@ import org.apache.ambari.server.scheduler.ExecutionScheduler;
 import org.apache.ambari.server.scheduler.ExecutionSchedulerImpl;
 import org.apache.ambari.server.security.SecurityHelper;
 import org.apache.ambari.server.security.SecurityHelperImpl;
+import org.apache.ambari.server.serveraction.kerberos.KerberosOperationHandlerFactory;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
@@ -90,6 +91,8 @@ import org.apache.ambari.server.state.configgroup.ConfigGroupFactory;
 import org.apache.ambari.server.state.configgroup.ConfigGroupImpl;
 import org.apache.ambari.server.state.host.HostFactory;
 import org.apache.ambari.server.state.host.HostImpl;
+import org.apache.ambari.server.state.kerberos.KerberosDescriptorFactory;
+import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptorFactory;
 import org.apache.ambari.server.state.scheduler.RequestExecution;
 import org.apache.ambari.server.state.scheduler.RequestExecutionFactory;
 import org.apache.ambari.server.state.scheduler.RequestExecutionImpl;
@@ -200,6 +203,10 @@ public class ControllerModule extends AbstractModule {
     sessionManager.setSessionIdManager(sessionIdManager);
     bind(SessionManager.class).toInstance(sessionManager);
     bind(SessionIdManager.class).toInstance(sessionIdManager);
+
+    bind(KerberosOperationHandlerFactory.class);
+    bind(KerberosDescriptorFactory.class);
+    bind(KerberosServiceDescriptorFactory.class);
 
     bind(Configuration.class).toInstance(configuration);
     bind(OsFamily.class).toInstance(os_family);

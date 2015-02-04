@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 var App = require('app');
+var stringUtils = require('utils/string_utils');
 
 App.stackVersionMapper = App.QuickDataMapper.create({
   modelStackVerion: App.StackVersion,
@@ -27,9 +28,11 @@ App.stackVersionMapper = App.QuickDataMapper.create({
     "version": "version",
     "repository_version_id": "repository_version_id",
     "state": "state",
+    "not_installed_hosts": "host_states.NOT_INSTALLED",
     "installing_hosts": "host_states.INSTALLING",
     "installed_hosts": "host_states.INSTALLED",
     "install_failed_hosts": "host_states.INSTALL_FAILED",
+    "out_of_sync_hosts": "host_states.OUT_OF_SYNC",
     "upgrading_hosts": "host_states.UPGRADING",
     "upgraded_hosts": "host_states.UPGRADED",
     "upgrade_failed_hosts": "host_states.UPGRADE_FAILED",
@@ -41,9 +44,23 @@ App.stackVersionMapper = App.QuickDataMapper.create({
     var resultStack = [];
 
     if (json && json.items) {
+      json.items.sort(function (a, b) {
+        return stringUtils.compareVersions(a.repository_versions[0].RepositoryVersions.repository_version, b.repository_versions[0].RepositoryVersions.repository_version);
+      });
       json.items.forEach(function (item) {
         var stack = item.ClusterStackVersions;
         stack.repository_version_id = item.ClusterStackVersions.repository_version;
+        /**
+         * this property contains array of hosts on which repoversion wasn't installed
+         * possible states:
+         * <code>INSTALLING<code>
+         * <code>INSTALL_FAILED<code>
+         * <code>OUT_OF_SYNC<code>
+         */
+        stack.host_states.NOT_INSTALLED = item.ClusterStackVersions.host_states.INSTALLING
+          .concat(item.ClusterStackVersions.host_states.INSTALL_FAILED)
+          .concat(item.ClusterStackVersions.host_states.OUT_OF_SYNC);
+
         /**
          * this property contains array of hosts on which repoversion was installed
          * but state of repoveriosn for this hosts can be any postinstalled state

@@ -107,9 +107,9 @@
             </span>
             {{#if host.criticalWarningAlertsCount}}
               {{#if host.alertsSummary.CRITICAL}}
-                <span class="label alerts-count label-important" {{action "goToHostAlerts" host target="controller"}}>{{host.criticalWarningAlertsCount}}</span>
+                <span class="label alerts-crit-count" {{action "goToHostAlerts" host target="controller"}}>{{host.criticalWarningAlertsCount}}</span>
               {{else}}
-                <span class="label alerts-count label-warning" {{action "goToHostAlerts" host target="controller"}}>{{host.criticalWarningAlertsCount}}</span>
+                <span class="label alerts-warn-count" {{action "goToHostAlerts" host target="controller"}}>{{host.criticalWarningAlertsCount}}</span>
               {{/if}}
             {{/if}}
           </td>
@@ -132,10 +132,12 @@
           </td>
 
           <td class="load-avg">{{host.loadAvg}}</td>
-          <td {{bindAttr class="App.supports.stackUpgrade::hidden :host-table-versions"}}>
-            <a href="#" class="expander" {{action toggleVersions target="view"}}>
-              <span {{bindAttr class="view.isVersionsCollapsed:icon-caret-right:icon-caret-down"}}></span>
-              {{view.content.stackVersions.length}} {{pluralize view.content.stackVersions.length singular="t:common.version" plural="t:common.versions"}}
+          <td {{bindAttr class="App.supports.stackUpgrade::hidden view.hasSingleVersion:not-active-link :host-table-versions"}}>
+            <a href="#" class="expander black" {{action toggleVersions target="view"}}>
+              {{#unless view.hasSingleVersion}}
+                <span {{bindAttr class="view.isVersionsCollapsed:icon-caret-right:icon-caret-down"}}></span>
+              {{/unless}}
+              {{view.currentVersion}}
             </a>
             <div class="stack-versions collapsed-list">
               {{{view.versionlabels}}}

@@ -38,29 +38,23 @@ class AfterInstallHook(Hook):
               mode="f",
               configuration_attributes=params.config['configuration_attributes']['core-site']
     )
-    download_file(os.path.join(params.config['hostLevelParams']['jdk_location'], "sqljdbc4.jar"),
-                  os.path.join(params.hadoop_common_dir, "sqljdbc4.jar")
-    )
-    download_file(os.path.join(params.config['hostLevelParams']['jdk_location'], "sqljdbc_auth.dll"),
-                  os.path.join(params.hadoop_common_dir, "sqljdbc_auth.dll")
-    )
-    download_file(os.path.join(params.config['hostLevelParams']['jdk_location'], "sqljdbc4.jar"),
-                  os.path.join(params.hbase_lib_dir, "sqljdbc4.jar")
-    )
-    download_file(os.path.join(params.config['hostLevelParams']['jdk_location'], "sqljdbc_auth.dll"),
-                  os.path.join(params.hadoop_common_bin, "sqljdbc_auth.dll")
-    )
-    download_file(os.path.join(params.config['hostLevelParams']['jdk_location'], "metrics-sink-1.0.0.jar"),
-                  os.path.join(params.hadoop_common_dir, "metrics-sink-1.0.0.jar")
-    )
-    download_file(os.path.join(params.config['hostLevelParams']['jdk_location'], "metrics-sink-1.0.0.jar"),
-                  os.path.join(params.hbase_lib_dir, "metrics-sink-1.0.0.jar")
-    )
 
     File(format("{params.hadoop_install_root}/cluster.properties"),
            content=Template("cluster.properties.j2"),
            owner=params.hdfs_user,
            mode="f"
+    )
+
+    File(format("{params.hadoop_install_root}/Run-SmokeTests.cmd"),
+         content=Template("Run-SmokeTests.cmd"),
+         owner=params.hdfs_user,
+         mode="f"
+    )
+
+    File(format("{params.hadoop_install_root}/Run-SmokeTests.ps1"),
+         content=Template("Run-SmokeTests.ps1"),
+         owner=params.hdfs_user,
+         mode="f"
     )
 
 if __name__ == "__main__":

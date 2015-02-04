@@ -23,6 +23,19 @@ App.upgradeTaskView = Em.View.extend({
   templateName: require('templates/main/admin/stack_upgrade/upgrade_task'),
 
   /**
+   * view observed directly
+   * @type {boolean}
+   */
+  outsideView: false,
+
+  /**
+   * @type {boolean}
+   */
+  showContent: function () {
+    return this.get('outsideView') || this.get('content.isExpanded');
+  }.property('content.isExpanded'),
+
+  /**
    * @type {boolean}
    */
   errorLogOpened: false,
@@ -55,12 +68,44 @@ App.upgradeTaskView = Em.View.extend({
   taskDetailsProperties: ['status', 'stdout', 'stderr', 'error_log', 'host_name', 'output_log'],
 
   /**
+   * @type {string}
+   */
+  logTabId: function () {
+    return this.get('elementId') + '-log-tab'
+  }.property(''),
+
+  /**
+   * @type {string}
+   */
+  errorTabId: function () {
+    return this.get('elementId') + '-error-tab'
+  }.property(''),
+
+  /**
+   * @type {string}
+   */
+  logTabIdLink: function () {
+    return '#' + this.get('logTabId');
+  }.property(''),
+
+  /**
+   * @type {string}
+   */
+  errorTabIdLInk: function () {
+    return '#' + this.get('errorTabId');
+  }.property(''),
+
+  didInsertElement: function () {
+    if (this.get('outsideView')) this.doPolling();
+  },
+
+  /**
    * poll for task details when task is expanded
    */
   doPolling: function () {
     var self = this;
 
-    if (this.get('content.isExpanded')) {
+    if (this.get('content.isExpanded') || this.get('outsideView')) {
       this.getTaskDetails();
       this.set('timer', setTimeout(function () {
         self.doPolling();
@@ -68,13 +113,15 @@ App.upgradeTaskView = Em.View.extend({
     } else {
       clearTimeout(this.get('timer'));
     }
-  }.observes('content.isExpanded'),
+  }.observes('content.isExpanded', 'outsideView'),
 
   /**
    * request task details from server
+   * @return {$.ajax|null}
    */
   getTaskDetails: function () {
-    App.ajax.send({
+    if (Em.isNone(this.get('content'))) return null;
+    return App.ajax.send({
       name: 'admin.upgrade.task',
       sender: this,
       data: {

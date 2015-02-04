@@ -31,7 +31,7 @@ class SqoopServiceCheck(Script):
     import params
     env.set_params(params)
     if params.security_enabled:
-      Execute(format("{kinit_path_local}  -kt {smoke_user_keytab} {smokeuser}"),
+      Execute(format("{kinit_path_local}  -kt {smoke_user_keytab} {smokeuser_principal}"),
               user = params.smokeuser,
       )
     Execute("sqoop version",
@@ -39,8 +39,6 @@ class SqoopServiceCheck(Script):
             path = params.sqoop_bin_dir,
             logoutput = True
     )
-
-    self.save_component_version_to_structured_out(params.stack_name)
 
 if __name__ == "__main__":
   SqoopServiceCheck().execute()

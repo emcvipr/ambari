@@ -87,8 +87,10 @@ DIRNAME_PATTERNS = [
 REPOSITORY_BLACK_LIST = ["ambari.repo"]
 PACKAGES_BLACK_LIST = ["ambari-server", "ambari-agent"]
 
-
 class HostCleanup:
+
+  SELECT_ALL_PERFORMED_MARKER = "/var/lib/ambari-agent/data/hdp-select-set-all.performed"
+
   def resolve_ambari_config(self):
     try:
       config = AmbariConfig()
@@ -134,6 +136,8 @@ class HostCleanup:
       if packageList and not PACKAGE_SECTION in SKIP_LIST:
         logger.info("Deleting packages: " + str(packageList) + "\n")
         self.do_erase_packages(packageList)
+        # Removing packages means that we have to rerun hdp-select
+        self.do_remove_hdp_select_marker()
       if userList and not USER_SECTION in SKIP_LIST:
         logger.info("\n" + "Deleting users: " + str(userList))
         self.do_delete_users(userList)
@@ -259,6 +263,13 @@ class HostCleanup:
     else:  # root call, so we have final list
       self.do_erase_files_silent(remList)
 
+
+  def do_remove_hdp_select_marker(self):
+    """
+    Remove marker file for 'hdp-select set all' invocation
+    """
+    if os.path.isfile(self.SELECT_ALL_PERFORMED_MARKER):
+      os.unlink(self.SELECT_ALL_PERFORMED_MARKER)
 
 
   # Alternatives exist as a stack of symlinks under /var/lib/alternatives/$name
@@ -474,14 +485,6 @@ class HostCleanup:
     )
     (stdoutdata, stderrdata) = process.communicate()
     return process.returncode, stdoutdata, stderrdata
-
-
-  def search_file(self, filename, search_path, pathsep=os.pathsep):
-    """ Given a search path, find file with requested name """
-    for path in string.split(search_path, pathsep):
-      candidate = os.path.join(path, filename)
-      if os.path.exists(candidate): return os.path.abspath(candidate)
-    return None
 
 # Copy file and save with file.# (timestamp)
 def backup_file(filePath):

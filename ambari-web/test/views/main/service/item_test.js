@@ -77,18 +77,21 @@ describe('App.MainServiceItemView', function () {
         {
           serviceName: "HDFS",
           displayName: "HDFS",
+          isSingleNode: true,
           serviceTypes: ["HA_MODE"],
-          hostComponents: [
+          slaveComponents: [
             Em.Object.create({
               componentName: 'DATANODE',
-              isMaster: false,
-              isSlave: true
-            }),
+              totalCount: 1
+            })
+          ],
+          clientComponents: [
             Em.Object.create({
               componentName: 'HDFS_CLIENT',
-              isMaster: false,
-              isSlave: false
-            }),
+              totalCount: 1
+            })
+          ],
+          hostComponents: [
             Em.Object.create({
               componentName: 'NAMENODE',
               isMaster: true,
@@ -105,23 +108,25 @@ describe('App.MainServiceItemView', function () {
             {"action": "rollingRestart", "label": "Restart DataNodes", "cssClass": "icon-time", "disabled": false, "context": "DATANODE"},
             {"action": "reassignMaster", "context": "NAMENODE", "label": "Move NameNode", "cssClass": "icon-share-alt", "disabled": false},
             {"action": "reassignMaster", "context": "SECONDARY_NAMENODE", "label": "Move SNameNode", "cssClass": "icon-share-alt", "disabled": false},
-            {"action": "enableHighAvailability", "label": "Enable NameNode HA", "cssClass": "icon-arrow-up", "isHidden": false},
+            {"action": "enableHighAvailability", "label": "Enable NameNode HA", "cssClass": "icon-arrow-up", "isHidden": false, "disabled": true},
             {"action": "runSmokeTest", "label": "Run Service Check", "cssClass": "icon-thumbs-up-alt"},
             {"action": "turnOnOffPassive", "context": "Turn On Maintenance Mode for HDFS", "label": "Turn On Maintenance Mode", "cssClass": "icon-medkit", "disabled": false},
             {"action": "rebalanceHdfsNodes", "customCommand": "REBALANCEHDFS", "context": "Rebalance HDFS", "label": "Rebalance HDFS", "cssClass": "icon-refresh", "disabled": false},
-            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": true, "disabled": false, hasSubmenu: false, submenuOptions: []}
+            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": false, "disabled": false, hasSubmenu: false, submenuOptions: []}
           ]
         },
-        {
+       {
           serviceName: "ZOOKEEPER",
           displayName: "ZooKeeper",
           serviceTypes: [],
-          hostComponents: [
+          slaveComponents: [],
+          clientComponents: [
             Em.Object.create({
               componentName: 'ZOOKEEPER_CLIENT',
-              isMaster: false,
-              isSlave: false
-            }),
+              totalCount: 1
+            })
+          ],
+          hostComponents: [
             Em.Object.create({
               componentName: 'ZOOKEEPER_SERVER',
               isMaster: true,
@@ -137,13 +142,25 @@ describe('App.MainServiceItemView', function () {
             {"action": "runSmokeTest", "label": "Run Service Check", "cssClass": "icon-thumbs-up-alt"},
             {"action": "turnOnOffPassive", "context": "Turn On Maintenance Mode for ZooKeeper", "label": "Turn On Maintenance Mode", "cssClass": "icon-medkit", "disabled": false},
             {"cssClass": "icon-plus", "label": "Add ZooKeeper Server", "service": "ZOOKEEPER", "component": "ZOOKEEPER_SERVER", "action": "addZOOKEEPER_SERVER", "disabled": "disabled", tooltip: ''},
-            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": true, "disabled": false, "hasSubmenu": false, "submenuOptions": []}
+            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": false, "disabled": false, "hasSubmenu": false, "submenuOptions": []}
           ]
         },
         {
           serviceName: "YARN",
           displayName: "YARN",
           serviceTypes: ['HA_MODE'],
+          slaveComponents: [
+            Em.Object.create({
+              componentName: 'NODEMANAGER',
+              totalCount: 1
+            })
+          ],
+          clientComponents: [
+            Em.Object.create({
+              componentName: 'YARN_CLIENT',
+              totalCount: 1
+            })
+          ],
           hostComponents: [
             Em.Object.create({
               componentName: 'APP_TIMELINE_SERVER',
@@ -151,18 +168,8 @@ describe('App.MainServiceItemView', function () {
               isSlave: false
             }),
             Em.Object.create({
-              componentName: 'NODEMANAGER',
-              isMaster: false,
-              isSlave: true
-            }),
-            Em.Object.create({
               componentName: 'RESOURCEMANAGER',
               isMaster: true,
-              isSlave: false
-            }),
-            Em.Object.create({
-              componentName: 'YARN_CLIENT',
-              isMaster: false,
               isSlave: false
             })
           ],
@@ -172,25 +179,27 @@ describe('App.MainServiceItemView', function () {
             {"action": "rollingRestart", "label": "Restart NodeManagers", "cssClass": "icon-time", "disabled": false, "context": "NODEMANAGER"},
             {"action": "reassignMaster", "context": "APP_TIMELINE_SERVER", "label": "Move App Timeline Server", "cssClass": "icon-share-alt", "disabled": false},
             {"action": "reassignMaster", "context": "RESOURCEMANAGER", "label": "Move ResourceManager", "cssClass": "icon-share-alt", "disabled": false},
-            {"action": "enableRMHighAvailability", "label": "Enable ResourceManager HA", "cssClass": "icon-arrow-up", "isHidden": false},
+            {"action": "enableRMHighAvailability", "label": "Enable ResourceManager HA", "cssClass": "icon-arrow-up", "isHidden": false, disabled: false},
             {"action": "runSmokeTest", "label": "Run Service Check", "cssClass": "icon-thumbs-up-alt"},
             {"action": "turnOnOffPassive", "context": "Turn On Maintenance Mode for YARN", "label": "Turn On Maintenance Mode", "cssClass": "icon-medkit", "disabled": false},
-            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": true, "disabled": false, "hasSubmenu": false, "submenuOptions": []}
+            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": false, "disabled": false, "hasSubmenu": false, "submenuOptions": []}
           ]
         },
         {
           serviceName: "MAPREDUCE2",
           displayName: "MapReduce2",
           serviceTypes: [],
+          slaveComponents: [],
+          clientComponents: [
+            Em.Object.create({
+              componentName: 'MAPREDUCE2_CLIENT',
+              totalCount: 1
+            })
+          ],
           hostComponents: [
             Em.Object.create({
               componentName: 'HISTORYSERVER',
               isMaster: true,
-              isSlave: false
-            }),
-            Em.Object.create({
-              componentName: 'MAPREDUCE2_CLIENT',
-              isMaster: false,
               isSlave: false
             })
           ],
@@ -198,13 +207,15 @@ describe('App.MainServiceItemView', function () {
             {"action": "restartAllHostComponents", "context": "MAPREDUCE2", "label": "Restart All", "cssClass": "icon-repeat", "disabled": false},
             {"action": "runSmokeTest", "label": "Run Service Check", "cssClass": "icon-thumbs-up-alt"},
             {"action": "turnOnOffPassive", "context": "Turn On Maintenance Mode for MapReduce2", "label": "Turn On Maintenance Mode", "cssClass": "icon-medkit", "disabled": false},
-            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": true, "disabled": false, "hasSubmenu": false, "submenuOptions": []}
+            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": false, "disabled": false, "hasSubmenu": false, "submenuOptions": []}
           ]
         },
         {
           serviceName: "KAFKA",
           displayName: "Kafka",
           serviceTypes: [],
+          slaveComponents: [],
+          clientComponents: [],
           hostComponents: [
             Em.Object.create({
               componentName: 'KAFKA_BROKER',
@@ -223,12 +234,14 @@ describe('App.MainServiceItemView', function () {
           serviceName: "FLUME",
           displayName: "Flume",
           serviceTypes: [],
-          hostComponents: [
+          clientComponents: [],
+          slaveComponents: [
             Em.Object.create({
               componentName: 'FLUME_HANDLER',
-              isMaster: false,
-              isSlave: true
+              totalCount: 1
             })
+          ],
+          hostComponents: [
           ],
           controller: [
             {'addDisabledTooltipFLUME_HANDLER': ''},
@@ -248,21 +261,23 @@ describe('App.MainServiceItemView', function () {
           serviceName: "HBASE",
           displayName: "HBase",
           serviceTypes: [],
-          hostComponents: [
+          slaveComponents: [
+            Em.Object.create({
+              componentName: 'HBASE_REGIONSERVER',
+              totalCount: 1
+            })
+          ],
+          clientComponents: [
             Em.Object.create({
               componentName: 'HBASE_CLIENT',
-              isMaster: false,
-              isSlave: false
-            }),
+              totalCount: 1
+            })
+          ],
+          hostComponents: [
             Em.Object.create({
               componentName: 'HBASE_MASTER',
               isMaster: true,
               isSlave: false
-            }),
-            Em.Object.create({
-              componentName: 'HBASE_REGIONSERVER',
-              isMaster: false,
-              isSlave: true
             })
           ],
           controller: [
@@ -275,19 +290,21 @@ describe('App.MainServiceItemView', function () {
             {"action": "runSmokeTest", "label": "Run Service Check", "cssClass": "icon-thumbs-up-alt"},
             {"action": "turnOnOffPassive", "context": "Turn On Maintenance Mode for HBase", "label": "Turn On Maintenance Mode", "cssClass": "icon-medkit", "disabled": false},
             {"cssClass": "icon-plus", "label": "Add HBase Master", "service": "HBASE", "component": "HBASE_MASTER", "action": "addHBASE_MASTER", "disabled": '', tooltip: ''},
-            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": true, "disabled": false, "hasSubmenu": false, "submenuOptions": []}
+            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": false, "disabled": false, "hasSubmenu": false, "submenuOptions": []}
           ]
         },
         {
           serviceName: "OOZIE",
           displayName: "Oozie",
           serviceTypes: [],
-          hostComponents: [
+          slaveComponents: [],
+          clientComponents: [
             Em.Object.create({
               componentName: 'OOZIE_CLIENT',
-              isMaster: false,
-              isSlave: false
-            }),
+              totalCount: 1
+            })
+          ],
+          hostComponents: [
             Em.Object.create({
               componentName: 'OOZIE_SERVER',
               isMaster: true,
@@ -299,13 +316,15 @@ describe('App.MainServiceItemView', function () {
             {"action": "reassignMaster", "context": "OOZIE_SERVER", "label": "Move Oozie Server", "cssClass": "icon-share-alt", "disabled": false},
             {"action": "runSmokeTest", "label": "Run Service Check", "cssClass": "icon-thumbs-up-alt"},
             {"action": "turnOnOffPassive", "context": "Turn On Maintenance Mode for Oozie", "label": "Turn On Maintenance Mode", "cssClass": "icon-medkit", "disabled": false},
-            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": true, "disabled": false, "hasSubmenu": false, "submenuOptions": []}
+            {"action": "downloadClientConfigs", "label": "Download Client Configs", "cssClass": "icon-download-alt", "isHidden": false, "disabled": false, "hasSubmenu": false, "submenuOptions": []}
           ]
         },
         {
           serviceName: "KNOX",
           displayName: "Knox",
           serviceTypes: [],
+          slaveComponents: [],
+          clientComponents: [],
           hostComponents: [
             Em.Object.create({
               componentName: 'KNOX_GATEWAY',
@@ -330,6 +349,8 @@ describe('App.MainServiceItemView', function () {
 
       sinon.stub(App, 'get', function (k) {
         switch (k) {
+          case 'isSingleNode':
+            return (view.get('controller.content.serviceName') == 'HDFS');
           case 'supports.autoRollbackHA':
           case 'isRMHaEnabled':
           case 'isHaEnabled':
@@ -343,6 +364,31 @@ describe('App.MainServiceItemView', function () {
           default:
             return Em.get(App, k);
         }
+      });
+
+      sinon.stub(App.HostComponent, 'find', function () {
+        return [
+          Em.Object.create({
+            hostName: 'host1',
+            componentName: 'NAMENODE'
+          }),
+          Em.Object.create({
+            hostName: 'host1',
+            componentName: 'SECONDARY_NAMENODE'
+          }),
+          Em.Object.create({
+            hostName: 'host1',
+            componentName: 'APP_TIMELINE_SERVER'
+          }),
+          Em.Object.create({
+            hostName: 'host1',
+            componentName: 'RESOURCEMANAGER'
+          }),
+          Em.Object.create({
+            hostName: 'host1',
+            componentName: 'OOZIE_SERVER'
+          })
+        ];
       });
 
       sinon.stub(App.StackServiceComponent, 'find', function () {
@@ -379,6 +425,7 @@ describe('App.MainServiceItemView', function () {
 
     afterEach(function () {
       App.get.restore();
+      App.HostComponent.find.restore();
       App.StackServiceComponent.find.restore();
     });
 
@@ -389,6 +436,8 @@ describe('App.MainServiceItemView', function () {
           controller: Em.Object.create({
             content: Em.Object.create({
               hostComponents: testCase.hostComponents,
+              slaveComponents: testCase.slaveComponents,
+              clientComponents: testCase.clientComponents,
               serviceName: testCase.serviceName,
               displayName: testCase.displayName,
               serviceTypes: testCase.serviceTypes,

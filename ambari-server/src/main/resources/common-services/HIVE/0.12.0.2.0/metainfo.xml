@@ -150,6 +150,7 @@
           <displayName>MySQL Server</displayName>
           <category>MASTER</category>
           <cardinality>0-1</cardinality>
+          <versionAdvertised>false</versionAdvertised>
           <clientsToUpdateConfigs></clientsToUpdateConfigs>
           <commandScript>
             <script>scripts/mysql_server.py</script>
@@ -288,6 +289,7 @@
         <config-type>hive-env</config-type>
         <config-type>webhcat-site</config-type>
         <config-type>webhcat-env</config-type>
+        <config-type>ranger-hive-plugin-properties</config-type>
       </configuration-dependencies>
     </service>
   </services>

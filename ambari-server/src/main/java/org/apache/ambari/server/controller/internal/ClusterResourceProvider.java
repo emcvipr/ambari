@@ -50,8 +50,8 @@ import org.apache.ambari.server.orm.entities.HostGroupEntity;
 import org.apache.ambari.server.state.Config;
 import org.apache.ambari.server.state.ConfigHelper;
 import org.apache.ambari.server.state.ConfigImpl;
+import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.StackId;
-import org.apache.ambari.server.state.kerberos.KerberosDescriptor;
 
 /**
  * Resource provider for cluster resources.
@@ -65,6 +65,7 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
   public static final String CLUSTER_NAME_PROPERTY_ID    = PropertyHelper.getPropertyId("Clusters", "cluster_name");
   protected static final String CLUSTER_VERSION_PROPERTY_ID = PropertyHelper.getPropertyId("Clusters", "version");
   protected static final String CLUSTER_PROVISIONING_STATE_PROPERTY_ID = PropertyHelper.getPropertyId("Clusters", "provisioning_state");
+  protected static final String CLUSTER_SECURITY_TYPE_PROPERTY_ID = PropertyHelper.getPropertyId("Clusters", "security_type");
   protected static final String CLUSTER_DESIRED_CONFIGS_PROPERTY_ID = PropertyHelper.getPropertyId("Clusters", "desired_configs");
   protected static final String CLUSTER_DESIRED_SERVICE_CONFIG_VERSIONS_PROPERTY_ID = PropertyHelper.getPropertyId("Clusters", "desired_service_config_versions");
   protected static final String CLUSTER_TOTAL_HOSTS_PROPERTY_ID = PropertyHelper.getPropertyId("Clusters", "total_hosts");
@@ -105,6 +106,7 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
     propertyIds.add(CLUSTER_NAME_PROPERTY_ID);
     propertyIds.add(CLUSTER_VERSION_PROPERTY_ID);
     propertyIds.add(CLUSTER_PROVISIONING_STATE_PROPERTY_ID);
+    propertyIds.add(CLUSTER_SECURITY_TYPE_PROPERTY_ID);
     propertyIds.add(CLUSTER_DESIRED_CONFIGS_PROPERTY_ID);
     propertyIds.add(CLUSTER_DESIRED_SERVICE_CONFIG_VERSIONS_PROPERTY_ID);
     propertyIds.add(CLUSTER_TOTAL_HOSTS_PROPERTY_ID);
@@ -200,6 +202,7 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
       setResourceProperty(resource, CLUSTER_ID_PROPERTY_ID, response.getClusterId(), requestedIds);
       setResourceProperty(resource, CLUSTER_NAME_PROPERTY_ID, clusterName, requestedIds);
       setResourceProperty(resource, CLUSTER_PROVISIONING_STATE_PROPERTY_ID, response.getProvisioningState(), requestedIds);
+      setResourceProperty(resource, CLUSTER_SECURITY_TYPE_PROPERTY_ID, response.getSecurityType(), requestedIds);
       setResourceProperty(resource, CLUSTER_DESIRED_CONFIGS_PROPERTY_ID, response.getDesiredConfigs(), requestedIds);
       setResourceProperty(resource, CLUSTER_DESIRED_SERVICE_CONFIG_VERSIONS_PROPERTY_ID,
         response.getDesiredServiceConfigVersions(), requestedIds);
@@ -319,14 +322,6 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
     baseUnsupported.remove("default_password");
     baseUnsupported.remove("configurations");
 
-    // Allow property Ids that start with "kerberos_descriptor/"
-    Iterator<String> iterator = baseUnsupported.iterator();
-    while (iterator.hasNext()) {
-      if (iterator.next().startsWith("kerberos_descriptor/")) {
-        iterator.remove();
-      }
-    }
-
     return checkConfigPropertyIds(baseUnsupported, "Clusters");
   }
 
@@ -364,15 +359,25 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
    * @return the cluster request object
    */
   private ClusterRequest getRequest(Map<String, Object> properties) {
-    KerberosDescriptor kerberosDescriptor = new KerberosDescriptor(createKerberosPropertyMap(properties));
+    SecurityType securityType;
+    String requestedSecurityType = (String) properties.get(CLUSTER_SECURITY_TYPE_PROPERTY_ID);
+    if(requestedSecurityType == null)
+      securityType = null;
+    else {
+      try {
+        securityType = SecurityType.valueOf(requestedSecurityType.toUpperCase());
+      } catch (IllegalArgumentException e) {
+        throw new IllegalArgumentException(String.format("Cannot set cluster security type to invalid value: %s", requestedSecurityType));
+      }
+    }
 
     ClusterRequest cr = new ClusterRequest(
         (Long) properties.get(CLUSTER_ID_PROPERTY_ID),
         (String) properties.get(CLUSTER_NAME_PROPERTY_ID),
         (String) properties.get(CLUSTER_PROVISIONING_STATE_PROPERTY_ID),
+        securityType,
         (String) properties.get(CLUSTER_VERSION_PROPERTY_ID),
         null,
-        kerberosDescriptor,
         getSessionAttributes(properties));
 
     List<ConfigurationRequest> configRequests = getConfigurationRequests("Clusters", properties);
@@ -387,107 +392,6 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
     }
 
     return cr;
-  }
-
-  /**
-   * Recursively attempts to "normalize" a property value into either a single Object, a Map or a
-   * Collection of items depending on the type of Object that is supplied.
-   * <p/>
-   * If the supplied value is a Map, attempts to render a Map of keys to "normalized" values. This
-   * may yield a Map of Maps or a Map of Collections, or a Map of values.
-   * <p/>
-   * If the supplied value is a Collection, attempts to render a Collection of Maps, Collections, or values
-   * <p/>
-   * Else, assumes the value is a simple value
-   *
-   * @param property an Object to "normalize"
-   * @return the normalized object or the input value if it is not a Map or Collection.
-   */
-  private Object normalizeKerberosProperty(Object property) {
-    if (property instanceof Map) {
-      Map<?, ?> properties = (Map) property;
-      Map<String, Object> map = new HashMap<String, Object>(properties.size());
-
-      for (Map.Entry<?, ?> entry : properties.entrySet()) {
-        normalizeKerberosProperty(entry.getKey().toString(), entry.getValue(), map);
-      }
-
-      return map;
-    } else if (property instanceof Collection) {
-      Collection properties = (Collection) property;
-      Collection<Object> collection = new ArrayList<Object>(properties.size());
-
-      for (Object item : properties) {
-        collection.add(normalizeKerberosProperty(item));
-      }
-
-      return collection;
-    } else {
-      return property;
-    }
-  }
-
-  /**
-   * Recursively attempts to "normalize" a property value into either a single Object, a Map or a
-   * Collection of items; and places the result into the supplied Map under a specified key.
-   * <p/>
-   * See {@link #normalizeKerberosProperty(Object)} for more information "normalizing" a property value
-   *
-   * If the key (propertyName) indicates a hierarchy by separating names with a '/', the supplied map
-   * will be updated to handle the hierarchy. For example, if the propertyName value is "parent/child"
-   * then the map will be updated to contain an entry where the key is named "parent" and the value
-   * is a Map containing an entry with a name of "child" and value that is the normalized version of
-   * the specified value (propertyValue).
-   *
-   * @param propertyName a String declaring the name of the supplied property value
-   * @param propertyValue an Object containing the property value
-   * @param map a Map to store the results within
-   * @see #normalizeKerberosProperty(Object)
-   */
-  private void normalizeKerberosProperty(String propertyName, Object propertyValue, Map<String, Object> map) {
-    String[] keys = propertyName.split("/");
-    Map<String, Object> currentMap = map;
-
-    if (keys.length > 0) {
-      for (int i = 0; i < keys.length - 1; i++) {
-        String key = keys[i];
-
-        Object value = currentMap.get(key);
-
-        if (value instanceof Map) {
-          currentMap = (Map<String, Object>) value;
-        } else {
-          Map<String, Object> temp = new HashMap<String, Object>();
-          currentMap.put(key, temp);
-          currentMap = temp;
-        }
-      }
-
-      currentMap.put(keys[keys.length - 1], normalizeKerberosProperty(propertyValue));
-    }
-  }
-
-  /**
-   * Given a Map of Strings to Objects, attempts to expand all properties into a tree of Maps to
-   * effectively represent a Kerberos descriptor.
-   *
-   * @param properties a Map of properties to process
-   * @return a Map containing the expanded hierarchy of data
-   * @see #normalizeKerberosProperty(String, Object, java.util.Map)
-   */
-  private Map<String, Object> createKerberosPropertyMap(Map<String, Object> properties) {
-    Map<String, Object> kerberosPropertyMap = new HashMap<String, Object>();
-
-    if (properties != null) {
-      for (Map.Entry<String, Object> entry : properties.entrySet()) {
-        String key = entry.getKey();
-        if (key.startsWith("kerberos_descriptor/")) {
-          normalizeKerberosProperty(key.replace("kerberos_descriptor/", ""), entry.getValue(), kerberosPropertyMap);
-        }
-      }
-    }
-
-    return kerberosPropertyMap;
   }
 
   /**
@@ -808,23 +712,27 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
    *
    * @throws SystemException an unexpected exception occurred
    */
-  private void setConfigurationsOnCluster(String clusterName, Stack stack, Map<String, HostGroupImpl> blueprintHostGroups) throws SystemException {
+  void setConfigurationsOnCluster(String clusterName, Stack stack, Map<String, HostGroupImpl> blueprintHostGroups) throws SystemException {
     List<BlueprintServiceConfigRequest> listofConfigRequests =
       new LinkedList<BlueprintServiceConfigRequest>();
 
     // create a list of config requests on a per-service basis, in order
     // to properly support the new service configuration versioning mechanism
     // in Ambari
-    Collection<String> encounteredConfigTypes = new HashSet<String>();
     for (String service : getServicesToDeploy(stack, blueprintHostGroups)) {
       BlueprintServiceConfigRequest blueprintConfigRequest =
         new BlueprintServiceConfigRequest(service);
 
       for (String serviceConfigType : stack.getConfigurationTypes(service)) {
-        //todo: This is a temporary fix to ensure that we don't try to add the same
-        //todo: config type multiple times.
-        //todo: This is to unblock BUG-28939 and will be correctly fixed as part of BUG-29145.
-        if (encounteredConfigTypes.add(serviceConfigType)) {
+        Set<String> excludedConfigTypes = stack.getExcludedConfigurationTypes(service);
+        if (excludedConfigTypes == null) {
+          // if the service does not have excluded config types
+          // associated, then treat this as an empty set
+          excludedConfigTypes = Collections.emptySet();
+        }
+
+        // only include config types that are not excluded, re-introducing fix from AMBARI-8009
+        if (!excludedConfigTypes.contains(serviceConfigType)) {
           // skip handling of cluster-env here
           if (!serviceConfigType.equals("cluster-env")) {
             if (mapClusterConfigurations.containsKey(serviceConfigType)) {
@@ -900,10 +808,23 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
         // only create one cluster request per service, which includes
         // all the configuration types for that service
         if (clusterRequest == null) {
+          SecurityType securityType;
+          String requestedSecurityType = (String) clusterProperties.get(CLUSTER_SECURITY_TYPE_PROPERTY_ID);
+          if(requestedSecurityType == null)
+            securityType = null;
+          else {
+            try {
+              securityType = SecurityType.valueOf(requestedSecurityType.toUpperCase());
+            } catch (IllegalArgumentException e) {
+              throw new IllegalArgumentException(String.format("Cannot set cluster security type to invalid value: %s", requestedSecurityType));
+            }
+          }
+
           clusterRequest = new ClusterRequest(
             (Long) clusterProperties.get(CLUSTER_ID_PROPERTY_ID),
             (String) clusterProperties.get(CLUSTER_NAME_PROPERTY_ID),
             (String) clusterProperties.get(CLUSTER_PROVISIONING_STATE_PROPERTY_ID),
+            securityType,
             (String) clusterProperties.get(CLUSTER_VERSION_PROPERTY_ID),
             null);
         }

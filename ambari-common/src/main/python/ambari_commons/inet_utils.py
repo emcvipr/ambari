@@ -24,6 +24,7 @@ import urllib2
 
 from exceptions import *
 from logging_utils import *
+from os_check import OSCheck
 
 def download_file(link, destination, chunk_size=16 * 1024):
   print_info_msg("Downloading {0} to {1}".format(link, destination))
@@ -56,7 +57,7 @@ def find_range_components(meta):
     if len(range_comp1) > 1:
       range_comp2 = range_comp1[0].split(' ') #split away the "bytes" prefix
       if len(range_comp2) == 0:
-        raise FatalException(12, 'Malformed Content-Range response header: "{}".' % hdr_range)
+        raise FatalException(12, 'Malformed Content-Range response header: "{0}".' % hdr_range)
       range_comp3 = range_comp2[1].split('-')
       seek_pos = int(range_comp3[0])
       if range_comp1[1] != '*': #'*' == unknown length
@@ -77,7 +78,7 @@ def force_download_file(link, destination, chunk_size = 16 * 1024, progress_func
 
   if os.path.exists(destination) and not os.path.isfile(destination):
     #Directory specified as target? Must be a mistake. Bail out, don't assume anything.
-    err = 'Download target {} is a directory.' % destination
+    err = 'Download target {0} is a directory.' % destination
     raise FatalException(1, err)
 
   (dest_path, file_name) = os.path.split(destination)
@@ -138,7 +139,7 @@ def force_download_file(link, destination, chunk_size = 16 * 1024, progress_func
 
   downloaded_size = os.stat(temp_dest).st_size
   if downloaded_size != file_size:
-    err = 'Size of downloaded file {} is {} bytes, it is probably damaged or incomplete' % (destination, downloaded_size)
+    err = 'Size of downloaded file {0} is {1} bytes, it is probably damaged or incomplete' % (destination, downloaded_size)
     raise FatalException(1, err)
 
   # when download is complete -> mv temp_dest destination
@@ -146,3 +147,15 @@ def force_download_file(link, destination, chunk_size = 16 * 1024, progress_func
     #Windows behavior: rename fails if the destination file exists
     os.unlink(destination)
   os.rename(temp_dest, destination)
+
+def resolve_address(address):
+  """
+  Resolves address to proper one in special cases, for example 0.0.0.0 to 127.0.0.1 on windows os.
+
+  :param address: address to resolve
+  :return: resulting address
+  """
+  if OSCheck.is_windows_family():
+    if address == '0.0.0.0':
+      return '127.0.0.1'
+  return address

@@ -22,42 +22,39 @@ from resource_management import *
 from ams import ams
 from ams_service import ams_service
 from hbase import hbase
+from status import check_service_status
 
 class AmsCollector(Script):
-    def install(self, env):
-        self.install_packages(env)
+  def install(self, env):
+    self.install_packages(env)
+    self.configure(env) # for security
 
 
-    def configure(self, env):
-        import params
-        env.set_params(params)
-        hbase('master')
-        hbase('regionserver')
-        ams(name='collector')
+  def configure(self, env):
+    import params
+    env.set_params(params)
+    hbase('master')
+    hbase('regionserver')
+    ams(name='collector')
 
-    def start(self, env):
-        import params
-        env.set_params(params)
-        self.configure(env) # for security
+  def start(self, env):
+    self.configure(env) # for security
 
-        ams_service( 'collector',
-                       action = 'start'
-        )
+    ams_service( 'collector',
+                   action = 'start'
+    )
 
-    def stop(self, env):
-        import params
-        env.set_params(params)
+  def stop(self, env):
+    import params
+    env.set_params(params)
 
-        ams_service( 'collector',
-                       action = 'stop'
-        )
+    ams_service( 'collector', action = 'stop')
 
-    def status(self, env):
-        import status_params
-        env.set_params(status_params)
-        pid_file = format("{ams_collector_pid_dir}/ambari-metrics-collector.pid")
-        check_process_status(pid_file)
+  def status(self, env):
+    import status_params
+    env.set_params(status_params)
+    check_service_status(name='collector')
 
 
 if __name__ == "__main__":
-    AmsCollector().execute()
+  AmsCollector().execute()

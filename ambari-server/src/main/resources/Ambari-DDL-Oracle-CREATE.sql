@@ -23,6 +23,7 @@ CREATE TABLE clusters (
   cluster_info VARCHAR2(255) NULL,
   cluster_name VARCHAR2(100) NOT NULL UNIQUE,
   provisioning_state VARCHAR2(255) DEFAULT 'INIT' NOT NULL,
+  security_type VARCHAR2(32) DEFAULT 'NONE' NOT NULL,
   desired_cluster_state VARCHAR2(255) NULL,
   desired_stack_version VARCHAR2(255) NULL,
   PRIMARY KEY (cluster_id));
@@ -72,7 +73,7 @@ CREATE TABLE clusterstate (
   PRIMARY KEY (cluster_id));
 
 CREATE TABLE cluster_version (
-  id BIGINT NUMBER(19) NULL,
+  id NUMBER(19) NULL,
   repo_version_id NUMBER(19) NOT NULL,
   cluster_id NUMBER(19) NOT NULL,
   state VARCHAR2(32) NOT NULL,
@@ -97,11 +98,12 @@ CREATE TABLE hostcomponentdesiredstate (
 CREATE TABLE hostcomponentstate (
   cluster_id NUMBER(19) NOT NULL,
   component_name VARCHAR2(255) NOT NULL,
+  version VARCHAR2(32) DEFAULT 'UNKNOWN' NOT NULL,
   current_stack_version VARCHAR2(255) NOT NULL,
   current_state VARCHAR2(255) NOT NULL,
   host_name VARCHAR2(255) NOT NULL,
   service_name VARCHAR2(255) NOT NULL,
-  upgrade_state VARCHAR2(255) DEFAULT 'NONE' NOT NULL,
+  upgrade_state VARCHAR2(32) DEFAULT 'NONE' NOT NULL,
   security_state VARCHAR2(32) DEFAULT 'UNSECURED' NOT NULL,
   PRIMARY KEY (cluster_id, component_name, host_name, service_name));
 
@@ -506,6 +508,12 @@ CREATE TABLE repo_version (
   PRIMARY KEY(repo_version_id)
 );
 
+CREATE TABLE artifact (
+  artifact_name VARCHAR2(255) NOT NULL,
+  foreign_keys VARCHAR2(255) NOT NULL,
+  artifact_data CLOB NOT NULL,
+  PRIMARY KEY(artifact_name, foreign_keys));
+
 --------altering tables by creating unique constraints----------
 ALTER TABLE users ADD CONSTRAINT UNQ_users_0 UNIQUE (user_name, ldap_user);
 ALTER TABLE groups ADD CONSTRAINT UNQ_groups_0 UNIQUE (group_name, ldap_group);
@@ -694,18 +702,20 @@ CREATE INDEX idx_alert_notice_state on alert_notice(notify_state);
 
 -- upgrade tables
 CREATE TABLE upgrade (
-  upgrade_id BIGINT NOT NULL,
-  cluster_id BIGINT NOT NULL,
-  request_id BIGINT NOT NULL,
-  state VARCHAR2(255) DEFAULT 'NONE' NOT NULL,
+  upgrade_id NUMBER(19) NOT NULL,
+  cluster_id NUMBER(19) NOT NULL,
+  request_id NUMBER(19) NOT NULL,
+  from_version VARCHAR2(255) DEFAULT '' NOT NULL,
+  to_version VARCHAR2(255) DEFAULT '' NOT NULL,
+  direction VARCHAR2(255) DEFAULT 'UPGRADE' NOT NULL,
   PRIMARY KEY (upgrade_id),
   FOREIGN KEY (cluster_id) REFERENCES clusters(cluster_id),
   FOREIGN KEY (request_id) REFERENCES request(request_id)
 );
 
 CREATE TABLE upgrade_group (
-  upgrade_group_id BIGINT NOT NULL,
-  upgrade_id BIGINT NOT NULL,
+  upgrade_group_id NUMBER(19) NOT NULL,
+  upgrade_id NUMBER(19) NOT NULL,
   group_name VARCHAR2(255) DEFAULT '' NOT NULL,
   group_title VARCHAR2(1024) DEFAULT '' NOT NULL,
   PRIMARY KEY (upgrade_group_id),
@@ -713,9 +723,9 @@ CREATE TABLE upgrade_group (
 );
 
 CREATE TABLE upgrade_item (
-  upgrade_item_id BIGINT NOT NULL,
-  upgrade_group_id BIGINT NOT NULL,
-  stage_id BIGINT NOT NULL,
+  upgrade_item_id NUMBER(19) NOT NULL,
+  upgrade_group_id NUMBER(19) NOT NULL,
+  stage_id NUMBER(19) NOT NULL,
   state VARCHAR2(255) DEFAULT 'NONE' NOT NULL,
   hosts CLOB,
   tasks CLOB,

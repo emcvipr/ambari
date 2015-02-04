@@ -471,13 +471,11 @@ module.exports = {
   advancedClusterConfigs: {
     items: [
       {
-        "StackConfigurations" : {
-          "property_type" : [ ]
-        },
         "StackLevelConfigurations" : {
           "final" : "false",
           "property_description" : "Whether to ignore failures on users and group creation",
           "property_name" : "ignore_groupsusers_create",
+          "property_type" : [ ],
           "property_value" : "false",
           "stack_name" : "HDP",
           "stack_version" : "2.2",
@@ -485,16 +483,56 @@ module.exports = {
         }
       },
       {
-        "StackConfigurations" : {
-          "property_type" : [
-            "GROUP"
-          ]
-        },
         "StackLevelConfigurations" : {
           "final" : "false",
           "property_description" : "Hadoop user group.",
           "property_name" : "user_group",
+          "property_type" : [
+            "GROUP"
+          ],
           "property_value" : "hadoop",
+          "stack_name" : "HDP",
+          "stack_version" : "2.2",
+          "type" : "cluster-env.xml"
+        }
+      },
+      {
+        "StackLevelConfigurations" : {
+          "final" : "false",
+          "property_description" : "",
+          "property_name" : "smokeuser",
+          "property_type" : [
+            "USER"
+          ],
+          "property_value" : "ambari-qa",
+          "stack_name" : "HDP",
+          "stack_version" : "2.2",
+          "type" : "cluster-env.xml"
+        }
+      },
+      {
+        "StackLevelConfigurations" : {
+          "final" : "false",
+          "property_description" : "",
+          "property_name" : "zk_user",
+          "property_type" : [
+            "USER"
+          ],
+          "property_value" : "zookeeper",
+          "stack_name" : "HDP",
+          "stack_version" : "2.2",
+          "type" : "cluster-env.xml"
+        }
+      },
+      {
+        "StackLevelConfigurations" : {
+          "final" : "false",
+          "property_description" : "",
+          "property_name" : "mapred_user",
+          "property_type" : [
+            "USER"
+          ],
+          "property_value" : "mapreduce",
           "stack_name" : "HDP",
           "stack_version" : "2.2",
           "type" : "cluster-env.xml"

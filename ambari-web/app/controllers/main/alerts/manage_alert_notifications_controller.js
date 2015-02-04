@@ -290,11 +290,11 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
       selectedAlertNotification.get('properties')['ambari.dispatch.recipients'].join(', ') : '');
     inputFields.set('SMTPServer.value', selectedAlertNotification.get('properties')['mail.smtp.host']);
     inputFields.set('SMTPPort.value', selectedAlertNotification.get('properties')['mail.smtp.port']);
-    inputFields.set('SMTPUseAuthentication.value', selectedAlertNotification.get('properties')['mail.smtp.auth']);
+    inputFields.set('SMTPUseAuthentication.value', selectedAlertNotification.get('properties')['mail.smtp.auth'] !== "false");
     inputFields.set('SMTPUsername.value', selectedAlertNotification.get('properties')['ambari.dispatch.credential.username']);
     inputFields.set('SMTPPassword.value', selectedAlertNotification.get('properties')['ambari.dispatch.credential.password']);
     inputFields.set('retypeSMTPPassword.value', selectedAlertNotification.get('properties')['ambari.dispatch.credential.password']);
-    inputFields.set('SMTPSTARTTLS.value', selectedAlertNotification.get('properties')['mail.smtp.starttls.enable']);
+    inputFields.set('SMTPSTARTTLS.value', selectedAlertNotification.get('properties')['mail.smtp.starttls.enable'] !== "false");
     inputFields.set('emailFrom.value', selectedAlertNotification.get('properties')['mail.smtp.from']);
     inputFields.set('version.value', selectedAlertNotification.get('properties')['ambari.dispatch.snmp.version']);
     inputFields.set('OIDs.value', selectedAlertNotification.get('properties')['ambari.dispatch.snmp.oids.trap']);
@@ -331,6 +331,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
     var createEditPopup = App.ModalPopup.show({
       header: isEdit ? Em.I18n.t('alerts.actions.manage_alert_notifications_popup.editHeader') : Em.I18n.t('alerts.actions.manage_alert_notifications_popup.addHeader'),
       classNames: ['create-edit-alert-notification-popup'],
+      marginBottom: 130,
       bodyClass: Em.View.extend({
         controller: this,
         templateName: require('templates/main/alerts/create_alert_notification'),
@@ -383,14 +384,20 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
         }.observes('controller.inputFields.name.value'),
 
         emailToValidation: function () {
-          var emailTo = this.get('controller.inputFields.email.value');
-          if (emailTo && !validator.isValidEmail(emailTo)) {
-            this.set('emailToError', true);
-            this.set('controller.inputFields.email.errorMsg', Em.I18n.t('alerts.notifications.error.email'));
-          } else {
-            this.set('emailToError', false);
-            this.set('controller.inputFields.email.errorMsg', null);
+          var inputValue = this.get('controller.inputFields.email.value').trim(),
+              emailsTo = inputValue.split(','),
+              emailToError = false,
+              i = emailsTo.length,
+              emailTo;
+          while (i--) {
+            emailTo = emailsTo[i];
+            if (emailTo && !validator.isValidEmail(emailTo.trim())) {
+              emailToError = true;
+              break;
+            }
           }
+          this.set('emailToError', emailToError);
+          this.set('controller.inputFields.email.errorMsg', emailToError ? Em.I18n.t('alerts.notifications.error.email') : null);
         }.observes('controller.inputFields.email.value'),
 
         emailFromValidation: function () {

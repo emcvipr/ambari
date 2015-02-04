@@ -72,7 +72,7 @@ App.ClusterController = Em.Controller.extend({
 
   doOnClusterLoad: function (item) {
     if (this.get('isLoaded')) {
-      App.router.get('mainAdminSecurityController').getUpdatedSecurityStatus();
+      App.router.get('mainAdminKerberosController').getUpdatedSecurityStatus();
     }
   }.observes('isLoaded'),
 
@@ -230,7 +230,6 @@ App.ClusterController = Em.Controller.extend({
     var hostsController = App.router.get('mainHostController');
     hostsController.set('isCountersUpdating', true);
     hostsController.updateStatusCounters();
-    hostsController.set('isCountersUpdating', false);
 
     App.HttpClient.get(racksUrl, App.racksMapper, {
       complete: function (jqXHR, textStatus) {
@@ -286,6 +285,9 @@ App.ClusterController = Em.Controller.extend({
       self.updateLoadStatus('stackComponents');
       updater.updateServices(function () {
         self.updateLoadStatus('services');
+        //force clear filters  for hosts page to load all data
+        App.db.setFilterConditions('mainHostController', null);
+
         updater.updateHost(function () {
           self.updateLoadStatus('hosts');
         });
@@ -414,5 +416,33 @@ App.ClusterController = Em.Controller.extend({
 
   getHostNamesError: function () {
     console.error('failed to load hostNames');
+  },
+
+
+  /**
+   * puts kerberos admin credentials in the live cluster session
+   * and resend ajax request
+   * @param adminPrincipalValue
+   * @param adminPasswordValue
+   * @param ajaxOpt
+   * @returns {$.ajax}
+   */
+  createKerberosAdminSession: function (adminPrincipalValue, adminPasswordValue, ajaxOpt) {
+    return App.ajax.send({
+      name: 'common.cluster.update',
+      sender: this,
+      data: {
+        clusterName: App.get('clusterName'),
+        data: [{
+          session_attributes: {
+            kerberos_admin: {principal: adminPrincipalValue, password: adminPasswordValue}
+          }
+        }]
+      }
+    }).success(function () {
+      if (ajaxOpt) {
+        $.ajax(ajaxOpt);
+      }
+    });
   }
 });

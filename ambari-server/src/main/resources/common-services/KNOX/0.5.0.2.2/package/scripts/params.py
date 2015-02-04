@@ -23,23 +23,22 @@ from resource_management.libraries.functions.version import format_hdp_stack_ver
 from resource_management.libraries.functions.default import default
 from resource_management import *
 import status_params
+from ambari_commons import OSCheck
+
+if OSCheck.is_windows_family():
+  from params_windows import *
+else:
+  from params_linux import *
 
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
 stack_name = default("/hostLevelParams/stack_name", None)
 
+version = default("/commandParams/version", None)
+
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
-
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
-  knox_bin = '/usr/hdp/current/knox-server/bin/gateway.sh'
-  ldap_bin = '/usr/hdp/current/knox-server/bin/ldap.sh'
-  knox_client_bin = '/usr/hdp/current/knox-server/bin/knoxcli.sh'
-else:
-  knox_bin = '/usr/bin/gateway'
-  ldap_bin = '/usr/lib/knox/bin/ldap.sh'
-  knox_client_bin = '/usr/lib/knox/bin/knoxcli.sh'
 
 namenode_hosts = default("/clusterHostInfo/namenode_host", None)
 if type(namenode_hosts) is list:
@@ -111,17 +110,10 @@ if has_oozie:
 
 
 # server configurations
-knox_conf_dir = '/etc/knox/conf'
-knox_data_dir = '/var/lib/knox/data'
-knox_logs_dir = '/var/log/knox'
 knox_pid_dir = status_params.knox_pid_dir
-knox_user = default("/configurations/knox-env/knox_user", "knox")
-knox_group = default("/configurations/knox-env/knox_group", "knox")
 knox_pid_file = status_params.knox_pid_file
 ldap_pid_file = status_params.ldap_pid_file
 knox_master_secret = config['configurations']['knox-env']['knox_master_secret']
-knox_master_secret_path = '/var/lib/knox/data/security/master'
-knox_cert_store_path = '/var/lib/knox/data/security/keystores/gateway.jks'
 knox_host_name = config['clusterHostInfo']['knox_gateway_hosts'][0]
 knox_host_name_in_cluster = config['hostname']
 knox_host_port = config['configurations']['gateway-site']['gateway.port']
@@ -132,6 +124,7 @@ users_ldif = config['configurations']['users-ldif']['content']
 java_home = config['hostLevelParams']['java_home']
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 smokeuser = config['configurations']['cluster-env']['smokeuser']
+smokeuser_principal = config['configurations']['cluster-env']['smokeuser_principal_name']
 smoke_user_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
 kinit_path_local = functions.get_kinit_path(["/usr/bin", "/usr/kerberos/bin", "/usr/sbin"])
 if security_enabled:
@@ -139,4 +132,28 @@ if security_enabled:
   _hostname_lowercase = config['hostname'].lower()
   knox_principal_name = config['configurations']['knox-env']['knox_principal_name'].replace('_HOST',_hostname_lowercase)
 
+# ranger host
+ranger_admin_hosts = default("/clusterHostInfo/ranger_admin_hosts", [])
+user_input = default("/configurations/ranger-knox-plugin-properties/ranger-knox-plugin-enabled", "no")
+has_ranger_admin = not len(ranger_admin_hosts) == 0
 
+if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
+  # Setting Flag value for ranger hbase plugin
+  enable_ranger_knox = False
+  user_input = config['configurations']['ranger-knox-plugin-properties']['ranger-knox-plugin-enabled']
+  if user_input.lower() == 'yes':
+    enable_ranger_knox = True
+  elif user_input.lower() == 'no':
+    enable_ranger_knox = False
+
+ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
+
+jdk_location = config['hostLevelParams']['jdk_location']
+java_share_dir = '/usr/share/java'
+jdbc_jar_name = "mysql-connector-java.jar"
+
+downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
+
+driver_curl_source = format("{jdk_location}/{jdbc_jar_name}")
+driver_curl_target = format("{java_share_dir}/{jdbc_jar_name}")    
+      

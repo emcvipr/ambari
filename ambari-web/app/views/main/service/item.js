@@ -89,20 +89,21 @@ App.MainServiceItemView = Em.View.extend({
         action: App.get('isHaEnabled') ? 'disableHighAvailability' : 'enableHighAvailability',
         label: App.get('isHaEnabled') ? Em.I18n.t('admin.highAvailability.button.disable') : Em.I18n.t('admin.highAvailability.button.enable'),
         cssClass: App.get('isHaEnabled') ? 'icon-arrow-down' : 'icon-arrow-up',
-        isHidden: (App.get('isHaEnabled') || (/^1.3/.test(App.get('currentStackVersionNumber'))))
+        isHidden: (App.get('isHaEnabled') || (/^1.3/.test(App.get('currentStackVersionNumber')))),
+        disabled: App.get('isSingleNode')
       },
       TOGGLE_RM_HA: {
         action: 'enableRMHighAvailability',
         label: Em.I18n.t('admin.rm_highAvailability.button.enable'),
         cssClass: 'icon-arrow-up',
-        isHidden: App.get('isRMHaEnabled')
+        isHidden: App.get('isRMHaEnabled'),
+        disabled: App.get('isSingleNode')
       },
       MOVE_COMPONENT: {
         action: 'reassignMaster',
         context: '',
         label: Em.I18n.t('services.service.actions.reassign.master'),
-        cssClass: 'icon-share-alt',
-        disabled: false
+        cssClass: 'icon-share-alt'
       },
       STARTDEMOLDAP: {
         action: 'startLdapKnox',
@@ -130,7 +131,7 @@ App.MainServiceItemView = Em.View.extend({
         action: this.get('controller.isSeveralClients') ? '' : 'downloadClientConfigs',
         label: Em.I18n.t('services.service.actions.downloadClientConfigs'),
         cssClass: 'icon-download-alt',
-        isHidden: !this.get('controller.content.hostComponents').findProperty('isClient'),
+        isHidden: !!this.get('controller.content.clientComponents') ? this.get('controller.content.clientComponents').rejectProperty('totalCount', 0).length == 0 : false,
         disabled: false,
         hasSubmenu: this.get('controller.isSeveralClients'),
         submenuOptions: this.get('controller.clientComponents')
@@ -157,6 +158,13 @@ App.MainServiceItemView = Em.View.extend({
        'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.hive.metastore')),
        service: 'HIVE',
        component: 'HIVE_METASTORE',
+       isHidden: !App.get('isHadoop22Stack')
+      },
+      {
+       cssClass: 'icon-plus',
+       'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.hive.server2')),
+       service: 'HIVE',
+       component: 'HIVE_SERVER',
        isHidden: !App.get('isHadoop22Stack')
       },
       {
@@ -195,7 +203,7 @@ App.MainServiceItemView = Em.View.extend({
     var options = [];
     var service = this.get('controller.content');
     var allMasters = service.get('hostComponents').filterProperty('isMaster').mapProperty('componentName').uniq();
-    var allSlaves = service.get('hostComponents').filterProperty('isSlave').mapProperty('componentName').uniq();
+    var allSlaves = service.get('slaveComponents').rejectProperty('totalCount', 0).mapProperty('componentName');
     var actionMap = this.actionMap();
     var serviceCheckSupported = App.get('services.supportsServiceCheck').contains(service.get('serviceName'));
     var hasConfigTab = this.get('hasConfigTab');
@@ -229,7 +237,8 @@ App.MainServiceItemView = Em.View.extend({
       }).forEach(function(master) {
         options.push(self.createOption(actionMap.MOVE_COMPONENT, {
           context: master,
-          label: actionMap.MOVE_COMPONENT.label.format(App.format.role(master))
+          label: actionMap.MOVE_COMPONENT.label.format(App.format.role(master)),
+          disabled: App.allHostNames.length === App.HostComponent.find().filterProperty('componentName', master).mapProperty('hostName').length
         }));
       });
       if (service.get('serviceTypes').contains('HA_MODE')) {

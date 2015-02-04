@@ -65,8 +65,9 @@ App.TableServerViewMixin = Em.Mixin.create({
       return a.get('index') - b.get('index');
     });
   }.property('filteredContent'),
+
   /**
-   * compute applied filters and run content update from server
+   * compute applied filter and run content update from server
    * @param iColumn
    * @param value
    * @param type

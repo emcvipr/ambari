@@ -34,6 +34,7 @@ CREATE TABLE ambari.clusters (
   cluster_info VARCHAR(255) NOT NULL,
   cluster_name VARCHAR(100) NOT NULL UNIQUE,
   provisioning_state VARCHAR(255) NOT NULL DEFAULT 'INIT',
+  security_type VARCHAR(32) NOT NULL DEFAULT 'NONE',
   desired_cluster_state VARCHAR(255) NOT NULL,
   desired_stack_version VARCHAR(255) NOT NULL,
   PRIMARY KEY (cluster_id));
@@ -127,6 +128,7 @@ GRANT ALL PRIVILEGES ON TABLE ambari.hostcomponentdesiredstate TO :username;
 CREATE TABLE ambari.hostcomponentstate (
   cluster_id BIGINT NOT NULL,
   component_name VARCHAR(255) NOT NULL,
+  version VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',
   current_stack_version VARCHAR(255) NOT NULL,
   current_state VARCHAR(255) NOT NULL,
   host_name VARCHAR(255) NOT NULL,
@@ -447,6 +449,13 @@ GRANT ALL PRIVILEGES ON TABLE ambari.hostgroup TO :username;
 GRANT ALL PRIVILEGES ON TABLE ambari.hostgroup_component TO :username;
 GRANT ALL PRIVILEGES ON TABLE ambari.blueprint_configuration TO :username;
 GRANT ALL PRIVILEGES ON TABLE ambari.hostgroup_configuration TO :username;
+
+CREATE TABLE ambari.artifact (
+  artifact_name VARCHAR(255) NOT NULL,
+  artifact_data TEXT NOT NULL,
+  foreign_keys VARCHAR(255) NOT NULL,
+  PRIMARY KEY (artifact_name, foreign_keys));
+GRANT ALL PRIVILEGES ON TABLE ambari.artifact TO :username;
 
 CREATE TABLE ambari.viewmain (
   view_name VARCHAR(255) NOT NULL,
@@ -777,7 +786,9 @@ CREATE TABLE ambari.upgrade (
   upgrade_id BIGINT NOT NULL,
   cluster_id BIGINT NOT NULL,
   request_id BIGINT NOT NULL,
-  state VARCHAR(255) DEFAULT 'NONE' NOT NULL,
+  from_version VARCHAR(255) DEFAULT '' NOT NULL,
+  to_version VARCHAR(255) DEFAULT '' NOT NULL,
+  direction VARCHAR(255) DEFAULT 'UPGRADE' NOT NULL,
   PRIMARY KEY (upgrade_id),
   FOREIGN KEY (cluster_id) REFERENCES ambari.clusters(cluster_id),
   FOREIGN KEY (request_id) REFERENCES ambari.request(request_id)

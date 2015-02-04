@@ -36,7 +36,7 @@ from hdfs_namenode import namenode
 from hdfs import hdfs
 import hdfs_rebalance
 from utils import failover_namenode
-
+from setup_ranger_hdfs import setup_ranger_hdfs
 
 class NameNode(Script):
 
@@ -70,9 +70,8 @@ class NameNode(Script):
 
     env.set_params(params)
     self.configure(env)
+    setup_ranger_hdfs(env)
     namenode(action="start", rolling_restart=rolling_restart, env=env)
-
-    self.save_component_version_to_structured_out(params.stack_name)
 
   def post_rolling_restart(self, env):
     Logger.info("Executing Rolling Upgrade post-restart")
@@ -80,7 +79,7 @@ class NameNode(Script):
     env.set_params(params)
 
     Execute("hdfs dfsadmin -report -live",
-            user=params.hdfs_principal_name if params.security_enabled else params.hdfs_user
+            user=params.hdfs_user
     )
 
   def stop(self, env, rolling_restart=False):

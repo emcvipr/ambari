@@ -159,7 +159,9 @@ App.UpdateController = Em.Controller.extend({
       'host_components/HostRoles/stale_configs,host_components/HostRoles/service_name,host_components/HostRoles/desired_admin_state,' +
         'metrics/disk,metrics/load/load_one,Hosts/total_mem<hostAuxiliaryInfo><stackVersions>&minimal_response=true';
     var hostAuxiliaryInfo = ',Hosts/os_arch,Hosts/os_type,metrics/cpu/cpu_system,metrics/cpu/cpu_user,metrics/memory/mem_total,metrics/memory/mem_free';
-    var stackVersionInfo = ',stack_versions/HostStackVersions,stack_versions/repository_versions/RepositoryVersions/repository_version,stack_versions/repository_versions/RepositoryVersions/id';
+    var stackVersionInfo = ',stack_versions/HostStackVersions,' +
+      'stack_versions/repository_versions/RepositoryVersions/repository_version,stack_versions/repository_versions/RepositoryVersions/id,' +
+      'stack_versions/repository_versions/RepositoryVersions/display_name';
     realUrl = realUrl.replace("<stackVersions>", (App.get('supports.stackUpgrade') ? stackVersionInfo : ""));
 
     if (App.router.get('currentState.name') == 'index' && App.router.get('currentState.parentState.name') == 'hosts') {
@@ -167,8 +169,8 @@ App.UpdateController = Em.Controller.extend({
     }
     else {
       if (App.router.get('currentState.parentState.name') == 'hostDetails' &&
-          (App.router.get('currentState.name') == 'summary' || App.router.get('currentState.name') == 'alerts' )) {
-        hostDetailsFilter = App.router.get('location.lastSetURL').match(/\/hosts\/(.*)\/(summary|alerts)/)[1];
+          ['summary', 'alerts', 'stackVersions'].contains(App.router.get('currentState.name'))) {
+        hostDetailsFilter = App.router.get('location.lastSetURL').match(/\/hosts\/(.*)\/(summary|alerts|stackVersions)/)[1];
         App.updater.updateInterval('updateHost', App.get('componentsUpdateInterval'));
       }
       else {
@@ -375,6 +377,8 @@ App.UpdateController = Em.Controller.extend({
         'host_components/metrics/rpc/RpcQueueTime_avg_time,' +
         'host_components/metrics/dfs/FSNamesystem/*,' +
         'host_components/metrics/dfs/namenode/Version,' +
+        'host_components/metrics/dfs/namenode/LiveNodes,' +
+        'host_components/metrics/dfs/namenode/DeadNodes,' +
         'host_components/metrics/dfs/namenode/DecomNodes,' +
         'host_components/metrics/dfs/namenode/TotalFiles,' +
         'host_components/metrics/dfs/namenode/UpgradeFinalized,' +
@@ -404,6 +408,7 @@ App.UpdateController = Em.Controller.extend({
         "host_components/processes/HostComponentProcess",
       'YARN': "host_components/metrics/yarn/Queue," +
         "ServiceComponentInfo/rm_metrics/cluster/activeNMcount," +
+        "ServiceComponentInfo/rm_metrics/cluster/lostNMcount," +
         "ServiceComponentInfo/rm_metrics/cluster/unhealthyNMcount," +
         "ServiceComponentInfo/rm_metrics/cluster/rebootedNMcount," +
         "ServiceComponentInfo/rm_metrics/cluster/decommissionedNMcount",

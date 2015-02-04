@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,7 @@ import org.apache.ambari.server.controller.MaintenanceStateHelper;
 import org.apache.ambari.server.events.ActionFinalReportReceivedEvent;
 import org.apache.ambari.server.events.AlertEvent;
 import org.apache.ambari.server.events.AlertReceivedEvent;
+import org.apache.ambari.server.events.HostComponentVersionEvent;
 import org.apache.ambari.server.events.publishers.AlertEventPublisher;
 import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.metadata.ActionMetadata;
@@ -63,6 +65,8 @@ import org.apache.ambari.server.state.HostHealthStatus;
 import org.apache.ambari.server.state.HostHealthStatus.HealthStatus;
 import org.apache.ambari.server.state.HostState;
 import org.apache.ambari.server.state.MaintenanceState;
+import org.apache.ambari.server.state.RepositoryVersionState;
+import org.apache.ambari.server.state.SecurityState;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponent;
 import org.apache.ambari.server.state.ServiceComponentHost;
@@ -70,6 +74,7 @@ import org.apache.ambari.server.state.ServiceInfo;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.StackInfo;
 import org.apache.ambari.server.state.State;
+import org.apache.ambari.server.state.UpgradeState;
 import org.apache.ambari.server.state.alert.AlertDefinition;
 import org.apache.ambari.server.state.alert.AlertDefinitionHash;
 import org.apache.ambari.server.state.fsm.InvalidStateTransitionException;
@@ -88,10 +93,13 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
+import com.google.gson.annotations.SerializedName;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
 import com.google.inject.Singleton;
@@ -103,8 +111,12 @@ import com.google.inject.Singleton;
  */
 @Singleton
 public class HeartBeatHandler {
+  /**
+   * Logger.
+   */
+  private static final Logger LOG = LoggerFactory.getLogger(HeartBeatHandler.class);
+
   private static final Pattern DOT_PATTERN = Pattern.compile("\\.");
-  private static Log LOG = LogFactory.getLog(HeartBeatHandler.class);
   private final Clusters clusterFsm;
   private final ActionQueue actionQueue;
   private final ActionManager actionManager;
@@ -255,16 +267,15 @@ public class HeartBeatHandler {
 
   /**
    * Extracts all of the {@link Alert}s from the heartbeat and fires
-   * {@link AlertEvent}s for each one.
+   * {@link AlertEvent}s for each one. If there is a problem looking up the
+   * cluster, then alerts will not be processed.
    *
    * @param heartbeat
    *          the heartbeat to process.
    * @param hostname
    *          the host that the heartbeat is for.
-   * @throws AmbariException
    */
-  protected void processAlerts(HeartBeat heartbeat, String hostname)
-      throws AmbariException {
+  protected void processAlerts(HeartBeat heartbeat, String hostname) {
 
     if (null == hostname || null == heartbeat) {
       return;
@@ -276,9 +287,16 @@ public class HeartBeatHandler {
           alert.setHost(hostname);
         }
 
-        Cluster cluster = clusterFsm.getCluster(alert.getCluster());
-        AlertEvent event = new AlertReceivedEvent(cluster.getClusterId(), alert);
-        alertEventPublisher.publish(event);
+        try {
+          Cluster cluster = clusterFsm.getCluster(alert.getCluster());
+          AlertEvent event = new AlertReceivedEvent(cluster.getClusterId(),
+              alert);
+          alertEventPublisher.publish(event);
+        } catch (AmbariException ambariException) {
+          LOG.warn(
+              "Unable to process alerts because the cluster {} does not exist",
+              alert.getCluster());
+        }
       }
     }
   }
@@ -450,6 +468,31 @@ public class HeartBeatHandler {
           String schName = scHost.getServiceComponentName();
 
           if (report.getStatus().equals(HostRoleStatus.COMPLETED.toString())) {
+
+            // Reading component version if it is present
+            if (StringUtils.isNotBlank(report.getStructuredOut())) {
+              ComponentVersionStructuredOut structuredOutput = null;
+              try {
+                structuredOutput = gson.fromJson(report.getStructuredOut(), ComponentVersionStructuredOut.class);
+              } catch (JsonSyntaxException ex) {
+                //Json structure for component version was incorrect
+                //do nothing, pass this data further for processing
+              }
+              if (structuredOutput != null && StringUtils.isNotBlank(structuredOutput.getVersion())) {
+                final String previousVersion = scHost.getVersion();
+                if (!StringUtils.equals(previousVersion, structuredOutput.getVersion())) {
+                  scHost.setVersion(structuredOutput.getVersion());
+                  if (previousVersion != null && !previousVersion.equalsIgnoreCase(State.UNKNOWN.toString())) {
+                    scHost.setUpgradeState(UpgradeState.COMPLETE);
+                  }
+                }
+              }
+              // Safer to recalculate the version even if we don't detect a difference in the value.
+              // This is useful in case that a manual database edit is done while ambari-server is stopped.
+              HostComponentVersionEvent event = new HostComponentVersionEvent(cl, scHost);
+              ambariEventPublisher.publish(event);
+            }
+
             // Updating stack version, if needed
             if (scHost.getState().equals(State.UPGRADING)) {
               scHost.setStackVersion(scHost.getDesiredStackVersion());
@@ -518,6 +561,7 @@ public class HeartBeatHandler {
         }
       }
     }
+
     //Update state machines from reports
     actionManager.processTaskResponse(hostname, reports, commands);
   }
@@ -553,6 +597,25 @@ public class HeartBeatHandler {
                       + " of cluster " + status.getClusterName()
                       + " has changed from " + prevState + " to " + liveState
                       + " at host " + hostname);
+                }
+              }
+
+              SecurityState prevSecurityState = scHost.getSecurityState();
+              SecurityState currentSecurityState = SecurityState.valueOf(status.getSecurityState());
+              if((prevSecurityState != currentSecurityState)) {
+                if(prevSecurityState.isEndpoint()) {
+                  scHost.setSecurityState(currentSecurityState);
+                  LOG.info(String.format("Security of service component %s of service %s of cluster %s " +
+                          "has changed from %s to %s on host %s",
+                      componentName, status.getServiceName(), status.getClusterName(), prevSecurityState,
+                      currentSecurityState, hostname));
+                }
+                else {
+                  LOG.debug(String.format("Security of service component %s of service %s of cluster %s " +
+                          "has changed from %s to %s on host %s but will be ignored since %s is a " +
+                          "transitional state",
+                      componentName, status.getServiceName(), status.getClusterName(),
+                      prevSecurityState, currentSecurityState, hostname, prevSecurityState));
                 }
               }
 
@@ -944,5 +1007,20 @@ public class HeartBeatHandler {
     ec.setKerberosCommandParams(kcp);
   }
 
+  /**
+   * This class is used for mapping json of structured output for component START action.
+   */
+  private static class ComponentVersionStructuredOut {
+    @SerializedName("version")
+    private String version;
+
+    public String getVersion() {
+      return version;
+    }
+
+    public void setVersion(String version) {
+      this.version = version;
+    }
+  }
 
 }

@@ -25,23 +25,14 @@ import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 import org.apache.hadoop.service.AbstractService;
 import org.apache.hadoop.yarn.api.records.timeline.TimelinePutResponse;
-
 import java.io.IOException;
-import java.net.URL;
 import java.sql.SQLException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics
-  .timeline.PhoenixTransactSQL.Condition;
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics
-    .timeline.PhoenixTransactSQL.LikeCondition;
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics
-  .timeline.TimelineMetricConfiguration.HBASE_SITE_CONFIGURATION_FILE;
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics
-  .timeline.TimelineMetricConfiguration.METRICS_SITE_CONFIGURATION_FILE;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixTransactSQL.Condition;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixTransactSQL.DefaultCondition;
 
 public class HBaseTimelineMetricStore extends AbstractService
     implements TimelineMetricStore {
@@ -113,11 +104,11 @@ public class HBaseTimelineMetricStore extends AbstractService
   @Override
   public TimelineMetrics getTimelineMetrics(List<String> metricNames,
       String hostname, String applicationId, String instanceId,
-      Long startTime, Long endTime, Integer limit,
+      Long startTime, Long endTime, Precision precision, Integer limit,
       boolean groupedByHosts) throws SQLException, IOException {
 
-    Condition condition = new LikeCondition(metricNames, hostname, applicationId,
-      instanceId, startTime, endTime, limit, groupedByHosts);
+    Condition condition = new DefaultCondition(metricNames, hostname, applicationId,
+      instanceId, startTime, endTime, precision, limit, groupedByHosts);
 
     if (hostname == null) {
       return hBaseAccessor.getAggregateMetricRecords(condition);
@@ -129,12 +120,12 @@ public class HBaseTimelineMetricStore extends AbstractService
   @Override
   public TimelineMetric getTimelineMetric(String metricName, String hostname,
       String applicationId, String instanceId, Long startTime,
-      Long endTime, Integer limit)
+      Long endTime, Precision precision, Integer limit)
       throws SQLException, IOException {
 
     TimelineMetrics metrics = hBaseAccessor.getMetricRecords(
-      new LikeCondition(Collections.singletonList(metricName), hostname,
-        applicationId, instanceId, startTime, endTime, limit, true)
+      new DefaultCondition(Collections.singletonList(metricName), hostname,
+        applicationId, instanceId, startTime, endTime, precision, limit, true)
     );
 
     TimelineMetric metric = new TimelineMetric();

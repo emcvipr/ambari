@@ -18,12 +18,31 @@
 
 package org.apache.ambari.server.upgrade;
 
-import com.google.inject.Binder;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.Module;
-import com.google.inject.Provider;
-import com.google.inject.persist.PersistService;
+import static junit.framework.Assert.assertEquals;
+import static junit.framework.Assert.assertFalse;
+import static junit.framework.Assert.assertNotNull;
+import static junit.framework.Assert.assertNull;
+import static junit.framework.Assert.assertTrue;
+import static junit.framework.Assert.fail;
+import static org.easymock.EasyMock.capture;
+import static org.easymock.EasyMock.createMockBuilder;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.createStrictMock;
+import static org.easymock.EasyMock.eq;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.expectLastCall;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.reset;
+import static org.easymock.EasyMock.verify;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.List;
+
+import javax.persistence.EntityManager;
+
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.DBAccessor.DBColumnInfo;
@@ -43,34 +62,19 @@ import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntity;
 import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntityPK;
 import org.apache.ambari.server.state.SecurityState;
+import org.apache.ambari.server.state.SecurityType;
 import org.easymock.Capture;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import javax.persistence.EntityManager;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.List;
-
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertFalse;
-import static junit.framework.Assert.assertNotNull;
-import static junit.framework.Assert.assertNull;
-import static junit.framework.Assert.assertTrue;
-import static org.easymock.EasyMock.capture;
-import static org.easymock.EasyMock.createMockBuilder;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.createStrictMock;
-import static org.easymock.EasyMock.eq;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.expectLastCall;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.reset;
-import static org.easymock.EasyMock.verify;
+import com.google.inject.Binder;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.Module;
+import com.google.inject.Provider;
+import com.google.inject.persist.PersistService;
 
 /**
  * {@link UpgradeCatalog200} unit tests.
@@ -113,6 +117,8 @@ public class UpgradeCatalog200Test {
     Capture<DBAccessor.DBColumnInfo> alertDefinitionDescriptionColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> alertTargetGlobalColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> hostComponentStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
+    Capture<DBAccessor.DBColumnInfo> hostComponentVersionColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
+    Capture<DBAccessor.DBColumnInfo> clustersSecurityTypeColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> hostComponentStateSecurityStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> hostComponentDesiredStateSecurityStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> hostRoleCommandRetryColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
@@ -128,6 +134,7 @@ public class UpgradeCatalog200Test {
     Capture<DBAccessor.DBColumnInfo> valueColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<DBAccessor.DBColumnInfo> dataValueColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<List<DBAccessor.DBColumnInfo>> alertTargetStatesCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
+    Capture<List<DBAccessor.DBColumnInfo>> artifactCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
 
     Capture<List<DBAccessor.DBColumnInfo>> upgradeCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
     Capture<List<DBAccessor.DBColumnInfo>> upgradeGroupCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
@@ -151,6 +158,10 @@ public class UpgradeCatalog200Test {
     dbAccessor.addColumn(eq("hostcomponentstate"),
         capture(hostComponentStateColumnCapture));
 
+    // Host Component Version
+    dbAccessor.addColumn(eq("hostcomponentstate"),
+        capture(hostComponentVersionColumnCapture));
+
     // Host Role Command retry allowed
     dbAccessor.addColumn(eq("host_role_command"),
         capture(hostRoleCommandRetryColumnCapture));
@@ -158,6 +169,10 @@ public class UpgradeCatalog200Test {
     // Stage skippable
     dbAccessor.addColumn(eq("stage"),
         capture(stageSkippableColumnCapture));
+
+    // Clusters: security type
+    dbAccessor.addColumn(eq("clusters"),
+        capture(clustersSecurityTypeColumnCapture));
 
     // Host Component State: security State
     dbAccessor.addColumn(eq("hostcomponentstate"),
@@ -192,6 +207,9 @@ public class UpgradeCatalog200Test {
     // Upgrade item
     dbAccessor.createTable(eq("upgrade_item"), capture(upgradeItemCapture), eq("upgrade_item_id"));
 
+    // artifact
+    dbAccessor.createTable(eq("artifact"), capture(artifactCapture),
+        eq("artifact_name"), eq("foreign_keys"));
 
     setViewInstancePropertyExpectations(dbAccessor, valueColumnCapture);
     setViewInstanceDataExpectations(dbAccessor, dataValueColumnCapture);
@@ -225,6 +243,14 @@ public class UpgradeCatalog200Test {
     assertEquals("NONE", upgradeStateColumn.getDefaultValue());
     assertFalse(upgradeStateColumn.isNullable());
 
+    // Verify added column in hostcomponentstate table
+    DBAccessor.DBColumnInfo upgradeVersionColumn = hostComponentVersionColumnCapture.getValue();
+    assertEquals("version", upgradeVersionColumn.getName());
+    assertEquals(32, (int) upgradeVersionColumn.getLength());
+    assertEquals(String.class, upgradeVersionColumn.getType());
+    assertEquals("UNKNOWN", upgradeVersionColumn.getDefaultValue());
+    assertFalse(upgradeVersionColumn.isNullable());
+
     // Verify added column in host_role_command table
     DBAccessor.DBColumnInfo upgradeRetryColumn = hostRoleCommandRetryColumnCapture.getValue();
     assertEquals("retry_allowed", upgradeRetryColumn.getName());
@@ -241,6 +267,9 @@ public class UpgradeCatalog200Test {
     assertEquals(0, upgradeSkippableColumn.getDefaultValue());
     assertFalse(upgradeSkippableColumn.isNullable());
 
+    // verify security_type column
+    verifyClustersSecurityType(clustersSecurityTypeColumnCapture);
+
     // verify security_state columns
     verifyComponentSecurityStateColumn(hostComponentStateSecurityStateColumnCapture);
     verifyComponentSecurityStateColumn(hostComponentDesiredStateSecurityStateColumnCapture);
@@ -249,6 +278,11 @@ public class UpgradeCatalog200Test {
     verifyViewParameterColumns(viewparameterLabelColumnCapture, viewparameterPlaceholderColumnCapture,
         viewparameterDefaultValueColumnCapture);
 
+    // verify artifact columns
+    List<DBAccessor.DBColumnInfo> artifactColumns = artifactCapture.getValue();
+    testCreateArtifactTable(artifactColumns);
+
+
     // Verify capture group sizes
     assertEquals(7, clusterVersionCapture.getValue().size());
     assertEquals(4, hostVersionCapture.getValue().size());
@@ -256,7 +290,7 @@ public class UpgradeCatalog200Test {
     assertViewInstancePropertyColumns(valueColumnCapture);
     assertViewInstanceDataColumns(dataValueColumnCapture);
 
-    assertEquals(4, upgradeCapture.getValue().size());
+    assertEquals(6, upgradeCapture.getValue().size());
     assertEquals(4, upgradeGroupCapture.getValue().size());
     assertEquals(7, upgradeItemCapture.getValue().size());
   }
@@ -270,15 +304,31 @@ public class UpgradeCatalog200Test {
   public void testExecuteDMLUpdates() throws Exception {
     Method removeNagiosService = UpgradeCatalog200.class.getDeclaredMethod("removeNagiosService");
     Method updateHiveDatabaseType = UpgradeCatalog200.class.getDeclaredMethod("updateHiveDatabaseType");
+    Method addNewConfigurationsFromXml = AbstractUpgradeCatalog.class.getDeclaredMethod
+        ("addNewConfigurationsFromXml");
+    Method setSecurityType = UpgradeCatalog200.class.getDeclaredMethod("setSecurityType");
+    Method updateDfsClusterAdmintistratorsProperty = UpgradeCatalog200.class.getDeclaredMethod("updateDfsClusterAdmintistratorsProperty");
 
-    UpgradeCatalog200 upgradeCatalog = createMockBuilder(
-        UpgradeCatalog200.class).addMockedMethod(removeNagiosService).addMockedMethod(updateHiveDatabaseType).createMock();
+    UpgradeCatalog200 upgradeCatalog = createMockBuilder(UpgradeCatalog200.class)
+        .addMockedMethod(removeNagiosService)
+        .addMockedMethod(updateHiveDatabaseType)
+        .addMockedMethod(addNewConfigurationsFromXml)
+        .addMockedMethod(setSecurityType)
+        .addMockedMethod(updateDfsClusterAdmintistratorsProperty)
+        .createMock();
 
     upgradeCatalog.removeNagiosService();
     expectLastCall().once();
+    upgradeCatalog.addNewConfigurationsFromXml();
+    expectLastCall();
+
+    upgradeCatalog.updateDfsClusterAdmintistratorsProperty();
+    expectLastCall();
+    
     upgradeCatalog.updateHiveDatabaseType();
     expectLastCall().once();
-
+    upgradeCatalog.setSecurityType();
+    expectLastCall().once();
 
     replay(upgradeCatalog);
 
@@ -428,6 +478,20 @@ public class UpgradeCatalog200Test {
   }
 
   /**
+   * Verifies new security_type column in clusters table
+   *
+   * @param securityTypeColumnCapture
+   */
+  private void verifyClustersSecurityType(
+      Capture<DBAccessor.DBColumnInfo> securityTypeColumnCapture) {
+    DBColumnInfo column = securityTypeColumnCapture.getValue();
+    Assert.assertEquals(SecurityType.NONE.toString(), column.getDefaultValue());
+    Assert.assertEquals(Integer.valueOf(32), column.getLength());
+    Assert.assertEquals(String.class, column.getType());
+    Assert.assertEquals("security_type", column.getName());
+  }
+
+  /**
    * Verifies new security_state column in hostcomponentdesiredstate and hostcomponentstate tables
    *
    * @param securityStateColumnCapture
@@ -513,5 +577,33 @@ public class UpgradeCatalog200Test {
     assertEquals(String.class, column.getType());
     assertNull(column.getDefaultValue());
     assertTrue(column.isNullable());
+  }
+
+  /**
+   * assert artifact table creation
+   *
+   * @param artifactColumns artifact table columns
+   */
+  private void testCreateArtifactTable(List<DBColumnInfo> artifactColumns) {
+    assertEquals(3, artifactColumns.size());
+    for (DBColumnInfo column : artifactColumns) {
+      if (column.getName().equals("artifact_name")) {
+        assertNull(column.getDefaultValue());
+        assertEquals(String.class, column.getType());
+        assertEquals(255, (int) column.getLength());
+        assertEquals(false, column.isNullable());
+      } else if (column.getName().equals("foreign_keys")) {
+        assertNull(column.getDefaultValue());
+        assertEquals(String.class, column.getType());
+        assertEquals(255, (int) column.getLength());
+        assertEquals(false, column.isNullable());
+      } else if (column.getName().equals("artifact_data")) {
+        assertNull(column.getDefaultValue());
+        assertEquals(char[].class, column.getType());
+        assertEquals(false, column.isNullable());
+      } else {
+        fail("unexpected column name");
+      }
+    }
   }
 }

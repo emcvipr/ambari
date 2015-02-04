@@ -19,6 +19,7 @@ package org.apache.ambari.server.controller.internal;
 
 import org.apache.ambari.server.StaticallyInject;
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
+import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.controller.spi.ExtendedResourceProvider;
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
 import org.apache.ambari.server.controller.spi.NoSuchResourceException;
@@ -47,7 +48,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -56,7 +56,7 @@ import java.util.Set;
  * ResourceProvider for Stage
  */
 @StaticallyInject
-public class StageResourceProvider extends AbstractResourceProvider implements ExtendedResourceProvider {
+public class StageResourceProvider extends AbstractControllerResourceProvider implements ExtendedResourceProvider {
 
   /**
    * Used for querying stage resources.
@@ -134,9 +134,9 @@ public class StageResourceProvider extends AbstractResourceProvider implements E
   private static Map<HostRoleStatus, EnumSet<HostRoleStatus>> manualTransitionMap = new HashMap<HostRoleStatus, EnumSet<HostRoleStatus>>();
 
   static {
-    manualTransitionMap.put(HostRoleStatus.HOLDING, EnumSet.of(HostRoleStatus.COMPLETED));
-    manualTransitionMap.put(HostRoleStatus.HOLDING_FAILED, EnumSet.of(HostRoleStatus.PENDING, HostRoleStatus.FAILED));
-    manualTransitionMap.put(HostRoleStatus.HOLDING_TIMEDOUT, EnumSet.of(HostRoleStatus.PENDING, HostRoleStatus.TIMEDOUT));
+    manualTransitionMap.put(HostRoleStatus.HOLDING, EnumSet.of(HostRoleStatus.COMPLETED, HostRoleStatus.ABORTED));
+    manualTransitionMap.put(HostRoleStatus.HOLDING_FAILED, EnumSet.of(HostRoleStatus.PENDING, HostRoleStatus.FAILED, HostRoleStatus.ABORTED));
+    manualTransitionMap.put(HostRoleStatus.HOLDING_TIMEDOUT, EnumSet.of(HostRoleStatus.PENDING, HostRoleStatus.TIMEDOUT, HostRoleStatus.ABORTED));
   }
 
 
@@ -144,9 +144,11 @@ public class StageResourceProvider extends AbstractResourceProvider implements E
 
   /**
    * Constructor.
+   *
+   * @param managementController  the Ambari management controller
    */
-  StageResourceProvider() {
-    super(PROPERTY_IDS, KEY_PROPERTY_IDS);
+  StageResourceProvider(AmbariManagementController managementController) {
+    super(PROPERTY_IDS, KEY_PROPERTY_IDS, managementController);
   }
 
   // ----- AbstractResourceProvider ------------------------------------------
@@ -184,7 +186,7 @@ public class StageResourceProvider extends AbstractResourceProvider implements E
         String stageStatus = (String) updateProperties.get(STAGE_STATUS);
         if (stageStatus != null) {
           HostRoleStatus desiredStatus = HostRoleStatus.valueOf(stageStatus);
-          updateStageStatus(entity, desiredStatus);
+          updateStageStatus(entity, desiredStatus, getManagementController());
         }
       }
     }
@@ -238,15 +240,16 @@ public class StageResourceProvider extends AbstractResourceProvider implements E
    * @param requestId      the request id
    * @param stageId        the stage id
    * @param desiredStatus  the desired stage status
+   * @param controller     the ambari management controller
    */
-  public static void updateStageStatus(long requestId, long stageId, HostRoleStatus desiredStatus) {
-    Predicate predicate =
-        new PredicateBuilder().property(STAGE_STAGE_ID).equals(stageId).
-            and().property(STAGE_REQUEST_ID).equals(requestId).toPredicate();
+  public static void updateStageStatus(long requestId, long stageId, HostRoleStatus desiredStatus,
+                                       AmbariManagementController controller) {
+    Predicate predicate = new PredicateBuilder().property(STAGE_STAGE_ID).equals(stageId).and().
+        property(STAGE_REQUEST_ID).equals(requestId).toPredicate();
 
     List<StageEntity> entityList = dao.findAll(PropertyHelper.getReadRequest(), predicate);
     for (StageEntity stageEntity : entityList) {
-      updateStageStatus(stageEntity, desiredStatus);
+      updateStageStatus(stageEntity, desiredStatus, controller);
     }
   }
 
@@ -256,34 +259,36 @@ public class StageResourceProvider extends AbstractResourceProvider implements E
   /**
    * Update the given stage entity with the desired status.
    *
-   * @param entity         the stage entity to update
+   * @param stage          the stage entity to update
    * @param desiredStatus  the desired stage status
+   * @param controller     the ambari management controller
    *
    * @throws java.lang.IllegalArgumentException if the transition to the desired status is not a
    *         legal transition
    */
-  private static void updateStageStatus(StageEntity entity, HostRoleStatus desiredStatus) {
-    Collection<HostRoleCommandEntity> tasks = entity.getHostRoleCommands();
+  private static void updateStageStatus(StageEntity stage, HostRoleStatus desiredStatus,
+                                        AmbariManagementController controller) {
+    Collection<HostRoleCommandEntity> tasks = stage.getHostRoleCommands();
 
-    Map<HostRoleStatus, Integer> taskStatusCounts = calculateTaskStatusCounts(getHostRoleStatuses(tasks));
-
-    HostRoleStatus currentStatus = calculateSummaryStatus(taskStatusCounts, tasks.size(), !entity.isSkippable());
+    HostRoleStatus currentStatus = CalculatedStatus.statusFromTaskEntities(tasks, stage.isSkippable()).getStatus();
 
     if (!isValidManualTransition(currentStatus, desiredStatus)) {
       throw new IllegalArgumentException("Can not transition a stage from " +
           currentStatus + " to " + desiredStatus);
     }
+    if (desiredStatus == HostRoleStatus.ABORTED) {
+      controller.getActionManager().cancelRequest(stage.getRequestId(), "User aborted.");
+    } else {
+      for (HostRoleCommandEntity hostRoleCommand : tasks) {
+        HostRoleStatus hostRoleStatus = hostRoleCommand.getStatus();
+        if (hostRoleStatus.equals(currentStatus)) {
+          hostRoleCommand.setStatus(desiredStatus);
 
-    for (HostRoleCommandEntity hostRoleCommand : tasks) {
-      HostRoleStatus hostRoleStatus = hostRoleCommand.getStatus();
-      if (hostRoleStatus.equals(currentStatus)) {
-        hostRoleCommand.setStatus(desiredStatus);
-
-        if (desiredStatus == HostRoleStatus.PENDING) {
-          hostRoleCommand.setStartTime(-1L);
+          if (desiredStatus == HostRoleStatus.PENDING) {
+            hostRoleCommand.setStartTime(-1L);
+          }
+          hostRoleCommandDAO.merge(hostRoleCommand);
         }
-
-        hostRoleCommandDAO.merge(hostRoleCommand);
       }
     }
   }
@@ -333,106 +338,12 @@ public class StageResourceProvider extends AbstractResourceProvider implements E
     setResourceProperty(resource, STAGE_START_TIME, startTime, requestedIds);
     setResourceProperty(resource, STAGE_END_TIME, endTime, requestedIds);
 
-    int taskCount = tasks.size();
+    CalculatedStatus status = CalculatedStatus.statusFromTaskEntities(tasks, entity.isSkippable());
 
-    Map<HostRoleStatus, Integer> taskStatusCounts = calculateTaskStatusCounts(getHostRoleStatuses(tasks));
-
-    setResourceProperty(resource, STAGE_PROGRESS_PERCENT, calculateProgressPercent(taskStatusCounts, taskCount),
-        requestedIds);
-    setResourceProperty(resource, STAGE_STATUS,
-        calculateSummaryStatus(taskStatusCounts, taskCount, !entity.isSkippable()).toString(),
-        requestedIds);
+    setResourceProperty(resource, STAGE_PROGRESS_PERCENT, status.getPercent(), requestedIds);
+    setResourceProperty(resource, STAGE_STATUS, status.getStatus().toString(), requestedIds);
 
     return resource;
-  }
-
-  /**
-   * Calculate the percent complete based on the given status counts.
-   *
-   * @param counters  counts of resources that are in various states
-   * @param total     total number of resources in request
-   *
-   * @return the percent complete for the stage
-   */
-  protected static double calculateProgressPercent(Map<HostRoleStatus, Integer> counters, double total) {
-    return ((counters.get(HostRoleStatus.QUEUED)      * 0.09 +
-        counters.get(HostRoleStatus.IN_PROGRESS)      * 0.35 +
-        counters.get(HostRoleStatus.HOLDING)          * 0.35 +
-        counters.get(HostRoleStatus.HOLDING_FAILED)   * 0.35 +
-        counters.get(HostRoleStatus.HOLDING_TIMEDOUT) * 0.35 +
-        counters.get(HostRoleStatus.COMPLETED)) / total) * 100.0;
-  }
-
-  /**
-   * Calculate an overall status based on the given status counts.
-   *
-   * @param counters  counts of resources that are in various states
-   * @param total     total number of resources in request
-   * @param failAll   true if a single failed status should result in an overall failed status return
-   *
-   * @return summary request status based on statuses of tasks in different states.
-   */
-  protected static HostRoleStatus calculateSummaryStatus(Map<HostRoleStatus, Integer> counters, int total,
-                                                         boolean failAll) {
-    return counters.get(HostRoleStatus.HOLDING) > 0 ? HostRoleStatus.HOLDING :
-        counters.get(HostRoleStatus.HOLDING_FAILED) > 0 ? HostRoleStatus.HOLDING_FAILED :
-        counters.get(HostRoleStatus.HOLDING_TIMEDOUT) > 0 ? HostRoleStatus.HOLDING_TIMEDOUT :
-        counters.get(HostRoleStatus.FAILED) > 0 && failAll ? HostRoleStatus.FAILED :
-        counters.get(HostRoleStatus.ABORTED) > 0 ? HostRoleStatus.ABORTED :
-        counters.get(HostRoleStatus.TIMEDOUT) > 0 && failAll ? HostRoleStatus.TIMEDOUT :
-        counters.get(HostRoleStatus.IN_PROGRESS) > 0 ? HostRoleStatus.IN_PROGRESS :
-        counters.get(HostRoleStatus.COMPLETED) == total  && total > 0 ? HostRoleStatus.COMPLETED : HostRoleStatus.PENDING;
-  }
-
-  /**
-   * Get a collection of statuses from the given collection of task entities.
-   *
-   * @param tasks  the task entities
-   *
-   * @return a collection of statuses
-   */
-  private static Collection<HostRoleStatus> getHostRoleStatuses(Collection<HostRoleCommandEntity> tasks) {
-    Collection<HostRoleStatus> hostRoleStatuses = new LinkedList<HostRoleStatus>();
-
-    for (HostRoleCommandEntity hostRoleCommand : tasks) {
-      hostRoleStatuses.add(hostRoleCommand.getStatus());
-    }
-    return hostRoleStatuses;
-  }
-
-  /**
-   * Returns counts of tasks that are in various states.
-   *
-   * @param hostRoleStatuses  the collection of tasks
-   *
-   * @return a map of counts of tasks keyed by the task status
-   */
-  protected static Map<HostRoleStatus, Integer> calculateTaskStatusCounts(Collection<HostRoleStatus> hostRoleStatuses) {
-    Map<HostRoleStatus, Integer> counters = new HashMap<HostRoleStatus, Integer>();
-    // initialize
-    for (HostRoleStatus hostRoleStatus : HostRoleStatus.values()) {
-      counters.put(hostRoleStatus, 0);
-    }
-    // calculate counts
-    for (HostRoleStatus status : hostRoleStatuses) {
-      // count tasks where isCompletedState() == true as COMPLETED
-      // but don't count tasks with COMPLETED status twice
-      if (status.isCompletedState() && status != HostRoleStatus.COMPLETED) {
-        // Increase total number of completed tasks;
-        counters.put(HostRoleStatus.COMPLETED, counters.get(HostRoleStatus.COMPLETED) + 1);
-      }
-      // Increment counter for particular status
-      counters.put(status, counters.get(status) + 1);
-    }
-
-    // We overwrite the value to have the sum converged
-    counters.put(HostRoleStatus.IN_PROGRESS,
-        hostRoleStatuses.size() -
-        counters.get(HostRoleStatus.COMPLETED) -
-        counters.get(HostRoleStatus.QUEUED) -
-        counters.get(HostRoleStatus.PENDING));
-
-    return counters;
   }
 
   /**

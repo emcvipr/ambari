@@ -86,7 +86,7 @@ public class HostStackVersionResourceProvider extends AbstractControllerResource
   protected static final String HOST_STACK_VERSION_REPO_VERSION_PROPERTY_ID    = PropertyHelper.getPropertyId("HostStackVersions", "repository_version");
 
   protected static final String INSTALL_PACKAGES_ACTION = "install_packages";
-  protected static final String INSTALL_PACKAGES_FULL_NAME = "Distribute repositories/install packages";
+  protected static final String INSTALL_PACKAGES_FULL_NAME = "Install version";
 
 
   @SuppressWarnings("serial")
@@ -331,7 +331,8 @@ public class HostStackVersionResourceProvider extends AbstractControllerResource
         desiredRepoVersion, stackId, hostName));
     }
     if (hostVersEntity.getState() != RepositoryVersionState.INSTALLED &&
-            hostVersEntity.getState() != RepositoryVersionState.INSTALL_FAILED) {
+            hostVersEntity.getState() != RepositoryVersionState.INSTALL_FAILED &&
+            hostVersEntity.getState() != RepositoryVersionState.OUT_OF_SYNC) {
       throw new UnsupportedOperationException(String.format("Repo version %s for stack %s " +
         "for host %s is in %s state. Can not transition to INSTALLING state",
               desiredRepoVersion, stackId, hostName, hostVersEntity.getState().toString()));

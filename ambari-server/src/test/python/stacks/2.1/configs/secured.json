@@ -451,7 +451,8 @@
             "hive.metastore.execute.setugi": "true", 
             "hive.auto.convert.sortmerge.join.noconditionaltask": "true", 
             "hive.server2.enable.doAs": "true", 
-            "hive.optimize.mapjoin.mapreduce": "true", 
+            "hive.optimize.mapjoin.mapreduce": "true",
+            "hive.server2.transport.mode": "binary",
             "hive.server2.authentication.kerberos.keytab": "/etc/security/keytabs/hive.service.keytab"
         }, 
         "yarn-site": {
@@ -516,6 +517,7 @@
             "security_enabled": "true",
             "ignore_groupsusers_create": "false",
             "smokeuser": "ambari-qa",
+            "smokeuser_principal_name": "ambari-qa@EXAMPLE.COM",
             "kerberos_domain": "EXAMPLE.COM",
             "user_group": "hadoop",
             "smokeuser_keytab": "/etc/security/keytabs/smokeuser.headless.keytab",
@@ -603,7 +605,9 @@
             "storm_log_dir": "/var/log/storm", 
             "storm_pid_dir": "/var/run/storm", 
             "storm_user": "storm",
-            "storm_principal_name": "storm"
+            "storm_principal_name": "storm",
+            "storm_ui_keytab" : "/etc/security/keytabs/spnego.service.keytab",
+            "storm_ui_principal_name" : "HTTP/_HOST"
         }, 
         "falcon-env": {
             "falcon_port": "15000", 

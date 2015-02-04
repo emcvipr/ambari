@@ -43,28 +43,26 @@ App.MainDashboardServiceHdfsView = App.MainDashboardServiceView.extend({
     },
     templateName: require('templates/main/service/info/summary/master_components'),
     mastersComp: function() {
-      if (App.get('isHaEnabled')) {
-        // return all Namenodes followed by its ZKFC
-        var namenodes = this.get('parentView.service.hostComponents').filter(function(comp){
-          return comp.get('isMaster') && comp.get('componentName') !== 'JOURNALNODE';
-        });
-        var zkfcs = this.get('parentView.service.hostComponents').filter(function(comp){
-          return comp.get('componentName') == 'ZKFC';
-        });
-        var nnZkfc = [];
-        namenodes.forEach( function(namenode) {
-          nnZkfc.push(namenode);
-          nnZkfc.push(zkfcs.findProperty('host.publicHostName', namenode.get('host.publicHostName')).set('isZkfc', true));
-        });
-        return nnZkfc;
-      } else {
-        return this.get('parentView.service.hostComponents').filter(function(comp){
-          return comp.get('isMaster') && comp.get('componentName') !== 'JOURNALNODE';
-        });
-      }
-    }.property('parentView.service.hostComponents')
+      var masterComponents = [];
+      var zkfcs = this.get('parentView.service.hostComponents').filterProperty('componentName', 'ZKFC');
+
+      this.get('parentView.service.hostComponents').forEach(function (comp) {
+        if (comp.get('isMaster') && comp.get('componentName') !== 'JOURNALNODE') {
+          masterComponents.push(comp);
+          var zkfc = zkfcs.findProperty('hostName', comp.get('hostName'));
+          if (zkfc) {
+            zkfc.set('isSubComponent', true);
+            masterComponents.push(zkfc);
+          }
+        }
+      });
+      return masterComponents;
+    }.property('parentView.service.hostComponents.length')
   }),
 
+  didInsertElement: function() {
+    App.tooltip($("[rel='tooltip']"));
+  },
   dataNodesLive: function () {
     return this.get('service.dataNodesStarted');
   }.property('service.dataNodesStarted'),

@@ -21,14 +21,45 @@
   <target>2.2.*.*</target>
 
   <order>
+
+    <group xsi:type="cluster" name="PRE_CLUSTER" title="Prepare Backups">
+
+      <execute-stage service="HDFS" component="NAMENODE" title="Pre Upgrade HDFS">
+        <task xsi:type="execute" hosts="master">
+          <script>scripts/namenode.py</script>
+          <function>prepare_rolling_upgrade</function>
+        </task>
+      </execute-stage>
+
+      <execute-stage service="HBASE" component="HBASE_MASTER" title="Pre Upgrade HBASE">
+        <task xsi:type="execute" hosts="master">
+          <script>scripts/hbase_upgrade.py</script>
+          <function>snapshot</function>
+        </task>
+      </execute-stage>
+
+      <execute-stage service="HIVE" component="HIVE_METASTORE" title="Pre Upgrade HIVE">
+        <task xsi:type="manual">
+          <message>Backup the Hive Metastore database located on the following host(s): {{hosts.all}}</message>
+        </task>
+      </execute-stage>
+
+      <execute-stage service="OOZIE" component="OOZIE_SERVER" title="Pre Upgrade OOZIE">
+        <task xsi:type="manual">
+          <message>Backup the Oozie Server database on {{oozie-env/oozie_hostname}}</message>
+        </task>
+      </execute-stage>
+
+    </group>
+
     <group name="ZOOKEEPER" title="Zookeeper">
       <service name="ZOOKEEPER">
         <component>ZOOKEEPER_SERVER</component>
-        <component>ZOOKEEPER_CLIENT</component>
       </service>
     </group>
 
     <group name="CORE_MASTER" title="Core Masters">
+      <service-check>false</service-check>
       <service name="HDFS">
         <component>JOURNALNODE</component>
         <component>NAMENODE</component>
@@ -46,9 +77,20 @@
       <service name="HBASE">
         <component>HBASE_MASTER</component>
       </service>
+      
     </group>
-
+    
+    <group name="SERVICE_CHECK" title="Full Service Check" xsi:type="service-check">
+      <priority>
+        <service>HDFS</service>
+        <service>MAPREDUCE2</service>
+        <service>YARN</service>
+        <service>HBASE</service>
+      </priority>
+    </group>
+    
     <group name="CORE_SLAVES" title="Core Slaves" xsi:type="colocated">
+      <service-check>false</service-check>
       <service name="HDFS">
         <component>DATANODE</component>
       </service>
@@ -57,14 +99,23 @@
         <component>HBASE_REGIONSERVER</component>
       </service>
 
-     <service name="YARN">
+      <service name="YARN">
         <component>NODEMANAGER</component>
       </service>
 
       <batch>
         <percent>33</percent>
-        <message>Please run additional tests</message>
+        <summary>Verification Required</summary>
+        <message>Core Services have been {{direction.past}}. You are advised to perform tests against your cluster to ensure proper operation before proceeding with {{direction.text}} of remaining services.</message>
       </batch>
+    </group>
+    
+    <group name="SERVICE_CHECK" title="Full Service Check" xsi:type="service-check">
+      <priority>
+        <service>HDFS</service>
+        <service>YARN</service>
+        <service>HBASE</service>
+      </priority>
     </group>
 
     <group name="HIVE" title="Hive">
@@ -76,6 +127,14 @@
       </service>
     </group>
 
+    <group name="OOZIE" title="Oozie">
+      <skippable>true</skippable>
+      <service name="OOZIE">
+        <component>OOZIE_SERVER</component>
+        <component>OOZIE_CLIENT</component>
+      </service>
+    </group>
+
     <group name="FALCON" title="Falcon">
       <skippable>true</skippable>
       <service name="FALCON">
@@ -84,13 +143,11 @@
       </service>
     </group>
 
-    <group name="KAFKA" title="Kafka">
-      <service name="KAFKA">
-        <component>KAFKA_BROKER</component>
-      </service>
-   </group>
-
     <group name="CLIENTS" title="Client Components">
+      <service-check>false</service-check>
+      <service name="ZOOKEEPER">
+        <component>ZOOKEEPER_CLIENT</component>
+      </service>
       <service name="HDFS">
         <component>HDFS_CLIENT</component>
       </service>
@@ -101,27 +158,86 @@
 
       <service name="MAPREDUCE2">
         <component>MAPREDUCE2_CLIENT</component>
-       </service>
+      </service>
 
-       <service name="TEZ">
-         <component>TEZ_CLIENT</component>
-       </service>
+      <service name="TEZ">
+        <component>TEZ_CLIENT</component>
+      </service>
 
-       <service name="HBASE">
-         <component>HBASE_CLIENT</component>
-       </service>
+      <service name="HBASE">
+        <component>HBASE_CLIENT</component>
+      </service>
 
-       <service name="PIG">
-         <component name="PIG" />
-       </service>
+      <service name="PIG">
+        <component>PIG</component>
+      </service>
 
-       <service name="HIVE">
-         <component>HIVE_CLIENT</component>
-         <component>HCAT</component>
-       </service>
+      <service name="SQOOP">
+        <component>SQOOP</component>
+      </service>
+
+      <service name="HIVE">
+        <component>HIVE_CLIENT</component>
+        <component>HCAT</component>
+      </service>
     </group>
 
-    <group xsi:type="cluster" name="POST_CLUSTER" title="Finalize Upgrade">
+    <group name="SERVICE_CHECK" title="Full Service Check" xsi:type="service-check">
+      <priority>
+        <service>HDFS</service>
+        <service>YARN</service>
+        <service>HBASE</service>
+      </priority>
+    </group>
+
+    <group name="KAFKA" title="Kafka">
+      <skippable>true</skippable>
+      <service name="KAFKA">
+        <component>KAFKA_BROKER</component>
+      </service>
+    </group>
+
+    <group name="KNOX" title="Knox">
+      <skippable>true</skippable>
+      <service name="KNOX">
+        <component>KNOX_GATEWAY</component>
+      </service>
+    </group>
+
+    <group name="STORM" title="Storm">
+      <skippable>true</skippable>
+      <service name="STORM">
+        <component>NIMBUS</component>
+        <component>STORM_REST_API</component>
+        <component>SUPERVISOR</component>
+        <component>STORM_UI_SERVER</component>
+        <component>DRPC_SERVER</component>
+      </service>
+    </group>
+
+    <group name="SLIDER" title="Slider">
+      <skippable>true</skippable>
+      <service name="SLIDER">
+        <component>SLIDER</component>
+      </service>
+    </group>
+
+    <group name="FLUME" title="Flume">
+      <skippable>true</skippable>
+      <service name="FLUME">
+        <component>FLUME_HANDLER</component>
+      </service>
+    </group>
+
+
+    <group xsi:type="cluster" name="POST_CLUSTER" title="Finalize {{direction.text.proper}}">
+      <skippable>true</skippable>
+      <execute-stage title="Check Unhealthy Hosts" id="unhealthy-hosts">
+        <task xsi:type="manual">
+          <message>The following hosts were unhealthy and should be resolved before finalizing can be completed: {{hosts.unhealthy}}</message>
+        </task>
+      </execute-stage>
+      
       <execute-stage title="Confirm Finalize">
         <task xsi:type="manual">
           <message>Please confirm you are ready to finalize</message>
@@ -170,17 +286,16 @@
           <task xsi:type="restart" />
         </upgrade>
       </component>
+
+      <component name="ZOOKEEPER_CLIENT">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
     </service>
 
     <service name="HDFS">
       <component name="NAMENODE">
-        <pre-upgrade>
-          <task xsi:type="execute" hosts="master">
-            <script>scripts/namenode.py</script>
-            <function>prepare_rolling_upgrade</function>
-          </task>
-        </pre-upgrade>
-
         <upgrade>
           <task xsi:type="restart" />
         </upgrade>
@@ -191,7 +306,7 @@
           <task xsi:type="restart" />
         </upgrade>
       </component>
-      
+
       <component name="HDFS_CLIENT">
         <upgrade>
           <task xsi:type="restart" />
@@ -211,7 +326,7 @@
           <task xsi:type="restart" />
         </upgrade>
       </component>
-      
+
       <component name="MAPREDUCE2_CLIENT">
         <upgrade>
           <task xsi:type="restart" />
@@ -227,13 +342,6 @@
       </component>
 
       <component name="RESOURCEMANAGER">
-        <!--
-        Upgrade+restart the standby ResourceManager first
-        Make the standby ResourceManager as the active
-
-        Automatic failover: This can be done by simply killing the current active ResourceManager
-        Manual failover: Make the standby ResourceManager as the active and the current active as standby
-        -->
         <upgrade>
           <task xsi:type="restart" />
         </upgrade>
@@ -251,14 +359,9 @@
         </upgrade>
       </component>
     </service>
-    
+
     <service name="HBASE">
       <component name="HBASE_MASTER">
-        <pre-upgrade>
-          <task xsi:type="execute" hosts="master">
-            <command>su - {{hbase-env/hbase_user}} -c 'echo "snapshot_all" | hbase shell'</command>
-          </task>
-        </pre-upgrade>
         <upgrade>
           <task xsi:type="restart" />
         </upgrade>
@@ -269,7 +372,7 @@
           <task xsi:type="restart" />
         </upgrade>
       </component>
-      
+
       <component name="HBASE_CLIENT">
         <upgrade>
           <task xsi:type="restart" />
@@ -284,9 +387,17 @@
         </upgrade>
       </component>
     </service>
-    
+
     <service name="PIG">
       <component name="PIG">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
+
+    <service name="SQOOP">
+      <component name="SQOOP">
         <upgrade>
           <task xsi:type="restart" />
         </upgrade>
@@ -297,10 +408,7 @@
       <component name="HIVE_METASTORE">
         <pre-upgrade>
           <task xsi:type="manual">
-            <message>Backup the Hive Metastore database.</message>
-          </task>
-          <task xsi:type="manual">
-            <message>Run the SQL file at /usr/hdp/$version/hive/scripts/metastore/upgrade to update the Hive Metastore schema.</message>
+            <message>Consult the README documentation at /usr/hdp/{{version}}/hive/scripts/metastore/upgrade to correctly upgrade the Hive Metastore database. This database upgrade should be performed on the following host(s): {{hosts.all}}</message>
           </task>
         </pre-upgrade>
         <upgrade>
@@ -311,25 +419,41 @@
       <component name="HIVE_SERVER">
         <pre-upgrade>
           <task xsi:type="manual">
-            <message>The HiveServer port will now change to 10010. Ensure that this port is available on each HiveServer instance.</message>
+            <summary>HiveServer Port Availability</summary>
+            <message>The HiveServer port will now change to 10010 if hive is using a binary transfer mode or 10011 if hive is using an http transport mode. You can use "netstat -anp | grep 1001[01]" to determine if the port is available on each of following HiveServer host(s): {{hosts.all}}. If the port is not available, the process using it must be terminated.</message>
           </task>
 
           <task xsi:type="configure">
-            <type>hive-site</type>
-            <key>hive.server2.thrift.port</key>
-            <value>10010</value>
+            <condition type="hive-site" key="hive.server2.transport.mode" value="binary">
+              <type>hive-site</type>
+              <key>hive.server2.thrift.port</key>
+              <value>10010</value>
+            </condition>
+            <condition type="hive-site" key="hive.server2.transport.mode" value="http">
+              <type>hive-site</type>
+              <key>hive.server2.http.port</key>
+              <value>10011</value>
+            </condition>
           </task>
         </pre-upgrade>
-        
+
         <pre-downgrade>
           <task xsi:type="manual">
-            <message>The HiveServer port will now change to 10000. Ensure that this port is available on each HiveServer instance.</message>
+            <summary>HiveServer Port Availability</summary>
+            <message>The HiveServer port will now change to 10000 if hive is using a binary transfer mode or 10001 if hive is using an http transport mode. You can use "netstat -anp | grep 1000[01]" to determine if the port is available on each of following HiveServer host(s): {{hosts.all}}. If the port is not available, the process using it must be terminated.</message>
           </task>
 
           <task xsi:type="configure">
-            <type>hive-site</type>
-            <key>hive.server2.thrift.port</key>
-            <value>10000</value>
+            <condition type="hive-site" key="hive.server2.transport.mode" value="binary">
+              <type>hive-site</type>
+              <key>hive.server2.thrift.port</key>
+              <value>10000</value>
+            </condition>
+            <condition type="hive-site" key="hive.server2.transport.mode" value="http">
+              <type>hive-site</type>
+              <key>hive.server2.http.port</key>
+              <value>10001</value>
+            </condition>
           </task>
         </pre-downgrade>
 
@@ -345,6 +469,33 @@
       </component>
 
       <component name="HIVE_CLIENT">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+
+      <component name="HCAT">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
+
+    <service name="SLIDER">
+      <component name="SLIDER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
+
+    <service name="OOZIE">
+      <component name="OOZIE_SERVER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+      <component name="OOZIE_CLIENT">
         <upgrade>
           <task xsi:type="restart" />
         </upgrade>
@@ -372,5 +523,58 @@
       </component>
     </service>
 
+    <service name="KNOX">
+      <component name="KNOX_GATEWAY">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
+
+    <service name="STORM">
+      <component name="NIMBUS">
+        <pre-upgrade>
+          <task xsi:type="manual">
+            <message>Deactivate and kill your currently running topology.</message>
+          </task>
+        </pre-upgrade>
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+      <component name="STORM_REST_API">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+      <component name="SUPERVISOR">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+      <component name="STORM_UI_SERVER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+      <component name="DRPC_SERVER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+        <post-upgrade>
+          <task xsi:type="manual">
+            <message>Rebuild your topology and resubmit the topology using the new jar.</message>
+          </task>
+        </post-upgrade>
+      </component>
+    </service>
+
+    <service name="FLUME">
+      <component name="FLUME_HANDLER">
+        <upgrade>
+          <task xsi:type="restart" />
+        </upgrade>
+      </component>
+    </service>
   </processing>
 </upgrade>

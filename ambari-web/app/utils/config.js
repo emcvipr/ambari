@@ -563,7 +563,13 @@ App.config = Em.Object.create({
     // Password fields should be made blank by default in installer wizard
     // irrespective of whatever value is sent from stack definition.
     // This forces the user to fill the password field.
-    configData.value = configData.displayType == "password" ? '' : advanced ? advanced.value : configData.value;
+    if (configData.displayType == 'checkbox') {
+      configData.value = advanced ? advanced.value === 'true' : configData.value === 'true';
+    } else if (configData.displayType == 'password') {
+      configData.value = '';
+    } else {
+      configData.value = advanced ? advanced.value : configData.value;
+    }
     configData.defaultValue = configData.value;
     configData.filename = advanced ? advanced.filename : configData.filename;
     configData.description = advanced ? advanced.description : configData.description;
@@ -682,7 +688,13 @@ App.config = Em.Object.create({
         var serviceConfigProperty = App.ServiceConfigProperty.create(_config);
         this.updateHostOverrides(serviceConfigProperty, _config);
         if (!storedConfigs && !serviceConfigProperty.get('hasInitialValue')) {
-          serviceConfigProperty.initialValue(localDB);
+          var hiveMetastoreUrisConfig = configs.filterProperty('filename', 'hive-site.xml').findProperty('name', 'hive.metastore.uris');
+          var clientPortConfig = configs.filterProperty('filename', 'zoo.cfg.xml').findProperty('name', 'clientPort');
+          var dependencies = {
+            'hive.metastore.uris': hiveMetastoreUrisConfig && hiveMetastoreUrisConfig.defaultValue,
+            'clientPort': clientPortConfig && clientPortConfig.defaultValue
+          };
+          serviceConfigProperty.initialValue(localDB, dependencies);
         }
         if (storedConfigs && storedConfigs.filterProperty('name', _config.name).length && !!_config.filename) {
           var storedConfig = storedConfigs.filterProperty('name', _config.name).findProperty('filename', _config.filename);
@@ -825,7 +837,7 @@ App.config = Em.Object.create({
     var properties = [];
     if (data.items.length) {
       data.items.forEach(function (item) {
-        item.StackLevelConfigurations.property_type = item.StackConfigurations.property_type || [];
+        item.StackLevelConfigurations.property_type = item.StackLevelConfigurations.property_type || [];
         item.StackLevelConfigurations.service_name = 'MISC';
         var property = this.createAdvancedPropertyObject(item.StackLevelConfigurations);
         if (property) properties.push(property);
@@ -911,11 +923,13 @@ App.config = Em.Object.create({
 
   loadAdvancedConfigPartialSuccess: function(data, opt, params, request) {
     var properties = [];
-    var configurations = data.items.mapProperty('configurations').reduce(function(p,c) { return p.concat(c); });
-    configurations.forEach(function(item) {
-      var property = this.createAdvancedPropertyObject(item.StackConfigurations);
-      if (property) properties.push(property);
-    }, this);
+    if(data.items.length && data.items.mapProperty('configurations').length) {
+      var configurations = data.items.mapProperty('configurations').reduce(function(p,c) { return p.concat(c); });
+      configurations.forEach(function(item) {
+        var property = this.createAdvancedPropertyObject(item.StackConfigurations);
+        if (property) properties.push(property);
+      }, this);
+    }
     params.callback(properties, request);
   },
 
@@ -962,7 +976,12 @@ App.config = Em.Object.create({
   advancedConfigIdentityData: function(config) {
     var propertyData = {};
     var proxyUserGroupServices = ['HIVE', 'OOZIE', 'FALCON'];
-
+    var nameToDisplayNameMap = {
+      'smokeuser': 'Smoke Test User',
+      'user_group': 'Hadoop Group',
+      'mapred_user': 'MapReduce User',
+      'zk_user': 'ZooKeeper User'
+    };
     if (config.property_type.contains('USER') || config.property_type.contains('GROUP')) {
       propertyData.id = "puppet var";
       propertyData.category = 'Users and Groups';
@@ -970,7 +989,7 @@ App.config = Em.Object.create({
       propertyData.serviceName = 'MISC';
       propertyData.isOverridable = false;
       propertyData.isReconfigurable = false;
-      propertyData.displayName = App.format.normalizeName(config.property_name);
+      propertyData.displayName = nameToDisplayNameMap[config.property_name] || App.format.normalizeName(config.property_name);
       propertyData.displayType = 'user';
       if (config.service_name) {
         var propertyIndex = config.service_name == 'MISC' ? 30 : App.StackService.find().mapProperty('serviceName').indexOf(config.service_name);

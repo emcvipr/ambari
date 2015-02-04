@@ -22,11 +22,13 @@ Ambari Agent
 
 import json
 import sys
+import re
 import traceback
 from resource_management import *
-from resource_management.libraries.functions.list_ambari_managed_repos import *
+from resource_management.libraries.functions.list_ambari_managed_repos import list_ambari_managed_repos
 from ambari_commons.os_check import OSCheck, OSConst
-from resource_management.libraries.functions import packages_analyzer
+from resource_management.libraries.functions.packages_analyzer import allInstalledPackages
+from resource_management.core.shell import call
 
 
 class InstallPackages(Script):
@@ -52,16 +54,20 @@ class InstallPackages(Script):
       repository_version = config['roleParams']['repository_version']
       base_urls = json.loads(config['roleParams']['base_urls'])
       package_list = json.loads(config['roleParams']['package_list'])
+      stack_id = config['roleParams']['stack_id']
     except KeyError:
       # Last try
       repository_version = config['commandParams']['repository_version']
       base_urls = json.loads(config['commandParams']['base_urls'])
       package_list = json.loads(config['commandParams']['package_list'])
+      stack_id = config['commandParams']['stack_id']
 
     # Install/update repositories
     installed_repositories = []
     current_repositories = ['base']  # Some our packages are installed from the base repo
     current_repo_files = set(['base'])
+    old_versions = self.hdp_versions()
+    
     try:
       append_to_file = False
       for url_info in base_urls:
@@ -81,11 +87,12 @@ class InstallPackages(Script):
       packages_were_checked = False
       try:
         packages_installed_before = []
-        packages_analyzer.allInstalledPackages(packages_installed_before)
+        allInstalledPackages(packages_installed_before)
         packages_installed_before = [package[0] for package in packages_installed_before]
         packages_were_checked = True
         for package in package_list:
-          Package(package['name'], use_repos=list(current_repo_files) if OSCheck.is_ubuntu_family() else current_repositories)
+          name = self.format_package_name(package['name'], repository_version)
+          Package(name, use_repos=list(current_repo_files) if OSCheck.is_ubuntu_family() else current_repositories)
         package_install_result = True
       except Exception, err:
         print "Can not install packages."
@@ -95,19 +102,34 @@ class InstallPackages(Script):
         # Remove already installed packages in case of fail
         if packages_were_checked and packages_installed_before:
           packages_installed_after = []
-          packages_analyzer.allInstalledPackages(packages_installed_after)
+          allInstalledPackages(packages_installed_after)
           packages_installed_after = [package[0] for package in packages_installed_after]
           packages_installed_before = set(packages_installed_before)
           new_packages_installed = [package for package in packages_installed_after if package not in packages_installed_before]
+
+          if OSCheck.is_ubuntu_family():
+            package_version_string = repository_version.replace('.', '-')
+          else:
+            package_version_string = repository_version.replace('-', '_')
+            package_version_string = package_version_string.replace('.', '_')
           for package in new_packages_installed:
-            Package(package, action="remove")
+            if package_version_string and (package_version_string in package):
+              Package(package, action="remove")
 
     # Build structured output
     structured_output = {
       'ambari_repositories': installed_repositories,
       'installed_repository_version': repository_version,
+      'stack_id': stack_id,
       'package_installation_result': 'SUCCESS' if package_install_result else 'FAIL'
     }
+
+    if package_install_result:
+      new_versions = self.hdp_versions()
+      deltas = set(new_versions) - set(old_versions)
+      if 1 == len(deltas):
+        structured_output['actual_version'] = next(iter(deltas))
+
     self.put_structured_out(structured_output)
 
     # Provide correct exit code
@@ -144,6 +166,32 @@ class InstallPackages(Script):
       components = ubuntu_components,  # ubuntu specific
     )
     return repo['repoName'], file_name
+
+  def format_package_name(self, package_name, repo_id):
+    """
+    This method overcomes problems at SLES SP3. Zypper here behaves differently
+    than at SP1, and refuses to install packages by mask if there is any installed package that
+    matches this mask.
+    So we preppend concrete HDP version to mask under Suse
+    """
+    if OSCheck.is_suse_family() and '*' in package_name:
+      mask_version = re.search(r'((_\d+)*(_)?\*)', package_name).group(0)
+      formatted_version = '_' + repo_id.replace('.', '_').replace('-', '_') + '*'
+      return package_name.replace(mask_version, formatted_version)
+    else:
+      return package_name
+
+  def hdp_versions(self):
+    code, out = call("hdp-select versions")
+    if 0 == code:
+      versions = []
+      for line in out.splitlines():
+        versions.append(line.rstrip('\n'))
+      return versions
+    else:
+      return []
+
+
 
 if __name__ == "__main__":
   InstallPackages().execute()

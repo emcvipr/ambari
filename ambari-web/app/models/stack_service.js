@@ -79,8 +79,19 @@ App.StackService = DS.Model.extend({
 
   isHiddenOnSelectServicePage: function () {
     var hiddenServices = ['MAPREDUCE2'];
-    return hiddenServices.contains(this.get('serviceName')) || !this.get('isInstallable');
+    return hiddenServices.contains(this.get('serviceName')) || !this.get('isInstallable') || this.get('doNotShowAndInstall');
   }.property('serviceName', 'isInstallable'),
+
+  doNotShowAndInstall: function () {
+    var skipServices = [];
+    if(!App.supports.installGanglia) {
+      skipServices.push('GANGLIA');
+    }
+    if(App.router.get('clusterInstallCompleted') != true){
+      skipServices.push('RANGER');
+    }
+    return skipServices.contains(this.get('serviceName'));
+  }.property('serviceName'),
 
   // Is the service required for monitoring of other hadoop ecosystem services
   isMonitoringService: function () {
@@ -130,6 +141,11 @@ App.StackService = DS.Model.extend({
     return serviceComponents.someProperty('isSlave');
   }.property('serviceName'),
 
+  hasNonMastersWithCustomAssignment: function () {
+    var serviceComponents = this.get('serviceComponents');
+    return serviceComponents.rejectProperty('isMaster').rejectProperty('cardinality', 'ALL').length > 0;
+  }.property('serviceName'),
+
   isClientOnlyService: function () {
     var serviceComponents = this.get('serviceComponents');
     return serviceComponents.everyProperty('isClient');
@@ -141,7 +157,7 @@ App.StackService = DS.Model.extend({
   }.property('configTypes'),
 
   customReviewHandler: function () {
-    return App.get('isHadoopWindowsStack')? App.StackService.reviewWindowsPageHandlers[this.get('serviceName')] : App.StackService.reviewPageHandlers[this.get('serviceName')];
+    return App.StackService.reviewPageHandlers[this.get('serviceName')];
   }.property('serviceName'),
 
   /**
@@ -153,7 +169,7 @@ App.StackService = DS.Model.extend({
     var configTypes = this.get('configTypes');
     var serviceComponents = this.get('serviceComponents');
     if (configTypes && Object.keys(configTypes).length) {
-      var pattern = ["MetricsSink", "General", "CapacityScheduler", "FaultTolerance", "Isolation", "Performance", "KDC","^Advanced", "Env$", "^Custom", "Falcon - Oozie integration", "FalconStartupSite", "FalconRuntimeSite", "MetricCollector"];
+      var pattern = ["General", "CapacityScheduler", "FaultTolerance", "Isolation", "Performance", "KDC", "Kadmin","^Advanced", "Env$", "^Custom", "Falcon - Oozie integration", "FalconStartupSite", "FalconRuntimeSite", "MetricCollector", "Settings$"];
       configCategories = App.StackService.configCategories.call(this).filter(function (_configCategory) {
         var serviceComponentName = _configCategory.get('name');
         var isServiceComponent = serviceComponents.someProperty('componentName', serviceComponentName);
@@ -209,30 +225,10 @@ App.StackService.reviewPageHandlers = {
   }
 };
 
-App.StackService.reviewWindowsPageHandlers = {
-  'HIVE': {
-    'Database': 'loadHiveDbValue'
-  },
-  'HDFS': {
-    'Database': 'loadSinkDbValue'
-  },
-  'NAGIOS': {
-    'Administrator': 'loadNagiosAdminValue'
-  },
-  'OOZIE': {
-    'Database': 'loadOozieDbValue'
-  }
-};
-
 App.StackService.configCategories = function () {
   var serviceConfigCategories = [];
   switch (this.get('serviceName')) {
     case 'HDFS':
-      if (App.get('isHadoopWindowsStack')) {
-        serviceConfigCategories.pushObjects([
-          App.ServiceConfigCategory.create({ name: 'MetricsSink', displayName: 'Metrics Sink'})
-        ]);
-      }
       serviceConfigCategories.pushObjects([
         App.ServiceConfigCategory.create({ name: 'NAMENODE', displayName: 'NameNode'}),
         App.ServiceConfigCategory.create({ name: 'SECONDARY_NAMENODE', displayName: 'Secondary NameNode'}),
@@ -328,14 +324,21 @@ App.StackService.configCategories = function () {
       break;
     case 'KERBEROS':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'KDC', displayName: 'KDC and Kadmin'}),
+        App.ServiceConfigCategory.create({ name: 'KDC', displayName: 'KDC'}),
+        App.ServiceConfigCategory.create({ name: 'Kadmin', displayName: 'Kadmin'}),
         App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'})
       ]);
       break;
     case 'AMS':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'MetricCollector', displayName: 'Metric Collector'}),
-        App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'})
+        App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'}),
+        App.ServiceConfigCategory.create({ name: 'MetricCollector', displayName: 'Metric Collector'})
+      ]);
+      break;
+    case 'RANGER':
+      serviceConfigCategories.pushObjects([
+        App.ServiceConfigCategory.create({ name: 'AdminSettings', displayName: 'Admin Settings'}),
+        App.ServiceConfigCategory.create({ name: 'DBSettings', displayName: 'DB Settings'})
       ]);
       break;
     case 'PIG':

@@ -23,21 +23,48 @@ App.HostStackVersion = DS.Model.extend({
   version: DS.attr('string'),
   repo: DS.belongsTo('App.Repository'),
   repoVersion: DS.attr('string'),
+  displayName: DS.attr('string'),
 
   /**
    * possible property value defined at App.HostStackVersion.statusDefinition
+   * @type {string}
    */
   status: DS.attr('string'),
   host: DS.belongsTo('App.Host'),
   hostName: DS.attr('string'),
+
+  /**
+   * @type {boolean}
+   */
   isCurrent: function () {
     return this.get('status') === 'CURRENT'
   }.property('status'),
+
+  /**
+   * @type {boolean}
+   */
+  isInstalling: function () {
+    return this.get('status') === 'INSTALLING';
+  }.property('status'),
+
+  /**
+   * @type {boolean}
+   */
+  isOutOfSync: function () {
+    return this.get('status') === 'OUT_OF_SYNC';
+  }.property('status'),
+  /**
+   * @type {string}
+   */
   displayStatus: function() {
     return App.HostStackVersion.formatStatus(this.get('status'));
   }.property('status'),
+
+  /**
+   * @type {boolean}
+   */
   installEnabled: function () {
-    return (this.get('status') === 'INIT' || this.get('status') === 'INSTALL_FAILED');
+    return ['OUT_OF_SYNC', 'INSTALL_FAILED'].contains(this.get('status'));
   }.property('status'),
   installDisabled: Ember.computed.not('installEnabled')
 });
@@ -52,8 +79,10 @@ App.HostStackVersion.statusDefinition = [
   "INSTALLED",
   "INSTALLING",
   "INSTALL_FAILED",
-  "INIT",
-  "CURRENT"
+  "OUT_OF_SYNC",
+  "CURRENT",
+  "UPGRADING",
+  "UPGRADE_FAILED"
 ];
 
 /**
@@ -62,7 +91,7 @@ App.HostStackVersion.statusDefinition = [
  * @return {string}
  */
 App.HostStackVersion.formatStatus = function (status) {
-  return status ?
+  return App.HostStackVersion.statusDefinition.contains(status) ?
     Em.I18n.t('hosts.host.stackVersions.status.' + status.toLowerCase()) :
-    Em.I18n.t('common.unknown');
+    status.toCapital();
 };

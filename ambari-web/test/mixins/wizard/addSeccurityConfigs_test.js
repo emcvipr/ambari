@@ -18,7 +18,7 @@
 
 var App = require('app');
 var stackDescriptorData = require('test/mock_data_setup/stack_descriptors');
-var stackDescriptor = stackDescriptorData.Versions.kerberos_descriptor;
+var stackDescriptor = stackDescriptorData.artifact_data;
 
 require('mixins/wizard/addSecurityConfigs');
 
@@ -355,7 +355,7 @@ describe('App.AddSecurityConfigs', function () {
         property: 'spnego_keytab',
         e: [
           { key: 'value', value: '${keytab_dir}/spnego.service.keytab' },
-          { key: 'serviceName', value: 'Cluster' },
+          { key: 'serviceName', value: 'Cluster' }
         ]
       },
       // principal name inherited from /spnego with predefined value
@@ -363,7 +363,7 @@ describe('App.AddSecurityConfigs', function () {
         property: 'oozie.authentication.kerberos.principal',
         e: [
           { key: 'value', value: 'HTTP/${host}@${realm}' },
-          { key: 'isEditable', value: true },
+          { key: 'isEditable', value: true }
         ]
       },
       // keytab inherited from /spnego without predefined file value
@@ -378,10 +378,6 @@ describe('App.AddSecurityConfigs', function () {
       }
     ];
 
-    it('resulted array should have unique properties by name', function() {
-      expect(result.mapProperty('name').length).to.be.eql(result.mapProperty('name').uniq().length);
-    });
-    
     propertyValidationTests.forEach(function(test) {
       it('property {0} should be created'.format(test.property), function() {
         expect(result.findProperty('name', test.property)).to.be.ok;
@@ -395,7 +391,8 @@ describe('App.AddSecurityConfigs', function () {
   });
 
   describe('#expandKerberosStackDescriptorProps', function() {
-    var result = controller.expandKerberosStackDescriptorProps(stackDescriptor.properties);
+    var serviceName = 'Cluster';
+    var result = controller.expandKerberosStackDescriptorProps(stackDescriptor.properties, serviceName);
     var testCases = [
       {
         property: 'realm',
@@ -430,7 +427,7 @@ describe('App.AddSecurityConfigs', function () {
       {
         property: 'dfs.namenode.kerberos.principal',
         e: [
-          { key: 'value', value: 'nn/_HOST@${realm}' },
+          { key: 'value', value: 'nn/_HOST@${realm}' }
         ]
       },
       {
@@ -441,7 +438,7 @@ describe('App.AddSecurityConfigs', function () {
         ]
       }     
     ];
-    var properties = controller.createConfigsByIdentities(identitiesData, 'NAMENODE');
+    var properties = controller.createConfigsByIdentities(identitiesData, 'HDFS');
     tests.forEach(function(test) {
       it('property {0} should be created'.format(test.property), function() {
         expect(properties.findProperty('name', test.property)).to.be.ok;
@@ -490,8 +487,8 @@ describe('App.AddSecurityConfigs', function () {
           {
             property: 'spnego_principal',
             e: [
-              { key: 'displayName', value: 'spnego_principal' },
-              { key: 'filename', value: 'cluster-env' },
+              { key: 'displayName', value: 'Spnego Principal' },
+              { key: 'filename', value: 'cluster-env' }
             ]
           }
         ]
@@ -502,8 +499,8 @@ describe('App.AddSecurityConfigs', function () {
           {
             property: 'spnego_keytab',
             e: [
-              { key: 'displayName', value: 'spnego_keytab' },
-              { key: 'filename', value: 'cluster-env' },
+              { key: 'displayName', value: 'Spnego Keytab' },
+              { key: 'filename', value: 'cluster-env' }
             ]
           }
         ]

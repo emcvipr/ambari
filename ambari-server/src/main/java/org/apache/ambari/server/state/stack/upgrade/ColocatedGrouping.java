@@ -30,6 +30,7 @@ import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlType;
 
 import org.apache.ambari.server.stack.HostsType;
+import org.apache.ambari.server.state.UpgradeContext;
 import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
@@ -49,20 +50,22 @@ public class ColocatedGrouping extends Grouping {
 
   @Override
   public StageWrapperBuilder getBuilder() {
-    return new MultiHomedBuilder(batch);
+    return new MultiHomedBuilder(batch, performServiceCheck);
   }
 
   private static class MultiHomedBuilder extends StageWrapperBuilder {
 
-    private Batch batch;
+    private Batch m_batch;
+    private boolean m_serviceCheck = true;
 
     // !!! host -> list of tasks
     private Map<String, List<TaskProxy>> initialBatch = new LinkedHashMap<String, List<TaskProxy>>();
     private Map<String, List<TaskProxy>> finalBatches = new LinkedHashMap<String, List<TaskProxy>>();
 
 
-    private MultiHomedBuilder(Batch batch) {
-      this.batch = batch;
+    private MultiHomedBuilder(Batch batch, boolean serviceCheck) {
+      this.m_batch = batch;
+      m_serviceCheck = serviceCheck;
     }
 
     @Override
@@ -70,7 +73,7 @@ public class ColocatedGrouping extends Grouping {
         boolean forUpgrade, boolean clientOnly, ProcessingComponent pc) {
 
       int count = Double.valueOf(Math.ceil(
-          (double) batch.percent / 100 * hostsType.hosts.size())).intValue();
+          (double) m_batch.percent / 100 * hostsType.hosts.size())).intValue();
 
       int i = 0;
       for (String host : hostsType.hosts) {
@@ -131,7 +134,7 @@ public class ColocatedGrouping extends Grouping {
 
 
     @Override
-    public List<StageWrapper> build() {
+    public List<StageWrapper> build(UpgradeContext ctx) {
       List<StageWrapper> results = new ArrayList<StageWrapper>();
 
       if (LOG.isDebugEnabled()) {
@@ -139,24 +142,26 @@ public class ColocatedGrouping extends Grouping {
         LOG.debug("RU final: {}", finalBatches);
       }
 
-      results.addAll(fromProxies(initialBatch));
+      results.addAll(fromProxies(ctx.getDirection(), initialBatch));
 
       // !!! TODO when manual tasks are ready
       ManualTask task = new ManualTask();
-      task.message = batch.message;
+      task.summary = m_batch.summary;
+      task.message = m_batch.message;
 
       StageWrapper wrapper = new StageWrapper(
           StageWrapper.Type.SERVER_SIDE_ACTION,
-          "Validate partial upgrade",
+          "Validate Partial " + ctx.getDirection().getText(true),
           new TaskWrapper(null, null, Collections.<String>emptySet(), task));
       results.add(wrapper);
 
-      results.addAll(fromProxies(finalBatches));
+      results.addAll(fromProxies(ctx.getDirection(), finalBatches));
 
       return results;
     }
 
-    private List<StageWrapper> fromProxies(Map<String, List<TaskProxy>> wrappers) {
+    private List<StageWrapper> fromProxies(Direction direction,
+        Map<String, List<TaskProxy>> wrappers) {
       List<StageWrapper> results = new ArrayList<StageWrapper>();
 
       Set<String> serviceChecks = new HashSet<String>();
@@ -191,7 +196,8 @@ public class ColocatedGrouping extends Grouping {
 
       }
 
-      if (serviceChecks.size() > 0) {
+      if (Direction.UPGRADE == direction && m_serviceCheck &&
+          serviceChecks.size() > 0) {
         // !!! add the service check task
         List<TaskWrapper> tasks = new ArrayList<TaskWrapper>();
         for (String service : serviceChecks) {

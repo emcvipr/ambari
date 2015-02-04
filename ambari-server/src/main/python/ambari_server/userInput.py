@@ -22,7 +22,8 @@ import os
 import getpass
 import re
 
-from ambari_commons.logging_utils import *
+from ambari_commons.logging_utils import get_silent
+from ambari_commons.os_utils import get_password
 
 
 #
@@ -30,9 +31,6 @@ from ambari_commons.logging_utils import *
 #
 # return True if 'y' or False if 'n'
 #
-from ambari_commons.os_utils import get_password
-
-
 def get_YN_input(prompt, default):
   yes = set(['yes', 'ye', 'y'])
   no = set(['no', 'n'])
@@ -40,27 +38,34 @@ def get_YN_input(prompt, default):
 
 
 def get_choice_string_input(prompt, default, firstChoice, secondChoice):
-  if SILENT:
+  if get_silent():
     print(prompt)
     return default
-  choice = raw_input(prompt).lower()
-  if choice in firstChoice:
-    return True
-  elif choice in secondChoice:
-    return False
-  elif choice is "":  # Just enter pressed
-    return default
-  else:
-    print "input not recognized, please try again: "
-    return get_choice_string_input(prompt, default, firstChoice, secondChoice)
+
+  input = True
+  result = default
+  while input:
+    choice = raw_input(prompt).lower()
+    if choice in firstChoice:
+      result = True
+      input = False
+    elif choice in secondChoice:
+      result = False
+      input = False
+    elif choice is "":  # Just enter pressed
+      result = default
+      input = False
+    else:
+      print "input not recognized, please try again: "
+
+  return result
 
 
 def get_validated_string_input(prompt, default, pattern, description,
                                is_pass, allowEmpty=True, validatorFunction=None):
-
   input = ""
   while not input:
-    if SILENT:
+    if get_silent():
       print (prompt)
       input = default
     elif is_pass:
@@ -96,7 +101,7 @@ def get_validated_string_input(prompt, default, pattern, description,
 def get_validated_filepath_input(prompt, description, default=None):
   input = False
   while not input:
-    if SILENT:
+    if get_silent():
       print (prompt)
       return default
     else:
@@ -108,3 +113,42 @@ def get_validated_filepath_input(prompt, description, default=None):
       else:
         print description
         input = False
+
+def get_prompt_default(defaultStr=None):
+  if not defaultStr or defaultStr == "":
+    return ""
+  else:
+    return '(' + defaultStr + ')'
+
+
+def read_password(passwordDefault,
+                  passwordPattern,
+                  passwordPrompt=None,
+                  passwordDescr=None):
+
+  input = True
+  while(input):
+    # setup password
+    if passwordPrompt is None:
+      passwordPrompt = 'Password (' + passwordDefault + '): '
+
+    if passwordDescr is None:
+      passwordDescr = "Invalid characters in password. Use only alphanumeric or " \
+                      "_ or - characters"
+
+    password = get_validated_string_input(passwordPrompt, passwordDefault,
+                                          passwordPattern, passwordDescr, True)
+    if not password:
+      print 'Password cannot be blank.'
+      continue
+
+    if password != passwordDefault:
+      password1 = get_validated_string_input("Re-enter password: ",
+                                             passwordDefault, passwordPattern, passwordDescr, True)
+      if password != password1:
+        print "Passwords do not match"
+        continue
+
+    input = False
+
+  return password

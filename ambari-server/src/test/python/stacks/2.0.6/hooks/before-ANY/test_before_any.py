@@ -73,7 +73,7 @@ class TestHookBeforeInstall(RMFTestCase):
     self.assertResourceCalled('User', 'hdfs',
         gid = 'hadoop',
         ignore_failures = False,
-        groups = [u'hadoop'],
+        groups = [u' hdfs'],
     )
     self.assertResourceCalled('User', 'storm',
         gid = 'hadoop',
@@ -131,7 +131,7 @@ class TestHookBeforeInstall(RMFTestCase):
         owner = 'hbase',
         mode = 0775,
         recursive = True,
-        recursive_permission = True
+        cd_access='a'
     )
     self.assertResourceCalled('File', '/tmp/changeUid.sh',
         content = StaticFile('changeToSecureUid.sh'),

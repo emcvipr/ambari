@@ -18,22 +18,17 @@
 
 package org.apache.ambari.server.api.resources;
 
-import org.apache.ambari.server.api.query.render.ClusterBlueprintRenderer;
 import org.apache.ambari.server.api.query.render.DefaultRenderer;
-import org.apache.ambari.server.api.query.render.MinimalRenderer;
 import org.apache.ambari.server.api.query.render.Renderer;
 import org.apache.ambari.server.controller.spi.Resource;
 
-import java.util.Collection;
-
 
 /**
- * Blueprint resource definition.
+ * Client configuration resource definition.
  */
 public class ClientConfigResourceDefinition extends BaseResourceDefinition {
   /**
    * Constructor.
-   *
    */
   public ClientConfigResourceDefinition() {
     super(Resource.Type.ClientConfig);
@@ -56,13 +51,5 @@ public class ClientConfigResourceDefinition extends BaseResourceDefinition {
     } else {
       return super.getRenderer(name);
     }
-  }
-
-  @Override
-  public Collection<String> getCreateDirectives() {
-    Collection<String> directives = super.getCreateDirectives();
-    directives.add("validate_topology");
-
-    return directives;
   }
 }

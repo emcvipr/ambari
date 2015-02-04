@@ -47,9 +47,7 @@ App.MainAlertDefinitionsController = Em.ArrayController.extend({
    * </ul>
    * @type {App.AlertDefinition[]}
    */
-  content: function () {
-    return App.AlertDefinition.getAllDefinitions();
-  }.property('mapperTimestamp'),
+  content: App.AlertDefinition.find(),
 
   /**
    * Enable/disable alertDefinition confirmation popup
@@ -92,15 +90,22 @@ App.MainAlertDefinitionsController = Em.ArrayController.extend({
   },
 
   /**
-   * Calculate critical/warning count for each service, to show up the label on services menu
+   * Calculate critical count for each service, to show up the label on services menu
    * @method getCriticalAlertsCountForService
    * @return {number}
    */
   getCriticalAlertsCountForService: function (service) {
-    var alertsForService = this.get('content').filterProperty('service', service);
-    return alertsForService.filterProperty('isCriticalOrWarning').get('length');
+    return this.get('criticalAlertInstances').filterProperty('service', service).get('length');
   },
 
+  /**
+   * Calculate critical/warning count for each service, to show up the label on services menu
+   * @method getCriticalOrWarningAlertsCountForService
+   * @return {number}
+   */
+  getCriticalOrWarningAlertsCountForService: function (service) {
+    return this.get('unhealthyAlertInstances').filterProperty('service', service).get('length');
+  },
 
   /**
    *  ========================== alerts popup dialog =========================
@@ -114,11 +119,17 @@ App.MainAlertDefinitionsController = Em.ArrayController.extend({
     return this.get('unhealthyAlertInstances.length');
   }.property('unhealthyAlertInstances.length'),
 
-  unhealthyAlertInstances: function () {
-    return App.AlertInstance.find().toArray().filterProperty('state', 'CRITICAL').concat(
-        App.AlertInstance.find().toArray().filterProperty('state', 'WARNING')
-    );
+  criticalAlertInstances: function () {
+    return App.AlertInstance.find().toArray().filterProperty('state', 'CRITICAL');
   }.property('mapperTimestamp'),
+
+  warningAlertInstances: function () {
+    return App.AlertInstance.find().toArray().filterProperty('state', 'WARNING');
+  }.property('mapperTimestamp'),
+
+  unhealthyAlertInstances: function () {
+    return this.get('criticalAlertInstances').concat(this.get('warningAlertInstances'));
+  }.property('criticalAlertInstances', 'warningAlertInstances'),
 
   /**
    * if critical alerts exist, if true, the alert badge should be red.

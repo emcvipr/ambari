@@ -80,7 +80,7 @@ class TestSliderClient(RMFTestCase):
     )
 
     self.assertResourceCalled('Execute',
-                              '/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa; /usr/lib/slider/bin/slider list',
+                              '/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa@EXAMPLE.COM; /usr/lib/slider/bin/slider list',
                               logoutput=True,
                               tries=3,
                               user='ambari-qa',
@@ -106,3 +106,15 @@ class TestSliderClient(RMFTestCase):
     )
     self.assertNoMoreResources()
 
+
+  def test_pre_rolling_restart(self):
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/slider_client.py",
+                       classname = "SliderClient",
+                       command = "pre_rolling_restart",
+                       config_file="default.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
+
+    self.assertResourceCalled("Execute", "hdp-select set slider-client 2.2.1.0-2067")
+    self.assertResourceCalled("Execute", "hdp-select set hadoop-client 2.2.1.0-2067")
+    self.assertNoMoreResources()

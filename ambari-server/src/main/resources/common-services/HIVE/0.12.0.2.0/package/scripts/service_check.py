@@ -34,7 +34,7 @@ class HiveServiceCheck(Script):
     port = int(format("{hive_server_port}"))
     print "Test connectivity to hive server"
     if params.security_enabled:
-      kinitcmd=format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser}; ")
+      kinitcmd=format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser_principal}; ")
     else:
       kinitcmd=None
 
@@ -42,7 +42,8 @@ class HiveServiceCheck(Script):
     for address in address_list:
       try:
         check_thrift_port_sasl(address, port, params.hive_server2_authentication,
-                               params.hive_server_principal, kinitcmd, params.smokeuser)
+                               params.hive_server_principal, kinitcmd, params.smokeuser,
+                               transport_mode=params.hive_transport_mode)
         print "Successfully connected to %s on port %s" % (address, port)
         workable_server_available = True
       except:

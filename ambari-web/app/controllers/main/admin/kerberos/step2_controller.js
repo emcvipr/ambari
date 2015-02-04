@@ -35,6 +35,28 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
 
   addMiscTabToPage: false,
 
+  /**
+   * @type {boolean} true if test connection to hosts is in progress
+   */
+  testConnectionInProgress: false,
+
+  /**
+   * Should Back-button be disabled
+   * @type {boolean}
+   */
+  isBackBtnDisabled: function() {
+    return this.get('testConnectionInProgress');
+  }.property('testConnectionInProgress'),
+
+  /**
+   * Should Next-button be disabled
+   * @type {boolean}
+   */
+  isSubmitDisabled: function () {
+    if (!this.get('stepConfigs.length') || this.get('testConnectionInProgress') || this.get('submitButtonClicked')) return true;
+    return (!this.get('stepConfigs').filterProperty('showConfig', true).everyProperty('errorCount', 0) || this.get("miscModalVisible"));
+  }.property('stepConfigs.@each.errorCount', 'miscModalVisible', 'submitButtonClicked', 'testConnectionInProgress'),
+
   hostNames: function () {
     return this.get('content.hosts');
   }.property('content.hosts'),
@@ -70,7 +92,21 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     App.config.setPreDefinedServiceConfigs(this.get('addMiscTabToPage'));
     //STEP 4: Add advanced configs
     App.config.addAdvancedConfigs(configs, advancedConfigs);
+    this.showAdConfigs(configs);
     this.applyServicesConfigs(configs, storedConfigs);
+  },
+
+  /**
+   * Make Active Directory specific configs visible if user has selected AD option
+   * @param configs
+   */
+  showAdConfigs: function (configs) {
+    var kdcType = this.get('content.kerberosOption');
+    var configNames = ['ldap_url', 'container_dn'];
+    configNames.forEach(function (_configName) {
+      var config = configs.findProperty('name', _configName);
+      config.isVisible = kdcType === Em.I18n.t('admin.kerberos.wizard.step1.option.ad');
+    }, this);
   },
 
   submit: function () {
@@ -87,7 +123,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
       self.createKerberosComponent().done(function () {
         self.createKerberosHostComponents().done(function () {
           self.createConfigurations().done(function () {
-            self.createKerberosAdminSession().done(function() {
+            self.createKerberosAdminSession().done(function () {
               App.router.send('next');
             });
           });
@@ -132,7 +168,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     });
   },
 
-  createKerberosHostComponents: function() {
+  createKerberosHostComponents: function () {
     var hostNames = this.get('content.hosts');
     var queryStr = '';
     hostNames.forEach(function (hostName) {
@@ -215,7 +251,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     return {"type": site, "tag": tag, "properties": properties};
   },
 
-  tweakKdcTypeValue: function(properties) {
+  tweakKdcTypeValue: function (properties) {
     if (properties['kdc_type'] === Em.I18n.t('admin.kerberos.wizard.step1.option.kdc')) {
       properties['kdc_type'] = "mit-kdc";
     } else if (properties['kdc_type'] === Em.I18n.t('admin.kerberos.wizard.step1.option.ad')) {
@@ -229,20 +265,30 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
    */
   createKerberosAdminSession: function () {
     var configs = this.get('stepConfigs')[0].get('configs');
-    var adminPrincipalValue = configs.findProperty('name','admin_principal').value;
-    var adminPasswordValue = configs.findProperty('name','admin_password').value;
+    var adminPrincipalValue = configs.findProperty('name', 'admin_principal').value;
+    var adminPasswordValue = configs.findProperty('name', 'admin_password').value;
     return App.ajax.send({
       name: 'common.cluster.update',
       sender: this,
       data: {
         clusterName: App.get('clusterName') || App.clusterStatus.get('clusterName'),
         data: [{
-          session_attributes : {
-            kerberos_admin : {principal : adminPrincipalValue, password : adminPasswordValue}
+          session_attributes: {
+            kerberos_admin: {principal: adminPrincipalValue, password: adminPasswordValue}
           }
         }]
       }
     });
+  },
+
+  /**
+   * shows popup with to warn user  
+   * @param primary
+   */
+  showConnectionInProgressPopup: function(primary) {
+    var primaryText = Em.I18n.t('common.exitAnyway');
+    var msg = Em.I18n.t('services.service.config.connection.exitPopup.msg');
+    App.showConfirmationPopup(primary, msg, null, null, primaryText)
   }
 });
 

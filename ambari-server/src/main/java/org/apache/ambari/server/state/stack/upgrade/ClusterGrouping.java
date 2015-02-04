@@ -21,6 +21,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import javax.xml.bind.annotation.XmlAccessType;
@@ -32,9 +34,12 @@ import javax.xml.bind.annotation.XmlTransient;
 import javax.xml.bind.annotation.XmlType;
 
 import org.apache.ambari.server.stack.HostsType;
-import org.apache.ambari.server.stack.MasterHostResolver;
-import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.UpgradeContext;
 import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 
 /**
  * Used to represent cluster-based operations.
@@ -63,6 +68,9 @@ public class ClusterGrouping extends Grouping {
     @XmlAttribute(name="title")
     public String title;
 
+    @XmlAttribute(name="id")
+    public String id;
+
     /**
      * Optional service name, can be ""
      */
@@ -80,14 +88,6 @@ public class ClusterGrouping extends Grouping {
   }
 
   public class ClusterBuilder extends StageWrapperBuilder {
-    private MasterHostResolver m_resolver = null;
-
-    /**
-     * @param cluster the cluster to use with this builder
-     */
-    public void setHelpers(Cluster cluster) {
-      m_resolver = new MasterHostResolver(cluster);
-    }
 
     @Override
     public void add(HostsType hostsType, String service,
@@ -96,7 +96,7 @@ public class ClusterGrouping extends Grouping {
     }
 
     @Override
-    public List<StageWrapper> build() {
+    public List<StageWrapper> build(UpgradeContext ctx) {
       if (null == ClusterGrouping.this.executionStages) {
         return Collections.emptyList();
       }
@@ -109,41 +109,24 @@ public class ClusterGrouping extends Grouping {
 
           StageWrapper wrapper = null;
 
-          if (null != execution.service && !execution.service.isEmpty() && null != execution.component && !execution.component.isEmpty()) {
+          switch (task.getType()) {
+            case MANUAL:
+              wrapper = getManualStageWrapper(ctx, execution);
+              break;
 
-            HostsType hosts = m_resolver.getMasterAndHosts(execution.service, execution.component);
-
-            if (null == hosts) {
-              continue;
-            }
-
-            Set<String> realHosts = new LinkedHashSet<String>(hosts.hosts);
-
-            // !!! FIXME other types
-            if (task.getType() == Task.Type.EXECUTE) {
-              ExecuteTask et = (ExecuteTask) task;
-
-              if (null != et.hosts && "master".equals(et.hosts) && null != hosts.master) {
-                realHosts = Collections.singleton(hosts.master);
-              }
-
+            case SERVER_ACTION:
               wrapper = new StageWrapper(
-                  StageWrapper.Type.RU_TASKS,
+                  StageWrapper.Type.SERVER_SIDE_ACTION,
                   execution.title,
-                  new TaskWrapper(execution.service, execution.component, realHosts, task));
-            }
-          } else {
-            switch (task.getType()) {
-              case MANUAL:
-              case SERVER_ACTION:
-                wrapper = new StageWrapper(
-                    StageWrapper.Type.SERVER_SIDE_ACTION,
-                    execution.title,
-                    new TaskWrapper(null, null, Collections.<String>emptySet(), task));
-                break;
-              default:
-                break;
-            }
+                  new TaskWrapper(null, null, Collections.<String>emptySet(), task));
+              break;
+
+            case EXECUTE:
+              wrapper = getExecuteStageWrapper(ctx, execution);
+              break;
+
+            default:
+              break;
           }
 
           if (null != wrapper) {
@@ -155,4 +138,94 @@ public class ClusterGrouping extends Grouping {
       return results;
     }
   }
+
+  private StageWrapper getManualStageWrapper(UpgradeContext ctx, ExecuteStage execution) {
+
+    String service   = execution.service;
+    String component = execution.component;
+    String id        = execution.id;
+    Task task        = execution.task;
+
+    if (null != id && id.equals("unhealthy-hosts")) {
+
+      // !!! this specific task is used ONLY when there are unhealthy
+      if (ctx.getUnhealthy().isEmpty()) {
+        return null;
+      }
+      ManualTask mt = (ManualTask) task;
+
+      fillHostDetails(mt, ctx.getUnhealthy());
+    }
+
+    Set<String> realHosts = Collections.emptySet();
+
+    if (null != service && !service.isEmpty() &&
+        null != component && !component.isEmpty()) {
+
+      HostsType hosts = ctx.getResolver().getMasterAndHosts(service, component);
+
+      if (null == hosts) {
+        return null;
+      } else {
+        realHosts = new LinkedHashSet<String>(hosts.hosts);
+      }
+    }
+
+    return new StageWrapper(
+        StageWrapper.Type.SERVER_SIDE_ACTION,
+        execution.title,
+        new TaskWrapper(service, component, realHosts, task));
+  }
+
+  private StageWrapper getExecuteStageWrapper(UpgradeContext ctx, ExecuteStage execution) {
+    String service   = execution.service;
+    String component = execution.component;
+    Task task        = execution.task;
+
+    if (null != service && !service.isEmpty() &&
+        null != component && !component.isEmpty()) {
+
+      HostsType hosts = ctx.getResolver().getMasterAndHosts(service, component);
+
+      if (hosts != null) {
+        Set<String> realHosts = new LinkedHashSet<String>(hosts.hosts);
+
+        ExecuteTask et = (ExecuteTask) task;
+
+        if (null != et.hosts && "master".equals(et.hosts) && null != hosts.master) {
+          realHosts = Collections.singleton(hosts.master);
+        }
+
+        return new StageWrapper(
+            StageWrapper.Type.RU_TASKS,
+            execution.title,
+            new TaskWrapper(service, component, realHosts, task));
+      }
+    }
+    return null;
+  }
+
+  private void fillHostDetails(ManualTask mt, Map<String, List<String>> unhealthy) {
+
+    JsonArray arr = new JsonArray();
+    for (Entry<String, List<String>> entry : unhealthy.entrySet()) {
+      JsonObject hostObj = new JsonObject();
+      hostObj.addProperty("host", entry.getKey());
+
+      JsonArray componentArr = new JsonArray();
+      for (String comp : entry.getValue()) {
+        componentArr.add(new JsonPrimitive(comp));
+      }
+      hostObj.add("components", componentArr);
+
+      arr.add(hostObj);
+    }
+
+    JsonObject obj = new JsonObject();
+    obj.add("unhealthy", arr);
+
+    mt.structuredOut = obj.toString();
+
+  }
+
 }

@@ -318,9 +318,7 @@ public class ResourceInstanceFactoryImpl implements ResourceInstanceFactory {
         break;
 
       case Upgrade:
-        resourceDefinition = new SimpleResourceDefinition(
-            Resource.Type.Upgrade, "upgrade", "upgrades",
-            Resource.Type.UpgradeGroup);
+        resourceDefinition = new UpgradeResourceDefinition();
         break;
 
       case UpgradeGroup:
@@ -340,6 +338,24 @@ public class ResourceInstanceFactoryImpl implements ResourceInstanceFactory {
 
       case Stage:
         resourceDefinition = new SimpleResourceDefinition(Resource.Type.Stage, "stage", "stages", Resource.Type.Task);
+        break;
+
+      case StackArtifact:
+        resourceDefinition = new BaseStacksResourceDefinition(Resource.Type.StackArtifact) {
+          @Override
+          public String getPluralName() {
+            return "artifacts";
+          }
+
+          @Override
+          public String getSingularName() {
+            return "artifact";
+          }
+        };
+        break;
+
+      case Artifact:
+        resourceDefinition = new SimpleResourceDefinition(Resource.Type.Artifact, "artifact", "artifacts");
         break;
 
       default:

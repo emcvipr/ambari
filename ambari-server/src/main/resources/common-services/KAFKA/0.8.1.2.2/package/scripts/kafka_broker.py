@@ -47,13 +47,11 @@ class KafkaBroker(Script):
     env.set_params(params)
     self.configure(env)
     daemon_cmd = format('source {params.conf_dir}/kafka-env.sh ; {params.kafka_bin} start')
-    no_op_test = format('ls {params.pid_file} >/dev/null 2>&1 && ps -p `cat {params.pid_file}` >/dev/null 2>&1')
+    no_op_test = format('ls {params.kafka_pid_file} >/dev/null 2>&1 && ps -p `cat {params.kafka_pid_file}` >/dev/null 2>&1')
     Execute(daemon_cmd,
             user=params.kafka_user,
             not_if=no_op_test
     )
-    
-    self.save_component_version_to_structured_out(params.stack_name)
 
   def stop(self, env, rolling_restart=False):
     import params
@@ -63,7 +61,7 @@ class KafkaBroker(Script):
     Execute(daemon_cmd,
             user=params.kafka_user,
     )
-    Execute (format("rm -f {params.pid_file}"))
+    Execute (format("rm -f {params.kafka_pid_file}"))
 
 
   def status(self, env):

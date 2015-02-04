@@ -27,6 +27,7 @@ from resource_management.libraries.functions.security_commons import build_expec
   cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties, \
   FILE_TYPE_XML
 from install_jars import install_tez_jars
+from setup_ranger_hive import setup_ranger_hive
 
 class HiveServer(Script):
 
@@ -53,13 +54,11 @@ class HiveServer(Script):
     self.configure(env) # FOR SECURITY
 
     # This function is needed in HDP 2.2, but it is safe to call in earlier versions.
-    copy_tarballs_to_hdfs('mapreduce', params.tez_user, params.hdfs_user, params.user_group)
-    copy_tarballs_to_hdfs('tez', params.tez_user, params.hdfs_user, params.user_group)
-
+    copy_tarballs_to_hdfs('mapreduce', 'hive-server2', params.tez_user, params.hdfs_user, params.user_group)
+    copy_tarballs_to_hdfs('tez', 'hive-server2', params.tez_user, params.hdfs_user, params.user_group)
+    setup_ranger_hive(env)    
     hive_service( 'hiveserver2', action = 'start',
       rolling_restart=rolling_restart )
-
-    self.save_component_version_to_structured_out(params.stack_name)
 
 
   def stop(self, env, rolling_restart=False):
@@ -88,6 +87,8 @@ class HiveServer(Script):
 
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
       Execute(format("hdp-select set hive-server2 {version}"))
+      copy_tarballs_to_hdfs('mapreduce', 'hive-server2', params.tez_user, params.hdfs_user, params.user_group)
+      copy_tarballs_to_hdfs('tez', 'hive-server2', params.tez_user, params.hdfs_user, params.user_group)
 
 
   def security_status(self, env):

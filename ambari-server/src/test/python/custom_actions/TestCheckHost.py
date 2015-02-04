@@ -23,13 +23,20 @@ import json
 import os
 import socket
 import subprocess
-from ambari_commons import inet_utils
+from ambari_commons import inet_utils, OSCheck
 from resource_management import Script, ConfigDictionary
 from mock.mock import patch
 from mock.mock import MagicMock
 from unittest import TestCase
 
 from check_host import CheckHost
+
+from only_for_platform import only_for_platform, get_platform, PLATFORM_LINUX, PLATFORM_WINDOWS
+
+if get_platform() != PLATFORM_WINDOWS:
+  os_distro_value = ('Suse','11','Final')
+else:
+  os_distro_value = ('win2012serverr2','6.3','WindowsServer')
 
 
 class TestCheckHost(TestCase):
@@ -141,7 +148,7 @@ class TestCheckHost(TestCase):
                                                                                     'exit_code': 1}})
     self.assertEquals(format_mock.call_args[0][0],'{java_exec} -cp '\
             '{check_db_connection_path}{class_path_delimiter}{jdbc_path} -Djava.library.path={agent_cache_dir} '\
-            'org.apache.ambari.server.DBConnectionVerification {db_connection_url} '\
+            'org.apache.ambari.server.DBConnectionVerification \"{db_connection_url}\" '\
             '{user_name} {user_passwd!p} {jdbc_driver}')
 
     # test, db connection success
@@ -232,6 +239,8 @@ class TestCheckHost(TestCase):
     structured_out_mock.assert_called_with({})
 
 
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch("platform.system")
   @patch.object(Script, 'get_config')
   @patch.object(Script, 'get_tmp_dir')
   @patch('resource_management.libraries.script.Script.put_structured_out')
@@ -244,7 +253,7 @@ class TestCheckHost(TestCase):
   @patch('time.time')
   def testLastAgentEnv(self, time_mock, checkReverseLookup_mock, checkIptables_mock, getTransparentHugePage_mock,
                        getUMask_mock, checkLiveServices_mock, javaProcs_mock, put_structured_out_mock,
-                       get_tmp_dir_mock, get_config_mock):
+                       get_tmp_dir_mock, get_config_mock, systemmock):
     jsonFilePath = os.path.join("../resources/custom_actions", "check_last_agent_env.json")
     with open(jsonFilePath, "r") as jsonFile:
       jsonPayload = json.load(jsonFile)

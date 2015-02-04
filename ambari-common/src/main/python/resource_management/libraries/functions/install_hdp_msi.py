@@ -46,6 +46,9 @@ HDFS_NAMENODE_DATA_DIR={hdp_data_dir}\\hdpdatann
 
 #Datanode Data directory
 HDFS_DATANODE_DATA_DIR={hdp_data_dir}\\hdpdatadn
+
+IS_SLIDER=yes
+IS_PHOENIX=yes
 """
 cluster_properties = """#Log directory
 HDP_LOG_DIR={hdp_log_dir}
@@ -91,7 +94,7 @@ OOZIE_DB_PASSWORD=oozie
 
 INSTALL_MSI_CMD = 'cmd /C start /wait msiexec /qn /i  {hdp_msi_path} /lv {hdp_log_path} MSIUSEREALADMINDETECTION=1 ' \
                   'HDP_LAYOUT={hdp_layout_path} DESTROY_DATA=yes HDP_USER_PASSWORD={hadoop_password_arg} HDP=yes ' \
-                  'KNOX=yes KNOX_MASTER_SECRET="AmbariHDP2Windows" FALCON=yes STORM=yes HBase=yes STORM=yes FLUME=yes RANGER=no'
+                  'KNOX=yes KNOX_MASTER_SECRET="AmbariHDP2Windows" FALCON=yes STORM=yes HBase=yes STORM=yes FLUME=yes SLIDER=yes PHOENIX=yes RANGER=no'
 CREATE_SERVICE_SCRIPT = os.path.abspath("sbin\createservice.ps1")
 CREATE_SERVICE_CMD = 'cmd /C powershell -File "{script}" -username hadoop -password "{password}" -servicename ' \
                      '{servicename} -hdpresourcesdir "{resourcedir}" -servicecmdpath "{servicecmd}"'
@@ -112,10 +115,13 @@ def _ensure_services_created(hadoop_password):
 
 
 # creating symlinks to services folders to avoid using stack-dependent paths
-def _create_symlinks():
+def _create_symlinks(stack_version):
   # folders
   Execute("cmd /c mklink /d %HADOOP_NODE%\\hadoop %HADOOP_HOME%")
   Execute("cmd /c mklink /d %HADOOP_NODE%\\hive %HIVE_HOME%")
+  hdp_stack_version = format_hdp_stack_version(stack_version)
+  if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
+    Execute("cmd /c mklink /d %HADOOP_NODE%\\knox %KNOX_HOME%")
   # files pairs (symlink_path, path_template_to_target_file), use * to replace file version
   links_pairs = [
     ("%HADOOP_HOME%\\share\\hadoop\\tools\\lib\\hadoop-streaming.jar",
@@ -138,7 +144,7 @@ def _is_msi_installed():
 # check if msi was installed correctly and raise Fail in case of broken install
 def _validate_msi_install():
   if not _is_msi_installed() and os.path.exists(os.path.join(_working_dir, INSTALL_MARKER_FAILED)):
-    Fail("Current or previous hdp.msi install failed. Check hdp.msi install logs")
+    raise Fail("Current or previous hdp.msi install failed. Check hdp.msi install logs")
   return _is_msi_installed()
 
 
@@ -169,7 +175,7 @@ def install_windows_msi(msi_url, save_dir, save_file, hadoop_password, stack_ver
     hdp_stack_version = format_hdp_stack_version(stack_version)
     hdp_22_specific_props = ''
     if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
-      hdp_22_specific_props = hdp_22
+      hdp_22_specific_props = hdp_22.format(hdp_data_dir=hdp_data_dir)
 
     # install msi
     download_file(msi_url, os.path.join(msi_save_dir, save_file))
@@ -189,7 +195,7 @@ def install_windows_msi(msi_url, save_dir, save_file, hadoop_password, stack_ver
     reload_windows_env()
     # create additional services manually due to hdp.msi limitaitons
     _ensure_services_created(hadoop_password)
-    _create_symlinks()
+    _create_symlinks(stack_version)
     # finalizing install
     _write_marker()
     _validate_msi_install()

@@ -27,13 +27,17 @@ public class KerberosOperationHandlerFactoryTest {
   @Test
   public void testForAD() {
     Assert.assertEquals(MITKerberosOperationHandler.class,
-      KerberosOperationHandlerFactory.getKerberosOperationHandler(KDCType.MIT_KDC).getClass());
+      new KerberosOperationHandlerFactory().getKerberosOperationHandler(KDCType.MIT_KDC).getClass());
   }
 
   @Test
   public void testForMIT() {
     Assert.assertEquals(ADKerberosOperationHandler.class,
-      KerberosOperationHandlerFactory.getKerberosOperationHandler(KDCType.ACTIVE_DIRECTORY).getClass());
+      new KerberosOperationHandlerFactory().getKerberosOperationHandler(KDCType.ACTIVE_DIRECTORY).getClass());
   }
 
+  @Test(expected = IllegalArgumentException.class)
+  public void testForNull() {
+    Assert.assertNull(new KerberosOperationHandlerFactory().getKerberosOperationHandler(null));
+  }
 }

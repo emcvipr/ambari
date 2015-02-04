@@ -243,12 +243,6 @@
   </property>
 
   <property>
-    <name>dfs.namenode.handler.count</name>
-    <value>40</value>
-    <description>The number of server threads for the namenode.</description>
-  </property>
-
-  <property>
     <name>dfs.datanode.max.transfer.threads</name>
     <value>1024</value>
     <description>Specifies the maximum number of threads to use for transferring data in and out of the datanode.</description>
@@ -332,7 +326,8 @@
 
   <property>
     <name>dfs.cluster.administrators</name>
-    <value> hdfs</value>
+    <value>hdfs</value>
+    <property-type>GROUP</property-type>
     <description>ACL for who all can view the default servlets in the HDFS</description>
   </property>
 
@@ -371,6 +366,13 @@
     <name>dfs.journalnode.http-address</name>
     <value>0.0.0.0:8480</value>
     <description>The address and port the JournalNode web UI listens on.
+      If the port is 0 then the server will start on a free port. </description>
+  </property>
+
+  <property>
+    <name>dfs.journalnode.https-address</name>
+    <value>0.0.0.0:8481</value>
+    <description>The address and port the JournalNode HTTPS server listens on.
       If the port is 0 then the server will start on a free port. </description>
   </property>
 

@@ -36,6 +36,11 @@ class HbaseClient(Script):
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
       Execute(format("hdp-select set hbase-client {version}"))
 
+      # set all of the hadoop clientss since hbase client is upgraded as part
+      # of the final "CLIENTS" group and we need to ensure that hadoop-client
+      # is also set
+      Execute(format("hdp-select set hadoop-client {version}"))
+
   def install(self, env):
     self.install_packages(env)
     self.configure(env)
@@ -45,8 +50,6 @@ class HbaseClient(Script):
     env.set_params(params)
     
     hbase(name='client')
-
-    self.save_component_version_to_structured_out(params.stack_name)
 
   def status(self, env):
     raise ClientComponentHasNoStatus()

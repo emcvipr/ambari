@@ -118,7 +118,7 @@ App.MainHostStackVersionsView = App.TableView.extend({
       return [
         {
           value: '',
-          label: Em.I18n.t('common.all')
+          label: Em.I18n.t('hosts.host.stackVersions.table.allVersions')
         }
       ].concat(this.get('parentView.content').mapProperty('repoVersion').uniq().map(function (version) {
         return {
@@ -155,6 +155,24 @@ App.MainHostStackVersionsView = App.TableView.extend({
     }.property(),
     onChangeValue: function () {
       this.get('parentView').updateFilter(this.get('column'), this.get('value'), 'select');
+    }
+  }),
+
+  /**
+   * show progress of installation of version on host
+   */
+  showInstallProgress: function (event) {
+    App.router.get('mainAdminStackAndUpgradeController').showProgressPopup(event.context);
+  },
+
+  outOfSyncInfo: Em.View.extend({
+    tagName: 'i',
+    classNames: ['icon-question-sign'],
+    didInsertElement: function() {
+      App.tooltip($(this.get('element')), {
+        placement: "top",
+        title: Em.I18n.t('hosts.host.stackVersions.outOfSync.tooltip')
+      });
     }
   }),
 

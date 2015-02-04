@@ -205,7 +205,7 @@ class TestHBaseMaster(RMFTestCase):
       owner = 'hbase',
       mode = 0775,
       recursive = True,
-      recursive_permission = True
+      cd_access='a'
     )
     self.assertResourceCalled('Directory', '/hadoop/hbase/local',
       owner = 'hbase',
@@ -315,7 +315,7 @@ class TestHBaseMaster(RMFTestCase):
       owner = 'hbase',
       mode = 0775,
       recursive = True,
-      recursive_permission = True
+      cd_access='a'
     )
     self.assertResourceCalled('Directory', '/hadoop/hbase/local',
       owner = 'hbase',
@@ -436,7 +436,7 @@ class TestHBaseMaster(RMFTestCase):
       owner = 'hbase',
       mode = 0775,
       recursive = True,
-      recursive_permission = True)
+      cd_access='a')
 
     self.assertResourceCalled('Directory', '/hadoop/hbase/local',
       owner = 'hbase',
@@ -642,3 +642,16 @@ class TestHBaseMaster(RMFTestCase):
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
+
+  def test_upgrade_backup(self):
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hbase_upgrade.py",
+                   classname = "HbaseMasterUpgrade",
+                   command = "snapshot",
+                   config_file="hbase-preupgrade.json",
+                   hdp_stack_version = self.STACK_VERSION,
+                   target = RMFTestCase.TARGET_COMMON_SERVICES)
+
+    self.assertResourceCalled('Execute', " echo 'snapshot_all' | /usr/hdp/current/hbase-client/bin/hbase shell",
+      user = 'hbase')
+  
+    self.assertNoMoreResources()

@@ -24,40 +24,41 @@ describe('App.UpgradeVersionBoxView', function () {
   var view = App.UpgradeVersionBoxView.create({
     controller: Em.Object.create({
       upgrade: Em.K
-    })
+    }),
+    content: Em.K
   });
 
-  describe("#versionName", function () {
-    it("version is null", function () {
-      view.set('version', null);
-      view.propertyDidChange('versionName');
-      expect(view.get('versionName')).to.be.empty;
-    });
-    it("version is loaded", function () {
-      view.set('version', Em.Object.create({
-        repository_name: 'HDP-2.2'
-      }));
-      view.propertyDidChange('versionName');
-      expect(view.get('versionName')).to.equal('HDP-2.2');
-    });
-  });
-
-  describe("#runAction()", function () {
-    beforeEach(function () {
-      sinon.spy(view.get('controller'), 'upgrade');
-    });
+  describe("#isUpgrading", function () {
     afterEach(function () {
-      view.get('controller').upgrade.restore();
+      App.set('upgradeState', 'INIT');
     });
-    it("call upgrade()", function () {
-      view.set('method', 'upgrade');
-      expect(view.runAction()).to.be.true;
-      expect(view.get('controller').upgrade.calledOnce).to.be.true;
+    it("wrong version", function () {
+      App.set('upgradeState', 'IN_PROGRESS');
+      view.set('controller.upgradeVersion', 'HDP-2.2.1');
+      view.set('content.displayName', 'HDP-2.2.2');
+      view.propertyDidChange('isUpgrading');
+      expect(view.get('isUpgrading')).to.be.false;
     });
-    it("no method should be called", function () {
-      view.set('method', null);
-      expect(view.runAction()).to.be.false;
-      expect(view.get('controller').upgrade.called).to.be.false;
+    it("correct version", function () {
+      App.set('upgradeState', 'IN_PROGRESS');
+      view.set('controller.upgradeVersion', 'HDP-2.2.2');
+      view.set('content.displayName', 'HDP-2.2.2');
+      view.propertyDidChange('isUpgrading');
+      expect(view.get('isUpgrading')).to.be.true;
+    });
+    it("upgradeState INIT", function () {
+      App.set('upgradeState', 'INIT');
+      view.set('controller.upgradeVersion', 'HDP-2.2.2');
+      view.set('content.displayName', 'HDP-2.2.2');
+      view.propertyDidChange('isUpgrading');
+      expect(view.get('isUpgrading')).to.be.false;
+    });
+    it("upgradeState INIT and wrong version", function () {
+      App.set('upgradeState', 'INIT');
+      view.set('controller.upgradeVersion', 'HDP-2.2.2');
+      view.set('content.displayName', 'HDP-2.2.1');
+      view.propertyDidChange('isUpgrading');
+      expect(view.get('isUpgrading')).to.be.false;
     });
   });
 });

@@ -48,6 +48,23 @@ module.exports = Em.Application.create({
   upgradeState: 'INIT',
 
   /**
+   * flag is true when upgrade process is running
+   * @returns {boolean}
+   */
+  upgradeInProgress: function() {
+    return ["IN_PROGRESS"].contains(this.get('upgradeState'));
+  }.property('upgradeState'),
+
+  /**
+   * flag is true when upgrade process is waiting for user action
+   * to procced, retry, perform manual steps etc.
+   * @returns {boolean}
+   */
+  upgradeHolding: function() {
+    return this.get('upgradeState').contains("HOLDING");
+  }.property('upgradeState'),
+
+  /**
    * compute user access rights by permission type
    * types:
    *  - ADMIN
@@ -59,7 +76,7 @@ module.exports = Em.Application.create({
    * @return {boolean}
    */
   isAccessible: function (type) {
-    if (this.get('upgradeState') !== 'INIT' && !type.contains('upgrade_')) {
+    if (!App.get('supports.opsDuringRollingUpgrade') && !['INIT', 'COMPLETED'].contains(this.get('upgradeState')) && !type.contains('upgrade_')) {
       return false;
     }
 
@@ -120,6 +137,15 @@ module.exports = Em.Application.create({
     return Em.get((this.get('currentStackVersion') || this.get('defaultStackVersion')).match(/(.+)-\d.+/), '1');
   }.property('currentStackVersion', 'defaultStackVersion'),
 
+  /**
+   * true if cluster has only 1 host
+   * for now is used to disable move/HA actions
+   * @type {boolean}
+   */
+  isSingleNode: function() {
+    return this.get('allHostNames.length') === 1;
+  }.property('allHostNames.length'),
+
   allHostNames: [],
 
   currentStackVersionNumber: function () {
@@ -144,7 +170,7 @@ module.exports = Em.Application.create({
   isHaEnabled: function () {
     var isHDFSInstalled = App.Service.find().findProperty('serviceName','HDFS');
     return !!isHDFSInstalled && !this.HostComponent.find().someProperty('componentName', 'SECONDARY_NAMENODE');
-  }.property('router.clusterController.isLoaded', 'isStackServicesLoaded'),
+  }.property('router.clusterController.isLoaded', 'router.clusterController.dataLoadList.serviceMetrics'),
 
   /**
    * If ResourceManager High Availability is enabled

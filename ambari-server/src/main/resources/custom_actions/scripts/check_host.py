@@ -192,7 +192,7 @@ class CheckHost(Script):
         install_cmd = format("mkdir -p {java_dir} ; cd {java_dir} ; tar -xf {jdk_download_target} > /dev/null 2>&1")
         install_path = ["/bin","/usr/bin/"]
       elif jdk_name.endswith(".exe"):
-        install_cmd = "{} /s INSTALLDIR={} STATIC=1 WEB_JAVA=0 /L \\var\\log\\ambari-agent".format(
+        install_cmd = "{0} /s INSTALLDIR={1} STATIC=1 WEB_JAVA=0 /L \\var\\log\\ambari-agent".format(
           os_utils.quote_path(jdk_download_target), os_utils.quote_path(java64_home),
         )
         install_path = [java_dir]
@@ -219,7 +219,7 @@ class CheckHost(Script):
     # download jdbc driver from ambari-server resources
     try:
       download_file(jdbc_url, jdbc_path)
-      if db_name == DB_MSSQL:
+      if db_name == DB_MSSQL and OSCheck.is_windows_family():
         jdbc_auth_path = os.path.join(agent_cache_dir, JDBC_AUTH_SYMLINK_MSSQL)
         jdbc_auth_url = jdk_location + JDBC_AUTH_SYMLINK_MSSQL
         download_file(jdbc_auth_url, jdbc_auth_path)
@@ -235,7 +235,7 @@ class CheckHost(Script):
   
     # try to connect to db
     db_connection_check_command = format("{java_exec} -cp {check_db_connection_path}{class_path_delimiter}" \
-           "{jdbc_path} -Djava.library.path={agent_cache_dir} org.apache.ambari.server.DBConnectionVerification {db_connection_url} " \
+           "{jdbc_path} -Djava.library.path={agent_cache_dir} org.apache.ambari.server.DBConnectionVerification \"{db_connection_url}\" " \
            "{user_name} {user_passwd!p} {jdbc_driver}")
     print "INFO db_connection_check_command: " + db_connection_check_command
     process = subprocess.Popen(db_connection_check_command,

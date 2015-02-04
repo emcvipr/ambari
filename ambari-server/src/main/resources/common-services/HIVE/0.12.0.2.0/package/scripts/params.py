@@ -106,12 +106,18 @@ hive_jdbc_connection_url = config['configurations']['hive-site']['javax.jdo.opti
 
 hive_metastore_user_passwd = config['configurations']['hive-site']['javax.jdo.option.ConnectionPassword']
 hive_metastore_db_type = config['configurations']['hive-env']['hive_database_type']
+#HACK Temporarily use dbType=azuredb while invoking schematool
+if hive_metastore_db_type == "mssql":
+  hive_metastore_db_type = "azuredb"
 
 #users
 hive_user = config['configurations']['hive-env']['hive_user']
 #JDBC driver jar name
 hive_jdbc_driver = config['configurations']['hive-site']['javax.jdo.option.ConnectionDriverName']
-if hive_jdbc_driver == "com.mysql.jdbc.Driver":
+if hive_jdbc_driver == "com.microsoft.sqlserver.jdbc.SQLServerDriver":
+  jdbc_jar_name = "sqljdbc4.jar"
+  jdbc_symlink_name = "mssql-jdbc-driver.jar"
+elif hive_jdbc_driver == "com.mysql.jdbc.Driver":
   jdbc_jar_name = "mysql-connector-java.jar"
   jdbc_symlink_name = "mysql-jdbc-driver.jar"
 elif hive_jdbc_driver == "org.postgresql.Driver":
@@ -123,7 +129,7 @@ elif hive_jdbc_driver == "oracle.jdbc.driver.OracleDriver":
 
 check_db_connection_jar_name = "DBConnectionVerification.jar"
 check_db_connection_jar = format("/usr/lib/ambari-agent/{check_db_connection_jar_name}")
-hive_jdbc_drivers_list = ["com.mysql.jdbc.Driver","org.postgresql.Driver","oracle.jdbc.driver.OracleDriver"]
+hive_jdbc_drivers_list = ["com.microsoft.sqlserver.jdbc.SQLServerDriver","com.mysql.jdbc.Driver","org.postgresql.Driver","oracle.jdbc.driver.OracleDriver"]
 downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 prepackaged_ojdbc_symlink = format("{hive_lib}/ojdbc6.jar")
 
@@ -135,7 +141,11 @@ hive_var_lib = '/var/lib/hive'
 ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 hive_server_host = config['clusterHostInfo']['hive_server_host'][0]
 hive_server_hosts = config['clusterHostInfo']['hive_server_host']
-hive_server_port = default('/configurations/hive-site/hive.server2.thrift.port',"10000")
+hive_transport_mode = config['configurations']['hive-site']['hive.server2.transport.mode']
+if hive_transport_mode.lower() == "http":
+  hive_server_port = config['configurations']['hive-site']['hive.server2.thrift.http.port']
+else:
+  hive_server_port = default('/configurations/hive-site/hive.server2.thrift.port',"10000")
 hive_url = format("jdbc:hive2://{hive_server_host}:{hive_server_port}")
 hive_server_principal = config['configurations']['hive-site']['hive.server2.authentication.kerberos.principal']
 hive_server2_authentication = config['configurations']['hive-site']['hive.server2.authentication']
@@ -144,6 +154,7 @@ smokeuser = config['configurations']['cluster-env']['smokeuser']
 smoke_test_sql = format("{tmp_dir}/hiveserver2.sql")
 smoke_test_path = format("{tmp_dir}/hiveserver2Smoke.sh")
 smoke_user_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
+smokeuser_principal = config['configurations']['cluster-env']['smokeuser_principal_name']
 
 fs_root = config['configurations']['core-site']['fs.defaultFS']
 security_enabled = config['configurations']['cluster-env']['security_enabled']
@@ -315,3 +326,23 @@ HdfsDirectory = functools.partial(
   kinit_path_local = kinit_path_local,
   bin_dir = hadoop_bin_dir
 )
+
+# ranger host
+ranger_admin_hosts = default("/clusterHostInfo/ranger_admin_hosts", [])
+user_input = default("/configurations/ranger-hive-plugin-properties/ranger-hive-plugin-enabled", "no")
+has_ranger_admin = not len(ranger_admin_hosts) == 0
+if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >=0:
+  # setting flag value for ranger hive plugin
+  enable_ranger_hive = False
+  user_input = config['configurations']['ranger-hive-plugin-properties']['ranger-hive-plugin-enabled']
+  if  user_input.lower() == 'yes':
+    enable_ranger_hive = True
+  elif user_input.lower() == 'no':
+    enable_ranger_hive = False
+
+ranger_jdbc_jar_name = "mysql-connector-java.jar"
+
+ranger_downloaded_custom_connector = format("{tmp_dir}/{ranger_jdbc_jar_name}")
+
+ranger_driver_curl_source = format("{jdk_location}/{ranger_jdbc_jar_name}")
+ranger_driver_curl_target = format("{java_share_dir}/{ranger_jdbc_jar_name}")

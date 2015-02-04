@@ -31,6 +31,12 @@ App.ManageAlertGroupsController = Em.Controller.extend({
   isLoaded: false,
 
   /**
+   * Property used to trigger Alert Groups Filter content updating
+   * @type {Boolean}
+   */
+  changeTrigger: false,
+
+  /**
    * @type {App.AlertGroup[]}
    */
   alertGroups: [],
@@ -301,7 +307,7 @@ App.ManageAlertGroupsController = Em.Controller.extend({
     if (selectedAlertGroup.get('default')) return [];
     var usedDefinitionsMap = {};
     var availableDefinitions = [];
-    var sharedDefinitions = App.AlertDefinition.getAllDefinitions();
+    var sharedDefinitions = App.AlertDefinition.find();
 
     selectedAlertGroup.get('definitions').forEach(function (def) {
       usedDefinitionsMap[def.name] = true;

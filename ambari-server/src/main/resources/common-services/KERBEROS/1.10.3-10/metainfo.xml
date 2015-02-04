@@ -34,6 +34,7 @@
           <displayName>Kerberos Client</displayName>
           <category>CLIENT</category>
           <cardinality>ALL</cardinality>
+          <versionAdvertised>false</versionAdvertised>
           <auto-deploy>
             <enabled>true</enabled>
           </auto-deploy>
@@ -120,8 +121,7 @@
 
       <configuration-dependencies>
         <config-type>krb5-conf</config-type>
-        <config-type>kdc-conf</config-type>
-        <config-type>kadm5-acl</config-type>
+        <config-type>kerberos-env</config-type>
       </configuration-dependencies>
       <restartRequiredAfterChange>true</restartRequiredAfterChange>
     </service>

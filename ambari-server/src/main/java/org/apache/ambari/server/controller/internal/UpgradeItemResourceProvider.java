@@ -56,6 +56,7 @@ public class UpgradeItemResourceProvider extends ReadOnlyResourceProvider {
   protected static final String UPGRADE_REQUEST_ID = "UpgradeItem/request_id";
   protected static final String UPGRADE_GROUP_ID = "UpgradeItem/group_id";
   protected static final String UPGRADE_ITEM_STAGE_ID = "UpgradeItem/stage_id";
+  protected static final String UPGRADE_ITEM_TEXT = "UpgradeItem/text";
 
   private static final Set<String> PK_PROPERTY_IDS = new HashSet<String>(
       Arrays.asList(UPGRADE_REQUEST_ID, UPGRADE_ITEM_STAGE_ID));
@@ -67,12 +68,19 @@ public class UpgradeItemResourceProvider extends ReadOnlyResourceProvider {
   @Inject
   private static UpgradeDAO m_dao = null;
 
+  /**
+   * Used to generated the correct tasks and stages during an upgrade.
+   */
+  @Inject
+  private static UpgradeHelper s_upgradeHelper;
+
 
   static {
     // properties
     PROPERTY_IDS.add(UPGRADE_ITEM_STAGE_ID);
     PROPERTY_IDS.add(UPGRADE_GROUP_ID);
     PROPERTY_IDS.add(UPGRADE_REQUEST_ID);
+    PROPERTY_IDS.add(UPGRADE_ITEM_TEXT);
 
     // !!! boo
     for (String p : StageResourceProvider.PROPERTY_IDS) {
@@ -120,7 +128,7 @@ public class UpgradeItemResourceProvider extends ReadOnlyResourceProvider {
           Long requestId = (Long) resource.getPropertyValue(UPGRADE_REQUEST_ID);
           Long stageId   = (Long) resource.getPropertyValue(UPGRADE_ITEM_STAGE_ID);
 
-          StageResourceProvider.updateStageStatus(requestId, stageId, desiredStatus);
+          StageResourceProvider.updateStageStatus(requestId, stageId, desiredStatus, getManagementController());
         }
       }
     }
@@ -186,10 +194,8 @@ public class UpgradeItemResourceProvider extends ReadOnlyResourceProvider {
 
       if (!resultMap.isEmpty()) {
         if (null != clusterName) {
-          UpgradeHelper helper = new UpgradeHelper();
-
-          Set<Resource> stages = helper.getStageResources(clusterName, requestId,
-              new ArrayList<Long>(resultMap.keySet()));
+          Set<Resource> stages = s_upgradeHelper.getStageResources(clusterName,
+              requestId, new ArrayList<Long>(resultMap.keySet()));
 
           for (Resource stage : stages) {
             Long l = (Long) stage.getPropertyValue(StageResourceProvider.STAGE_STAGE_ID);
@@ -223,6 +229,7 @@ public class UpgradeItemResourceProvider extends ReadOnlyResourceProvider {
     setResourceProperty(resource, UPGRADE_REQUEST_ID, upgrade.getRequestId(), requestedIds);
     setResourceProperty(resource, UPGRADE_GROUP_ID, group.getId(), requestedIds);
     setResourceProperty(resource, UPGRADE_ITEM_STAGE_ID, item.getStageId(), requestedIds);
+    setResourceProperty(resource, UPGRADE_ITEM_TEXT, item.getText(), requestedIds);
 
     return resource;
   }

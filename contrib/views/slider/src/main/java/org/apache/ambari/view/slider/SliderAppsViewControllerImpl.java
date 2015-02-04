@@ -260,23 +260,26 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
                   new ViewStatus.Validation(
                       "ZooKeeper service is not installed"));
             }
-            if (cluster.getDesiredConfigs().containsKey("ganglia-env")) {
-              Map<String, String> gangliaConfigs = ambariClient.getConfiguration(
-                  cluster, "ganglia-env",
-                  cluster.getDesiredConfigs().get("ganglia-env"));
-              String clustersCsv = gangliaConfigs.get("additional_clusters");
-              AmbariService gangliaService = ambariClient.getService(cluster,
-                  "GANGLIA");
-              List<AmbariHostComponent> hostsList = gangliaService
-                  .getComponentsToHostComponentsMap().get("GANGLIA_SERVER");
+            if (cluster.getDesiredConfigs().containsKey("ams-site")) {
+              Map<String, String> amsConfigs = ambariClient.getConfiguration(cluster, "ams-site", cluster.getDesiredConfigs().get("ams-site"));
+              AmbariService amsService = ambariClient.getService(cluster, "AMS");
+              List<AmbariHostComponent> hostsList = amsService.getComponentsToHostComponentsMap().get("METRIC_COLLECTOR");
               if (hostsList != null && hostsList.size() > 0) {
-                String gangliaHostName = hostsList
-                    .get(0).getHostName();
-                newHadoopConfigs.put(PROPERTY_GANGLIA_SERVER_HOSTNAME, gangliaHostName);
-                status.getParameters().put(PROPERTY_GANGLIA_SERVER_HOSTNAME, gangliaHostName);
+                String collectorHostName = hostsList.get(0).getHostName();
+                newHadoopConfigs.put(PROPERTY_METRICS_SERVER_HOSTNAME, collectorHostName);
+                status.getParameters().put(PROPERTY_METRICS_SERVER_HOSTNAME, collectorHostName);
               }
-              newHadoopConfigs.put(PROPERTY_GANGLIA_CUSTOM_CLUSTERS, clustersCsv);
-              status.getParameters().put(PROPERTY_GANGLIA_CUSTOM_CLUSTERS, clustersCsv);
+              if (amsConfigs != null && amsConfigs.containsKey("timeline.metrics.service.webapp.address")) {
+                String portString = amsConfigs.get("timeline.metrics.service.webapp.address");
+                int sepIndex = portString.indexOf(':');
+                if (sepIndex > -1) {
+                  portString = portString.substring(sepIndex + 1);
+                }
+                newHadoopConfigs.put(PROPERTY_METRICS_SERVER_PORT, portString);
+                status.getParameters().put(PROPERTY_METRICS_SERVER_PORT, portString);
+              }
+              newHadoopConfigs.put(PROPERTY_METRICS_LIBRARY_PATH, "file:///usr/lib/ambari-metrics-hadoop-sink/ambari-metrics-hadoop-sink.jar");
+              status.getParameters().put(PROPERTY_METRICS_LIBRARY_PATH, "file:///usr/lib/ambari-metrics-hadoop-sink/ambari-metrics-hadoop-sink.jar");
             }
             Validation validateHDFSAccess = validateHDFSAccess(newHadoopConfigs, hdfsServiceInfo);
             if (validateHDFSAccess != null) {
@@ -648,7 +651,7 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
           : new SliderAppMasterClient(yarnApp.getTrackingUrl());
       SliderAppMasterData appMasterData = null;
       Map<String, String> quickLinks = new HashMap<String, String>();
-      Set<String> gangliaMetrics = new HashSet<String>();
+      Set<String> metrics = new HashSet<String>();
       for (String property : properties) {
         if ("RUNNING".equals(app.getState())) {
           if (sliderAppClient != null) {
@@ -761,7 +764,7 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
                 throw new RuntimeException(e.getMessage(), e);
               }
             } else if (property.startsWith(METRICS_PREFIX)) {
-              gangliaMetrics.add(property.substring(METRICS_PREFIX.length()));
+              metrics.add(property.substring(METRICS_PREFIX.length()));
             } else if ("supportedMetrics".equals(property)) {
               if (matchedAppType != null) {
                 app.setSupportedMetrics(matchedAppType.getSupportedMetrics());
@@ -770,7 +773,7 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
           }
         }
       }
-      if (gangliaMetrics.size() > 0) {
+      if (metrics.size() > 0) {
         if (quickLinks.isEmpty()) {
           quickLinks = sliderAppClient
               .getQuickLinks(appMasterData.publisherUrl);
@@ -779,8 +782,8 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
           String metricsUrl = quickLinks.get(METRICS_API_NAME);
           MetricsHolder metricsHolder = appMetrics.get(matchedAppType
               .uniqueName());
-          app.setMetrics(sliderAppClient.getGangliaMetrics(metricsUrl,
-              gangliaMetrics, null, viewContext, matchedAppType, metricsHolder));
+          app.setMetrics(sliderAppClient.getMetrics(metricsUrl,
+              metrics, null, viewContext, matchedAppType, metricsHolder));
         }
       }
     }
@@ -1080,10 +1083,10 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
               MetricsHolder metricsHolder = new MetricsHolder();
               metricsHolder.setJmxMetrics(readMetrics(zipFile,
                   "jmx_metrics.json"));
-              metricsHolder.setGangliaMetrics(readMetrics(zipFile,
-                  "ganglia_metrics.json"));
+              metricsHolder.setTimelineMetrics(readMetrics(zipFile,
+                  "timeline_metrics.json"));
               appType.setSupportedMetrics(getSupportedMetrics(metricsHolder
-                  .getGangliaMetrics()));
+                  .getTimelineMetrics()));
               appMetrics.put(appType.uniqueName(), metricsHolder);
 
               appType.setTypeComponents(appTypeComponentList);
@@ -1126,13 +1129,13 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
   }
 
   private List<String> getSupportedMetrics(
-      Map<String, Map<String, Map<String, Metric>>> gangliaMetrics) {
+      Map<String, Map<String, Map<String, Metric>>> metrics) {
     Set<String> supportedMetrics = new HashSet<String>();
-    if (gangliaMetrics != null && gangliaMetrics.size() > 0) {
-      for (Map<String, Map<String, Metric>> compMetrics : gangliaMetrics
+    if (metrics != null && metrics.size() > 0) {
+      for (Map<String, Map<String, Metric>> compMetrics : metrics
           .values()) {
-        for (Map<String, Metric> metrics : compMetrics.values()) {
-          supportedMetrics.addAll(metrics.keySet());
+        for (Map<String, Metric> compMetric : compMetrics.values()) {
+          supportedMetrics.addAll(compMetric.keySet());
         }
       }
     }

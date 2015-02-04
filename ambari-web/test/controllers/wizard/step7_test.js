@@ -937,11 +937,8 @@ describe('App.InstallerStep7Controller', function () {
         Em.Object.create({
           serviceName: 'HDFS',
           configs: [
-            {category: 'MetricsSink'},
-            {category: 'MetricsSink'},
             {category: 'NameNode'},
-            {category: 'NameNode'},
-            {category: 'MetricsSink'}
+            {category: 'NameNode'}
           ]
         }),
         Em.Object.create({serviceName: 's2'})]
@@ -969,11 +966,8 @@ describe('App.InstallerStep7Controller', function () {
         Em.Object.create({
           serviceName: 'HDFS',
           configs: [
-            {category: 'MetricsSink'},
-            {category: 'MetricsSink'},
             {category: 'NameNode'},
-            {category: 'NameNode'},
-            {category: 'MetricsSink'}
+            {category: 'NameNode'}
           ]
         }),
         Em.Object.create({serviceName: 's2'})]
@@ -985,7 +979,7 @@ describe('App.InstallerStep7Controller', function () {
       });
       installerStep7Controller.setStepConfigs([], []);
 
-      expect(installerStep7Controller.get('stepConfigs').findProperty('serviceName', 'HDFS').get('configs').length).to.equal(5);
+      expect(installerStep7Controller.get('stepConfigs').findProperty('serviceName', 'HDFS').get('configs').length).to.equal(2);
 
       s.restore();
 
@@ -1358,6 +1352,10 @@ describe('App.InstallerStep7Controller', function () {
         {
           siteName: 'ams-hbase-site',
           tagName: 'version1'
+        },
+        {
+          siteName: 'site-without-properties',
+          tagName: 'version1'
         }
       ],
       configs = [
@@ -1388,6 +1386,10 @@ describe('App.InstallerStep7Controller', function () {
           properties: {
             'hbase.client.scanner.caching': '2500'
           }
+        },
+        {
+          type: 'site-without-properties',
+          tag: 'version1'
         }
       ],
       installedServiceNames = ['HBASE', 'AMS'];

@@ -86,7 +86,7 @@ hadoop_conf_empty_dir = "/etc/hadoop/conf.empty"
 limits_conf_dir = "/etc/security/limits.d"
 
 execute_path = os.environ['PATH'] + os.pathsep + hadoop_bin_dir
-ulimit_cmd = "ulimit -c unlimited && "
+ulimit_cmd = "ulimit -c unlimited ; "
 
 #security params
 smoke_user_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
@@ -149,8 +149,9 @@ webhcat_user = config['configurations']['hive-env']['hcat_user']
 hcat_user = config['configurations']['hive-env']['hcat_user']
 hive_user = config['configurations']['hive-env']['hive_user']
 smoke_user =  config['configurations']['cluster-env']['smokeuser']
+smokeuser_principal =  config['configurations']['cluster-env']['smokeuser_principal_name']
 mapred_user = config['configurations']['mapred-env']['mapred_user']
-hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name']
+hdfs_principal_name = default('/configurations/hadoop-env/hdfs_principal_name', None)
 
 user_group = config['configurations']['cluster-env']['user_group']
 proxyuser_group =  config['configurations']['hadoop-env']['proxyuser_group']
@@ -172,10 +173,18 @@ namenode_dirs_stub_filename = "namenode_dirs_created"
 smoke_hdfs_user_dir = format("/user/{smoke_user}")
 smoke_hdfs_user_mode = 0770
 
-namenode_formatted_old_mark_dir = format("{hadoop_pid_dir_prefix}/hdfs/namenode/formatted/")
-namenode_formatted_mark_dir = format("/var/lib/hdfs/namenode/formatted/")
 
-fs_checkpoint_dir = config['configurations']['hdfs-site']['dfs.namenode.checkpoint.dir']
+hdfs_namenode_formatted_mark_suffix = "/namenode-formatted/"
+namenode_formatted_old_mark_dirs = ["/var/run/hadoop/hdfs/namenode-formatted", 
+  format("{hadoop_pid_dir_prefix}/hdfs/namenode/formatted"),
+  "/var/lib/hdfs/namenode/formatted"]
+dfs_name_dirs = dfs_name_dir.split(",")
+namenode_formatted_mark_dirs = []
+for dn_dir in dfs_name_dirs:
+ tmp_mark_dir = format("{dn_dir}{hdfs_namenode_formatted_mark_suffix}")
+ namenode_formatted_mark_dirs.append(tmp_mark_dir)
+
+fs_checkpoint_dirs = config['configurations']['hdfs-site']['dfs.namenode.checkpoint.dir'].split(',')
 
 dfs_data_dir = config['configurations']['hdfs-site']['dfs.datanode.data.dir']
 dfs_data_dir = ",".join([re.sub(r'^\[.+\]', '', dfs_dir.strip()) for dfs_dir in dfs_data_dir.split(",")])
@@ -208,7 +217,13 @@ if dfs_ha_enabled:
       namenode_id = nn_id
       namenode_rpc = nn_host
 
-journalnode_address = default('/configurations/hdfs-site/dfs.journalnode.http-address', None)
+if dfs_http_policy is not None and dfs_http_policy.upper() == "HTTPS_ONLY":
+  https_only = True
+  journalnode_address = default('/configurations/hdfs-site/dfs.journalnode.https-address', None)
+else:
+  https_only = False
+  journalnode_address = default('/configurations/hdfs-site/dfs.journalnode.http-address', None)
+
 if journalnode_address:
   journalnode_port = journalnode_address.split(":")[1]
   
@@ -224,10 +239,16 @@ if security_enabled:
   _nn_keytab = config['configurations']['hdfs-site']['dfs.namenode.keytab.file']
   _nn_principal_name = _nn_principal_name.replace('_HOST',hostname.lower())
   
-  nn_kinit_cmd = format("{kinit_path_local} -kt {_nn_keytab} {_nn_principal_name};")  
+  nn_kinit_cmd = format("{kinit_path_local} -kt {_nn_keytab} {_nn_principal_name};")
+
+  _jn_principal_name = config['configurations']['hdfs-site']['dfs.journalnode.kerberos.principal']
+  _jn_principal_name = _jn_principal_name.replace('_HOST', hostname.lower())
+  _jn_keytab = config['configurations']['hdfs-site']['dfs.journalnode.keytab.file']
+  jn_kinit_cmd = format("{kinit_path_local} -kt {_jn_keytab} {_jn_principal_name};")
 else:
   dn_kinit_cmd = ""
-  nn_kinit_cmd = ""  
+  nn_kinit_cmd = ""
+  jn_kinit_cmd = ""
 
 import functools
 #create partial functions with common arguments for every HdfsDirectory call
@@ -295,3 +316,27 @@ ttnode_heapsize = "1024m"
 dtnode_heapsize = config['configurations']['hadoop-env']['dtnode_heapsize']
 mapred_pid_dir_prefix = default("/configurations/mapred-env/mapred_pid_dir_prefix","/var/run/hadoop-mapreduce")
 mapred_log_dir_prefix = default("/configurations/mapred-env/mapred_log_dir_prefix","/var/log/hadoop-mapreduce")
+
+# ranger host
+ranger_admin_hosts = default("/clusterHostInfo/ranger_admin_hosts", [])
+user_input = default("/configurations/ranger-hdfs-plugin-properties/ranger-hdfs-plugin-enabled", "no")
+has_ranger_admin = not len(ranger_admin_hosts) == 0
+
+if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
+  # setting flag value for ranger hdfs plugin
+  enable_ranger_hdfs = False
+  if  user_input.lower() == 'yes':
+    enable_ranger_hdfs = True
+  elif user_input.lower() == 'no':
+    enable_ranger_hdfs = False
+
+ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
+
+jdk_location = config['hostLevelParams']['jdk_location']
+java_share_dir = '/usr/share/java'
+jdbc_jar_name = "mysql-connector-java.jar"
+
+downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
+
+driver_curl_source = format("{jdk_location}/{jdbc_jar_name}")
+driver_curl_target = format("{java_share_dir}/{jdbc_jar_name}")    

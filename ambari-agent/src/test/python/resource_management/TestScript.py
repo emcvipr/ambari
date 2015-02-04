@@ -85,16 +85,16 @@ class TestScript(TestCase):
 
     # Testing installing of a list of packages
     with Environment(".", test_mode=True) as env:
+      script = Script()
       Script.config = dummy_config
       script.install_packages("env")
     resource_dump = pprint.pformat(env.resource_list)
-    self.assertEqual(resource_dump, "[Package['hbase'], Package['yet-another-package']]")
+    self.assertEqual(resource_dump, '[u"Package[\'hbase\']", u"Package[\'yet-another-package\']"]')
 
   @patch("__builtin__.open")
   def test_structured_out(self, open_mock):
     script = Script()
     script.stroutfile = ''
-
     self.assertEqual(Script.structuredOut, {})
 
     script.put_structured_out({"1": "1"})
@@ -110,8 +110,7 @@ class TestScript(TestCase):
     self.assertEqual(open_mock.call_count, 3)
     self.assertEqual(Script.structuredOut, {"1": "3", "2": "2"})
 
+
   def tearDown(self):
     # enable stdout
     sys.stdout = sys.__stdout__
-
-

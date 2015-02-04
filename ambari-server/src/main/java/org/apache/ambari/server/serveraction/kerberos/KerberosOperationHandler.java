@@ -18,7 +18,6 @@
 
 package org.apache.ambari.server.serveraction.kerberos;
 
-import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.utils.ShellCommandUtil;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.directory.server.kerberos.shared.crypto.encryption.KerberosKeyFactory;
@@ -64,7 +63,6 @@ public abstract class KerberosOperationHandler {
   private final static char[] SECURE_PASSWORD_CHARS =
       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890?.!$%^*()-_+=~".toCharArray();
 
-
   /**
    * The default set of ciphers to use for creating keytab entries
    */
@@ -77,9 +75,9 @@ public abstract class KerberosOperationHandler {
         add(EncryptionType.AES256_CTS_HMAC_SHA1_96);
       }});
 
-  private KerberosCredential administratorCredentials;
-  private String defaultRealm;
-
+  private KerberosCredential administratorCredentials = null;
+  private String defaultRealm = null;
+  private boolean open = false;
 
   /**
    * Create a secure (random) password using a secure random number generator and a set of (reasonable)
@@ -121,38 +119,20 @@ public abstract class KerberosOperationHandler {
   }
 
   /**
-     * Prepares and creates resources to be used by this KerberosOperationHandler
-     * <p/>
-     * It is expected that this KerberosOperationHandler will not be used before this call.
-     *
-     * @param administratorCredentials a KerberosCredential containing the administrative credentials
-     *                                 for the relevant KDC
-     * @param defaultRealm             a String declaring the default Kerberos realm (or domain)
-     */
-    public abstract void open(KerberosCredential administratorCredentials, String defaultRealm)
-            throws AmbariException;
-
-    /**
-     * Prepares and creates resources to be used by this KerberosOperationHandler.
-     * Implementation in this class is ignoring parameters ldapUrl and principalContainerDn and delegate to
-     * <code>open(KerberosCredential administratorCredentials, String defaultRealm)</code>
-     * Subclasses that want to use these parameters need to override this method.
-     *
-     * <p/>
-     * It is expected that this KerberosOperationHandler will not be used before this call.
-     *
-     * @param administratorCredentials a KerberosCredential containing the administrative credentials
-     *                                 for the relevant KDC
-     * @param defaultRealm             a String declaring the default Kerberos realm (or domain)
-     * @param ldapUrl  ldapUrl of ldap back end where principals would be created
-     * @param principalContainerDn DN of the container in ldap back end where principals would be created
-     *
-     */
-    public void open(KerberosCredential administratorCredentials, String defaultRealm,
-                              String ldapUrl, String principalContainerDn)
-            throws AmbariException {
-       open(administratorCredentials, defaultRealm);
-    }
+   * Prepares and creates resources to be used by this KerberosOperationHandler.
+   * Implementation in this class is ignoring parameters ldapUrl and principalContainerDn and delegate to
+   * <code>open(KerberosCredential administratorCredentials, String defaultRealm)</code>
+   * Subclasses that want to use these parameters need to override this method.
+   * <p/>
+   * It is expected that this KerberosOperationHandler will not be used before this call.
+   *
+   * @param administratorCredentials a KerberosCredential containing the administrative credentials
+   *                                 for the relevant KDC
+   * @param defaultRealm             a String declaring the default Kerberos realm (or domain)
+   * @param kerberosConfiguration    a Map of key/value pairs containing data from the kerberos-env configuration set
+   */
+  public abstract void open(KerberosCredential administratorCredentials, String defaultRealm, Map<String, String> kerberosConfiguration)
+      throws KerberosOperationException;
 
   /**
    * Closes and cleans up any resources used by this KerberosOperationHandler
@@ -160,7 +140,7 @@ public abstract class KerberosOperationHandler {
    * It is expected that this KerberosOperationHandler will not be used after this call.
    */
   public abstract void close()
-      throws AmbariException;
+      throws KerberosOperationException;
 
   /**
    * Test to see if the specified principal exists in a previously configured KDC
@@ -169,10 +149,10 @@ public abstract class KerberosOperationHandler {
    *
    * @param principal a String containing the principal to test
    * @return true if the principal exists; false otherwise
-   * @throws AmbariException
+   * @throws KerberosOperationException
    */
   public abstract boolean principalExists(String principal)
-      throws AmbariException;
+      throws KerberosOperationException;
 
   /**
    * Creates a new principal in a previously configured KDC
@@ -181,11 +161,12 @@ public abstract class KerberosOperationHandler {
    *
    * @param principal a String containing the principal to add
    * @param password  a String containing the password to use when creating the principal
+   * @param service   a boolean value indicating whether the principal is to be created as a service principal or not
    * @return an Integer declaring the generated key number
-   * @throws AmbariException
+   * @throws KerberosOperationException
    */
-  public abstract Integer createServicePrincipal(String principal, String password)
-      throws AmbariException;
+  public abstract Integer createPrincipal(String principal, String password, boolean service)
+      throws KerberosOperationException;
 
   /**
    * Updates the password for an existing principal in a previously configured KDC
@@ -195,10 +176,10 @@ public abstract class KerberosOperationHandler {
    * @param principal a String containing the principal to update
    * @param password  a String containing the password to set
    * @return an Integer declaring the new key number
-   * @throws AmbariException
+   * @throws KerberosOperationException
    */
   public abstract Integer setPrincipalPassword(String principal, String password)
-      throws AmbariException;
+      throws KerberosOperationException;
 
   /**
    * Removes an existing principal in a previously configured KDC
@@ -207,10 +188,31 @@ public abstract class KerberosOperationHandler {
    *
    * @param principal a String containing the principal to remove
    * @return true if the principal was successfully removed; otherwise false
-   * @throws AmbariException
+   * @throws KerberosOperationException
    */
-  public abstract boolean removeServicePrincipal(String principal)
-      throws AmbariException;
+  public abstract boolean removePrincipal(String principal)
+      throws KerberosOperationException;
+
+  /**
+   * Tests to ensure the connection information and credentials allow for administrative
+   * connectivity to the KDC
+   *
+   * @return true of successful; otherwise false
+   * @throws KerberosOperationException if a failure occurs while testing the
+   *                                    administrator credentials
+   */
+  public boolean testAdministratorCredentials() throws KerberosOperationException {
+    if (!isOpen()) {
+      throw new KerberosOperationException("This operation handler has not been opened");
+    }
+
+    KerberosCredential credentials = getAdministratorCredentials();
+    if (credentials == null) {
+      throw new KerberosOperationException("Missing KDC administrator credentials");
+    } else {
+      return principalExists(credentials.getPrincipal());
+    }
+  }
 
   /**
    * Create or append to a keytab file using the specified principal and password.
@@ -219,18 +221,18 @@ public abstract class KerberosOperationHandler {
    * @param password   a String containing the password to use when creating the principal
    * @param keytabFile a File containing the absolute path to the keytab file
    * @return true if the keytab file was successfully created; false otherwise
-   * @throws AmbariException
+   * @throws KerberosOperationException
    */
   public boolean createKeytabFile(String principal, String password, Integer keyNumber, File keytabFile)
-      throws AmbariException {
+      throws KerberosOperationException {
     boolean success = false;
 
     if ((principal == null) || principal.isEmpty()) {
-      throw new AmbariException("Failed to create keytab file, missing principal");
+      throw new KerberosOperationException("Failed to create keytab file, missing principal");
     } else if (password == null) {
-      throw new AmbariException(String.format("Failed to create keytab file for %s, missing password", principal));
+      throw new KerberosOperationException(String.format("Failed to create keytab file for %s, missing password", principal));
     } else if (keytabFile == null) {
-      throw new AmbariException(String.format("Failed to create keytab file for %s, missing file path", principal));
+      throw new KerberosOperationException(String.format("Failed to create keytab file for %s, missing file path", principal));
     } else {
       Keytab keytab;
       Set<EncryptionType> ciphers = new HashSet<EncryptionType>(DEFAULT_CIPHERS);
@@ -294,7 +296,7 @@ public abstract class KerberosOperationHandler {
               keytabFile.deleteOnExit();
             }
 
-            throw new AmbariException(message, e);
+            throw new KerberosOperationException(message, e);
           }
         }
       }
@@ -320,6 +322,24 @@ public abstract class KerberosOperationHandler {
   }
 
   /**
+   * Test this KerberosOperationHandler to see whether is was previously open or not
+   *
+   * @return a boolean value indicating whether this KerberosOperationHandler was open (true) or not (false)
+   */
+  public boolean isOpen() {
+    return open;
+  }
+
+  /**
+   * Sets whether this KerberosOperationHandler is open or not.
+   *
+   * @param open a boolean value indicating whether this KerberosOperationHandler was open (true) or not (false)
+   */
+  public void setOpen(boolean open) {
+    this.open = open;
+  }
+
+  /**
    * Given base64-encoded keytab data, decode the String to binary data and write it to a (temporary)
    * file.
    * <p/>
@@ -328,10 +348,10 @@ public abstract class KerberosOperationHandler {
    *
    * @param keytabData a String containing base64-encoded keytab data
    * @return a File pointing to the decoded keytab file or null if not successful
-   * @throws AmbariException
+   * @throws KerberosOperationException
    */
   protected File createKeytabFile(String keytabData)
-      throws AmbariException {
+      throws KerberosOperationException {
     boolean success = false;
     File tempFile = null;
 
@@ -354,12 +374,12 @@ public abstract class KerberosOperationHandler {
         String message = String.format("Failed to write to temporary keytab file %s: %s",
             tempFile.getAbsolutePath(), e.getLocalizedMessage());
         LOG.error(message, e);
-        throw new AmbariException(message, e);
+        throw new KerberosOperationException(message, e);
       } catch (IOException e) {
         String message = String.format("Failed to write to temporary keytab file %s: %s",
             tempFile.getAbsolutePath(), e.getLocalizedMessage());
         LOG.error(message, e);
-        throw new AmbariException(message, e);
+        throw new KerberosOperationException(message, e);
       } finally {
         if (fos != null) {
           try {
@@ -390,10 +410,10 @@ public abstract class KerberosOperationHandler {
    *
    * @param command an array of String value representing the command and its arguments
    * @return a ShellCommandUtil.Result declaring the result of the operation
-   * @throws AmbariException
+   * @throws KerberosOperationException
    */
   protected ShellCommandUtil.Result executeCommand(String[] command)
-      throws AmbariException {
+      throws KerberosOperationException {
 
     if ((command == null) || (command.length == 0)) {
       return null;
@@ -403,12 +423,21 @@ public abstract class KerberosOperationHandler {
       } catch (IOException e) {
         String message = String.format("Failed to execute the command: %s", e.getLocalizedMessage());
         LOG.error(message, e);
-        throw new AmbariException(message, e);
+        throw new KerberosOperationException(message, e);
       } catch (InterruptedException e) {
         String message = String.format("Failed to wait for the command to complete: %s", e.getLocalizedMessage());
         LOG.error(message, e);
-        throw new AmbariException(message, e);
+        throw new KerberosOperationException(message, e);
       }
     }
   }
+
+  protected DeconstructedPrincipal deconstructPrincipal(String principal) throws KerberosOperationException {
+    try {
+      return DeconstructedPrincipal.valueOf(principal, getDefaultRealm());
+    } catch (IllegalArgumentException e) {
+      throw new KerberosOperationException(e.getMessage(), e);
+    }
+  }
+
 }

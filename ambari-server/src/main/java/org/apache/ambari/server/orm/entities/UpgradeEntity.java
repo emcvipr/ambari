@@ -24,7 +24,6 @@ import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.EnumType;
 import javax.persistence.Enumerated;
-import javax.persistence.FetchType;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
@@ -33,9 +32,8 @@ import javax.persistence.NamedQuery;
 import javax.persistence.OneToMany;
 import javax.persistence.Table;
 import javax.persistence.TableGenerator;
-import javax.persistence.TypedQuery;
 
-import org.apache.ambari.server.state.UpgradeState;
+import org.apache.ambari.server.state.stack.upgrade.Direction;
 
 /**
  * Models the data representation of an upgrade
@@ -61,12 +59,18 @@ public class UpgradeEntity {
   @Column(name = "cluster_id", nullable = false, insertable = true, updatable = false)
   private Long clusterId;
 
-  @Enumerated(value=EnumType.STRING)
-  @Column(name = "state", nullable = false)
-  private UpgradeState state = UpgradeState.NONE;
-
   @Column(name="request_id", nullable = false)
   private Long requestId;
+
+  @Column(name="from_version", nullable = false)
+  private String fromVersion = null;
+
+  @Column(name="to_version", nullable = false)
+  private String toVersion = null;
+
+  @Column(name="direction", nullable = false)
+  @Enumerated(value = EnumType.STRING)
+  private Direction direction = Direction.UPGRADE;
 
   @OneToMany(mappedBy = "upgradeEntity", cascade = { CascadeType.ALL })
   private List<UpgradeGroupEntity> upgradeGroupEntities;
@@ -101,21 +105,6 @@ public class UpgradeEntity {
   }
 
   /**
-   * @return the current state
-   */
-  public UpgradeState getState() {
-    return state;
-  }
-
-  /**
-   * @param state the new state
-   */
-  public void setState(UpgradeState state) {
-    this.state = state;
-  }
-
-
-  /**
    * @return the upgrade items
    */
   public List<UpgradeGroupEntity> getUpgradeGroups() {
@@ -145,5 +134,48 @@ public class UpgradeEntity {
   public void setRequestId(Long id) {
     requestId = id;
   }
+
+  /**
+   * @return the "from" version
+   */
+  public String getFromVersion() {
+    return fromVersion;
+  }
+
+  /**
+   * @param version the "from" version
+   */
+  public void setFromVersion(String version) {
+    fromVersion = version;
+  }
+
+  /**
+   * @return the "to" version
+   */
+  public String getToVersion() {
+    return toVersion;
+  }
+
+  /**
+   * @param version the "to" version
+   */
+  public void setToVersion(String version) {
+    toVersion = version;
+  }
+
+  /**
+   * @return the direction of the upgrade
+   */
+  public Direction getDirection() {
+    return direction;
+  }
+
+  /**
+   * @param direction the direction of the upgrade
+   */
+  public void setDirection(Direction direction) {
+    this.direction = direction;
+  }
+
 
 }

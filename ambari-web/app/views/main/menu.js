@@ -74,6 +74,10 @@ App.MainMenuView = Em.CollectionView.extend({
       return App.router.get('mainHostController.hostsCountMap.health-status-WITH-ALERTS');
     }.property('App.router.mainHostController.hostsCountMap'),
 
+    hasCriticalAlerts: function () {
+      return App.router.get('mainHostController.hostsCountMap.health-status-CRITICAL') > 0;
+    }.property('content.hasAlertsLabel', 'alertsCount'),
+
     hasAlertsLabel: function () {
       return this.get('content.hasAlertsLabel') && this.get('alertsCount') > 0;
     }.property('content.hasAlertsLabel', 'alertsCount'),
@@ -105,13 +109,9 @@ App.MainMenuView = Em.CollectionView.extend({
       }
       App.router.route('main/' + event.context);
     },
-    goToCategory: function (event) {
-      var itemName = this.get('content').routing;
-      // route to correct category of current menu item
-      if (itemName == 'admin') {
-        App.router.route('main/admin/' + event.context);
-      }
-    },
+
+    selectedAdminItemBinding: 'App.router.mainAdminController.category',
+
     dropdownCategories: function () {
       var itemName = this.get('content').routing;
       var categories = [];
@@ -123,13 +123,6 @@ App.MainMenuView = Em.CollectionView.extend({
           url: 'stack',
           label: Em.I18n.t('admin.stackUpgrade.title')
         });
-        if (App.get('supports.stackUpgrade')) {
-          categories.push({
-            name: 'adminStackVersions.index',
-            url: 'versions',
-            label: Em.I18n.t('common.versions')
-          });
-        }
         categories.push({
           name: 'adminServiceAccounts',
           url: 'serviceAccounts',
@@ -152,6 +145,22 @@ App.MainMenuView = Em.CollectionView.extend({
         }
       }
       return categories;
-    }.property('')
+    }.property(''),
+
+    AdminDropdownItemView: Ember.View.extend({
+      tagName: 'li',
+      classNameBindings: 'isActive:active'.w(),
+      isActive: function () {
+        return this.get('item') === this.get('parentView.selectedAdminItem');
+      }.property('item', 'parentView.selectedAdminItem'),
+
+      goToCategory: function (event) {
+        var itemName = this.get('parentView').get('content').routing;
+        // route to correct category of current menu item
+        if (itemName == 'admin') {
+          App.router.route('main/admin/' + event.context);
+        }
+      }
+    })
   })
 });

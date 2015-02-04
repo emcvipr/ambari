@@ -41,6 +41,7 @@ import org.apache.ambari.server.state.PropertyInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.ambari.server.state.ServiceInfo;
+import org.apache.ambari.server.state.StackInfo;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -175,12 +176,25 @@ public class ClusterBlueprintRenderer extends BaseRenderer implements Renderer {
    * @param stackVersion  stack version
    */
   private void determinePropertiesToStrip(TreeNode<Resource> servicesNode, String stackName, String stackVersion) {
-    AmbariMetaInfo stackInfo = getController().getAmbariMetaInfo();
+    AmbariMetaInfo ambariMetaInfo = getController().getAmbariMetaInfo();
+    StackInfo stack;
+    try {
+      stack = ambariMetaInfo.getStack(stackName, stackVersion);
+    } catch (AmbariException e) {
+      // shouldn't ever happen.
+      // Exception indicates that stack is not defined
+      // but we are getting the stack name from a running cluster.
+      throw new RuntimeException("Unexpected exception occurred while generating a blueprint. "  +
+          "The stack '" + stackName + ":" + stackVersion + "' does not exist");
+    }
+    Map<String, PropertyInfo> requiredStackProperties = stack.getRequiredProperties();
+    updatePropertiesToStrip(requiredStackProperties);
+
     for (TreeNode<Resource> serviceNode : servicesNode.getChildren()) {
       String name = (String) serviceNode.getObject().getPropertyValue("ServiceInfo/service_name");
       ServiceInfo service;
       try {
-        service = stackInfo.getService(stackName, stackVersion, name);
+        service = ambariMetaInfo.getService(stackName, stackVersion, name);
       } catch (AmbariException e) {
         // shouldn't ever happen.
         // Exception indicates that service is not in the stack
@@ -190,20 +204,30 @@ public class ClusterBlueprintRenderer extends BaseRenderer implements Renderer {
       }
 
       Map<String, PropertyInfo> requiredProperties = service.getRequiredProperties();
-      for (Map.Entry<String, PropertyInfo> entry : requiredProperties.entrySet()) {
-        String propertyName = entry.getKey();
-        PropertyInfo propertyInfo = entry.getValue();
-        String configCategory = propertyInfo.getFilename();
-        if (configCategory.endsWith(".xml")) {
-          configCategory = configCategory.substring(0, configCategory.indexOf(".xml"));
-        }
-        Collection<String> categoryProperties = propertiesToStrip.get(configCategory);
-        if (categoryProperties == null) {
-          categoryProperties = new ArrayList<String>();
-          propertiesToStrip.put(configCategory, categoryProperties);
-        }
-        categoryProperties.add(propertyName);
+      updatePropertiesToStrip(requiredProperties);
+    }
+  }
+
+  /**
+   * Helper method to update propertiesToStrip with properties that are marked as required
+   *
+   * @param requiredProperties  Properties marked as required
+   */
+  private void updatePropertiesToStrip(Map<String, PropertyInfo> requiredProperties) {
+
+    for (Map.Entry<String, PropertyInfo> entry : requiredProperties.entrySet()) {
+      String propertyName = entry.getKey();
+      PropertyInfo propertyInfo = entry.getValue();
+      String configCategory = propertyInfo.getFilename();
+      if (configCategory.endsWith(".xml")) {
+        configCategory = configCategory.substring(0, configCategory.indexOf(".xml"));
       }
+      Collection<String> categoryProperties = propertiesToStrip.get(configCategory);
+      if (categoryProperties == null) {
+        categoryProperties = new ArrayList<String>();
+        propertiesToStrip.put(configCategory, categoryProperties);
+      }
+      categoryProperties.add(propertyName);
     }
   }
 
@@ -215,10 +239,10 @@ public class ClusterBlueprintRenderer extends BaseRenderer implements Renderer {
    *
    * @return cluster configuration
    */
-  private List<Map<String, Map<String, String>>>  processConfigurations(TreeNode<Resource> clusterNode,
+  private List<Map<String, Map<String, Map<String, ?>>>>  processConfigurations(TreeNode<Resource> clusterNode,
                                                                         Collection<HostGroupImpl> hostGroups) {
 
-    List<Map<String, Map<String, String>>> configList = new ArrayList<Map<String, Map<String, String>>>();
+    List<Map<String, Map<String, Map<String, ?>>>> configList = new ArrayList<Map<String, Map<String, Map<String, ?>>>>();
 
     Map<String, Object> desiredConfigMap = clusterNode.getObject().getPropertiesMap().get("Clusters/desired_configs");
     TreeNode<Resource> configNode = clusterNode.getChild("configurations");
@@ -231,7 +255,16 @@ public class ClusterBlueprintRenderer extends BaseRenderer implements Renderer {
 
         BlueprintConfigurationProcessor updater = new BlueprintConfigurationProcessor(properties);
         properties = updater.doUpdateForBlueprintExport(hostGroups);
-        configList.add(properties);
+
+        // build up maps for properties and property attributes
+        Map<String, Map<String, ?>> typeMap =
+          new HashMap<String, Map<String, ?>>();
+        typeMap.put("properties", properties.get(configuration.getType()));
+        if ((configuration.getPropertyAttributes() != null) && !configuration.getPropertyAttributes().isEmpty()) {
+          typeMap.put("properties_attributes", configuration.getPropertyAttributes());
+        }
+
+        configList.add(Collections.singletonMap(configuration.getType(), typeMap));
       }
     }
     return configList;
@@ -542,6 +575,12 @@ public class ClusterBlueprintRenderer extends BaseRenderer implements Renderer {
     private Map<String, String> properties = new HashMap<String, String>();
 
     /**
+     * Attributes for the properties in the cluster configuration.
+     */
+    private Map<String, ?> propertyAttributes =
+      new HashMap<String, Object>();
+
+    /**
      * Constructor.
      *
      * @param configNode  configuration node
@@ -554,6 +593,9 @@ public class ClusterBlueprintRenderer extends BaseRenderer implements Renderer {
 
       // property map type is currently <String, Object>
       properties = (Map) configNode.getObject().getPropertiesMap().get("properties");
+
+      // get the property attributes set in this configuration
+      propertyAttributes = (Map) configNode.getObject().getPropertiesMap().get("properties_attributes");
 
       if (properties != null) {
         stripRequiredProperties(properties);
@@ -593,13 +635,23 @@ public class ClusterBlueprintRenderer extends BaseRenderer implements Renderer {
       return properties;
     }
 
+    /**
+     * Get property attributes.
+     *
+     * @return map of property attributes
+     */
+    public Map<String, ?> getPropertyAttributes() {
+      return propertyAttributes;
+    }
+
     @Override
     public boolean equals(Object o) {
       if (this == o) return true;
       if (o == null || getClass() != o.getClass()) return false;
 
       Configuration that = (Configuration) o;
-      return tag.equals(that.tag) && type.equals(that.type) && properties.equals(that.properties);
+      return tag.equals(that.tag) && type.equals(that.type) && properties.equals(that.properties)
+        && propertyAttributes.equals(that.propertyAttributes);
     }
 
     @Override
@@ -607,6 +659,7 @@ public class ClusterBlueprintRenderer extends BaseRenderer implements Renderer {
       int result = type.hashCode();
       result = 31 * result + tag.hashCode();
       result = 31 * result + properties.hashCode();
+      result = 31 * result + propertyAttributes.hashCode();
       return result;
     }
 

@@ -24,15 +24,26 @@ module.exports = App.WizardRoute.extend({
   enter: function (router) {
     console.log('in /admin/stack/upgrade:enter');
     Ember.run.next(function () {
+      //if upgrade id is absent then upgrade is completed
+      if (Em.isNone(App.db.get('MainAdminStackAndUpgrade', 'upgradeId'))) {
+        router.transitionTo('main.admin.stackAndUpgrade.versions');
+        return null;
+      }
+
       App.router.get('updateController').set('isWorking', false);
 
       return App.ModalPopup.show({
         classNames: ['full-width-modal'],
         header: function () {
-          return Em.I18n.t('admin.stackUpgrade.dialog.header').format(App.router.get('mainAdminStackAndUpgradeController').get('upgradeVersion'));
-        }.property('App.router.mainAdminStackAndUpgradeController.upgradeVersion'),
+          var controller = App.router.get('mainAdminStackAndUpgradeController');
+          if (controller.get('isDowngrade')) {
+            return Em.I18n.t('admin.stackUpgrade.dialog.downgrade.header').format(controller.get('upgradeVersion'));
+          } else {
+            return Em.I18n.t('admin.stackUpgrade.dialog.header').format(controller.get('upgradeVersion'));
+          }
+        }.property('App.router.mainAdminStackAndUpgradeController.upgradeVersion', 'App.router.mainAdminStackAndUpgradeController.isDowngrade'),
         bodyClass: App.upgradeWizardView,
-        primary: null,
+        primary: Em.I18n.t('common.dismiss'),
         secondary: null,
         didInsertElement: function () {
           this.fitHeight();
@@ -49,31 +60,15 @@ module.exports = App.WizardRoute.extend({
           scrollable.css('max-height', Number(block.css('max-height').slice(0, -2)) - block.height());
           block.css('max-height', 'none');
         },
-        onClose: function() {
-          var self = this, header, body;
-          if (['IN_PROGRESS', 'PENDING', 'FAILED'].contains(App.get('upgradeState'))) {
-            header = Em.I18n.t('admin.stackUpgrade.state.inProgress');
-            body = Em.I18n.t('admin.stackUpgrade.dialog.closeProgress');
-          } else if (App.get('upgradeState') === 'HOLDING') {
-            header = Em.I18n.t('admin.stackUpgrade.state.paused');
-            body = Em.I18n.t('admin.stackUpgrade.dialog.closePause');
-          } else {
-            this.closeWizard();
-            return;
-          }
-          App.ModalPopup.show({
-            header: header,
-            body: body,
-            showCloseButton: false,
-            onPrimary: function() {
-              self.closeWizard();
-              this._super();
-            }
-          })
+        onPrimary: function () {
+          this.closeWizard();
+        },
+        onClose: function () {
+          this.closeWizard();
         },
         closeWizard: function () {
           App.router.get('updateController').set('isWorking', true);
-          App.router.transitionTo('main.admin.stackAndUpgrade');
+          App.router.transitionTo('main.admin.stackAndUpgrade.versions');
           this.hide();
         }
       });

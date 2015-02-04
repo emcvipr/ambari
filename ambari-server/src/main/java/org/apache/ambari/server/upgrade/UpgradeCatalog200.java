@@ -18,8 +18,13 @@
 
 package org.apache.ambari.server.upgrade;
 
-import com.google.inject.Inject;
-import com.google.inject.Injector;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.orm.DBAccessor;
@@ -40,17 +45,15 @@ import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntityP
 import org.apache.ambari.server.orm.entities.ServiceDesiredStateEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.Config;
 import org.apache.ambari.server.state.SecurityState;
+import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.UpgradeState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
 
 
 /**
@@ -62,6 +65,7 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
   private static final String ALERT_TARGET_TABLE = "alert_target";
   private static final String ALERT_TARGET_STATES_TABLE = "alert_target_states";
   private static final String ALERT_CURRENT_TABLE = "alert_current";
+  private static final String ARTIFACT_TABLE = "artifact";
 
   /**
    * {@inheritDoc}
@@ -106,6 +110,11 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
   protected void executeDDLUpdates() throws AmbariException, SQLException {
     prepareRollingUpgradesDDL();
     executeAlertDDLUpdates();
+    createArtifactTable();
+
+    // add security_type to clusters
+    dbAccessor.addColumn("clusters", new DBColumnInfo(
+        "security_type", String.class, 32, SecurityType.NONE.toString(), false));
 
     // add security_state to various tables
     dbAccessor.addColumn("hostcomponentdesiredstate", new DBColumnInfo(
@@ -182,6 +191,9 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
     dbAccessor.addColumn("hostcomponentstate", new DBAccessor.DBColumnInfo("upgrade_state",
         String.class, 32, "NONE", false));
 
+    dbAccessor.addColumn("hostcomponentstate", new DBAccessor.DBColumnInfo("version",
+        String.class, 32, "UNKNOWN", false));
+
     dbAccessor.addColumn("host_role_command", new DBAccessor.DBColumnInfo("retry_allowed",
         Integer.class, 1, 0, false));
 
@@ -221,7 +233,9 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
     columns.add(new DBAccessor.DBColumnInfo("upgrade_id", Long.class, null, null, false));
     columns.add(new DBAccessor.DBColumnInfo("cluster_id", Long.class, null, null, false));
     columns.add(new DBAccessor.DBColumnInfo("request_id", Long.class, null, null, false));
-    columns.add(new DBAccessor.DBColumnInfo("state", String.class, 255, UpgradeState.NONE.name(), false));
+    columns.add(new DBAccessor.DBColumnInfo("from_version", String.class, 255, "", false));
+    columns.add(new DBAccessor.DBColumnInfo("to_version", String.class, 255, "", false));
+    columns.add(new DBAccessor.DBColumnInfo("direction", String.class, 255, "UPGRADE", false));
     dbAccessor.createTable("upgrade", columns, "upgrade_id");
     dbAccessor.addFKConstraint("upgrade", "fk_upgrade_cluster_id", "cluster_id", "clusters", "cluster_id", false);
     dbAccessor.addFKConstraint("upgrade", "fk_upgrade_request_id", "request_id", "request", "request_id", false);
@@ -250,6 +264,14 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
     dbAccessor.executeQuery("INSERT INTO ambari_sequences(sequence_name, sequence_value) VALUES('upgrade_item_id_seq', 0)", false);
   }
 
+  private void createArtifactTable() throws SQLException {
+    ArrayList<DBColumnInfo> columns = new ArrayList<DBColumnInfo>();
+    columns.add(new DBColumnInfo("artifact_name", String.class, 255, null, false));
+    columns.add(new DBColumnInfo("foreign_keys", String.class, 255, null, false));
+    columns.add(new DBColumnInfo("artifact_data", char[].class, null, null, false));
+    dbAccessor.createTable(ARTIFACT_TABLE, columns, "artifact_name", "foreign_keys");
+  }
+
   // ----- UpgradeCatalog ----------------------------------------------------
 
   /**
@@ -259,7 +281,44 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
   protected void executeDMLUpdates() throws AmbariException, SQLException {
     // remove NAGIOS to make way for the new embedded alert framework
     removeNagiosService();
+    addNewConfigurationsFromXml();
+    updateDfsClusterAdmintistratorsProperty();
     updateHiveDatabaseType();
+    setSecurityType();
+  }
+  
+  protected void updateDfsClusterAdmintistratorsProperty() throws AmbariException {
+    /*
+     * Remove trailing and leading whitespaces from hdfs-site/dfs.cluster.administrators
+     * property.
+     */
+    AmbariManagementController ambariManagementController = injector.getInstance(
+        AmbariManagementController.class);
+    Clusters clusters = ambariManagementController.getClusters();
+
+    if (clusters != null) {
+      Map<String, Cluster> clusterMap = clusters.getClusters();
+      Map<String, String> prop = new HashMap<String, String>();
+      String properyValue = null;
+
+      if (clusterMap != null && !clusterMap.isEmpty()) {
+        for (final Cluster cluster : clusterMap.values()) {
+          properyValue = null;
+          if (cluster.getDesiredConfigByType("hdfs-site") != null) {
+            properyValue = cluster.getDesiredConfigByType(
+                "hdfs-site").getProperties().get("dfs.cluster.administrators");
+          }
+
+          if (properyValue != null) {
+            properyValue = properyValue.trim();
+
+            prop.put("dfs.cluster.administrators", properyValue);
+            updateConfigurationPropertiesForCluster(cluster, "hdfs-site",
+                prop, true, false);
+          }
+        }
+      }
+    }
   }
 
   protected void updateHiveDatabaseType() throws AmbariException {
@@ -302,6 +361,43 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
    */
   protected void removeNagiosService() {
     executeInTransaction(new RemoveNagiosRunnable());
+  }
+
+  /**
+   * Processes existing clusters to set it's security type as indicated by it's <code>cluster-env/security_enabled</code> flag.
+   * <p/>
+   * If the <code>cluster-env/security_enabled</code is set to "true", the cluster's security state
+   * will be set to "KERBEROS" since that is the only option. Else, the value will be set to  "NONE".
+   */
+  protected void setSecurityType() {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    Clusters clusters = ambariManagementController.getClusters();
+
+    if (clusters != null) {
+      Map<String, Cluster> clusterMap = clusters.getClusters();
+
+      if (clusterMap != null) {
+        for (final Cluster cluster : clusterMap.values()) {
+          Config configClusterEnv = cluster.getDesiredConfigByType("cluster-env");
+
+          if (configClusterEnv != null) {
+            Map<String, String> properties = configClusterEnv.getProperties();
+
+            if (properties != null) {
+              String securityEnabled = properties.get("security_enabled");
+
+              if ("true".equalsIgnoreCase(securityEnabled)) {
+                // Currently the only security option is Kerberos. If security is enabled, blindly
+                // set security type to SecurityType.KERBEROS
+                cluster.setSecurityType(SecurityType.KERBEROS);
+              } else {
+                cluster.setSecurityType(SecurityType.NONE);
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   /**

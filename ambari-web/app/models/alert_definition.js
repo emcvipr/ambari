@@ -35,6 +35,19 @@ App.AlertDefinition = DS.Model.extend({
   reporting: DS.hasMany('App.AlertReportDefinition'),
   lastTriggered: DS.attr('number'),
 
+  //relates only to SCRIPT-type alert definition
+  location: DS.attr('string'),
+  //relates only to AGGREGATE-type alert definition
+  alertName: DS.attr('string'),
+  //relates only to WEB and METRIC types of alert definition
+  uri: DS.belongsTo('App.AlertMetricsUriDefinition'),
+  //relates only METRIC-type alert definition
+  jmx: DS.belongsTo('App.AlertMetricsSourceDefinition'),
+  ganglia: DS.belongsTo('App.AlertMetricsSourceDefinition'),
+  //relates only PORT-type alert definition
+  defaultPort: DS.attr('number'),
+  portUri: DS.attr('string'),
+
   /**
    * Raw data from AlertDefinition/source
    * used to format request content for updating alert definition
@@ -59,7 +72,7 @@ App.AlertDefinition = DS.Model.extend({
    *      count: 0,
    *      maintenanceCount: 0
    *    },
-   *    "WARN": {
+   *    "WARNING": {
    *      count: 1,
    *      maintenanceCount: 1
    *    }
@@ -130,8 +143,7 @@ App.AlertDefinition = DS.Model.extend({
         hostCnt = 0,
         self = this;
     order.forEach(function (state) {
-      var cnt = summary[state] ? summary[state].count + summary[state].maintenanceCount : 0;
-      hostCnt += cnt;
+      hostCnt += summary[state] ? summary[state].count + summary[state].maintenanceCount : 0;
     });
     if (hostCnt > 1) {
       // multiple hosts
@@ -159,7 +171,18 @@ App.AlertDefinition = DS.Model.extend({
       // none
       return '<span class="alert-state-single-host label alert-state-PENDING">NONE</span>';
     }
-    return null;
+    return '';
+  }.property('summary'),
+
+  latestText: function () {
+    var order = this.get('order'), summary = this.get('summary'), text = '';
+    order.forEach(function (state) {
+      var cnt = summary[state] ? summary[state].count + summary[state].maintenanceCount : 0;
+      if (cnt > 0) {
+        text = summary[state].latestText;
+      }
+    });
+    return text;
   }.property('summary'),
 
   isHostAlertDefinition: function () {
@@ -175,12 +198,13 @@ App.AlertDefinition = DS.Model.extend({
   }.property('type'),
 
   /**
-   * if this definition is in state: CRIT / WARNING, if true, will show up in alerts fast access popup
+   * if this definition is in state: CRITICAL / WARNING, if true, will show up in alerts fast access popup
+   * instances with maintenance mode ON are ignored
    * @type {boolean}
    */
   isCriticalOrWarning: function () {
-    return this.get('isCritical') || this.get('isWarning');
-  }.property('isCritical', 'isWarning'),
+    return !!(this.get('summary.CRITICAL.count') || this.get('summary.WARNING.count'));
+  }.property('summary'),
 
   /**
    * if this definition is in state: CRIT
@@ -268,14 +292,29 @@ App.AlertDefinition = DS.Model.extend({
 
 App.AlertDefinition.reopenClass({
 
-  getAllDefinitions: function () {
-    return Array.prototype.concat.call(
-        Array.prototype, App.PortAlertDefinition.find().toArray(),
-        App.MetricsAlertDefinition.find().toArray(),
-        App.WebAlertDefinition.find().toArray(),
-        App.AggregateAlertDefinition.find().toArray(),
-        App.ScriptAlertDefinition.find().toArray()
-    )
+  /**
+   * Return function to sort list of AlertDefinitions by their status
+   * It sorts according to <code>severityOrder</code>
+   * @param {boolean} order true - DESC, false - ASC
+   * @returns {Function}
+   * @method getSortDefinitionsByStatus
+   */
+  getSortDefinitionsByStatus: function (order) {
+    return function (a, b) {
+      var a_summary = a.get('summary'),
+        b_summary = b.get('summary'),
+        st_order = a.get('severityOrder'),
+        ret = 0;
+      for (var i = 0; i < st_order.length; i++) {
+        var a_v = Em.isNone(a_summary[st_order[i]]) ? 0 : a_summary[st_order[i]].count + a_summary[st_order[i]].maintenanceCount,
+          b_v = Em.isNone(b_summary[st_order[i]]) ? 0 : b_summary[st_order[i]].count + b_summary[st_order[i]].maintenanceCount;
+        ret = b_v - a_v;
+        if (ret !== 0) {
+          break;
+        }
+      }
+      return order ? ret : -ret;
+    };
   }
 
 });
@@ -298,35 +337,7 @@ App.AlertMetricsUriDefinition = DS.Model.extend({
   httpsPropertyValue: DS.attr('string')
 });
 
-App.PortAlertDefinition = App.AlertDefinition.extend({
-  defaultPort: DS.attr('number'),
-  uri: DS.attr('string')
-});
-
-App.MetricsAlertDefinition = App.AlertDefinition.extend({
-  jmx: DS.belongsTo('App.AlertMetricsSourceDefinition'),
-  ganglia: DS.belongsTo('App.AlertMetricsSourceDefinition'),
-  uri: DS.belongsTo('App.AlertMetricsUriDefinition')
-});
-
-App.WebAlertDefinition = App.AlertDefinition.extend({
-  uri: DS.belongsTo('App.AlertMetricsUriDefinition')
-});
-
-App.AggregateAlertDefinition = App.AlertDefinition.extend({
-  alertName: DS.attr('string')
-});
-
-App.ScriptAlertDefinition = App.AlertDefinition.extend({
-  location: DS.attr('string')
-});
-
 App.AlertDefinition.FIXTURES = [];
 App.AlertReportDefinition.FIXTURES = [];
 App.AlertMetricsSourceDefinition.FIXTURES = [];
-App.PortAlertDefinition.FIXTURES = [];
 App.AlertMetricsUriDefinition.FIXTURES = [];
-App.MetricsAlertDefinition.FIXTURES = [];
-App.WebAlertDefinition.FIXTURES = [];
-App.AggregateAlertDefinition.FIXTURES = [];
-App.ScriptAlertDefinition.FIXTURES = [];

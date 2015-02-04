@@ -20,6 +20,7 @@
     "serviceName": "SLIDER",
     "role": "SLIDER",
     "commandParams": {
+        "version": "2.2.1.0-2067",
         "command_timeout": "300",
         "service_package_folder": "OOZIE",
         "script_type": "PYTHON",
@@ -149,9 +150,13 @@
         "kafka.ganglia.metrics.port": "8649",
         "log.index.interval.bytes": "4096",
         "log.retention.hours": "168"
-      }
-
-
+      },
+      "ranger-hbase-plugin-properties": {
+            "ranger-hbase-plugin-enabled":"yes"
+      },
+      "ranger-hive-plugin-properties": {
+            "ranger-hive-plugin-enabled":"yes"
+       }
     },
     "configuration_attributes": {
         "yarn-site": {

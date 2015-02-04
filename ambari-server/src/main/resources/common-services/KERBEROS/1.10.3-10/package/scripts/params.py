@@ -57,6 +57,8 @@ krb5kdc_pid_path = '/var/run/krb5kdc.pid'
 smoke_test_principal = None
 smoke_test_keytab_file = None
 
+smoke_user =  config['configurations']['cluster-env']['smokeuser']
+
 # If a test keytab file is available, simply use it
 
 
@@ -72,7 +74,7 @@ if config is not None:
     cluster_env = get_property_value(configurations, 'cluster-env')
 
     if cluster_env is not None:
-      smoke_test_principal = get_property_value(cluster_env, 'smokeuser', None, True, None)
+      smoke_test_principal = get_property_value(cluster_env, 'smokeuser_principal_name', None, True, None)
       smoke_test_keytab_file = get_property_value(cluster_env, 'smokeuser_keytab', None, True, None)
 
       default_group = get_property_value(cluster_env, 'user_group')

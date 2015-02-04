@@ -21,29 +21,39 @@ App.KerberosWizardStep6Controller = App.KerberosProgressPageController.extend({
   clusterDeployState: 'KERBEROS_DEPLOY',
   isSingleRequestPage: true,
   request: {},
+  commands: [],
+  contextForPollingRequest: Em.I18n.t('requestInfo.kerberizeCluster'),
 
-  setRequest: function (data, kerberosDescriptor) {
+  setRequest: function () {
     this.set('request', {
       name: 'KERBERIZE_CLUSTER',
       ajaxName: 'admin.kerberize.cluster',
       ajaxData: {
         data: {
           Clusters: {
-            desired_config: data
-          },
-          kerberos_descriptor: kerberosDescriptor
+            security_type: "KERBEROS"
+          }
         }
       }
     });
   },
 
-  contextForPollingRequest: Em.I18n.t('requestInfo.kerberizeCluster'),
-
-  commands: [],
+  postKerberosDescriptor: function (kerberosDescriptor) {
+    return App.ajax.send({
+      name: 'admin.kerberos.cluster.artifact.create',
+      sender: this,
+      data: {
+        artifactName: 'kerberos_descriptor',
+        data: {
+          artifact_data: kerberosDescriptor
+        }
+      }
+    });
+  },
 
   retry: function () {
     this.set('showRetry', false);
-    this.get('tasks').setEach('status','PENDING');
+    this.get('tasks').setEach('status', 'PENDING');
     App.router.send('retry');
   }
 });

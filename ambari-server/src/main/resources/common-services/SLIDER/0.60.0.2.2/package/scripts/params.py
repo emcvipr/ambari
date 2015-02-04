@@ -21,11 +21,20 @@ limitations under the License.
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
 from resource_management.libraries.functions.default import default
 from resource_management import *
+from ambari_commons import OSCheck
+
+if OSCheck.is_windows_family():
+  from params_windows import *
+else:
+  from params_linux import *
 
 # server configurations
 config = Script.get_config()
 
 stack_name = default("/hostLevelParams/stack_name", None)
+
+# New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade
+version = default("/commandParams/version", None)
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
@@ -36,9 +45,9 @@ if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
 else:
   slider_bin_dir = "/usr/lib/slider/bin"
 
-slider_conf_dir = "/etc/slider/conf"
 hadoop_conf_dir = "/etc/hadoop/conf"
 smokeuser = config['configurations']['cluster-env']['smokeuser']
+smokeuser_principal = config['configurations']['cluster-env']['smokeuser_principal_name']
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 smokeuser_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
 kinit_path_local = functions.get_kinit_path(["/usr/bin", "/usr/kerberos/bin", "/usr/sbin"])
@@ -47,5 +56,3 @@ slider_env_sh_template = config['configurations']['slider-env']['content']
 java64_home = config['hostLevelParams']['java_home']
 log4j_props = config['configurations']['slider-log4j']['content']
 slider_cmd = format("{slider_bin_dir}/slider")
-storm_slider_conf_dir= '/usr/hdp/current/storm-slider-client/conf'
-slider_home_dir= '/usr/hdp/current/slider-client'

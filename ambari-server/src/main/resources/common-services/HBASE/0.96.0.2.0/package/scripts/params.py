@@ -105,6 +105,7 @@ else:
   rs_hosts = default('/clusterHostInfo/hbase_rs_hosts', '/clusterHostInfo/all_hosts') 
 
 smoke_test_user = config['configurations']['cluster-env']['smokeuser']
+smokeuser_principal =  config['configurations']['cluster-env']['smokeuser_principal_name']
 smokeuser_permissions = "RWXCA"
 service_check_data = functions.get_unique_id_and_date()
 user_group = config['configurations']['cluster-env']["user_group"]
@@ -162,3 +163,28 @@ if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
     region_mover = format("/usr/hdp/current/hbase-{role_root}/bin/region_mover.rb")
     region_drainer = format("/usr/hdp/current/hbase-{role_root}/bin/draining_servers.rb")
     hbase_cmd = format("/usr/hdp/current/hbase-{role_root}/bin/hbase")
+
+user_input = default("/configurations/ranger-hbase-plugin-properties/ranger-hbase-plugin-enabled","no")
+if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
+  # Setting Flag value for ranger hbase plugin
+  enable_ranger_hbase = False
+  user_input = config['configurations']['ranger-hbase-plugin-properties']['ranger-hbase-plugin-enabled']
+  if user_input.lower() == 'yes':
+    enable_ranger_hbase = True
+  elif user_input.lower() == 'no':
+    enable_ranger_hbase = False
+
+# ranger host
+ranger_admin_hosts = default("/clusterHostInfo/ranger_admin_hosts", [])
+has_ranger_admin = not len(ranger_admin_hosts) == 0    
+
+ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
+
+jdk_location = config['hostLevelParams']['jdk_location']
+java_share_dir = '/usr/share/java'
+jdbc_jar_name = "mysql-connector-java.jar"
+
+downloaded_custom_connector = format("{exec_tmp_dir}/{jdbc_jar_name}")
+
+driver_curl_source = format("{jdk_location}/{jdbc_jar_name}")
+driver_curl_target = format("{java_share_dir}/{jdbc_jar_name}")

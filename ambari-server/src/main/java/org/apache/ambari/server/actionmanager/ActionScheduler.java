@@ -129,23 +129,23 @@ class ActionScheduler implements Runnable {
                          int maxAttempts, HostsMap hostsMap,
                          UnitOfWork unitOfWork, AmbariEventPublisher ambariEventPublisher,
                          Configuration configuration) {
-    this.sleepTime = sleepTimeMilliSec;
+    sleepTime = sleepTimeMilliSec;
     this.hostsMap = hostsMap;
-    this.actionTimeout = actionTimeoutMilliSec;
+    actionTimeout = actionTimeoutMilliSec;
     this.db = db;
     this.actionQueue = actionQueue;
     this.fsmObject = fsmObject;
     this.ambariEventPublisher = ambariEventPublisher;
     this.maxAttempts = (short) maxAttempts;
-    this.serverActionExecutor = new ServerActionExecutor(db, sleepTimeMilliSec);
+    serverActionExecutor = new ServerActionExecutor(db, sleepTimeMilliSec);
     this.unitOfWork = unitOfWork;
-    this.clusterHostInfoCache = CacheBuilder.newBuilder().
+    clusterHostInfoCache = CacheBuilder.newBuilder().
         expireAfterAccess(5, TimeUnit.MINUTES).
         build();
-    this.commandParamsStageCache = CacheBuilder.newBuilder().
+    commandParamsStageCache = CacheBuilder.newBuilder().
       expireAfterAccess(5, TimeUnit.MINUTES).
       build();
-    this.hostParamsStageCache = CacheBuilder.newBuilder().
+    hostParamsStageCache = CacheBuilder.newBuilder().
       expireAfterAccess(5, TimeUnit.MINUTES).
       build();
     this.configuration = configuration;
@@ -212,19 +212,34 @@ class ActionScheduler implements Runnable {
       // The first thing to do is to abort requests that are cancelled
       processCancelledRequestsList();
 
+      // !!! getting the stages in progress could be a very expensive call due
+      // to the join being used; there's no need to make it if there are
+      // no commands in progress
+      if (db.getCommandsInProgressCount() == 0) {
+        // Nothing to do
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("There are no stages currently in progress.");
+        }
+
+        return;
+      }
+
       Set<Long> runningRequestIds = new HashSet<Long>();
       List<Stage> stages = db.getStagesInProgress();
       if (LOG.isDebugEnabled()) {
         LOG.debug("Scheduler wakes up");
         LOG.debug("Processing {} in progress stages ", stages.size());
       }
+
       if (stages.isEmpty()) {
-        //Nothing to do
+        // Nothing to do
         if (LOG.isDebugEnabled()) {
-          LOG.debug("No stage in progress..nothing to do");
+          LOG.debug("There are no stages currently in progress.");
         }
+
         return;
       }
+
       int i_stage = 0;
 
       stages = filterParallelPerHostStages(stages);
@@ -298,7 +313,13 @@ class ActionScheduler implements Runnable {
         //Schedule what we have so far
 
         for (ExecutionCommand cmd : commandsToSchedule) {
-            processHostRole(stage, cmd, commandsToStart, commandsToUpdate);
+
+          // Hack - Remove passwords from configs
+          if (cmd.getRole().equals(Role.HIVE_CLIENT.toString()) &&
+                  cmd.getConfigurations().containsKey(Configuration.HIVE_CONFIG_TAG)) {
+            cmd.getConfigurations().get(Configuration.HIVE_CONFIG_TAG).remove(Configuration.HIVE_METASTORE_PASSWORD_PROPERTY);
+          }
+          processHostRole(stage, cmd, commandsToStart, commandsToUpdate);
         }
 
         LOG.debug("==> Commands to start: {}", commandsToStart.size());
@@ -584,7 +605,7 @@ class ActionScheduler implements Runnable {
           LOG.trace("===>commandsToSchedule(first_time)=" + commandsToSchedule.size());
         }
 
-        this.updateRoleStats(status, roleStats.get(roleStr));
+        updateRoleStats(status, roleStats.get(roleStr));
       }
     }
     LOG.debug("Collected {} commands to schedule in this wakeup.", commandsToSchedule.size());
@@ -796,7 +817,7 @@ class ActionScheduler implements Runnable {
 
   /**
    * @param requestId request will be cancelled on next scheduler wake up
-   * (if it is in state that allows cancelation, e.g. QUEUED, PENDING, IN_PROGRESS)
+   * (if it is in state that allows cancellation, e.g. QUEUED, PENDING, IN_PROGRESS)
    * @param reason why request is being cancelled
    */
   public void scheduleCancellingRequest(long requestId, String reason) {
@@ -906,7 +927,7 @@ class ActionScheduler implements Runnable {
 
 
   public void setTaskTimeoutAdjustment(boolean val) {
-    this.taskTimeoutAdjustment = val;
+    taskTimeoutAdjustment = val;
   }
 
   ServerActionExecutor getServerActionExecutor() {
@@ -926,7 +947,7 @@ class ActionScheduler implements Runnable {
     final float successFactor;
 
     RoleStats(int total, float successFactor) {
-      this.totalHosts = total;
+      totalHosts = total;
       this.successFactor = successFactor;
     }
 
@@ -950,6 +971,7 @@ class ActionScheduler implements Runnable {
       return !(isRoleInProgress() || isSuccessFactorMet());
     }
 
+    @Override
     public String toString() {
       StringBuilder builder = new StringBuilder();
       builder.append("numQueued=").append(numQueued);

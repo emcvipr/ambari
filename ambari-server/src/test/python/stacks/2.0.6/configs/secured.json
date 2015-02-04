@@ -368,6 +368,12 @@
             "hadoop.proxyuser.oozie.hosts": "c6402.ambari.apache.org", 
             "ipc.client.connection.maxidletime": "30000"
         }, 
+        "ranger-hdfs-plugin-properties" : {
+            "ranger-hdfs-plugin-enabled":"yes"
+        },
+        "ranger-hive-plugin-properties" : {
+            "ranger-hive-plugin-enabled":"yes"
+        },
         "hive-site": {
             "hive.enforce.sorting": "true", 
             "javax.jdo.option.ConnectionPassword": "!`\"' 1", 
@@ -407,7 +413,8 @@
             "hive.metastore.execute.setugi": "true", 
             "hive.auto.convert.sortmerge.join.noconditionaltask": "true", 
             "hive.server2.enable.doAs": "true", 
-            "hive.optimize.mapjoin.mapreduce": "true", 
+            "hive.optimize.mapjoin.mapreduce": "true",
+            "hive.server2.transport.mode": "binary",
             "hive.server2.authentication.kerberos.keytab": "/etc/security/keytabs/hive.service.keytab"
         }, 
         "yarn-site": {
@@ -475,6 +482,7 @@
             "security_enabled": "true",
             "ignore_groupsusers_create": "false",
             "smokeuser": "ambari-qa",
+            "smokeuser_principal_name": "ambari-qa@EXAMPLE.COM",
             "kerberos_domain": "EXAMPLE.COM",
             "user_group": "hadoop",
             "smokeuser_keytab": "/etc/security/keytabs/smokeuser.headless.keytab",

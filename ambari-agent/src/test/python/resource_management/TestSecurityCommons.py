@@ -21,6 +21,7 @@ from unittest import TestCase
 from resource_management.libraries.functions.security_commons import *
 from datetime import datetime, timedelta
 from tempfile import gettempdir
+import os
 
 class TestSecurityCommons(TestCase):
   @patch('os.path.isfile')
@@ -118,6 +119,47 @@ class TestSecurityCommons(TestCase):
     result = build_expectations(config_file, [], [], [])
 
     self.assertEquals(not result[config_file].items(), True)
+
+  def test_get_params_from_filesystem_JAAS(self):
+    conf_dir = gettempdir()
+    jaas_file = "test_jaas.conf"
+    jaas_file_path = conf_dir + os.sep + jaas_file
+
+    # Create temporary test file (mocking a files for reading isn't available for the current version
+    # of the library
+    with open(jaas_file_path, "w+") as f:
+      f.write('Client {\n'
+              '  com.sun.security.auth.module.Krb5LoginModule required\n'
+              '  useKeyTab=true\n'
+              '  storeKey=true\n'
+              '  useTicketCache=false\n'
+              '  keyTab="/etc/security/keytabs/hbase.service.keytab"\n'
+              '  principal="hbase/vp-ambari-ranger-med-0120-2.cs1cloud.internal@EXAMPLE.COM";\n'
+              '};\n')
+
+    config_file = {
+      jaas_file : FILE_TYPE_JAAS_CONF
+    }
+
+    result = get_params_from_filesystem(conf_dir, config_file)
+    expected = {
+      'test_jaas': {
+        'Client': {
+          'keyTab': '/etc/security/keytabs/hbase.service.keytab',
+          'useTicketCache': 'false',
+          'storeKey': 'true',
+          'com.sun.security.auth.module.Krb5LoginModule': 'required',
+          'useKeyTab': 'true',
+          'principal': 'hbase/vp-ambari-ranger-med-0120-2.cs1cloud.internal@EXAMPLE.COM'
+        }
+      }
+    }
+
+    self.assertEquals(expected, result)
+
+    os.unlink(jaas_file_path)
+
+    print result
 
   @patch('xml.etree.ElementTree.parse')
   def test_get_params_from_filesystem(self, et_parser_mock):

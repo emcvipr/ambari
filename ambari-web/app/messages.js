@@ -134,6 +134,7 @@ Em.I18n.translations = {
   'common.oss':'OSs',
   'common.memory':'Memory',
   'common.maximum':'Maximum',
+  'common.started':'Started',
   'common.start':'Start',
   'common.stop':'Stop',
   'common.pause':'Pause',
@@ -189,6 +190,7 @@ Em.I18n.translations = {
   'common.package': 'Package',
   'common.proceed': 'Proceed',
   'common.proceedAnyway': 'Proceed Anyway',
+  'common.exitAnyway': 'Exit Anyway',
   'common.process': 'Process',
   'common.property': 'Property',
   'common.installed': 'Installed',
@@ -310,6 +312,20 @@ Em.I18n.translations = {
   'popup.confirmationFeedBack.sending':'Sending...',
   'popup.confirmationFeedBack.query.fail':'Request failed',
 
+  'popup.clusterCheck.failedOn': 'Failed on: ',
+  'popup.clusterCheck.reason': 'Reason: ',
+  'popup.clusterCheck.Upgrade.header': 'Upgrade to {0}',
+  'popup.clusterCheck.Upgrade.title': 'Upgrade Requirements Not Met',
+  'popup.clusterCheck.Upgrade.alert': 'You must meet the following requirements before you can proceed with rolling upgrade.',
+  'popup.clusterCheck.Security.header': 'Enable Security',
+  'popup.clusterCheck.Security.title': 'Security Requirements Not Met',
+  'popup.clusterCheck.Security.alert': 'You must meet the following requirements before you can enable security.',
+
+  'popup.invalid.KDC.header': 'Admin session expiration error',
+  'popup.invalid.KDC.msg': ' Please enter admin principal and password.',
+  'popup.invalid.KDC.admin.principal': 'Admin principal',
+  'popup.invalid.KDC.admin.password': 'Admin password',
+
   'login.header':'Sign in',
   'login.username':'Username',
   'login.loginButton':'Sign in',
@@ -398,6 +414,7 @@ Em.I18n.translations = {
 
   'installer.controls.slaveComponentGroups':' Groups',
   'installer.controls.serviceConfigPopover.title':'{0}<br><small>{1}</small>',
+  'installer.controls.checkConnection.popover':'This action will check accessibility of {0} host and port from Ambari Server host',
   'installer.controls.serviceConfigMultipleHosts.other':'1 other',
   'installer.controls.serviceConfigMultipleHosts.others':'{0} others',
   'installer.controls.serviceConfigMasterHosts.header':'{0} Hosts',
@@ -638,8 +655,15 @@ Em.I18n.translations = {
   'installer.step4.multipleDFS.popup.body':'You selected more than one file system. We will automatically select only {0}. Is this OK?',
   'installer.step4.serviceCheck.popup.header':'{0} Needed',
   'installer.step4.serviceCheck.popup.body':'You did not select {0}, but it is needed by other services you selected. We will automatically add {0}. Is this OK?',
-  'installer.step4.monitoringCheck.popup.header':'Limited Functionality Warning',
-  'installer.step4.monitoringCheck.popup.body':'You did not select {0}. If {1} is not selected, monitoring and alerts will not function properly. Is this OK?',
+  'installer.step4.ambariMetricsCheck.popup.header':'Limited Functionality Warning',
+  'installer.step4.ambariMetricsCheck.popup.body':'Ambari Metrics collects metrics from the cluster and makes them available to Ambari.  If you do not install Ambari Metrics service, metrics will not be accessible from Ambari.  Are you sure you want to proceed without Ambari Metrics?',
+  'installer.step4.rangerRequirements.popup.header': 'Ranger Requirements',
+  'installer.step4.rangerRequirements.popup.body.requirements': '<ol><li>You must have an <strong>existing MySQL Server or Oracle Server</strong> database instance running to be used by Ranger.</li>' +
+    '<li>In Assign Masters step of this wizard, you will be prompted to specify which host for the Ranger Admin. On that host, you <strong>must have MySQL Client or Oracle Client installed</strong> for Ranger to access to the database.</li>' +
+    '<li>Ensure that the access for the DB Admin user (<strong>root</strong> in case of MySQL or <strong>SYS</strong> in case of Oracle) is enabled in DB server from any host.</li>' +
+    '<li>Execute the following command on the Ambari Server host. Replace <code>database-type</code> with <strong>mysql</strong> or <strong>oracle</strong> and <code>/jdbc/driver/path</code> based on the location of the MySQL or Oracle JDBC driver:' +
+    '<pre>ambari-server setup --jdbc-db={database-type} --jdbc-driver={/jdbc/driver/path}</pre></li></ol>',
+  'installer.step4.rangerRequirements.popup.body.confirmation': 'I have met all the requirements above.',
 
   'installer.step5.header':'Assign Masters',
   'installer.step5.reassign.header':'Select Target Host',
@@ -773,11 +797,6 @@ Em.I18n.translations = {
   'installer.step9.serviceStatus.abort.inProgress':'Aborting ',
   'installer.step9.serviceStatus.abort.completed':' aborted successfully',
   'installer.step9.serviceStatus.abort.failed':' failed to abort',
-  'installer.step9.serviceStatus.upgrade.pending':'Preparing to upgrade ',
-  'installer.step9.serviceStatus.upgrade.queued':'Waiting to upgrade ',
-  'installer.step9.serviceStatus.upgrade.inProgress':'Upgrading ',
-  'installer.step9.serviceStatus.upgrade.completed':' upgraded successfully',
-  'installer.step9.serviceStatus.upgrade.failed':' failed to upgrade',
   'installer.step9.components.install.failed': 'Installation Failure',
 
   'installer.step10.header':'Summary',
@@ -807,42 +826,6 @@ Em.I18n.translations = {
 
   'addHost.step4.header':'Configurations',
   'addHost.step4.title':'Select the configuration groups to which the added hosts will belong to.',
-
-
-  'installer.stackUpgrade.header':'Stack Upgrade Wizard',
-  'installer.stackUpgrade.step1.newVersion':'New Version',
-  'installer.stackUpgrade.step1.installedVersion':'Installed Version',
-  'installer.stackUpgrade.step1.installedStackVersion':'Installed stack version',
-  'installer.stackUpgrade.step1.upgradeStackVersion':'Upgrade stack version',
-  'installer.stackUpgrade.step1.description':'This Stack Upgrade Wizard will walk you through the steps of upgrading the cluster to the latest available stack version.',
-
-  'installer.stackUpgrade.step2.notice.header':'Important before you proceed, please perform following.',
-  'installer.stackUpgrade.step2.notice.first':'Make sure that your NameNode is backed up.',
-  'installer.stackUpgrade.step2.notice.second':'Make sure that your NameNode is backed up.',
-  'installer.stackUpgrade.step2.notice.third':'Make sure that your NameNode is backed up.',
-  'installer.stackUpgrade.step2.notice.complete':'Once you have completed the above, click on Upgrade to initiate the upgrade process on all hosts in your cluster',
-  'installer.stackUpgrade.step2.advancedOption':'Advanced Option',
-  'installer.stackUpgrade.step2.localRepository':'Use a local repository',
-  'installer.stackUpgrade.step2.popup.body':'We cannot proceed since some of the master components are not currently running. Please ensure that all services are running before continuing.',
-  'installer.stackUpgrade.step3.ProceedWithWarning':'Proceed with Warning',
-  'installer.stackUpgrade.step3.status.success':'Successfully upgraded the cluster to {0}',
-  'installer.stackUpgrade.step3.status.info':"Upgrading the cluster. \nPlease wait while we perform cluster upgrade.",
-  'installer.stackUpgrade.step3.status.warning':"Upgraded the cluster to {0} with some warnings.\nYou can start using the cluster but the components that failed to upgrade will not be functional."+
-  "You can click on the Retry button to retry upgrading the failed components. Alternatively you can proceed and retry upgrade on individual components in the Host Detail page.",
-  'installer.stackUpgrade.step3.status.failed':"Failed to upgrade hosts. Click on each host to see what might have gone wrong.\n After fixing the problem, click the Retry button",
-  'installer.stackUpgrade.step3.host.nothingToUpgrade':'Install complete (Waiting to start)',
-  'installer.stackUpgrade.step3.service.upgraded':'Services upgraded',
-  'installer.stackUpgrade.step3.service.upgrading':'Services upgrade in progress',
-  'installer.stackUpgrade.step3.service.pending':'Services upgrade pending',
-  'installer.stackUpgrade.step3.service.failedUpgrade':'Services failed to upgrade',
-  'installer.stackUpgrade.step3.service.stopped':'All Services stopped',
-  'installer.stackUpgrade.step3.service.stopping':'All Services stopping',
-  'installer.stackUpgrade.step3.service.stopFail':'All Services failed to stop',
-  'installer.stackUpgrade.step3.service.stopPending':'All Services stop pending',
-  'installer.stackUpgrade.step3.retry.upgrade':'Retry Upgrade',
-  'installer.stackUpgrade.step3.retry.services':'Retry stopping services',
-  'installer.stackUpgrade.step3.upgrade.header':'All Services upgrade',
-  'installer.stackUpgrade.step3.stop.header':'All Services stop',
 
   'form.create':'Create',
   'form.save':'Save',
@@ -897,6 +880,7 @@ Em.I18n.translations = {
   'alerts.table.state.disabled.confirm.btn': 'Confirm Enable',
   'alerts.filters.filteredAlertsInfo': '{0} of {1} definitions showing',
   'alerts.definition.name': 'Alert Definition Name',
+  'alerts.saveChanges': 'You have unsaved changes',
 
   'alerts.definition.details.enable': 'Enable',
   'alerts.definition.details.disable': 'Disable',
@@ -958,9 +942,11 @@ Em.I18n.translations = {
   'admin.kerberos.wizard.header':'Enable Kerberos Wizard',
   'admin.kerberos.button.enable': 'Enable Kerberos',
   'admin.kerberos.button.disable': 'Disable Kerberos',
+  'admin.kerberos.wizard.exit.warning.msg': 'Configuring Kerberos is in progress. Do you really want to exit the Enable Kerberos Wizard?',
+  'admin.kerberos.wizard.exit.critical.msg': 'Configuring Kerberos is in progress. <strong>Before dismissing, you should complete the wizard.</strong> Do you really want to exit the Enable Kerberos Wizard?',
   'admin.kerberos.wizard.step1.header': 'Get Started',
   'admin.kerberos.wizard.step2.header': 'Configure Kerberos',
-  'admin.kerberos.wizard.step3.header': 'Install and Test Kerberos',
+  'admin.kerberos.wizard.step3.header': 'Install and Test Kerberos Client',
   'admin.kerberos.wizard.step4.header': 'Configure Identities',
   'admin.kerberos.wizard.step5.header': 'Stop Services',
   'admin.kerberos.wizard.step6.header': 'Kerberize Cluster',
@@ -969,16 +955,20 @@ Em.I18n.translations = {
   'admin.kerberos.wizard.step1.alert.body': 'Note: This process requires services to be restarted and cluster downtime. As well, depending on the options you select, might require support from your Security administrators. Please plan accordingly.',
   'admin.kerberos.wizard.step1.body.text': 'What type of KDC do you plan on using?',
   'admin.kerberos.wizard.step1.option.kdc': 'Existing MIT KDC',
-  'admin.kerberos.wizard.step1.option.kdc.condition.1': 'An administrative principal is created in the MIT KDC to be shared with Ambari when prompted.',
-  'admin.kerberos.wizard.step1.option.kdc.condition.2': 'Java Cryptography Extension (JCE) is installed on all hosts.',
+  'admin.kerberos.wizard.step1.option.kdc.condition.1': 'Ambari Server and cluster hosts have network access to both the KDC and KDC admin hosts.',
+  'admin.kerberos.wizard.step1.option.kdc.condition.2': 'KDC administrative credentials are on-hand.',
+  'admin.kerberos.wizard.step1.option.kdc.condition.3': 'The Java Cryptography Extensions (JCE) have been setup on the Ambari Server host.',
   'admin.kerberos.wizard.step1.option.ad': 'Existing Active Directory',
-  'admin.kerberos.wizard.step1.option.ad.condition.1': 'An administrative principal is created in the Active Directory to be shared with Ambari when prompted.',
-  'admin.kerberos.wizard.step1.option.ad.condition.2': 'Java Cryptography Extension (JCE) is installed on all hosts.',
+  'admin.kerberos.wizard.step1.option.ad.condition.1': 'Ambari Server and cluster hosts have network access to the Domain Controllers.',
+  'admin.kerberos.wizard.step1.option.ad.condition.2': 'Active Directory secure LDAP (LDAPS) connectivity has been configured.',
+  'admin.kerberos.wizard.step1.option.ad.condition.3': 'Active Directory User container for principals has been created and is on-hand (e.g. OU=Hadoop,OU=People,dc=apache,dc=org)',
+  'admin.kerberos.wizard.step1.option.ad.condition.4': 'Active Directory administrative credentials with delegated control of “Create, delete, and manage user accounts” on the previously mentioned User container are on-hand.',
+  'admin.kerberos.wizard.step1.option.ad.condition.5': 'The Java Cryptography Extensions (JCE) have been setup on the Ambari Server host.',
   'admin.kerberos.wizard.step1.prerequisites.label': 'Following prerequisites needs to be checked to progress ahead in the wizard.',
   'admin.kerberos.wizard.step2.info.body': 'Please configure kerberos related properties.',
-  'admin.kerberos.wizard.step3.task0.title': 'Install Kerberos',
-  'admin.kerberos.wizard.step3.task1.title': 'Test Kerberos',
-  'admin.kerberos.wizard.step3.notice.inProgress': 'Please wait while kerberos is being installed and tested.',
+  'admin.kerberos.wizard.step3.task0.title': 'Install Kerberos Client',
+  'admin.kerberos.wizard.step3.task1.title': 'Test Kerberos Client',
+  'admin.kerberos.wizard.step3.notice.inProgress': 'Please wait while the Kerberos clients are being installed and tested.',
   'admin.kerberos.wizard.step3.notice.completed': 'Kerberos service has been installed and tested successfully.',
   'admin.kerberos.wizard.progressPage.notice.inProgress': 'Please wait while cluster is being kerberized',
   'admin.kerberos.wizard.step4.info.body': 'Configure principal name and keytab location for service users and hadoop service components.',
@@ -986,9 +976,10 @@ Em.I18n.translations = {
   'admin.kerberos.wizard.step5.notice.inProgress': 'Please wait while services are being stopped.',
   'admin.kerberos.wizard.step5.notice.completed': 'Services have been successfully stopped.',
   'admin.kerberos.wizard.step6.notice.inProgress': 'Please wait while cluster is being kerberized.',
-  'admin.kerberos.wizard.step6.notice.completed': 'Cluster has been successfully kerberized.',
+  'admin.kerberos.wizard.step6.notice.completed': 'Kerberos has successfully been enabled on the cluster.',
   'admin.kerberos.wizard.step7.notice.inProgress': 'Please wait while services are being started and tested.',
   'admin.kerberos.wizard.step7.notice.completed': 'Services have been successfully tested with kerberos environment.',
+  'admin.kerberos.wizard.step7.notice.failed': 'Some services failed to start and execute tests successfully. Click Retry to attempt again or click Complete to dismiss the wizard and fix manually.',
   'admin.kerberos.wizard.step7.task0.title' : 'Start and Test Services',
 
   'admin.highAvailability':' High Availability',
@@ -1006,7 +997,6 @@ Em.I18n.translations = {
   'admin.highAvailability.error.hostsNum':'You must have at least 3 hosts in your cluster to enable NameNode HA.',
   'admin.highAvailability.error.namenodeStarted':'NameNode must be running before you enable NameNode HA.',
   'admin.highAvailability.error.zooKeeperNum':'You must have at least 3 ZooKeeper Servers in your cluster to enable NameNode HA.',
-  'admin.highAvailability.error.security':'You cannot enable NameNode HA via this wizard as your cluster is already secured.  First, disable security by going to Admin > Security, and then run this Enable NameNode HA wizard again.  After NameNode HA is enabled, you can go back to Admin > Security to secure the cluster.',
   'admin.rm_highAvailability.error.hostsNum':'You must have at least 3 hosts in your cluster to enable ResourceManager HA.',
   'admin.rm_highAvailability.error.zooKeeperNum':'You must have at least 3 ZooKeeper Servers in your cluster to enable ResourceManager HA.',
   'admin.rm_highAvailability.closePopup':'Enable ResourceManager HA Wizard is in progress. You must allow the wizard to complete for Ambari to be in usable state. If you choose to quit, you must follow manual instructions to complete or revert enabling ResourceManager HA as documented in the Ambari User Guide. Are you sure you want to exit the wizard?',
@@ -1134,7 +1124,7 @@ Em.I18n.translations = {
     '<li>Once in Safe Mode, create a Checkpoint:' +
     '<div class="code-snippet">sudo su {0} -l -c \'hdfs dfsadmin -saveNamespace\'</div></li>' +
     '<li>You will be able to proceed once Ambari detects that the NameNode is in Safe Mode and the Checkpoint has been created successfully.</li>'+
-    '<div class="alert alert-warn">If the <b>Next</b> button is enabled before you run the <b>"Step 3: Create a Checkpoint"</b> command, it means there is a recent Checkpoint already and you may proceed without running the <b>"Step 3: Create a Checkpoint"</b> command.</div>' +
+    '<div class="alert alert-warn">If the <b>Next</b> button is enabled before you run the <b>"Step 4: Create a Checkpoint"</b> command, it means there is a recent Checkpoint already and you may proceed without running the <b>"Step 4: Create a Checkpoint"</b> command.</div>' +
     '</ol>',
   'admin.highAvailability.wizard.step3.confirm.host.body':'<b>Confirm your host selections.</b>',
   'admin.highAvailability.wizard.step3.confirm.config.body':'<div class="alert alert-info">' +
@@ -1284,29 +1274,31 @@ Em.I18n.translations = {
   'admin.misc.header': 'Service Users and Groups',
   'admin.misc.nothingToShow': 'No user accounts to display',
 
-  'admin.stackVersions.table.header.stack': "Stack",
-  'admin.stackVersions.table.header.version': "Version",
-  'admin.stackVersions.table.header.os': "OS",
-  'admin.stackVersions.table.header.installed': "Installed on",
-  'admin.stackVersions.table.header.current': "Current on",
-  'admin.stackVersions.table.empty': "No cluster stack versions to display",
-  'admin.repoVersions.table.empty': "No repository versions to display",
+  'admin.stackVersions.filter.notInstalled': "Not Installed ({0})",
+  'admin.stackVersions.filter.all': "All ({0})",
+  'admin.stackVersions.filter.upgradeReady': "Upgrade Ready ({0})",
+  'admin.stackVersions.filter.installed': "Installed ({0})",
+  'admin.stackVersions.filter.current': "Current ({0})",
+  'admin.stackVersions.filter.upgrading': "Upgrade In Process ({0})",
+  'admin.stackVersions.filter.upgraded': "Ready to Finalize ({0})",
 
-  'admin.stackVersions.details.versionName': "Version Name",
-  'admin.stackVersions.details.installed.on': "Installed on",
-  'admin.stackVersions.details.current.on': "Current on",
-  'admin.stackVersions.details.not.installed.on': "Not installed on",
-  'admin.stackVersions.details.host': "host",
-  'admin.stackVersions.details.hosts': "hosts",
-  'admin.stackVersions.details.base.url': "Base Url",
-
-  'admin.stackVersions.details.hosts.btn.reinstall': "Reinstall on failed hosts",
-  'admin.stackVersions.details.hosts.btn.install': "Install to {0} hosts",
-  'admin.stackVersions.details.hosts.btn.installing': "Installing...",
-  'admin.stackVersions.details.hosts.btn.nothing': "Installed on all hosts.",
-  'admin.stackVersions.details.hosts.btn.goto.upgrade': "Proceed to upgrade",
-  'admin.stackVersions.details.hosts.btn.na': "Status not available",
-  'admin.stackVersions.details.install.hosts.popup.title': "Install {0} version",
+  'admin.stackVersions.editRepositories.info': 'Provide Base URLs for the Operating Systems you are configuring. Uncheck all other Operating Systems.',
+  'admin.stackVersions.editRepositories.validation.warning': 'Some of the repositories failed validation. Make changes to the base url or skip validation if you are sure that urls are correct',
+  'admin.stackVersions.version.install.confirm': 'You are about to install packages for version <strong>{0}</strong> on all hosts.',
+  'admin.stackVersions.version.linkTooltip': 'Click to Edit Repositories',
+  'admin.stackVersions.version.hostsTooltip': 'Click to List Hosts',
+  'admin.stackVersions.version.emptyHostsTooltip': 'No Hosts to List',
+  'admin.stackVersions.version.notInstalled': "Not Installed",
+  'admin.stackVersions.manageVersions': "Manage Versions",
+  'admin.stackVersions.manageVersions.popup.body': 'You are about to leave the <b>Cluster Management</b> interface' +
+    ' and go to the <b>Ambari Administration</b> interface. You can return to cluster management by using the' +
+    ' “Go to Dashboard” link in the Ambari Administration > Clusters section.',
+  'admin.stackVersions.version.installNow': "Install Packages",
+  'admin.stackVersions.version.performUpgrade': "Perform Upgrade",
+  'admin.stackVersions.version.upgrade.pause': "Upgrade: Action Required",
+  'admin.stackVersions.version.upgrade.running': "Upgrade: In Process",
+  'admin.stackVersions.version.downgrade.pause': "Downgrade: Action Required",
+  'admin.stackVersions.version.downgrade.running': "Downgrade: In Process",
 
   'admin.stackVersions.hosts.popup.header.current': "Current",
   'admin.stackVersions.hosts.popup.header.installed': "Installed",
@@ -1315,38 +1307,45 @@ Em.I18n.translations = {
   'admin.stackVersions.hosts.popup.title': "{0} Version is {1} on {2} hosts:",
   'admin.stackVersions.hosts.popup.primary': "Go to Hosts",
 
-  'admin.stackVersions.updateTab.title.available': "Updates Available ({0})",
-  'admin.stackVersions.updateTab.title.not.available': "No Updates Available",
+  'admin.stackVersions.details.install.hosts.popup.title': "Install {0} version",
 
-  'admin.stackUpgrade.title': "Stack and upgrade",
-  'admin.stackUpgrade.hostsOnline': "{0}/{1} hosts online",
-  'admin.stackUpgrade.state.available': "Upgrade Available",
-  'admin.stackUpgrade.state.notAvailable': "No Upgrade Available",
-  'admin.stackUpgrade.state.resume': "Resume Upgrade",
+  'admin.stackUpgrade.finalize.later': "Finalize Later",
+  'admin.stackUpgrade.finalize.message.upgrade': "Your cluster version has been upgraded. " +
+  "Click on <b>Finalize</b> when you are ready to finalize the upgrade and commit to the new version." +
+  " You are strongly encouraged to run tests on your cluster to ensure it is fully operational before finalizing." +
+  " <b>You cannot go back to the original version once the upgrade is finalized.</b>",
+  'admin.stackUpgrade.finalize.message.downgrade': "Your cluster version has been downgraded. " +
+    "Click on <b>Finalize</b> when you are ready to finalize the downgrade and commit to the new version." +
+    " You are strongly encouraged to run tests on your cluster to ensure it is fully operational before finalizing." +
+    " <b>You cannot go back to the original version once the downgrade is finalized.</b>",
+  'admin.stackUpgrade.doThisLater': "Do This Later",
+  'admin.stackUpgrade.pauseUpgrade': "Pause Upgrade",
+  'admin.stackUpgrade.downgrade.proceed': "Proceed with Downgrade",
+  'admin.stackUpgrade.downgrade.title': "Downgrade to {0}",
+  'admin.stackUpgrade.downgrade.body': "Are you sure you wish to abort the upgrade process and downgrade to {0}",
+  'admin.stackUpgrade.title': "Stack and Versions",
   'admin.stackUpgrade.state.inProgress': "Upgrade in Progress",
   'admin.stackUpgrade.state.paused': "Upgrade Paused",
-  'admin.stackUpgrade.state.stopped': "Upgrade Stopped",
   'admin.stackUpgrade.state.completed': "Upgrade Finished",
-  'admin.stackUpgrade.state.failed': "Upgrade Failed",
-  'admin.stackUpgrade.state.upgrading': "Upgrading...",
-  'admin.stackUpgrade.hosts': "hosts",
-  'admin.stackUpgrade.host': "host",
-  'admin.stackUpgrade.dialog.header': "Upgrade to {0}",
+  'admin.stackUpgrade.state.inProgress.downgrade': "Downgrade in Progress",
+  'admin.stackUpgrade.state.paused.downgrade': "Downgrade Paused",
+  'admin.stackUpgrade.state.completed.downgrade': "Downgrade Finished",
+  'admin.stackUpgrade.dialog.header': "Rolling Upgrade to {0}",
+  'admin.stackUpgrade.dialog.downgrade.header': "Downgrade to {0}",
   'admin.stackUpgrade.dialog.operationFailed': "This operation failed.",
   'admin.stackUpgrade.dialog.stop': "Stop Upgrade",
   'admin.stackUpgrade.dialog.continue': "Ignore and Proceed",
-  'admin.stackUpgrade.dialog.inProgress': "Currently running:",
+  'admin.stackUpgrade.dialog.cancel': "Cancel Upgrade",
+  'admin.stackUpgrade.dialog.inProgress': "Now Running:",
   'admin.stackUpgrade.dialog.keepRunning': "Keep running Upgrade in background",
   'admin.stackUpgrade.dialog.failed': "Failed on:",
   'admin.stackUpgrade.dialog.manual': "Manual steps required",
   'admin.stackUpgrade.dialog.manualDone': "I have performed the manual steps above.",
   'admin.stackUpgrade.dialog.closeProgress': "Upgrade is in progress. \n If you dismiss this window, Upgrade will keep running in background.",
   'admin.stackUpgrade.dialog.closePause': "Upgrade is paused. \n If you dismiss this window, you can resume Upgrade later.",
-  'admin.stackUpgrade.preupgradeCheck.header': "Upgrade to {0}",
-  'admin.stackUpgrade.preupgradeCheck.title': "Upgrade Requirements Not Met",
-  'admin.stackUpgrade.preupgradeCheck.alert': "You must meet the following requirements before you can proceed with rolling upgrade.",
-  'admin.stackUpgrade.preupgradeCheck.failedOn': "Failed on: ",
-  'admin.stackUpgrade.preupgradeCheck.reason': "Reason: ",
+  'admin.stackUpgrade.dialog.details.open': "show details",
+  'admin.stackUpgrade.dialog.details.hide': "hide details",
+  'admin.stackUpgrade.dialog.notActive': "Waiting to execute the next task...",
   'services.service.start':'Start',
   'services.service.stop':'Stop',
   'services.service.metrics':'Metrics',
@@ -1624,8 +1623,11 @@ Em.I18n.translations = {
   'services.service.config.propertyFilterPopover.content':'Enter keywords to filter properties by property name, value, or description.',
   'services.service.config.hive.oozie.postgresql': 'Existing PostgreSQL Database',
   'services.service.config.database.connection.success': 'Connection OK',
+  'services.service.config.database.connection.inProgress': 'Checking connectivity',
   'services.service.config.database.connection.failed': 'Connection Failed',
+  'services.service.config.connection.exitPopup.msg': 'Test connection is in progress. It\'s recommended to wait until it wil be complete. Are you sure you want to exit Enable Kerberos Wizard?',
   'services.service.config.database.btn.idle': 'Test Connection',
+  'services.service.config.kdc.btn.idle': 'Test KDC Connection',
   'services.service.config.database.btn.connecting': 'Connecting...',
   'services.service.config.database.msg.jdbcSetup': 'Be sure you have run:<br/>' +
     '<b>ambari-server setup --jdbc-db={0} --jdbc-driver=/path/to/{1}/driver.jar</b> ' +
@@ -1787,6 +1789,14 @@ Em.I18n.translations = {
     '<div class="code-snippet">mysql db_name < backup-file.sql</div></li>' +
     '</ol>' +
     '</div>',
+  'services.reassign.step5.body.app_timeline_server': '<div class="alert alert-info">' +
+  '<ol>' +
+  '<li>Copy <b>/hadoop/yarn/timeline/leveldb-timeline-store.ldb</b> from the source host <b>{1}</b> to <b>/hadoop/yarn/timeline/leveldb-timeline-store.ldb</b> on the target host <b>{2}</b>.</li>' +
+  '<li>Login to the target host <b>{2}</b> and change permissions by running:' +
+  '<div class="code-snippet">chown -R {3}:{5} /hadoop/yarn/timeline/leveldb-timeline-store.ldb</div></li>' +
+  '<div class="code-snippet">chmod -R 700 /hadoop/yarn/timeline/leveldb-timeline-store.ldb</div></li>' +
+  '</ol>' +
+  '</div>',
   'services.reassign.step5.body.securityNotice': '<div class="alert alert-info"> <div class="alert alert-warn"> <strong>Note: </strong> Secure cluster' +
     ' requires generating necessary principals for reassigned component and creating keytab files with the principal on ' +
     'the target host. The keytab file should be accessible to the service user.</div> {0} </div>',
@@ -1946,14 +1956,21 @@ Em.I18n.translations = {
   'hosts.host.serviceNotAvailable': 'Service not available on this host',
 
   'hosts.host.menu.stackVersions': 'Versions',
+  'hosts.host.stackVersions.table.allVersions': 'All Versions',
   'hosts.host.stackVersions.table.noVersions': 'No versions',
   'hosts.host.stackVersions.table.filteredInfo': '{0} of {1} versions showing',
-  'hosts.host.stackVersions.table.labels': '{0} ({1})',
   'hosts.host.stackVersions.status.init': 'Uninstalled',
   'hosts.host.stackVersions.status.installed': 'Installed',
   'hosts.host.stackVersions.status.install_failed': 'Install Failed',
   'hosts.host.stackVersions.status.installing': 'Installing',
   'hosts.host.stackVersions.status.current': 'Current',
+  'hosts.host.stackVersions.status.out_of_sync': 'Out of Sync',
+  'hosts.host.stackVersions.status.upgrading': 'Upgrading',
+  'hosts.host.stackVersions.status.upgrade_failed': 'Upgrade Failed',
+  'hosts.host.stackVersions.outOfSync.tooltip': 'This version is Out of Sync on this host. Out of Sync can occur ' +
+    'the components on a host change after installing a version not in use. ' +
+    'Click Install to have Ambari install the packages for this version to get this host in sync.',
+  'hosts.host.stackVersions.install.confirmation': 'You are about to install version <b>{0}</b> on this host.',
 
   'hosts.host.metrics.dataUnavailable':'Data Unavailable',
   'hosts.host.metrics.cpu':'CPU Usage',
@@ -2078,7 +2095,8 @@ Em.I18n.translations = {
   'hosts.cant.do.popup.masterList.body.end':'To delete this host, you must first move all the master components listed above to another host.',
   'hosts.cant.do.popup.nonDeletableList.body':'Deletion of the following {0} components is not supported. ',
   'hosts.cant.do.popup.runningList.body':'This host cannot be deleted since the following components are running:',
-  'hosts.cant.do.popup.runningList.body.end': 'If this host has a DataNode or NodeManager, it should be decommissioned first to prevent data loss.',
+  'hosts.cant.do.popup.runningList.body.end':'To delete this host, you must first stop all the running components listed above. ' +
+    'If this host has a DataNode, it should be decommissioned first to prevent data loss.',
   'hosts.add.header':'Add Host Wizard',
   'hosts.add.exit.header':'Exit',
   'hosts.add.exit.body':'Do you really want to exit Add Host Wizard?',
@@ -2218,6 +2236,19 @@ Em.I18n.translations = {
   'dashboard.services.hdfs.nodes.heapUsed':'{0} / {1} ({2}% used)',
   'dashboard.services.hdfs.chart.label':'Capacity (Used/Total)',
   'dashboard.services.hdfs.blockErrors':'{0} corrupt / {1} missing / {2} under replicated',
+  'dashboard.services.hdfs.datanode.status.tooltip.live': 'This is the number of DataNodes that are live as reported from ' +
+    'the NameNode. Even if a DataNode process is up, NameNode might see the status as dead ' +
+    'if the DataNode is not communicating with the NameNode as expected. This can be due situations ' +
+    'such as a network issue or a hanging DataNode process due to excessive garbage collection.',
+  'dashboard.services.hdfs.datanode.status.tooltip.dead': 'This is the number of DataNodes that are dead as reported from ' +
+  'the NameNode. Even if a DataNode process is up, NameNode might see the status as dead ' +
+  'if the DataNode is not communicating with the NameNode as expected. This can be due situations ' +
+  'such as a network issue or a hanging DataNode process due to excessive garbage collection.',
+  'dashboard.services.hdfs.datanode.status.tooltip.decommission': 'This is the number of DataNodes that are currently ' +
+  'Decommissioning as reported from the NameNode. If there are not enough other DataNodes ' +
+  'in the cluster to create the configured number of block replicas based on the dfs.replication ' +
+  'property (typically 3), a DataNode can get stuck in decommissioning state until ' +
+  'more DataNodes become available to the NameNode.',
 
   'dashboard.services.yarn.summary':'{0} of {1} nodes live',
   'dashboard.services.yarn.resourceManager':'ResourceManager',
@@ -2271,6 +2302,7 @@ Em.I18n.translations = {
   'dashboard.services.hive.clients':'Hive Clients',
   'dashboard.services.hive.client':'Hive Client',
   'dashboard.services.hive.metastore':'Hive Metastore',
+  'dashboard.services.hive.server2':'HiveServer2',
 
   'dashboard.services.oozie.clients':'Oozie Clients',
   'dashboard.services.oozie.client':'Oozie Client',
@@ -2291,6 +2323,7 @@ Em.I18n.translations = {
   'dashboard.configHistory.table.configGroup.default' : 'default',
   'dashboard.configHistory.table.empty' : 'No history to display',
   'dashboard.configHistory.table.notes.default': 'Initial configurations for {0}',
+  'dashboard.configHistory.table.notes.addService': 'Configuration updated while adding service',
   'dashboard.configHistory.table.notes.no': '<i>No notes</i>',
   'dashboard.configHistory.table.version.versionText' : 'V{0}',
   'dashboard.configHistory.table.version.prefix' : 'V',
@@ -2421,5 +2454,7 @@ Em.I18n.translations = {
   'config.group.save.confirmation.manage.button': 'Manage Hosts',
   'config.group.description.default': 'New configuration group created on {0}',
 
-  'utils.ajax.errorMessage': 'Error message'
+  'utils.ajax.errorMessage': 'Error message',
+  'utils.ajax.defaultErrorPopupBody.message': 'received on {0} method for API: {1}',
+  'utils.ajax.defaultErrorPopupBody.statusCode': '{0} status code'
 };

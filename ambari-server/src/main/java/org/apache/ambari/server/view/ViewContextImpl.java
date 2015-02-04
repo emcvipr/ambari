@@ -20,6 +20,7 @@ package org.apache.ambari.server.view;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import com.google.inject.persist.Transactional;
 import org.apache.ambari.server.orm.entities.PermissionEntity;
 import org.apache.ambari.server.orm.entities.ViewEntity;
 import org.apache.ambari.server.orm.entities.ViewInstanceEntity;
@@ -28,6 +29,7 @@ import org.apache.ambari.server.view.configuration.ViewConfig;
 import org.apache.ambari.server.view.events.EventImpl;
 import org.apache.ambari.server.view.persistence.DataStoreImpl;
 import org.apache.ambari.server.view.persistence.DataStoreModule;
+import org.apache.ambari.server.view.validation.ValidationException;
 import org.apache.ambari.view.AmbariStreamProvider;
 import org.apache.ambari.view.DataStore;
 import org.apache.ambari.view.ImpersonatorSetting;
@@ -198,16 +200,26 @@ public class ViewContextImpl implements ViewContext, ViewController {
     }
   }
 
+  @Transactional
   @Override
   public void putInstanceData(String key, String value) {
     checkInstance();
-    viewInstanceEntity.putInstanceData(key, value);
-    try {
-      viewRegistry.updateViewInstance(viewInstanceEntity);
-    } catch (SystemException e) {
-      String msg = "Caught exception updating the view instance.";
-      LOG.error(msg, e);
-      throw new IllegalStateException(msg, e);
+
+    ViewInstanceEntity updateInstance =
+        viewRegistry.getViewInstanceEntity(viewInstanceEntity.getViewName(), viewInstanceEntity.getInstanceName());
+
+    if (updateInstance != null) {
+      updateInstance.putInstanceData(key, value);
+
+      try {
+        viewRegistry.updateViewInstance(updateInstance);
+      } catch (SystemException e) {
+        String msg = "Caught exception updating the view instance.";
+        LOG.error(msg, e);
+        throw new IllegalStateException(msg, e);
+      } catch (ValidationException e) {
+        throw new IllegalArgumentException(e.getMessage());
+      }
     }
   }
 
@@ -393,9 +405,12 @@ public class ViewContextImpl implements ViewContext, ViewController {
    * @throws ParseErrorException if original string cannot be parsed by Velocity
    */
   private String parameterize(String raw) throws ParseErrorException {
-    Writer templateWriter = new StringWriter();
-    Velocity.evaluate(velocityContext, templateWriter, raw, raw);
-    return templateWriter.toString();
+    if (raw != null) {
+      Writer templateWriter = new StringWriter();
+      Velocity.evaluate(velocityContext, templateWriter, raw, raw);
+      return templateWriter.toString();
+    }
+    return null;
   }
 
   /**

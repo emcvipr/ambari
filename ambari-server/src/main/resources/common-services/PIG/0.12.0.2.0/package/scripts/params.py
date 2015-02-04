@@ -26,6 +26,8 @@ from resource_management import *
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
+stack_name = default("/hostLevelParams/stack_name", None)
+
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
@@ -48,6 +50,7 @@ hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name']
 hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
 smokeuser = config['configurations']['cluster-env']['smokeuser']
+smokeuser_principal = config['configurations']['cluster-env']['smokeuser_principal_name']
 user_group = config['configurations']['cluster-env']['user_group']
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 smoke_user_keytab = config['configurations']['cluster-env']['smokeuser_keytab']

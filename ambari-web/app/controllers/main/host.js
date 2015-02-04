@@ -57,6 +57,7 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
     return this.get('dataSource').filterProperty('isRequested');
   }.property('dataSource.@each.isRequested'),
 
+  allHostStackVersions: App.HostStackVersion.find(),
   /**
    * filterProperties support follow types of filter:
    * MATCH - match of RegExp
@@ -123,8 +124,8 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
       type: 'MULTIPLE'
     },
     {
-      name: 'stackVersions',
-      key: 'stack_versions/HostStackVersions',
+      name: 'hostStackVersion',
+      key: 'stack_versions',
       type: 'EQUAL'
     }
   ],
@@ -293,7 +294,7 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
 
       setTimeout(function () {
         self.updateStatusCounters();
-      }, App.get('componentsUpdateInterval'));
+      }, App.get('hostStatusCountersUpdateInterval'));
     }
   },
 
@@ -309,6 +310,7 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
       'ALERT': data.Clusters.health_report['Host/host_status/ALERT'],
       'UNKNOWN': data.Clusters.health_report['Host/host_status/UNKNOWN'],
       'health-status-WITH-ALERTS': (data.alerts_summary_hosts) ? data.alerts_summary_hosts.CRITICAL + data.alerts_summary_hosts.WARNING : 0,
+      'health-status-CRITICAL': (data.alerts_summary_hosts) ? data.alerts_summary_hosts.CRITICAL : 0,
       'health-status-RESTART': data.Clusters.health_report['Host/stale_config'],
       'health-status-PASSIVE_STATE': data.Clusters.health_report['Host/maintenance_state'],
       'TOTAL': data.Clusters.total_hosts
@@ -480,11 +482,11 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
       iColumn: column,
       value: [
         {
-          property: 'version',
+          property: 'repository_versions/RepositoryVersions/repository_version',
           value: version
         },
         {
-          property: 'state',
+          property: 'HostStackVersions/state',
           value: state.toUpperCase()
         }
       ],
@@ -720,7 +722,8 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
               state: operationData.action
             },
             query: 'HostRoles/component_name=' + operationData.componentName + '&HostRoles/host_name.in(' + hostsWithComponentInProperState.join(',') + ')&HostRoles/maintenance_state=OFF',
-            context: operationData.message + ' ' + operationData.componentNameFormatted
+            context: operationData.message + ' ' + operationData.componentNameFormatted,
+            level: 'SERVICE'
           },
           success: 'bulkOperationForHostComponentsSuccessCallback'
         });
@@ -930,7 +933,7 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
     associations[8] = 'componentsWithStaleConfigsCount';
     associations[9] = 'componentsInPassiveStateCount';
     associations[10] = 'selected';
-    associations[11] = 'stackVersions';
+    associations[11] = 'hostStackVersion';
     return associations;
   }.property()
 

@@ -924,6 +924,29 @@ public class BlueprintConfigurationProcessorTest {
   }
 
   @Test
+  public void testDoUpdateForClusterCreate_MultiHostProperty_exportedValues_withPorts_singleHostValue() {
+    Map<String, Map<String, String>> properties = new HashMap<String, Map<String, String>>();
+    Map<String, String> yarnSiteConfig = new HashMap<String, String>();
+
+    yarnSiteConfig.put("hadoop.registry.zk.quorum", "%HOSTGROUP::host_group_1%:2181");
+    properties.put("yarn-site", yarnSiteConfig);
+
+    Collection<String> hgComponents = new HashSet<String>();
+    hgComponents.add("NAMENODE");
+    hgComponents.add("SECONDARY_NAMENODE");
+    hgComponents.add("ZOOKEEPER_SERVER");
+    HostGroup group1 = new TestHostGroup("host_group_1", Collections.singleton("testhost"), hgComponents);
+
+    Map<String, HostGroup> hostGroups = new HashMap<String, HostGroup>();
+    hostGroups.put(group1.getName(), group1);
+
+    BlueprintConfigurationProcessor updater = new BlueprintConfigurationProcessor(properties);
+    Map<String, Map<String, String>> updatedProperties = updater.doUpdateForClusterCreate(hostGroups, null);
+    assertEquals("Multi-host property with single host value was not correctly updated for cluster create.",
+      "testhost:2181", updatedProperties.get("yarn-site").get("hadoop.registry.zk.quorum"));
+  }
+
+  @Test
   public void testDoUpdateForClusterCreate_MultiHostProperty__exportedValues___YAML() {
     Map<String, Map<String, String>> properties = new HashMap<String, Map<String, String>>();
     Map<String, String> typeProps = new HashMap<String, String>();
@@ -1220,6 +1243,271 @@ public class BlueprintConfigurationProcessorTest {
 
     mockSupport.verifyAll();
 
+  }
+
+  @Test
+  public void testHiveConfigClusterUpdateCustomValue() throws Exception {
+    final String expectedHostGroupName = "host_group_1";
+
+    final String expectedPropertyValue =
+      "hive.metastore.local=false,hive.metastore.uris=thrift://headnode0.ivantestcluster2-ssh.d1.internal.cloudapp.net:9083,hive.user.install.directory=/user";
+
+    EasyMockSupport mockSupport = new EasyMockSupport();
+
+    HostGroup mockHostGroupOne = mockSupport.createMock(HostGroup.class);
+
+    expect(mockHostGroupOne.getComponents()).andReturn(Collections.singleton("HIVE_METASTORE")).atLeastOnce();
+    expect(mockHostGroupOne.getHostInfo()).andReturn(Collections.singleton("test-host-one")).atLeastOnce();
+
+    mockSupport.replayAll();
+
+    Map<String, Map<String, String>> configProperties =
+      new HashMap<String, Map<String, String>>();
+
+    Map<String, String> webHCatSiteProperties =
+      new HashMap<String, String>();
+
+    configProperties.put("webhcat-site", webHCatSiteProperties);
+
+    // setup properties that include host information
+    webHCatSiteProperties.put("templeton.hive.properties",
+      expectedPropertyValue);
+
+    BlueprintConfigurationProcessor configProcessor =
+      new BlueprintConfigurationProcessor(configProperties);
+
+    Map<String, HostGroup> mapOfHostGroups =
+      new HashMap<String, HostGroup>();
+    mapOfHostGroups.put(expectedHostGroupName, mockHostGroupOne);
+
+    // call top-level cluster config update method
+    configProcessor.doUpdateForClusterCreate(mapOfHostGroups, null);
+
+    assertEquals("Unexpected config update for templeton.hive.properties",
+      expectedPropertyValue,
+      webHCatSiteProperties.get("templeton.hive.properties"));
+
+
+    mockSupport.verifyAll();
+
+  }
+
+  @Test
+  public void testHiveConfigClusterUpdateDefaultValue() throws Exception {
+    final String expectedHostGroupName = "host_group_1";
+    final String expectedHostName = "c6401.ambari.apache.org";
+
+    final String expectedPropertyValue =
+      "hive.metastore.local=false,hive.metastore.uris=thrift://localhost:9933,hive.metastore.sasl.enabled=false";
+
+    EasyMockSupport mockSupport = new EasyMockSupport();
+
+    HostGroup mockHostGroupOne = mockSupport.createMock(HostGroup.class);
+    expect(mockHostGroupOne.getComponents()).andReturn(Collections.singleton("HIVE_METASTORE")).atLeastOnce();
+    expect(mockHostGroupOne.getHostInfo()).andReturn(Collections.singleton(expectedHostName)).atLeastOnce();
+
+    mockSupport.replayAll();
+
+    Map<String, Map<String, String>> configProperties =
+      new HashMap<String, Map<String, String>>();
+
+    Map<String, String> webHCatSiteProperties =
+      new HashMap<String, String>();
+
+    configProperties.put("webhcat-site", webHCatSiteProperties);
+
+    // setup properties that include host information
+    webHCatSiteProperties.put("templeton.hive.properties",
+      expectedPropertyValue);
+
+    BlueprintConfigurationProcessor configProcessor =
+      new BlueprintConfigurationProcessor(configProperties);
+
+    Map<String, HostGroup> mapOfHostGroups =
+      new HashMap<String, HostGroup>();
+    mapOfHostGroups.put(expectedHostGroupName, mockHostGroupOne);
+
+    // call top-level cluster config update method
+    configProcessor.doUpdateForClusterCreate(mapOfHostGroups, null);
+
+    // verify that the host name for the metastore.uris property has been updated
+    assertEquals("Unexpected config update for templeton.hive.properties",
+      "hive.metastore.local=false,hive.metastore.uris=thrift://" + expectedHostName + ":9933,hive.metastore.sasl.enabled=false",
+      webHCatSiteProperties.get("templeton.hive.properties"));
+
+    mockSupport.verifyAll();
+
+  }
+
+  @Test
+  public void testHiveConfigClusterUpdateExportedHostGroupValue() throws Exception {
+    final String expectedHostGroupName = "host_group_1";
+    final String expectedHostName = "c6401.ambari.apache.org";
+
+    // simulate the case of this property coming from an exported Blueprint
+    final String expectedPropertyValue =
+      "hive.metastore.local=false,hive.metastore.uris=thrift://%HOSTGROUP::host_group_1%:9083,hive.metastore.sasl.enabled=false,hive.metastore.execute.setugi=true";
+
+    EasyMockSupport mockSupport = new EasyMockSupport();
+
+    HostGroup mockHostGroupOne = mockSupport.createMock(HostGroup.class);
+    expect(mockHostGroupOne.getHostInfo()).andReturn(Collections.singleton(expectedHostName)).atLeastOnce();
+
+    mockSupport.replayAll();
+
+    Map<String, Map<String, String>> configProperties =
+      new HashMap<String, Map<String, String>>();
+
+    Map<String, String> webHCatSiteProperties =
+      new HashMap<String, String>();
+
+    configProperties.put("webhcat-site", webHCatSiteProperties);
+
+    // setup properties that include host information
+    webHCatSiteProperties.put("templeton.hive.properties",
+      expectedPropertyValue);
+
+    BlueprintConfigurationProcessor configProcessor =
+      new BlueprintConfigurationProcessor(configProperties);
+
+    Map<String, HostGroup> mapOfHostGroups =
+      new HashMap<String, HostGroup>();
+    mapOfHostGroups.put(expectedHostGroupName, mockHostGroupOne);
+
+    // call top-level cluster config update method
+    configProcessor.doUpdateForClusterCreate(mapOfHostGroups, null);
+
+    // verify that the host name for the metastore.uris property has been updated
+    assertEquals("Unexpected config update for templeton.hive.properties",
+      "hive.metastore.local=false,hive.metastore.uris=thrift://" + expectedHostName + ":9083,hive.metastore.sasl.enabled=false,hive.metastore.execute.setugi=true",
+      webHCatSiteProperties.get("templeton.hive.properties"));
+
+    mockSupport.verifyAll();
+
+  }
+
+  @Test
+  public void testStormAndKafkaConfigClusterUpdateWithoutGangliaServer() throws Exception {
+    final String expectedHostGroupName = "host_group_1";
+
+    EasyMockSupport mockSupport = new EasyMockSupport();
+
+    HostGroup mockHostGroupOne = mockSupport.createMock(HostGroup.class);
+    Stack mockStack = mockSupport.createMock(Stack.class);
+
+    // simulate the case where Ganglia is not available in the cluster
+    expect(mockHostGroupOne.getComponents()).andReturn(Collections.<String>emptySet()).atLeastOnce();
+    expect(mockStack.getCardinality("GANGLIA_SERVER")).andReturn(new Cardinality("1")).atLeastOnce();
+
+    mockSupport.replayAll();
+
+    Map<String, Map<String, String>> configProperties =
+      new HashMap<String, Map<String, String>>();
+
+    Map<String, String> stormSiteProperties =
+      new HashMap<String, String>();
+    Map<String, String> kafkaBrokerProperties =
+      new HashMap<String, String>();
+
+    configProperties.put("storm-site", stormSiteProperties);
+    configProperties.put("kafka-broker", kafkaBrokerProperties);
+
+    stormSiteProperties.put("worker.childopts", "localhost");
+    stormSiteProperties.put("supervisor.childopts", "localhost");
+    stormSiteProperties.put("nimbus.childopts", "localhost");
+
+    kafkaBrokerProperties.put("kafka.ganglia.metrics.host", "localhost");
+
+
+    // setup properties that include host information
+
+    BlueprintConfigurationProcessor configProcessor =
+      new BlueprintConfigurationProcessor(configProperties);
+
+    Map<String, HostGroup> mapOfHostGroups =
+      new HashMap<String, HostGroup>();
+    mapOfHostGroups.put(expectedHostGroupName, mockHostGroupOne);
+
+    // call top-level export method
+    configProcessor.doUpdateForClusterCreate(mapOfHostGroups, mockStack);
+
+    // verify that the server name is not replaced, since the GANGLIA_SERVER
+    // component is not available
+    assertEquals("worker startup settings not properly handled by cluster create",
+      "localhost", stormSiteProperties.get("worker.childopts"));
+
+    assertEquals("supervisor startup settings not properly handled by cluster create",
+      "localhost", stormSiteProperties.get("supervisor.childopts"));
+
+    assertEquals("nimbus startup settings not properly handled by cluster create",
+      "localhost", stormSiteProperties.get("nimbus.childopts"));
+
+    assertEquals("Kafka ganglia host property not properly handled by cluster create",
+      "localhost", kafkaBrokerProperties.get("kafka.ganglia.metrics.host"));
+
+    mockSupport.verifyAll();
+  }
+
+  @Test
+  public void testStormandKafkaConfigClusterUpdateWithGangliaServer() throws Exception {
+    final String expectedHostName = "c6401.apache.ambari.org";
+    final String expectedHostGroupName = "host_group_1";
+
+    EasyMockSupport mockSupport = new EasyMockSupport();
+
+    HostGroup mockHostGroupOne = mockSupport.createMock(HostGroup.class);
+    Stack mockStack = mockSupport.createMock(Stack.class);
+
+    expect(mockHostGroupOne.getHostInfo()).andReturn(Arrays.asList(expectedHostName, "serverTwo")).atLeastOnce();
+    // simulate the case where Ganglia is available in the cluster
+    expect(mockHostGroupOne.getComponents()).andReturn(Collections.singleton("GANGLIA_SERVER")).atLeastOnce();
+
+    mockSupport.replayAll();
+
+    Map<String, Map<String, String>> configProperties =
+      new HashMap<String, Map<String, String>>();
+
+    Map<String, String> stormSiteProperties =
+      new HashMap<String, String>();
+    Map<String, String> kafkaBrokerProperties =
+      new HashMap<String, String>();
+
+    configProperties.put("storm-site", stormSiteProperties);
+    configProperties.put("kafka-broker", kafkaBrokerProperties);
+
+    stormSiteProperties.put("worker.childopts", "localhost");
+    stormSiteProperties.put("supervisor.childopts", "localhost");
+    stormSiteProperties.put("nimbus.childopts", "localhost");
+
+    kafkaBrokerProperties.put("kafka.ganglia.metrics.host", "localhost");
+
+    // setup properties that include host information
+
+    BlueprintConfigurationProcessor configProcessor =
+      new BlueprintConfigurationProcessor(configProperties);
+
+    Map<String, HostGroup> mapOfHostGroups =
+      new HashMap<String, HostGroup>();
+    mapOfHostGroups.put(expectedHostGroupName, mockHostGroupOne);
+
+    // call top-level export method
+    configProcessor.doUpdateForClusterCreate(mapOfHostGroups, mockStack);
+
+    // verify that the server name is not replaced, since the GANGLIA_SERVER
+    // component is not available
+    assertEquals("worker startup settings not properly handled by cluster create",
+      expectedHostName, stormSiteProperties.get("worker.childopts"));
+
+    assertEquals("supervisor startup settings not properly handled by cluster create",
+      expectedHostName, stormSiteProperties.get("supervisor.childopts"));
+
+    assertEquals("nimbus startup settings not properly handled by cluster create",
+      expectedHostName, stormSiteProperties.get("nimbus.childopts"));
+
+    assertEquals("Kafka ganglia host property not properly handled by cluster create",
+      expectedHostName, kafkaBrokerProperties.get("kafka.ganglia.metrics.host"));
+
+    mockSupport.verifyAll();
   }
 
   @Test

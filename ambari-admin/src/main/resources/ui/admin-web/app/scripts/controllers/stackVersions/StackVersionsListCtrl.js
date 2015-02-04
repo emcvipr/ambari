@@ -55,7 +55,7 @@ angular.module('ambariAdminConsole')
   };
 
   $scope.goToCluster = function() {
-    window.location.replace('/#/main/admin/versions/' + this.repo.id);
+    window.location.replace('/#/main/admin/stack/versions');
   };
 
   $scope.clearFilters = function () {
@@ -65,17 +65,19 @@ angular.module('ambariAdminConsole')
   };
 
   $scope.fetchRepoClusterStatus = function () {
-    var clusterName = $scope.clusters[0].Clusters.cluster_name; // only support one cluster at the moment
-    angular.forEach($scope.repos, function (repo) {
-      Cluster.getRepoVersionStatus(clusterName, repo.id).then(function (response) {
-        repo.status = response.status;
-        repo.totalHosts = response.totalHosts;
-        repo.currentHosts = response.currentHosts;
-        repo.installedHosts = response.installedHosts;
-        repo.stackVersionId = response.stackVersionId;
-        repo.cluster = (repo.status == 'current' || repo.status == 'installed')? clusterName : '';
+    var clusterName = ($scope.clusters && $scope.clusters.length > 0) ? $scope.clusters[0].Clusters.cluster_name : null; // only support one cluster at the moment
+    if (clusterName) {
+      angular.forEach($scope.repos, function (repo) {
+        Cluster.getRepoVersionStatus(clusterName, repo.id).then(function (response) {
+          repo.status = response.status;
+          repo.totalHosts = response.totalHosts;
+          repo.currentHosts = response.currentHosts;
+          repo.installedHosts = response.installedHosts;
+          repo.stackVersionId = response.stackVersionId;
+          repo.cluster = (repo.status == 'current' || repo.status == 'installed')? clusterName : '';
+        });
       });
-    });
+    }
   };
 
   $scope.fetchRepos = function () {
@@ -88,11 +90,7 @@ angular.module('ambariAdminConsole')
   };
 
   $scope.fillClusters = function (clusters) {
-    $scope.dropDownClusters = [{
-      Clusters: {
-        cluster_name: 'Configure on...'
-      }
-    }].concat(clusters);
+    $scope.dropDownClusters = [].concat(clusters);
     $scope.selectedCluster = $scope.dropDownClusters[0];
     angular.forEach(clusters, function (cluster) {
       var options = [{label: "All", value: ''}];
@@ -109,8 +107,10 @@ angular.module('ambariAdminConsole')
 
   $scope.fetchClusters = function () {
     return Cluster.getAllClusters().then(function (clusters) {
-      $scope.clusters = clusters;
-      $scope.fillClusters(clusters);
+      if (clusters && clusters.length > 0) {
+        $scope.clusters = clusters;
+        $scope.fillClusters(clusters);
+      }
     });
   };
 

@@ -240,24 +240,20 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
   componentsCount: null,
   hostsCount: null,
 
-  /*
-   * alerts label on summary box header. no alerts/ {cnt} alerts
-   */
-  alertsCountLabel: function () {
-    var cnt = this.get('controller.content.criticalAlertsCount');
-    return cnt? Em.I18n.t('services.service.summary.alerts.alertsExist').format(cnt) :
-      Em.I18n.t('services.service.summary.alerts.noAlerts');
-  }.property('controller.content.criticalAlertsCount'),
   alertsCount: function () {
-    return !!this.get('controller.content.criticalAlertsCount');
-  }.property('controller.content.criticalAlertsCount'),
+    return this.get('controller.content.alertsCount');
+  }.property('controller.content.alertsCount'),
+
+  hasCriticalAlerts: function () {
+    return this.get('controller.content.hasCriticalAlerts');
+  }.property('controller.content.alertsCount'),
 
   /**
    * Define if service has alert definitions defined
    * @type {Boolean}
    */
   hasAlertDefinitions: function () {
-    return App.AlertDefinition.getAllDefinitions().someProperty('serviceName', this.get('controller.content.serviceName'));
+    return App.AlertDefinition.find().someProperty('serviceName', this.get('controller.content.serviceName'));
   }.property('controller.content.serviceName'),
 
   restartRequiredHostsAndComponents:function () {
@@ -474,7 +470,11 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
     return gangliaUrl;
   }.property('App.router.clusterController.gangliaUrl', 'service.serviceName'),
 
-  didInsertElement:function () {
+  willInsertElement: function () {
+    App.router.get('updateController').updateServiceMetric(Em.K);
+  },
+
+  didInsertElement: function () {
     var svcName = this.get('service.serviceName');
     if (svcName) {
       this.constructGraphObjects(App.service_graph_config[svcName.toLowerCase()]);

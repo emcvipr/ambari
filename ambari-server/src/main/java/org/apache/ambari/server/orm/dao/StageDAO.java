@@ -18,10 +18,19 @@
 
 package org.apache.ambari.server.orm.dao;
 
-import com.google.inject.Inject;
-import com.google.inject.Provider;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import javax.persistence.EntityManager;
+import javax.persistence.TypedQuery;
+import javax.persistence.criteria.CriteriaQuery;
+import javax.persistence.criteria.Order;
+import javax.persistence.metamodel.SingularAttribute;
+
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.api.query.JpaPredicateVisitor;
 import org.apache.ambari.server.api.query.JpaSortBuilder;
@@ -36,15 +45,10 @@ import org.apache.ambari.server.utils.StageUtils;
 import org.eclipse.persistence.config.HintValues;
 import org.eclipse.persistence.config.QueryHints;
 
-import javax.persistence.EntityManager;
-import javax.persistence.TypedQuery;
-import javax.persistence.criteria.CriteriaQuery;
-import javax.persistence.criteria.Order;
-import javax.persistence.metamodel.SingularAttribute;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Collection;
-import java.util.Map;
+import com.google.inject.Inject;
+import com.google.inject.Provider;
+import com.google.inject.Singleton;
+import com.google.inject.persist.Transactional;
 
 @Singleton
 public class StageDAO {
@@ -93,13 +97,33 @@ public class StageDAO {
     return daoUtils.selectList(query, requestId);
   }
 
+  /**
+   * Get the list of stage entities for the given request id and stage ids.
+   *
+   * @param requestId  the request ids
+   * @param stageIds   the set of stage ids
+   *
+   * @return the set of entities for the given ids
+   */
+  public List<StageEntity> findByStageIds(Long requestId, Set<Long> stageIds) {
+    List<StageEntity> stageEntities = new LinkedList<StageEntity>();
+
+    for (StageEntity stage : findByRequestId(requestId)) {
+      if (stageIds.contains(stage.getStageId())) {
+        stageEntities.add(stage);
+      }
+    }
+    return stageEntities;
+  }
+
   @RequiresSession
-  public List<StageEntity> findByCommandStatuses(Collection<HostRoleStatus> statuses) {
-    TypedQuery<StageEntity> query = entityManagerProvider.get().createQuery("SELECT stage " +
-          "FROM StageEntity stage WHERE stage.stageId IN (SELECT hrce.stageId FROM " +
-          "HostRoleCommandEntity hrce WHERE stage.requestId = hrce.requestId and hrce.status IN ?1 ) " +
-          "ORDER BY stage.requestId, stage.stageId", StageEntity.class);
-    return daoUtils.selectList(query, statuses);
+  public List<StageEntity> findByCommandStatuses(
+      Collection<HostRoleStatus> statuses) {
+    TypedQuery<StageEntity> query = entityManagerProvider.get().createNamedQuery(
+        "StageEntity.findByCommandStatuses", StageEntity.class);
+
+    query.setParameter("statuses", statuses);
+    return daoUtils.selectList(query);
   }
 
   @RequiresSession
@@ -126,10 +150,12 @@ public class StageDAO {
       "SELECT stage.requestContext " + "FROM StageEntity stage " +
         "WHERE stage.requestId=?1", String.class);
     String result =  daoUtils.selectOne(query, requestId);
-    if (result != null)
+    if (result != null) {
       return result;
-    else
+    }
+    else {
       return ""; // Since it is defined as empty string in the StageEntity
+    }
   }
 
   @Transactional

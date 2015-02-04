@@ -18,11 +18,12 @@
 
 var App = require('app');
 
-App.PigScriptsRoute = Em.Route.extend({
+App.PigScriptsRoute = Em.Route.extend(App.RouteError, {
+  errorMassage:Em.I18n.t('scripts.load_error'),
   enter: function() {
     this.controllerFor('pig').set('category','scripts');
   },
   model: function(object,transition) {
-    return this.modelFor('pig');
+    return this.store.find('script');
   }
 });

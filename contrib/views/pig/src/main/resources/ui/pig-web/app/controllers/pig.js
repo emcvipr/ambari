@@ -21,9 +21,14 @@ var App = require('app');
 App.PigController = Em.ArrayController.extend({
   needs:['scriptEdit'],
   category: 'scripts',
+  navs: [
+    {name:'scripts',url:'pig',label: Em.I18n.t('scripts.scripts'),icon:'fa-file-code-o'},
+    {name:'udfs',url:'pig.udfs',label:Em.I18n.t('udfs.udfs'),icon:'fa-plug'},
+    {name:'history',url:'pig.history',label:Em.I18n.t('common.history'),icon:'fa-clock-o'}
+  ],
   actions:{
     closeScript:function () {
-      this.transitionToRoute('pig.scripts');
+      this.transitionToRoute('pig');
     },
     saveScript: function (script,onSuccessCallback) {
       var onSuccess = onSuccessCallback || function(model){
@@ -55,24 +60,19 @@ App.PigController = Em.ArrayController.extend({
       return script.save().then(onSuccess,onFail);
     },
     copyScript:function (script) {
-      script.get('pigScript').then(function (file) {
-
-        var newScript = this.store.createRecord('script',{
-          title:script.get('title')+' (copy)',
-          templetonArguments:script.get('templetonArguments')
-        });
-
-        newScript.save().then(function (savedScript) {
-          savedScript.get('pigScript').then(function (newFile) {
-            newFile.set('fileContent',file.get('fileContent'));
-            newFile.save().then(function () {
-              this.send('showAlert', {'message':script.get('title') + ' is copied.',status:'success'});
-              if (this.get('activeScript')) {
-                this.send('openModal','gotoCopy',savedScript);
-              }
-            }.bind(this));
-          }.bind(this));
-        }.bind(this));
+      var newScript = this.store.createRecord('script',{
+        title:script.get('title')+' (copy)',
+        templetonArguments:script.get('templetonArguments')
+      });
+      newScript.save().then(function (savedScript) {
+        return Em.RSVP.all([savedScript.get('pigScript'),script.get('pigScript.fileContent')]);
+      }).then(function (data) {
+        return data.objectAt(0).set('fileContent',data.objectAt(1)).save();
+      }).then(function () {
+        this.send('showAlert', {'message':script.get('title') + ' is copied.',status:'success'});
+        if (this.get('activeScript')) {
+          this.send('openModal','gotoCopy',newScript);
+        }
       }.bind(this));
     }
   },

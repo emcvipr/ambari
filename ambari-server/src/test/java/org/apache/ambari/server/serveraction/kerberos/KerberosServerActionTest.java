@@ -102,7 +102,7 @@ public class KerberosServerActionTest {
         new KerberosActionDataFileBuilder(new File(temporaryDirectory, KerberosActionDataFile.DATA_FILE_NAME));
     for (int i = 0; i < 10; i++) {
       builder.addRecord("hostName", "serviceName" + i, "serviceComponentName" + i,
-          "principal|_HOST|_REALM" + i, "principalConfiguration" + i, "keytabFilePath" + i,
+          "principal|_HOST|_REALM" + i, "principal_type", "principalConfiguration" + i, "keytabFilePath" + i,
           "keytabFileOwnerName" + i, "keytabFileOwnerAccess" + i,
           "keytabFileGroupName" + i, "keytabFileGroupAccess" + i,
           "keytabFileConfiguration" + i);
@@ -117,6 +117,7 @@ public class KerberosServerActionTest {
             .encrypt(Integer.toHexString(cluster.hashCode()).getBytes()));
 
     when(mockExecutionCommand.getCommandParams()).thenReturn(commandParams);
+    when(mockExecutionCommand.getClusterName()).thenReturn("c1");
 
     action = injector.getInstance(KerberosServerAction.class);
 
@@ -134,8 +135,8 @@ public class KerberosServerActionTest {
 
   @Test
   public void testGetCommandParameterValueStatic() throws Exception {
-    Assert.assertNull(action.getCommandParameterValue("nonexistingvalue"));
-    Assert.assertEquals("REALM.COM", action.getCommandParameterValue(KerberosServerAction.DEFAULT_REALM));
+    Assert.assertNull(KerberosServerAction.getCommandParameterValue(commandParams, "nonexistingvalue"));
+    Assert.assertEquals("REALM.COM", KerberosServerAction.getCommandParameterValue(commandParams, KerberosServerAction.DEFAULT_REALM));
   }
 
   @Test
@@ -167,13 +168,6 @@ public class KerberosServerActionTest {
   public void testGetPrincipalPasswordMapStatic() throws Exception {
     ConcurrentMap<String, Object> sharedMap = new ConcurrentHashMap<String, Object>();
     Assert.assertNotNull(KerberosServerAction.getPrincipalPasswordMap(sharedMap));
-  }
-
-  @Test
-  public void testGetCommandParameterValue() throws Exception {
-    Assert.assertNull(action.getCommandParameterValue("invalid_parameter"));
-    Assert.assertEquals(commandParams.get(KerberosServerAction.DEFAULT_REALM),
-        action.getCommandParameterValue(KerberosServerAction.DEFAULT_REALM));
   }
 
   @Test

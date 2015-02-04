@@ -65,11 +65,19 @@ def yarn(name = None):
               owner=params.yarn_user,
               group=params.user_group,
               recursive=True,
-              recursive_permission=True,
+              cd_access="a",
               ignore_failures=True,
               mode=0775
               )
 
+    if params.security_enabled:
+      smokeuser_directories = [os.path.join(dir, 'usercache' ,params.smokeuser)
+                               for dir in params.nm_local_dirs.split(',')]
+      for directory in smokeuser_directories:
+        Execute(('chown', '-R', params.smokeuser, directory),
+                only_if=format("test -d {directory}"),
+                sudo=True,
+        )
   Directory([params.yarn_pid_dir_prefix, params.yarn_pid_dir, params.yarn_log_dir],
             owner=params.yarn_user,
             group=params.user_group,
@@ -140,7 +148,7 @@ def yarn(name = None):
        owner=params.yarn_user,
        group=params.user_group,
        recursive=True,
-       recursive_permission=True
+       cd_access="a",
     )
 
   File(params.rm_nodes_exclude_path,

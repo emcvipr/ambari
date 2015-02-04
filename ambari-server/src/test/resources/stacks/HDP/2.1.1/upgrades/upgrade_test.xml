@@ -19,10 +19,15 @@
   <target>2.2.*</target>
   
   <order>
-    <group xsi:type="cluster" name="PRE_CLUSTER" title="Pre Upgrade" stage="pre">
+    <group xsi:type="cluster" name="PRE_CLUSTER" title="Pre {{direction.text.proper}}">
       <execute-stage title="Confirm 1">
         <task xsi:type="manual">
           <message>Foo</message>
+        </task>
+      </execute-stage>
+      <execute-stage service="HDFS" component="NAMENODE" title="Pre Upgrade HIVE">
+        <task xsi:type="manual">
+          <message>Back stuff up.</message>
         </task>
       </execute-stage>
       <execute-stage service="HDFS" component="NAMENODE" title="Finalize HDFS">
@@ -43,6 +48,7 @@
         <component>ZOOKEEPER_CLIENT</component>
       </service>
     </group>
+    
     <group name="CORE_MASTER" title="Core Masters">
       <service name="HDFS">
         <component>JOURNALNODE</component>
@@ -52,6 +58,7 @@
         <component>RESOURCEMANAGER</component>
       </service>
     </group>
+    
     <group name="CORE_SLAVES" title="Core Slaves" xsi:type="colocated">
       <skippable>true</skippable>      <!-- set skippable for test -->
       <allow-retry>false</allow-retry> <!-- set no retry for test -->
@@ -71,7 +78,22 @@
       </batch>
     </group>
     
-    <group xsi:type="cluster" name="POST_CLUSTER" title="Finalize Upgrade" stage="post">
+    <group name="HIVE" title="Hive">
+      <skippable>true</skippable>
+      <service name="HIVE">
+        <component>HIVE_METASTORE</component>
+        <component>HIVE_SERVER</component>
+        <component>WEBHCAT_SERVER</component>
+      </service>
+    </group>    
+    
+    <group xsi:type="cluster" name="POST_CLUSTER" title="Finalize {{direction.text.proper}}">
+      <execute-stage title="Check Unhealthy Hosts" id="unhealthy-hosts">
+        <task xsi:type="manual">
+          <message>The following hosts were unhealthy and should be resolved before finalizing can be completed:
+              {{host-detail-list}}</message>
+        </task>
+      </execute-stage>
       <execute-stage title="Confirm Finalize">
         <task xsi:type="manual">
           <message>Please confirm you are ready to finalize</message>
@@ -92,12 +114,12 @@
   
 
   <processing>
-  
     <service name="ZOOKEEPER">
       <component name="ZOOKEEPER_SERVER">
         <pre-upgrade>
           <task xsi:type="manual">
-            <message>Preparing with a manual</message>
+            <summary>SUMMARY OF PREPARE</summary>
+            <message>This is a manual task with a placeholder of {{foo/bar}}</message>
           </task>
         </pre-upgrade>
         <upgrade>
@@ -108,6 +130,7 @@
         </post-upgrade>
       </component>
     </service>
+    
     <service name="HDFS">
       <component name="NAMENODE">
         <pre-upgrade>
@@ -120,7 +143,7 @@
             <value>mynewvalue</value>
           </task>
           <task xsi:type="manual">
-            <message>Update your database</message>
+            <message>{{direction.verb.proper}} your database</message>
           </task>
         </pre-upgrade>
         <upgrade>
@@ -144,6 +167,7 @@
         </post-downgrade>
       </component>
     </service>
+    
     <service name="YARN">
       <component name="RESOURCEMANAGER">
         <pre-upgrade>
@@ -160,5 +184,29 @@
         </pre-upgrade>
       </component>
     </service>
+    
+    <service name="HIVE">
+      <component name="HIVE_SERVER">
+        <pre-upgrade>
+          <task xsi:type="manual">
+            <summary>HiveServer Port Availability</summary>
+            <message>The HiveServer port will now change to 10010 if hive is using a binary transfer mode or 10011 if hive is using an http transport mode. You can use "netstat -anp | grep 1001[01]" to determine if the port is available on each of following HiveServer host(s): {{hosts.all}}. If the port is not available, the process using it must be terminated.</message>
+          </task>
+
+          <task xsi:type="configure">
+            <condition type="hive-site" key="hive.server2.transport.mode" value="binary">
+              <type>hive-site</type>
+              <key>hive.server2.thrift.port</key>
+              <value>10010</value>
+            </condition>
+            <condition type="hive-site" key="hive.server2.transport.mode" value="http">
+              <type>hive-site</type>
+              <key>hive.server2.http.port</key>
+              <value>10011</value>
+            </condition>
+          </task>
+        </pre-upgrade>
+       </component>
+     </service>    
   </processing>
 </upgrade>

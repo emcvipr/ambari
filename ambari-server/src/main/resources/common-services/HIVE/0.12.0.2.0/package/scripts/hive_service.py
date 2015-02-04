@@ -59,7 +59,7 @@ def hive_service(name, action='start', rolling_restart=False):
        params.hive_jdbc_driver == "oracle.jdbc.driver.OracleDriver":
       
       db_connection_check_command = format(
-        "{java64_home}/bin/java -cp {check_db_connection_jar}:/usr/share/java/{jdbc_jar_name} org.apache.ambari.server.DBConnectionVerification '{hive_jdbc_connection_url}' {hive_metastore_user_name} {hive_metastore_user_passwd!p} {hive_jdbc_driver}")
+        "{java64_home}/bin/java -cp {check_db_connection_jar}:{target} org.apache.ambari.server.DBConnectionVerification '{hive_jdbc_connection_url}' {hive_metastore_user_name} {hive_metastore_user_passwd!p} {hive_jdbc_driver}")
       
       Execute(db_connection_check_command,
               path='/usr/sbin:/sbin:/usr/local/bin:/bin:/usr/bin', tries=5, try_sleep=10)
@@ -67,7 +67,7 @@ def hive_service(name, action='start', rolling_restart=False):
     # AMBARI-5800 - wait for the server to come up instead of just the PID existance
     if name == 'hiveserver2':
       SOCKET_WAIT_SECONDS = 120
-      address=params.hive_server_host
+      address=params.hostname
       port=int(params.hive_server_port)
       
       start_time = time.time()
@@ -76,13 +76,14 @@ def hive_service(name, action='start', rolling_restart=False):
       is_service_socket_valid = False
       print "Waiting for the Hive server to start..."
       if params.security_enabled:
-        kinitcmd=format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser}; ")
+        kinitcmd=format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser_principal}; ")
       else:
         kinitcmd=None
       while time.time() < end_time:
         try:
           check_thrift_port_sasl(address, port, params.hive_server2_authentication,
-                                 params.hive_server_principal, kinitcmd, params.smokeuser)
+                                 params.hive_server_principal, kinitcmd, params.smokeuser,
+                                 transport_mode=params.hive_transport_mode)
           is_service_socket_valid = True
           break
         except Exception, e:
@@ -110,7 +111,9 @@ def hive_service(name, action='start', rolling_restart=False):
     )
 
     # check if stopped the process, else fail the task
-    Execute(format("! ({process_id_exists_command})")
+    Execute(format("! ({process_id_exists_command})"),
+      tries=20,
+      try_sleep=3,
     )
 
     File(pid_file,

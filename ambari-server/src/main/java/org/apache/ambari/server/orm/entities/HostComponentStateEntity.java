@@ -29,6 +29,11 @@ import static org.apache.commons.lang.StringUtils.defaultString;
 @IdClass(HostComponentStateEntityPK.class)
 @Table(name = "hostcomponentstate")
 @Entity
+@NamedQueries({
+    @NamedQuery(name = "HostComponentStateEntity.findAll", query = "SELECT hcs from HostComponentStateEntity hcs"),
+    @NamedQuery(name = "HostComponentStateEntity.findByHost", query =
+        "SELECT hcs from HostComponentStateEntity hcs WHERE hcs.hostName=:hostName"),
+})
 public class HostComponentStateEntity {
 
   @Id
@@ -46,6 +51,9 @@ public class HostComponentStateEntity {
   @Id
   @Column(name = "component_name", nullable = false, insertable = false, updatable = false)
   private String componentName;
+
+  @Column(name = "version", nullable = false, insertable = true, updatable = true)
+  private String version = "UNKNOWN";
 
   @Enumerated(value = EnumType.STRING)
   @Column(name = "current_state", nullable = false, insertable = true, updatable = true)
@@ -138,6 +146,14 @@ public class HostComponentStateEntity {
     this.currentStackVersion = currentStackVersion;
   }
 
+  public String getVersion() {
+    return version;
+  }
+
+  public void setVersion(String version) {
+    this.version = version;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
@@ -153,6 +169,7 @@ public class HostComponentStateEntity {
     if (upgradeState != null ? !upgradeState.equals(that.upgradeState) : that.upgradeState != null) return false;
     if (hostName != null ? !hostName.equals(that.hostName) : that.hostName != null) return false;
     if (serviceName != null ? !serviceName.equals(that.serviceName) : that.serviceName != null) return false;
+    if (version != null ? !version.equals(that.version) : that.version != null) return false;
 
     return true;
   }
@@ -166,6 +183,7 @@ public class HostComponentStateEntity {
     result = 31 * result + (upgradeState != null ? upgradeState.hashCode() : 0);
     result = 31 * result + (currentStackVersion != null ? currentStackVersion.hashCode() : 0);
     result = 31 * result + (serviceName != null ? serviceName.hashCode() : 0);
+    result = 31 * result + (version != null ? version.hashCode() : 0);
     return result;
   }
 

@@ -19,13 +19,20 @@ limitations under the License.
 """
 
 import sys
-from resource_management import *
 from storm import storm
 from service import service
 from supervisord_service import supervisord_service, supervisord_check_status
+from resource_management.libraries.script import Script
+from resource_management.libraries.functions import format
+from resource_management.core.resources.system import Execute
+from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 
 
 class Supervisor(Script):
+
+  def get_stack_to_component(self):
+    return {"HDP": "storm-supervisor"}
+
   def install(self, env):
     self.install_packages(env)
     self.configure(env)
@@ -35,7 +42,14 @@ class Supervisor(Script):
     env.set_params(params)
     storm()
 
-  def start(self, env):
+  def pre_rolling_restart(self, env):
+    import params
+    env.set_params(params)
+
+    if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
+      Execute(format("hdp-select set storm-supervisor {version}"))
+
+  def start(self, env, rolling_restart=False):
     import params
     env.set_params(params)
     self.configure(env)
@@ -43,7 +57,7 @@ class Supervisor(Script):
     supervisord_service("supervisor", action="start")
     service("logviewer", action="start")
 
-  def stop(self, env):
+  def stop(self, env, rolling_restart=False):
     import params
     env.set_params(params)
 

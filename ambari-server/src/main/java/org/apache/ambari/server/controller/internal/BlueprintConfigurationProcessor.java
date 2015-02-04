@@ -701,6 +701,34 @@ public class BlueprintConfigurationProcessor {
   }
 
   /**
+   * Extension of SingleHostTopologyUpdater that supports the
+   * notion of an optional service.  An example: the Storm
+   * service has config properties that require the location
+   * of the Ganglia server when Ganglia is deployed, but Storm
+   * should also start properly without Ganglia.
+   *
+   * This updater detects the case when the specified component
+   * is not found, and returns the original property value.
+   *
+   */
+  private static class OptionalSingleHostTopologyUpdater extends SingleHostTopologyUpdater {
+
+    public OptionalSingleHostTopologyUpdater(String component) {
+      super(component);
+    }
+
+    @Override
+    public String updateForClusterCreate(Map<String, ? extends HostGroup> hostGroups, String origValue, Map<String, Map<String, String>> properties, Stack stackDefinition) {
+      try {
+        return super.updateForClusterCreate(hostGroups, origValue, properties, stackDefinition);
+      } catch (IllegalArgumentException illegalArgumentException) {
+        // return the original value, since the optional component is not available in this cluster
+        return origValue;
+      }
+    }
+  }
+
+  /**
    * Topology based updater which replaces the original host name of a database property with the host name
    * where the DB is deployed in the new cluster.  If an existing database is specified, the original property
    * value is returned.
@@ -863,7 +891,7 @@ public class BlueprintConfigurationProcessor {
           indexOfEnd = matcher.end();
         }
 
-        if (indexOfEnd < (origValue.length() - 1)) {
+        if ((indexOfEnd > -1) && (indexOfEnd < (origValue.length() - 1))) {
           suffix = origValue.substring(indexOfEnd);
         }
 
@@ -1134,7 +1162,7 @@ public class BlueprintConfigurationProcessor {
     multiCoreSiteMap.put("hadoop.proxyuser.hive.hosts", new MultipleHostTopologyUpdater("HIVE_SERVER"));
     multiCoreSiteMap.put("hadoop.proxyuser.HTTP.hosts", new MultipleHostTopologyUpdater("WEBHCAT_SERVER"));
     multiCoreSiteMap.put("hadoop.proxyuser.hcat.hosts", new MultipleHostTopologyUpdater("WEBHCAT_SERVER"));
-    multiWebhcatSiteMap.put("templeton.hive.properties", new MultipleHostTopologyUpdater("HIVE_SERVER"));
+    multiWebhcatSiteMap.put("templeton.hive.properties", new SingleHostTopologyUpdater("HIVE_METASTORE"));
     multiWebhcatSiteMap.put("templeton.kerberos.principal", new MultipleHostTopologyUpdater("WEBHCAT_SERVER"));
     hiveEnvMap.put("hive_hostname", new SingleHostTopologyUpdater("HIVE_SERVER"));
     multiHiveSiteMap.put("hive.zookeeper.quorum", new MultipleHostTopologyUpdater("ZOOKEEPER_SERVER"));
@@ -1161,9 +1189,9 @@ public class BlueprintConfigurationProcessor {
 
     // STORM
     stormSiteMap.put("nimbus.host", new SingleHostTopologyUpdater("NIMBUS"));
-    stormSiteMap.put("worker.childopts", new SingleHostTopologyUpdater("GANGLIA_SERVER"));
-    stormSiteMap.put("supervisor.childopts", new SingleHostTopologyUpdater("GANGLIA_SERVER"));
-    stormSiteMap.put("nimbus.childopts", new SingleHostTopologyUpdater("GANGLIA_SERVER"));
+    stormSiteMap.put("worker.childopts", new OptionalSingleHostTopologyUpdater("GANGLIA_SERVER"));
+    stormSiteMap.put("supervisor.childopts", new OptionalSingleHostTopologyUpdater("GANGLIA_SERVER"));
+    stormSiteMap.put("nimbus.childopts", new OptionalSingleHostTopologyUpdater("GANGLIA_SERVER"));
     multiStormSiteMap.put("storm.zookeeper.servers",
         new YamlMultiValuePropertyDecorator(new MultipleHostTopologyUpdater("ZOOKEEPER_SERVER")));
 
@@ -1173,7 +1201,7 @@ public class BlueprintConfigurationProcessor {
     falconStartupPropertiesMap.put("*.falcon.http.authentication.kerberos.principal", new SingleHostTopologyUpdater("FALCON_SERVER"));
 
     // KAFKA
-    kafkaBrokerMap.put("kafka.ganglia.metrics.host", new SingleHostTopologyUpdater("GANGLIA_SERVER"));
+    kafkaBrokerMap.put("kafka.ganglia.metrics.host", new OptionalSingleHostTopologyUpdater("GANGLIA_SERVER"));
 
     // KNOX
     multiCoreSiteMap.put("hadoop.proxyuser.knox.hosts", new MultipleHostTopologyUpdater("KNOX_GATEWAY"));

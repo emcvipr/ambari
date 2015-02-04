@@ -193,12 +193,33 @@ App.HostComponentView = Em.View.extend({
   }.property('content'),
 
   /**
+   * Host component with some <code>workStatus</code> can't be moved (so, disable such action in the dropdown list)
+   * @type {bool}
+   */
+  isMoveComponentDisabled: function () {
+    return App.allHostNames.length === App.HostComponent.find().filterProperty('componentName', this.get('content.componentName')).mapProperty('hostName').length;
+  }.property('content'),
+
+  /**
    * Host component with some <code>workStatus</code> can't be deleted (so, disable such action in the dropdown list)
    * @type {bool}
    */
   isDeleteComponentDisabled: function () {
-    return ![App.HostComponentStatus.stopped, App.HostComponentStatus.unknown, App.HostComponentStatus.install_failed, App.HostComponentStatus.upgrade_failed, App.HostComponentStatus.init].contains(this.get('workStatus'));
+    var stackComponentCount = App.StackServiceComponent.find(this.get('hostComponent.componentName')).get('minToInstall');
+    var installedCount = this.componentCounter();
+    return (installedCount <= stackComponentCount)
+      || ![App.HostComponentStatus.stopped, App.HostComponentStatus.unknown, App.HostComponentStatus.install_failed, App.HostComponentStatus.upgrade_failed, App.HostComponentStatus.init].contains(this.get('workStatus'));
   }.property('workStatus'),
+
+  /**
+   * gets number of current component that are applied to the cluster;
+   * @returns {Number}
+   */
+  componentCounter: function() {
+    return App.StackServiceComponent.find(this.get('hostComponent.componentName')).get('isMaster')
+      ? App.HostComponent.find().filterProperty('componentName', this.get('content.componentName')).length
+      : App.SlaveComponent.find().findProperty('componentName', this.get('content.componentName')).get('totalCount');
+  },
 
   /**
    * Check if component may be reassinged to another host

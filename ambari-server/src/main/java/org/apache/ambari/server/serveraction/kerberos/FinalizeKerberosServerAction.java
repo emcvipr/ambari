@@ -21,12 +21,17 @@ package org.apache.ambari.server.serveraction.kerberos;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.agent.CommandReport;
+import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.Host;
+import org.apache.ambari.server.state.SecurityState;
+import org.apache.ambari.server.state.ServiceComponentHost;
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 
@@ -58,7 +63,6 @@ public class FinalizeKerberosServerAction extends KerberosServerAction {
   }
 
   /**
-   *
    * @param requestSharedDataContext a Map to be used a shared data among all ServerActions related
    *                                 to a given request
    * @return
@@ -68,6 +72,28 @@ public class FinalizeKerberosServerAction extends KerberosServerAction {
   @Override
   public CommandReport execute(ConcurrentMap<String, Object> requestSharedDataContext) throws AmbariException, InterruptedException {
     String dataDirectoryPath = getCommandParameterValue(DATA_DIRECTORY);
+
+    // Set the ServiceComponentHost from a transitional state to the desired endpoint state
+    Map<String, Host> hosts = getClusters().getHostsForCluster(getClusterName());
+    if ((hosts != null) && !hosts.isEmpty()) {
+      Cluster cluster = getCluster();
+      for (String hostname : hosts.keySet()) {
+        List<ServiceComponentHost> serviceComponentHosts = cluster.getServiceComponentHosts(hostname);
+
+        for (ServiceComponentHost sch : serviceComponentHosts) {
+          SecurityState securityState = sch.getSecurityState();
+          if (securityState.isTransitional()) {
+            String message = String.format("Setting securityState for %s/%s on host %s to state %s",
+                sch.getServiceName(), sch.getServiceComponentName(), sch.getHostName(),
+                sch.getDesiredSecurityState().toString());
+            LOG.info(message);
+            actionLog.writeStdOut(message);
+
+            sch.setSecurityState(sch.getDesiredSecurityState());
+          }
+        }
+      }
+    }
 
     // Make sure this is a relevant directory. We don't want to accidentally allow _ANY_ directory
     // to be deleted.
@@ -84,11 +110,13 @@ public class FinalizeKerberosServerAction extends KerberosServerAction {
         } catch (IOException e) {
           // We should log this exception, but don't let it fail the process since if we got to this
           // KerberosServerAction it is expected that the the overall process was a success.
-          LOG.warn(String.format("The data directory (%s) was not deleted due to an error condition - {%s}",
-              dataDirectory.getAbsolutePath(), e.getMessage()), e);
+          String message = String.format("The data directory (%s) was not deleted due to an error condition - {%s}",
+              dataDirectory.getAbsolutePath(), e.getMessage());
+          LOG.warn(message, e);
         }
       }
     }
 
-    return createCommandReport(0, HostRoleStatus.COMPLETED, "{}", null, null);  }
+    return createCommandReport(0, HostRoleStatus.COMPLETED, "{}", actionLog.getStdOut(), actionLog.getStdErr());
+  }
 }

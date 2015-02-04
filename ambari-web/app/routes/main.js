@@ -180,7 +180,17 @@ module.exports = Em.Route.extend({
       summary: Em.Route.extend({
         route: '/summary',
         connectOutlets: function (router, context) {
-          router.get('mainHostDetailsController').connectOutlet('mainHostSummary');
+          router.get('mainController').dataLoading().done(function() {
+            var controller = router.get('mainHostDetailsController');
+            if ( App.Service.find().mapProperty('serviceName').contains('OOZIE')) {
+              controller.loadConfigs('loadOozieConfigs');
+              controller.isOozieConfigLoaded.always(function () {
+                controller.connectOutlet('mainHostSummary');
+              });
+            }else {
+              controller.connectOutlet('mainHostSummary');
+            }
+          });
         }
       }),
 
@@ -261,6 +271,16 @@ module.exports = Em.Route.extend({
 
       exit: function (router) {
         router.set('mainAlertInstancesController.isUpdating', false);
+      },
+
+      unroutePath: function (router, context) {
+        var controller = router.get('mainAlertDefinitionDetailsController');
+        if (!controller.get('forceTransition') && controller.get('isEditing')) {
+          controller.showSavePopup(context);
+        } else {
+          controller.set('forceTransition', false);
+          this._super(router, context);
+        }
       }
     }),
 
@@ -300,7 +320,7 @@ module.exports = Em.Route.extend({
        router.transitionTo('admin' + controller.get('category').capitalize());
        }, */
       route: '/',
-      redirectsTo: 'stackAndUpgrade'
+      redirectsTo: 'stackAndUpgrade.index'
     }),
 
     adminAuthentication: Em.Route.extend({
@@ -439,38 +459,36 @@ module.exports = Em.Route.extend({
       connectOutlets: function (router) {
         router.set('mainAdminController.category', "stackAndUpgrade");
         router.get('mainAdminController').connectOutlet('mainAdminStackAndUpgrade');
+      },
+
+      index: Em.Route.extend({
+        route: '/',
+        redirectsTo: 'services'
+      }),
+
+      services: Em.Route.extend({
+        route: '/services',
+        connectOutlets: function (router, context) {
+          router.get('mainAdminStackAndUpgradeController').connectOutlet('mainAdminStackServices');
+        }
+      }),
+
+      versions: Em.Route.extend({
+        route: '/versions',
+        connectOutlets: function (router, context) {
+          router.get('mainAdminStackAndUpgradeController').connectOutlet('MainAdminStackVersions');
+        }
+      }),
+
+      stackNavigate: function (router, event) {
+        var parent = event.view._parentView;
+        parent.deactivateChildViews();
+        event.view.set('active', "active");
+        router.transitionTo(event.context);
       }
     }),
     stackUpgrade: require('routes/stack_upgrade_routes'),
 
-    adminStackVersions: Em.Route.extend({
-      route: '/versions',
-      enter: function (router) {
-        if (App.get('supports.stackUpgrade')) {
-          router.set('mainAdminController.category', "stackVersions");
-        } else {
-          router.transitionTo('admin.stackAndUpgrade');
-        }
-      },
-      index: Em.Route.extend({
-        route: '/',
-        connectOutlets: function (router) {
-          router.get('mainAdminController').connectOutlet('mainStackVersions');
-        }
-      }),
-      version: Em.Route.extend({
-        route: '/:repository_version_id',
-        connectOutlets: function (router, repoVersion) {
-          router.get('mainAdminController').connectOutlet('mainStackVersionsDetails', repoVersion);
-        }
-      }),
-      update: Em.Route.extend({
-        route: '/updates',
-        connectOutlets: function (router) {
-          router.get('mainAdminController').connectOutlet('repoVersions');
-        }
-      })
-    }),
     adminAdvanced: Em.Route.extend({
       route: '/advanced',
       connectOutlets: function (router) {
@@ -510,7 +528,6 @@ module.exports = Em.Route.extend({
     }
 
   }),
-  stackUpgrade: require('routes/stack_upgrade'),
 
   services: Em.Route.extend({
     route: '/services',
@@ -554,7 +571,6 @@ module.exports = Em.Route.extend({
         route: '/summary',
         connectOutlets: function (router, context) {
           var item = router.get('mainServiceItemController.content');
-          router.get('updateController').updateServiceMetric(Em.K);
           //if service is not existed then route to default service
           if (item.get('isLoaded')) {
             router.get('mainServiceItemController').connectOutlet('mainServiceInfoSummary', item);

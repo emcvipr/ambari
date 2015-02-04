@@ -19,12 +19,19 @@ limitations under the License.
 """
 
 import sys
-from resource_management import *
+from resource_management.libraries.script import Script
 from storm import storm
 from supervisord_service import supervisord_service, supervisord_check_status
+from resource_management.libraries.functions import format
+from resource_management.core.resources.system import Execute
+from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 
 
 class Nimbus(Script):
+
+  def get_stack_to_component(self):
+    return {"HDP": "storm-nimbus"}
+
   def install(self, env):
     self.install_packages(env)
     self.configure(env)
@@ -35,14 +42,21 @@ class Nimbus(Script):
 
     storm()
 
-  def start(self, env):
+  def pre_rolling_restart(self, env):
+    import params
+    env.set_params(params)
+
+    if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
+      Execute(format("hdp-select set storm-nimbus {version}"))
+
+  def start(self, env, rolling_restart=False):
     import params
     env.set_params(params)
     self.configure(env)
 
     supervisord_service("nimbus", action="start")
 
-  def stop(self, env):
+  def stop(self, env, rolling_restart=False):
     import params
     env.set_params(params)
 

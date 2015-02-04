@@ -24,7 +24,7 @@ import org.junit.runners.Suite;
 import static org.junit.runners.Suite.SuiteClasses;
 
 @RunWith(Suite.class)
-@SuiteClasses({ITMetricAggregator.class, ITClusterAggregator.class})
+@SuiteClasses({ITMetricAggregator.class, ITClusterAggregator.class, ITPhoenixHBaseAccessor.class})
 public class TestClusterSuite {
 
 }

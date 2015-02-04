@@ -634,9 +634,8 @@ describe('App.MainHostDetailsController', function () {
       });
       var data = {Clusters: {desired_configs: {'core-site': {tag: 1}}}};
       App.HostComponent.find().clear();
-      App.set('isStackServicesLoaded', true);
+      App.propertyDidChange('isHaEnabled');
       expect(controller.constructConfigUrlParams(data)).to.eql(['(type=core-site&tag=1)']);
-      App.set('isStackServicesLoaded', false);
       App.store.load(App.HostComponent, {
         id: 'SECONDARY_NAMENODE_host1',
         component_name: 'SECONDARY_NAMENODE'
@@ -648,6 +647,7 @@ describe('App.MainHostDetailsController', function () {
         id: 'HBASE',
         service_name: 'HBASE'
       });
+      App.propertyDidChange('isHaEnabled');
       var data = {Clusters: {desired_configs: {'hbase-site': {tag: 1}}}};
       expect(controller.constructConfigUrlParams(data)).to.eql(['(type=hbase-site&tag=1)']);
       App.Service.find().clear();
@@ -676,15 +676,15 @@ describe('App.MainHostDetailsController', function () {
         id: 'YARN',
         service_name: 'YARN'
       });
-      var data = {Clusters: {desired_configs: {'yarn-site': {tag: 1}}}};
-      expect(controller.constructConfigUrlParams(data)).to.eql(['(type=yarn-site&tag=1)']);
+      var data = {Clusters: {desired_configs: {'yarn-site': {tag: 1}, 'zoo.cfg': {tag: 1}}}};
+      expect(controller.constructConfigUrlParams(data)).to.eql(['(type=yarn-site&tag=1)', '(type=zoo.cfg&tag=1)']);
       App.set('currentStackVersion', 'HDP-2.0.1');
       App.Service.find().clear();
     });
     it('isRMHaEnabled true', function () {
       sinon.stub(App, 'get').withArgs('isRMHaEnabled').returns(true);
-      var data = {Clusters: {desired_configs: {'yarn-site': {tag: 1}}}};
-      expect(controller.constructConfigUrlParams(data)).to.eql(['(type=yarn-site&tag=1)']);
+      var data = {Clusters: {desired_configs: {'yarn-site': {tag: 1}, 'zoo.cfg': {tag: 1}}}};
+      expect(controller.constructConfigUrlParams(data)).to.eql(['(type=yarn-site&tag=1)', '(type=zoo.cfg&tag=1)']);
       App.get.restore();
     });
   });
@@ -718,41 +718,34 @@ describe('App.MainHostDetailsController', function () {
       sinon.stub(controller, "getZkServerHosts", Em.K);
       sinon.stub(controller, "concatZkNames", Em.K);
       sinon.stub(controller, "setZKConfigs", Em.K);
+      sinon.stub(controller, 'saveConfigsBatch', Em.K);
     });
     afterEach(function () {
       controller.getZkServerHosts.restore();
       controller.concatZkNames.restore();
       controller.setZKConfigs.restore();
+      controller.saveConfigsBatch.restore();
     });
 
-    it('data.items is empty', function () {
+    it('call saveConfigsBatch()', function () {
       var data = {items: []};
       controller.saveZkConfigs(data);
+      expect(controller.saveConfigsBatch.calledOnce).to.be.true;
+    });
+  });
+
+  describe("#saveConfigsBatch()", function() {
+    it("no groups", function() {
+      controller.saveConfigsBatch([]);
       expect(App.ajax.send.called).to.be.false;
     });
-    it('data.items has one item', function () {
-      var data = {items: [
-        {
-          type: 'type1',
-          properties: {}
-        }
-      ]};
-      controller.saveZkConfigs(data);
-      expect(App.ajax.send.calledOnce).to.be.true;
+    it("configs is empty", function() {
+      controller.saveConfigsBatch([{}]);
+      expect(App.ajax.send.called).to.be.false;
     });
-    it('data.items has two items', function () {
-      var data = {items: [
-        {
-          type: 'type1',
-          properties: {}
-        },
-        {
-          type: 'type2',
-          properties: {}
-        }
-      ]};
-      controller.saveZkConfigs(data);
-      expect(App.ajax.send.calledTwice).to.be.true;
+    it("configs is correct", function() {
+      controller.saveConfigsBatch([{'properties' : {'site': {}}, 'properties_attributes': {'site': {}}}]);
+      expect(App.ajax.send.calledOnce).to.be.true;
     });
   });
 
@@ -770,7 +763,7 @@ describe('App.MainHostDetailsController', function () {
         id: 'HDFS',
         service_name: 'HDFS'
       });
-      App.set('isStackServicesLoaded', true);
+      App.propertyDidChange('isHaEnabled');
       expect(controller.setZKConfigs(configs, 'host1:2181', [])).to.be.true;
       expect(configs).to.eql({"core-site": {
         "ha.zookeeper.quorum": "host1:2181"
@@ -779,7 +772,7 @@ describe('App.MainHostDetailsController', function () {
         id: 'SECONDARY_NAMENODE_host1',
         component_name: 'SECONDARY_NAMENODE'
       });
-      App.set('isStackServicesLoaded', false);
+      App.propertyDidChange('isHaEnabled');
     });
     it('hbase-site is present', function () {
       var configs = {'hbase-site': {}};
@@ -838,7 +831,7 @@ describe('App.MainHostDetailsController', function () {
       sinon.stub(App, 'get').withArgs('isRMHaEnabled').returns(true);
       expect(controller.setZKConfigs(configs, 'host1:2181', ['host1', 'host2'])).to.be.true;
       expect(configs).to.eql({"yarn-site": {
-        "yarn.resourcemanager.zk-address": "host1,host2"
+        "yarn.resourcemanager.zk-address": "host1:2181"
       }});
       App.get.restore();
     });
@@ -849,10 +842,10 @@ describe('App.MainHostDetailsController', function () {
       expect(controller.concatZkNames([])).to.equal('');
     });
     it('One ZooKeeper host', function () {
-      expect(controller.concatZkNames(['host1'])).to.equal('host1:2181');
+      expect(controller.concatZkNames(['host1'], '2181')).to.equal('host1:2181');
     });
     it('Two ZooKeeper hosts', function () {
-      expect(controller.concatZkNames(['host1', 'host2'])).to.equal('host1:2181,host2:2181');
+      expect(controller.concatZkNames(['host1', 'host2'], '2181')).to.equal('host1:2181,host2:2181');
     });
   });
 
@@ -1435,7 +1428,6 @@ describe('App.MainHostDetailsController', function () {
       lastComponents: [],
       masterComponents: [],
       runningComponents: [],
-      notDecommissionedComponents: [],
       nonDeletableComponents: [],
       unknownComponents: []
     };
@@ -1511,38 +1503,6 @@ describe('App.MainHostDetailsController', function () {
         displayName: 'ZK1'
       })]});
       expect(controller.getHostComponentsInfo().runningComponents).to.eql(['ZK1']);
-      App.HostComponent.find.restore();
-    });
-    it('content.hostComponents has notDecommissioned running component', function () {
-      sinon.stub(App.HostComponent, 'find', function() {
-        return [{
-          id: 'DATANODE_host1',
-          componentName: 'DATANODE'
-        }];
-      });
-      controller.set('content', {hostComponents: [Em.Object.create({
-        componentName: 'DATANODE',
-        workStatus: 'STARTED',
-        displayName: 'DataNode',
-        adminState: 'INSERVICE'
-      })]});
-      expect(controller.getHostComponentsInfo().notDecommissionedComponents).to.eql(['DataNode']);
-      App.HostComponent.find.restore();
-    });
-    it('content.hostComponents has notDecommissioned running component', function () {
-      sinon.stub(App.HostComponent, 'find', function() {
-        return [{
-          id: 'DATANODE_host1',
-          componentName: 'DATANODE'
-        }];
-      });
-      controller.set('content', {hostComponents: [Em.Object.create({
-        componentName: 'DATANODE',
-        workStatus: 'INSTALLED',
-        displayName: 'DataNode',
-        adminState: 'INSERVICE'
-      })]});
-      expect(controller.getHostComponentsInfo().notDecommissionedComponents).to.eql(['DataNode']);
       App.HostComponent.find.restore();
     });
     it('content.hostComponents has non-deletable component', function () {
@@ -1625,8 +1585,7 @@ describe('App.MainHostDetailsController', function () {
       controller.set('mockHostComponentsInfo', {
         masterComponents: [],
         nonDeletableComponents: [],
-        runningComponents: [{}],
-        notDecommissionedComponents: []
+        runningComponents: [{}]
       });
       controller.validateAndDeleteHost();
       expect(controller.raiseDeleteComponentsError.calledWith([{}], 'runningList')).to.be.true;
@@ -1636,7 +1595,6 @@ describe('App.MainHostDetailsController', function () {
         masterComponents: [],
         nonDeletableComponents: [],
         runningComponents: [],
-        notDecommissionedComponents: [],
         unknownComponents: [],
         lastComponents: [],
         zkServerInstalled: true
@@ -1651,7 +1609,6 @@ describe('App.MainHostDetailsController', function () {
         masterComponents: [],
         nonDeletableComponents: [],
         runningComponents: [],
-        notDecommissionedComponents: [],
         unknownComponents: [],
         lastComponents: [],
         zkServerInstalled: false
@@ -2293,6 +2250,27 @@ describe('App.MainHostDetailsController', function () {
     });
   });
 
+  describe('#installVersionConfirmation()', function () {
+
+    beforeEach(function () {
+      sinon.spy(App, "showConfirmationPopup");
+      sinon.stub(controller, 'installVersion', Em.K);
+    });
+    afterEach(function () {
+      App.showConfirmationPopup.restore();
+      controller.installVersion.restore();
+    });
+
+    it('confirm popup should be displayed', function () {
+      var event = {context: Em.Object.create({displayName: 'displayName'})};
+      var popup = controller.installVersionConfirmation(event);
+      expect(App.showConfirmationPopup.calledOnce).to.be.true;
+      popup.onPrimary();
+      expect(controller.installVersion.calledWith(event)).to.be.true;
+    });
+  });
+
+
   describe("#installVersion()", function() {
     it("call App.ajax.send", function() {
       controller.set('content.hostName', 'host1');
@@ -2312,9 +2290,13 @@ describe('App.MainHostDetailsController', function () {
   describe("#installVersionSuccessCallback()", function () {
     before(function () {
       this.mock = sinon.stub(App.HostStackVersion, 'find');
+      sinon.stub(App.db, 'set', Em.K);
+      sinon.stub(App.clusterStatus, 'setClusterStatus', Em.K);
     });
     after(function () {
       this.mock.restore();
+      App.db.set.restore();
+      App.clusterStatus.setClusterStatus.restore();
     });
     it("", function () {
       var version = Em.Object.create({
@@ -2322,8 +2304,10 @@ describe('App.MainHostDetailsController', function () {
         status: 'INIT'
       });
       this.mock.returns(version);
-      controller.installVersionSuccessCallback({}, {}, {version: version});
+      controller.installVersionSuccessCallback({Requests:{id: 1}}, {}, {version: version});
       expect(version.get('status')).to.equal('INSTALLING');
+      expect(App.db.set.calledWith('repoVersionInstall', 'id', [1])).to.be.true;
+      expect(App.clusterStatus.setClusterStatus.calledOnce).to.be.true;
     });
   });
 });

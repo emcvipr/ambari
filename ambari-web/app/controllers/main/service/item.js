@@ -52,7 +52,7 @@ App.MainServiceItemController = Em.Controller.extend({
       var hostNames = App.Host.find().mapProperty('hostName');
       this.set('allHosts', hostNames);
 
-      ['HBASE_MASTER', 'HIVE_METASTORE', 'ZOOKEEPER_SERVER', 'FLUME_HANDLER'].forEach(function(componentName) {
+      ['HBASE_MASTER', 'HIVE_METASTORE', 'ZOOKEEPER_SERVER', 'FLUME_HANDLER', 'HIVE_SERVER'].forEach(function(componentName) {
         self.loadHostsWithoutComponent(componentName);
       });
     }
@@ -378,7 +378,7 @@ App.MainServiceItemController = Em.Controller.extend({
         this.hide();
       },
       bodyClass: Ember.View.extend({
-        templateName: require('templates/common/prompt_popup'),
+        templateName: require('templates/common/modal_popups/prompt_popup'),
         text: Em.I18n.t('services.service.actions.run.rebalanceHdfsNodes.prompt'),
         didInsertElement: function () {
           App.tooltip(this.$(".prompt-input"), {
@@ -569,7 +569,7 @@ App.MainServiceItemController = Em.Controller.extend({
    */
   addComponent: function (componentName) {
     var self = this;
-    var component = App.HostComponent.find().findProperty('componentName', componentName);
+    var component = App.StackServiceComponent.find().findProperty('componentName', componentName);
     var componentDisplayName = component.get('displayName');
 
     self.loadHostsWithoutComponent(componentName);
@@ -700,7 +700,7 @@ App.MainServiceItemController = Em.Controller.extend({
   },
 
   downloadClientConfigs: function (event) {
-    var component = this.get('content.hostComponents').findProperty('isClient');
+    var component = this.get('content.clientComponents').rejectProperty('totalCount', 0)[0];
     componentsUtils.downloadClientConfigs.call(this, {
       serviceName: this.get('content.serviceName'),
       componentName: (event && event.name) || component.get('componentName'),

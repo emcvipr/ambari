@@ -3,6 +3,8 @@
   "_comment" : "blockedRole-blockedCommand: [blockerRole1-blockerCommand1, blockerRole2-blockerCommand2, ...]",
   "general_deps" : {
     "_comment" : "dependencies for all cases",
+    "RANGER_SERVICE_CHECK-SERVICE_CHECK" : ["RANGER_ADMIN-START"],
+    "RANGER_SERVICE_CHECK-SERVICE_CHECK" : ["RANGER_USERSYNC-START"],
     "FALCON_SERVER-START": ["NAMENODE-START", "DATANODE-START", "OOZIE_SERVER-START"],
     "WEBHCAT_SERVICE_CHECK-SERVICE_CHECK": ["WEBHCAT_SERVER-START"],
     "FLUME_SERVICE_CHECK-SERVICE_CHECK": ["FLUME_HANDLER-START"],

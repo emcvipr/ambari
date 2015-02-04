@@ -22,6 +22,7 @@ import subprocess
 
 from mock.mock import MagicMock, patch
 from resource_management.core import shell
+from resource_management.libraries.functions import dynamic_variable_interpretation
 from stacks.utils.RMFTestCase import *
 
 class TestHiveServer(RMFTestCase):
@@ -43,6 +44,7 @@ class TestHiveServer(RMFTestCase):
   @patch.object(shell, "call", new=MagicMock(return_value=(0, '')))
   @patch.object(subprocess,"Popen")
   @patch("socket.socket")
+  @patch.object(dynamic_variable_interpretation, "copy_tarballs_to_hdfs", new=MagicMock())
   def test_start_default(self, socket_mock, popen_mock):
     s = socket_mock.return_value
     
@@ -66,7 +68,7 @@ class TestHiveServer(RMFTestCase):
                               user = 'hive'
     )
 
-    self.assertResourceCalled('Execute', '/usr/jdk64/jdk1.7.0_45/bin/java -cp /usr/lib/ambari-agent/DBConnectionVerification.jar:/usr/share/java/mysql-connector-java.jar org.apache.ambari.server.DBConnectionVerification \'jdbc:mysql://c6402.ambari.apache.org/hive?createDatabaseIfNotExist=true\' hive \'!`"\'"\'"\' 1\' com.mysql.jdbc.Driver',
+    self.assertResourceCalled('Execute', '/usr/jdk64/jdk1.7.0_45/bin/java -cp /usr/lib/ambari-agent/DBConnectionVerification.jar:/usr/lib/hive/lib//mysql-connector-java.jar org.apache.ambari.server.DBConnectionVerification \'jdbc:mysql://c6402.ambari.apache.org/hive?createDatabaseIfNotExist=true\' hive \'!`"\'"\'"\' 1\' com.mysql.jdbc.Driver',
                               path=['/usr/sbin:/sbin:/usr/local/bin:/bin:/usr/bin'], tries=5, try_sleep=10
     )
 
@@ -75,6 +77,7 @@ class TestHiveServer(RMFTestCase):
     self.assertTrue(s.close.called)
 
   @patch("socket.socket")
+  @patch.object(dynamic_variable_interpretation, "copy_tarballs_to_hdfs", new=MagicMock())
   def test_stop_default(self, socket_mock):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_server.py",
                        classname = "HiveServer",
@@ -90,7 +93,10 @@ class TestHiveServer(RMFTestCase):
     self.assertResourceCalled('Execute', 'sudo kill -9 `cat /var/run/hive/hive-server.pid`',
       not_if = '! (ls /var/run/hive/hive-server.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive-server.pid` >/dev/null 2>&1) || ( sleep 5 && ! (ls /var/run/hive/hive-server.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive-server.pid` >/dev/null 2>&1) )',
     )
-    self.assertResourceCalled('Execute', '! (ls /var/run/hive/hive-server.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive-server.pid` >/dev/null 2>&1)',)
+    self.assertResourceCalled('Execute', '! (ls /var/run/hive/hive-server.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive-server.pid` >/dev/null 2>&1)',
+      tries = 20,
+      try_sleep = 3,
+    )
     self.assertResourceCalled('File', '/var/run/hive/hive-server.pid',
       action = ['delete'],
     )
@@ -131,13 +137,13 @@ class TestHiveServer(RMFTestCase):
                               user = 'hive'
     )
 
-    self.assertResourceCalled('Execute', '/usr/jdk64/jdk1.7.0_45/bin/java -cp /usr/lib/ambari-agent/DBConnectionVerification.jar:/usr/share/java/mysql-connector-java.jar org.apache.ambari.server.DBConnectionVerification \'jdbc:mysql://c6402.ambari.apache.org/hive?createDatabaseIfNotExist=true\' hive \'!`"\'"\'"\' 1\' com.mysql.jdbc.Driver',
+    self.assertResourceCalled('Execute', '/usr/jdk64/jdk1.7.0_45/bin/java -cp /usr/lib/ambari-agent/DBConnectionVerification.jar:/usr/lib/hive/lib//mysql-connector-java.jar org.apache.ambari.server.DBConnectionVerification \'jdbc:mysql://c6402.ambari.apache.org/hive?createDatabaseIfNotExist=true\' hive \'!`"\'"\'"\' 1\' com.mysql.jdbc.Driver',
                               path=['/usr/sbin:/sbin:/usr/local/bin:/bin:/usr/bin'], tries=5, try_sleep=10
     )
-    self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa; ',
+    self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa@EXAMPLE.COM; ',
                               user = 'ambari-qa',
                               )
-    self.assertResourceCalled('Execute', "! beeline -u 'jdbc:hive2://c6402.ambari.apache.org:10000/;principal=hive/_HOST@EXAMPLE.COM' -e '' 2>&1| awk '{print}'|grep -i -e 'Connection refused' -e 'Invalid URL'",
+    self.assertResourceCalled('Execute', "! beeline -u 'jdbc:hive2://c6401.ambari.apache.org:10000/;principal=hive/_HOST@EXAMPLE.COM' -e '' 2>&1| awk '{print}'|grep -i -e 'Connection refused' -e 'Invalid URL'",
                               path = ['/bin/', '/usr/bin/', '/usr/lib/hive/bin/', '/usr/sbin/'],
                               user = 'ambari-qa',
                               timeout = 30,
@@ -161,7 +167,10 @@ class TestHiveServer(RMFTestCase):
     self.assertResourceCalled('Execute', 'sudo kill -9 `cat /var/run/hive/hive-server.pid`',
       not_if = '! (ls /var/run/hive/hive-server.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive-server.pid` >/dev/null 2>&1) || ( sleep 5 && ! (ls /var/run/hive/hive-server.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive-server.pid` >/dev/null 2>&1) )',
     )
-    self.assertResourceCalled('Execute', '! (ls /var/run/hive/hive-server.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive-server.pid` >/dev/null 2>&1)',)
+    self.assertResourceCalled('Execute', '! (ls /var/run/hive/hive-server.pid >/dev/null 2>&1 && ps -p `cat /var/run/hive/hive-server.pid` >/dev/null 2>&1)',
+      tries = 20,
+      try_sleep = 3,
+    )
     self.assertResourceCalled('File', '/var/run/hive/hive-server.pid',
       action = ['delete'],
     )

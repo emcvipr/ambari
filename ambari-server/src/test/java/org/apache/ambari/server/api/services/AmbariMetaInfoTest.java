@@ -42,7 +42,6 @@ import java.util.Set;
 import javax.persistence.EntityManager;
 import javax.xml.bind.JAXBException;
 
-import com.google.gson.Gson;
 import junit.framework.Assert;
 
 import org.apache.ambari.server.AmbariException;
@@ -78,10 +77,14 @@ import org.apache.ambari.server.state.alert.PortSource;
 import org.apache.ambari.server.state.alert.Reporting;
 import org.apache.ambari.server.state.alert.Source;
 import org.apache.ambari.server.state.kerberos.KerberosDescriptor;
+import org.apache.ambari.server.state.kerberos.KerberosDescriptorFactory;
+import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptorFactory;
 import org.apache.ambari.server.state.stack.MetricDefinition;
 import org.apache.ambari.server.state.stack.OsFamily;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
+import org.easymock.Capture;
+import org.easymock.EasyMock;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -89,6 +92,7 @@ import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.Gson;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -116,7 +120,6 @@ public class AmbariMetaInfoTest {
   private static final String NON_EXT_VALUE = "XXX";
 
   private static final int REPOS_CNT = 3;
-  private static final int STACKS_NAMES_CNT = 2;
   private static final int PROPERTIES_CNT = 62;
   private static final int OS_CNT = 4;
 
@@ -272,9 +275,22 @@ public class AmbariMetaInfoTest {
       }
     }
 
+    Capture<MetainfoEntity> c = new Capture<MetainfoEntity>();
+
+    metainfoDAO = ambariMetaInfo.metaInfoDAO;
+    reset(metainfoDAO);
+    reset(entity);
+    expect(metainfoDAO.findByKey("repo:/HDP/2.1.1/redhat6/HDP-2.1.1:baseurl")).andReturn(entity).atLeastOnce();
+    expect(metainfoDAO.merge(EasyMock.capture(c))).andReturn(entity).atLeastOnce();
+    replay(metainfoDAO, entity);
+
     // Reset the database with the original baseUrl
     ambariMetaInfo.updateRepoBaseURL(STACK_NAME_HDP, "2.1.1", "redhat6",
             HDP_REPO_ID, prevBaseUrl);
+
+    assertEquals(prevBaseUrl, c.getValue().getMetainfoValue());
+    assertTrue(repoInfo.isBaseUrlFromSaved());
+
   }
 
   @Test
@@ -1847,6 +1863,18 @@ public class AmbariMetaInfoTest {
       f = c.getDeclaredField("eventPublisher");
       f.setAccessible(true);
       f.set(this, ambariEventPublisher);
+
+      //KerberosDescriptorFactory
+      KerberosDescriptorFactory kerberosDescriptorFactory = new KerberosDescriptorFactory();
+      f = c.getDeclaredField("kerberosDescriptorFactory");
+      f.setAccessible(true);
+      f.set(this, kerberosDescriptorFactory);
+
+      //KerberosServiceDescriptorFactory
+      KerberosServiceDescriptorFactory kerberosServiceDescriptorFactory = new KerberosServiceDescriptorFactory();
+      f = c.getDeclaredField("kerberosServiceDescriptorFactory");
+      f.setAccessible(true);
+      f.set(this, kerberosServiceDescriptorFactory);
 
       //OSFamily
       Configuration config = createNiceMock(Configuration.class);

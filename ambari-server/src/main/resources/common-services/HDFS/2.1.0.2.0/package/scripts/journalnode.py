@@ -27,6 +27,7 @@ from resource_management.libraries.functions.security_commons import build_expec
 
 from utils import service
 from hdfs import hdfs
+import journalnode_upgrade
 
 
 class JournalNode(Script):
@@ -64,7 +65,11 @@ class JournalNode(Script):
       create_log_dir=True
     )
 
-    self.save_component_version_to_structured_out(params.stack_name)
+  def post_rolling_restart(self, env):
+    Logger.info("Executing Rolling Upgrade post-restart")
+    import params
+    env.set_params(params)
+    journalnode_upgrade.post_upgrade_check()
 
   def stop(self, env, rolling_restart=False):
     import params
@@ -81,7 +86,7 @@ class JournalNode(Script):
 
     Directory(params.jn_edits_dir,
               recursive=True,
-              recursive_permission=True,
+              cd_access="a",
               owner=params.hdfs_user,
               group=params.user_group
     )

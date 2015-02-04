@@ -32,6 +32,7 @@ CREATE TABLE clusters (
   cluster_info VARCHAR(255) NOT NULL,
   cluster_name VARCHAR(100) NOT NULL UNIQUE,
   provisioning_state VARCHAR(255) NOT NULL DEFAULT 'INIT',
+  security_type VARCHAR(32) NOT NULL DEFAULT 'NONE',
   desired_cluster_state VARCHAR(255) NOT NULL,
   desired_stack_version VARCHAR(255) NOT NULL,
   PRIMARY KEY (cluster_id));
@@ -106,6 +107,7 @@ CREATE TABLE hostcomponentdesiredstate (
 CREATE TABLE hostcomponentstate (
   cluster_id BIGINT NOT NULL,
   component_name VARCHAR(255) NOT NULL,
+  version VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',
   current_stack_version VARCHAR(255) NOT NULL,
   current_state VARCHAR(255) NOT NULL,
   host_name VARCHAR(255) NOT NULL,
@@ -516,6 +518,12 @@ CREATE TABLE repo_version (
   PRIMARY KEY(repo_version_id)
 );
 
+CREATE TABLE artifact (
+  artifact_name VARCHAR(255) NOT NULL,
+  foreign_keys VARCHAR(255) NOT NULL,
+  artifact_data LONGTEXT NOT NULL,
+  PRIMARY KEY(artifact_name, foreign_keys));
+
 -- altering tables by creating unique constraints----------
 ALTER TABLE users ADD CONSTRAINT UNQ_users_0 UNIQUE (user_name, ldap_user);
 ALTER TABLE groups ADD CONSTRAINT UNQ_groups_0 UNIQUE (group_name, ldap_group);
@@ -707,7 +715,9 @@ CREATE TABLE upgrade (
   upgrade_id BIGINT NOT NULL,
   cluster_id BIGINT NOT NULL,
   request_id BIGINT NOT NULL,
-  state VARCHAR(255) DEFAULT 'NONE' NOT NULL,
+  from_version VARCHAR(255) DEFAULT '' NOT NULL,
+  to_version VARCHAR(255) DEFAULT '' NOT NULL,
+  direction VARCHAR(255) DEFAULT 'UPGRADE' NOT NULL,
   PRIMARY KEY (upgrade_id),
   FOREIGN KEY (cluster_id) REFERENCES clusters(cluster_id),
   FOREIGN KEY (request_id) REFERENCES request(request_id)

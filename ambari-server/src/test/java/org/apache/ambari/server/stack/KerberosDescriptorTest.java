@@ -19,6 +19,7 @@
 package org.apache.ambari.server.stack;
 
 import org.apache.ambari.server.state.kerberos.KerberosDescriptor;
+import org.apache.ambari.server.state.kerberos.KerberosDescriptorFactory;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.springframework.util.Assert;
@@ -32,12 +33,13 @@ import java.net.URL;
  * and services
  */
 public class KerberosDescriptorTest {
+  private static final KerberosDescriptorFactory KERBEROS_DESCRIPTOR_FACTORY = new KerberosDescriptorFactory();
+
   private static File stacksDirectory;
   private static File hdpStackDirectory;
   private static File hdp22StackDirectory;
   private static File hdp22ServicesDirectory;
   private static File commonServicesDirectory;
-
 
   @BeforeClass
   public static void beforeClass() {
@@ -67,11 +69,81 @@ public class KerberosDescriptorTest {
   }
 
   @Test
-  public void testHDP22HBASEServiceDescriptor() throws IOException {
-    File hbaseDirectory = new File(hdp22ServicesDirectory, "HBASE");
-    KerberosDescriptor descriptor = KerberosDescriptor.fromFile(new File(hbaseDirectory, "kerberos.json"));
+  public void testCommonHBASEServiceDescriptor() throws IOException {
+    KerberosDescriptor descriptor = getKerberosDescriptor(commonServicesDirectory, "HBASE", "0.96.0.2.0");
     Assert.notNull(descriptor);
     Assert.notNull(descriptor.getServices());
     Assert.notNull(descriptor.getService("HBASE"));
+  }
+
+  @Test
+  public void testCommonHDFSServiceDescriptor() throws IOException {
+    KerberosDescriptor descriptor = getKerberosDescriptor(commonServicesDirectory, "HDFS", "2.1.0.2.0");
+    Assert.notNull(descriptor);
+    Assert.notNull(descriptor.getServices());
+    Assert.notNull(descriptor.getService("HDFS"));
+  }
+
+  @Test
+  public void testCommonYarnServiceDescriptor() throws IOException {
+    KerberosDescriptor descriptor = getKerberosDescriptor(commonServicesDirectory, "YARN", "2.1.0.2.0");
+    Assert.notNull(descriptor);
+    Assert.notNull(descriptor.getServices());
+    Assert.notNull(descriptor.getService("YARN"));
+    Assert.notNull(descriptor.getService("MAPREDUCE2"));
+  }
+
+  @Test
+  public void testCommonFalconServiceDescriptor() throws IOException {
+    KerberosDescriptor descriptor = getKerberosDescriptor(commonServicesDirectory, "FALCON", "0.5.0.2.1");
+    Assert.notNull(descriptor);
+    Assert.notNull(descriptor.getServices());
+    Assert.notNull(descriptor.getService("FALCON"));
+  }
+
+  @Test
+  public void testCommonHiveServiceDescriptor() throws IOException {
+    KerberosDescriptor descriptor = getKerberosDescriptor(commonServicesDirectory, "HIVE", "0.12.0.2.0");
+    Assert.notNull(descriptor);
+    Assert.notNull(descriptor.getServices());
+    Assert.notNull(descriptor.getService("HIVE"));
+  }
+
+  @Test
+  public void testCommonKnoxServiceDescriptor() throws IOException {
+    KerberosDescriptor descriptor = getKerberosDescriptor(commonServicesDirectory, "KNOX", "0.5.0.2.2");
+    Assert.notNull(descriptor);
+    Assert.notNull(descriptor.getServices());
+    Assert.notNull(descriptor.getService("KNOX"));
+  }
+
+  @Test
+  public void testCommonOozieServiceDescriptor() throws IOException {
+    KerberosDescriptor descriptor = getKerberosDescriptor(commonServicesDirectory, "OOZIE", "4.0.0.2.0");
+    Assert.notNull(descriptor);
+    Assert.notNull(descriptor.getServices());
+    Assert.notNull(descriptor.getService("OOZIE"));
+  }
+
+  @Test
+  public void testCommonStormServiceDescriptor() throws IOException {
+    KerberosDescriptor descriptor = getKerberosDescriptor(commonServicesDirectory, "STORM", "0.9.1.2.1");
+    Assert.notNull(descriptor);
+    Assert.notNull(descriptor.getServices());
+    Assert.notNull(descriptor.getService("STORM"));
+  }
+
+  @Test
+  public void testCommonZookeepeerServiceDescriptor() throws IOException {
+    KerberosDescriptor descriptor = getKerberosDescriptor(commonServicesDirectory, "ZOOKEEPER", "3.4.5.2.0");
+    Assert.notNull(descriptor);
+    Assert.notNull(descriptor.getServices());
+    Assert.notNull(descriptor.getService("ZOOKEEPER"));
+  }
+
+  private KerberosDescriptor getKerberosDescriptor(File baseDirectory, String service, String version) throws IOException {
+    File serviceDirectory = new File(baseDirectory, service);
+    File serviceVersionDirectory = new File(serviceDirectory, version);
+    return KERBEROS_DESCRIPTOR_FACTORY.createInstance(new File(serviceVersionDirectory, "kerberos.json"));
   }
 }
