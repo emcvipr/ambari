@@ -27,6 +27,7 @@ require('models/service_config');
  */
 App.StackService = DS.Model.extend({
   serviceName: DS.attr('string'),
+  serviceType: DS.attr('string'),
   displayName: DS.attr('string'),
   comments: DS.attr('string'),
   configTypes: DS.attr('object'),
@@ -45,8 +46,13 @@ App.StackService = DS.Model.extend({
   // Is the service a distributed filesystem
   isDFS: function () {
     var dfsServices = ['HDFS', 'GLUSTERFS'];
-    return dfsServices.contains(this.get('serviceName'));
-  }.property('serviceName'),
+    //return dfsServices.contains(this.get('serviceName'));
+    console.log("IN isDFS() serviceType = " + this.get('serviceType'));
+    if( this.get('serviceType') == 'HCFS' || dfsServices.contains(this.get('serviceName')) )
+    	return true;
+    else
+    	return false;
+  }.property('serviceName','serviceType'),
 
   // Primary DFS. used if there is more than one DFS in a stack.
   // Only one service in the stack should be tagged as primary DFS.

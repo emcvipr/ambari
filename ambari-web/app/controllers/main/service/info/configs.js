@@ -1897,7 +1897,8 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
     var configObject = {};
     switch (siteName) {
       case 'core-site':
-        if (this.get('content.serviceName') === 'HDFS' || this.get('content.serviceName') === 'GLUSTERFS') {
+    	console.log("IN createConfigObject() serviceType = " + this.get('content.serviceType'));
+        if (this.get('content.serviceName') === 'HDFS' || this.get('content.serviceName') === 'GLUSTERFS' || this.get('content.serviceType') === 'HCFS') {
           configObject = this.createCoreSiteObj(tagName);
         } else {
           return null;
