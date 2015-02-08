@@ -25,6 +25,13 @@ import json
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
+print '######################## BEFORE-ANY ############################'
+print config
+print '######################## BEFORE-ANY ############################'
+service_type = default("serviceType","")
+print "###### Service type:: ", service_type
+
+
 artifact_dir = format("{tmp_dir}/AMBARI-artifacts/")
 jce_policy_zip = default("/hostLevelParams/jce_name", None) # None when jdk is already installed by user
 jce_location = config['hostLevelParams']['jdk_location']

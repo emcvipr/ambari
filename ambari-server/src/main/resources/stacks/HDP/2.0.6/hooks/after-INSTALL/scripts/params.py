@@ -23,6 +23,13 @@ from resource_management.core.system import System
 
 config = Script.get_config()
 
+print '######################## AFTER-INSTALL ############################'
+print config
+print '######################## AFTER-INSTALL ############################'
+service_type = default("serviceType","")
+print "###### Service type:: ", service_type
+
+
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
