@@ -96,7 +96,7 @@ def _copy_files(source_and_dest_pairs, file_owner, group_owner, kinit_if_needed)
         params.HdfsDirectory(destination_dir,
                              action="create",
                              owner=file_owner,
-                             mode=0555
+                             mode=0755
         )
 
         CopyFromLocal(source,
