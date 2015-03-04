@@ -31,6 +31,10 @@ App.KerberosWizardStep4Controller = App.WizardStep7Controller.extend(App.AddSecu
   },
   
   loadStep: function() {
+    if (this.get('wizardController.skipConfigureIdentitiesStep')) {
+      App.router.send('next');
+      return;
+    }
     var self = this;
     this.clearStep();
     this.getDescriptorConfigs().then(function(properties) {
@@ -48,27 +52,32 @@ App.KerberosWizardStep4Controller = App.WizardStep7Controller.extend(App.AddSecu
   createServiceConfig: function(configs) {
     // Identity configs related to user principal
     var clusterConfigs = configs.filterProperty('serviceName','Cluster');
-    var nonClusterConfigs = configs.rejectProperty('serviceName','Cluster');
-    var categoryForClusterConfigs = [
+    // storm user principal is not required for ambari operation
+    var userConfigs = configs.filterProperty('identityType','user').rejectProperty('serviceName','STORM');
+    var generalConfigs = clusterConfigs.concat(userConfigs).uniq('name');
+    var advancedConfigs = configs.filter(function(element){
+      return !generalConfigs.findProperty('name', element.get('name'));
+    });
+    var categoryForGeneralConfigs = [
       App.ServiceConfigCategory.create({ name: 'Global', displayName: 'Global'}),
       App.ServiceConfigCategory.create({ name: 'Ambari Principals', displayName: 'Ambari Principals'})
     ];
-    var categoryForNonClusterConfigs = this.createCategoryForServices();
+    var categoryForAdvancedConfigs = this.createCategoryForServices();
     return [
       App.ServiceConfig.create({
       displayName: 'General',
       name: 'GENERAL',
       serviceName: 'KERBEROS_GENERAL',
-      configCategories: categoryForClusterConfigs,
-      configs: clusterConfigs,
+      configCategories: categoryForGeneralConfigs,
+      configs: generalConfigs,
       showConfig: true
     }),
       App.ServiceConfig.create({
         displayName: 'Advanced',
         name: 'ADVANCED',
         serviceName: 'KERBEROS_ADVANCED',
-        configCategories: categoryForNonClusterConfigs,
-        configs: nonClusterConfigs,
+        configCategories: categoryForAdvancedConfigs,
+        configs: advancedConfigs,
         showConfig: true
       })
     ];
@@ -79,12 +88,17 @@ App.KerberosWizardStep4Controller = App.WizardStep7Controller.extend(App.AddSecu
    * @returns {[App.ServiceConfigCategory]}
    */
   createCategoryForServices: function() {
-    var services = App.StackService.find().filter(function(s) {
-      return s.get('isInstalled') || (s.get('isSelected') && this.get('wizardController.name') == 'addServiceController');
-    }, this);
+    var services = [];
+    if (this.get('wizardController.name') == 'addServiceController') {
+      services = App.StackService.find().filter(function(item) {
+        return item.get('isInstalled') || item.get('isSelected');
+      });
+    } else {
+      services = App.Service.find();
+    }
     return services.map(function(item) {
       return App.ServiceConfigCategory.create({ name: item.get('serviceName'), displayName: item.get('displayName'), collapsedByDefault: true});
-    })
+    });
   },
 
   /**
@@ -161,8 +175,8 @@ App.KerberosWizardStep4Controller = App.WizardStep7Controller.extend(App.AddSecu
       else {
         property.set('category', property.get('serviceName'));
       }
-      // All user identity should be grouped under "Ambari Principals" category
-      if (property.get('identityType') == 'user') property.set('category', 'Ambari Principals');
+      // All user identity except storm should be grouped under "Ambari Principals" category
+      if (property.get('identityType') == 'user' && property.get('serviceName') !== 'STORM') property.set('category', 'Ambari Principals');
       var siteProperty = siteProperties.findProperty('name', property.get('name'));
       if (siteProperty) {
         if (siteProperty.category === property.get('category')) {
@@ -170,6 +184,9 @@ App.KerberosWizardStep4Controller = App.WizardStep7Controller.extend(App.AddSecu
           if (siteProperty.index) {
             property.set('index', siteProperty.index);
           }
+        }
+        if (siteProperty.displayType) {
+          property.set('displayType', siteProperty.displayType);
         }
       }
     });

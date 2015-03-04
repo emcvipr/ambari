@@ -63,6 +63,7 @@ import org.apache.ambari.server.controller.internal.RequestOperationLevel;
 import org.apache.ambari.server.controller.internal.RequestResourceFilter;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.metadata.ActionMetadata;
+import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.CommandScriptDefinition;
@@ -140,6 +141,7 @@ public class AmbariCustomCommandExecutionHelper {
   private OsFamily os_family;
 
   protected static final String SERVICE_CHECK_COMMAND_NAME = "SERVICE_CHECK";
+  protected static final String INSTALL_COMMAND_NAME = "INSTALL";
   public static final String DECOMMISSION_COMMAND_NAME = "DECOMMISSION";
 
 
@@ -338,7 +340,8 @@ public class AmbariCustomCommandExecutionHelper {
         }
       }
 
-      String commandTimeout = configs.getDefaultAgentTaskTimeout();
+      boolean isInstallCommand = commandName.equals(RoleCommand.INSTALL.toString());
+      String commandTimeout = configs.getDefaultAgentTaskTimeout(isInstallCommand);
 
       ComponentInfo componentInfo = ambariMetaInfo.getComponent(
           stackId.getStackName(), stackId.getStackVersion(),
@@ -369,6 +372,11 @@ public class AmbariCustomCommandExecutionHelper {
           serviceInfo.getServicePackageFolder());
 
       commandParams.put(HOOKS_FOLDER, stackInfo.getStackHooksFolder());
+
+      ClusterVersionEntity currentClusterVersion = cluster.getCurrentClusterVersion();
+      if (currentClusterVersion != null) {
+       commandParams.put(KeyNames.VERSION, currentClusterVersion.getRepositoryVersion().getVersion());
+      }
 
       execCmd.setCommandParams(commandParams);
 
@@ -534,7 +542,7 @@ public class AmbariCustomCommandExecutionHelper {
 
     Map<String, String> commandParams = new TreeMap<String, String>();
 
-    String commandTimeout = configs.getDefaultAgentTaskTimeout();
+    String commandTimeout = configs.getDefaultAgentTaskTimeout(false);
 
 
     if (serviceInfo.getSchemaVersion().equals(AmbariMetaInfo.SCHEMA_VERSION_2)) {

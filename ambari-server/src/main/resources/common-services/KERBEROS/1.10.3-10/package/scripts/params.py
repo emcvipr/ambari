@@ -40,6 +40,7 @@ kadm5_acl_file = 'kadm5.acl'
 kadm5_acl_path = kadm5_acl_dir + '/' + kadm5_acl_file
 
 config = Script.get_config()
+tmp_dir = Script.get_tmp_dir()
 
 command_params = None
 configurations = None
@@ -48,6 +49,8 @@ default_group = None
 cluster_env = None
 kdc_server_host = None
 cluster_host_info = None
+
+hostname = config['hostname']
 
 kdb5_util_path = 'kdb5_util'
 
@@ -66,6 +69,8 @@ if config is not None:
   command_params = get_property_value(config, 'commandParams')
   if command_params is not None:
     keytab_details = get_unstructured_data(command_params, 'keytab')
+    smoke_test_principal = get_property_value(command_params, 'principal_name', None, True, None)
+    smoke_test_keytab_file = get_property_value(command_params, 'keytab_file', None, True, None)
 
   kerberos_command_params = get_property_value(config, 'kerberosCommandParams')
 
@@ -74,8 +79,10 @@ if config is not None:
     cluster_env = get_property_value(configurations, 'cluster-env')
 
     if cluster_env is not None:
-      smoke_test_principal = get_property_value(cluster_env, 'smokeuser_principal_name', None, True, None)
-      smoke_test_keytab_file = get_property_value(cluster_env, 'smokeuser_keytab', None, True, None)
+      if smoke_test_principal is None:
+        smoke_test_principal = get_property_value(cluster_env, 'smokeuser_principal_name', None, True, None)
+      if smoke_test_keytab_file is None:
+        smoke_test_keytab_file = get_property_value(cluster_env, 'smokeuser_keytab', None, True, None)
 
       default_group = get_property_value(cluster_env, 'user_group')
 
@@ -100,12 +107,9 @@ if config is not None:
   libdefaults_ticket_lifetime = '24h'
   libdefaults_renew_lifetime = '7d'
   libdefaults_forwardable = 'true'
-  libdefaults_default_tgs_enctypes = 'aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 des3-cbc-sha1 ' \
-                                     'arcfour-hmac-md5 camellia256-cts-cmac camellia128-cts-cmac ' \
-                                     'des-cbc-crc des-cbc-md5 des-cbc-md4'
-  libdefaults_default_tkt_enctypes = 'aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 des3-cbc-sha1 ' \
-                                     'arcfour-hmac-md5 camellia256-cts-cmac camellia128-cts-cmac ' \
-                                     'des-cbc-crc des-cbc-md5 des-cbc-md4'
+  libdefaults_default_tgs_enctypes = None
+  libdefaults_default_tkt_enctypes = None
+
   realm = 'EXAMPLE.COM'
   domains = ''
   kdc_host = 'localhost'
@@ -117,10 +121,17 @@ if config is not None:
   test_password = None
   test_keytab = None
   test_keytab_file = None
-
+  encryption_types = None
+  manage_krb5_conf = "true"
   krb5_conf_template = None
 
   krb5_conf_data = get_property_value(configurations, 'krb5-conf')
+
+  kerberos_env = get_property_value(configurations, "kerberos-env")
+
+  if kerberos_env is not None:
+    encryption_types = get_property_value(kerberos_env, "encryption_types", None, True, None)
+    realm = get_property_value(kerberos_env, "realm", None, True, None)
 
   if krb5_conf_data is not None:
     logging_default = get_property_value(krb5_conf_data, 'logging_default', logging_default)
@@ -166,6 +177,10 @@ if config is not None:
     krb5_conf_dir = get_property_value(krb5_conf_data, 'conf_dir', krb5_conf_dir)
     krb5_conf_file = get_property_value(krb5_conf_data, 'conf_file', krb5_conf_file)
     krb5_conf_path = krb5_conf_dir + '/' + krb5_conf_file
+
+    manage_krb5_conf = get_property_value(krb5_conf_data, 'manage_krb5_conf',
+                                          "true")
+
 
   # ################################################################################################
   # Get kdc.conf template data

@@ -61,7 +61,9 @@
         "source": {
           "type": "WEB",
           "uri": {
-            "http": "{{storm-site/ui.port}}"
+            "http": "{{storm-site/ui.port}}",
+           "kerberos_keytab": "{{storm-env/storm_ui_keytab}}",
+            "kerberos_principal": "{{storm-env/storm_ui_principal_name}}"
           },
           "reporting": {
             "ok": {
@@ -71,7 +73,7 @@
               "text": "HTTP {0} response in {2:.3f} seconds"
             },
             "critical": {
-              "text": "Connection failed to {1}"
+              "text": "Connection failed to {1}: {3}"
             }
           }
         }

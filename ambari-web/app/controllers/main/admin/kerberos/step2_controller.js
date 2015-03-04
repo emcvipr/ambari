@@ -58,11 +58,10 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
   }.property('stepConfigs.@each.errorCount', 'miscModalVisible', 'submitButtonClicked', 'testConnectionInProgress'),
 
   hostNames: function () {
-    return this.get('content.hosts');
-  }.property('content.hosts'),
+    return App.get('allHostNames');
+  }.property('App.allHostNames'),
 
   serviceConfigTags: [],
-
 
   clearStep: function () {
     this._super();
@@ -110,6 +109,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
   },
 
   submit: function () {
+    if (this.get('isSubmitDisabled')) return false;
     this.set('isSubmitDisabled', true);
     var self = this;
     this.deleteKerberosService().always(function (data) {
@@ -169,7 +169,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
   },
 
   createKerberosHostComponents: function () {
-    var hostNames = this.get('content.hosts');
+    var hostNames = this.get('hostNames');
     var queryStr = '';
     hostNames.forEach(function (hostName) {
       queryStr += 'Hosts/host_name=' + hostName + '|';
@@ -263,8 +263,8 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
    * puts kerberos admin credentials in the live cluster session
    * @returns {*} jqXHr
    */
-  createKerberosAdminSession: function () {
-    var configs = this.get('stepConfigs')[0].get('configs');
+  createKerberosAdminSession: function (configs) {
+    configs = configs || this.get('stepConfigs')[0].get('configs');
     var adminPrincipalValue = configs.findProperty('name', 'admin_principal').value;
     var adminPasswordValue = configs.findProperty('name', 'admin_password').value;
     return App.ajax.send({

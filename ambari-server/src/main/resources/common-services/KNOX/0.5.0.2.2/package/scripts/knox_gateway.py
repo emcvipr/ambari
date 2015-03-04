@@ -25,7 +25,7 @@ import sys
 import upgrade
 import os
 from knox import knox
-from ldap import ldap
+from knox_ldap import ldap
 from setup_ranger_knox import setup_ranger_knox
 import service_mapping
 from ambari_commons import OSConst
@@ -80,7 +80,7 @@ class KnoxGateway(Script):
     self.configure(env)
     daemon_cmd = format('{knox_bin} start')
     no_op_test = format('ls {knox_pid_file} >/dev/null 2>&1 && ps -p `cat {knox_pid_file}` >/dev/null 2>&1')
-    setup_ranger_knox(env)
+    setup_ranger_knox()
     Execute(daemon_cmd,
             user=params.knox_user,
             environment={'JAVA_HOME': params.java_home},

@@ -19,10 +19,20 @@ limitations under the License.
 """
 import os
 
-from resource_management import *
+from resource_management.core.resources import Directory
+from resource_management.core.resources import File
+from resource_management.core.resources.system import Execute
+from resource_management.core.source import DownloadSource
+from resource_management.core.source import InlineTemplate
+from resource_management.core.source import Template
+from resource_management.libraries.functions import format
+from resource_management.libraries.functions import compare_versions
+from resource_management.libraries.resources.xml_config import XmlConfig
+from resource_management.core.resources.packaging import Package
 
-def oozie(is_server=False # TODO: see if see can remove this
-              ):
+
+# TODO: see if see can remove this
+def oozie(is_server=False):
   import params
 
   if is_server:
@@ -38,7 +48,7 @@ def oozie(is_server=False # TODO: see if see can remove this
   )
   XmlConfig("oozie-site.xml",
     conf_dir = params.conf_dir,
-    configurations = params.config['configurations']['oozie-site'],
+    configurations = params.oozie_site,
     configuration_attributes=params.config['configuration_attributes']['oozie-site'],
     owner = params.oozie_user,
     group = params.user_group,
@@ -76,20 +86,12 @@ def oozie(is_server=False # TODO: see if see can remove this
            group = params.user_group
     )
 
-  environment = {
-    "no_proxy": format("{ambari_server_hostname}")
-  }
-
   if params.jdbc_driver_name == "com.mysql.jdbc.Driver" or \
      params.jdbc_driver_name == "com.microsoft.sqlserver.jdbc.SQLServerDriver" or \
      params.jdbc_driver_name == "org.postgresql.Driver" or \
      params.jdbc_driver_name == "oracle.jdbc.driver.OracleDriver":
-    Execute(format("/bin/sh -c 'cd /usr/lib/ambari-agent/ &&\
-    curl -kf -x \"\" \
-    --retry 5 {jdk_location}{check_db_connection_jar_name}\
-     -o {check_db_connection_jar_name}'"),
-      not_if  = format("[ -f {check_db_connection_jar} ]"),
-      environment=environment
+    File(format("/usr/lib/ambari-agent/{check_db_connection_jar_name}"),
+      content = DownloadSource(format("{jdk_location}{check_db_connection_jar_name}")),
     )
   pass
 
@@ -129,8 +131,8 @@ def oozie_server_specific():
     not_if="ls {pid_file} >/dev/null 2>&1 && !(ps `cat {pid_file}` >/dev/null 2>&1)"
   )
   
-  oozie_server_directorties = [format("{oozie_home}/{oozie_tmp_dir}"), params.oozie_pid_dir, params.oozie_log_dir, params.oozie_tmp_dir, params.oozie_data_dir, params.oozie_lib_dir, params.oozie_webapps_dir, params.oozie_webapps_conf_dir, params.oozie_server_dir]
-  Directory( oozie_server_directorties,
+  oozie_server_directories = [format("{oozie_home}/{oozie_tmp_dir}"), params.oozie_pid_dir, params.oozie_log_dir, params.oozie_tmp_dir, params.oozie_data_dir, params.oozie_lib_dir, params.oozie_webapps_dir, params.oozie_webapps_conf_dir, params.oozie_server_dir]
+  Directory( oozie_server_directories,
     owner = params.oozie_user,
     group = params.user_group,
     mode = 0755,
@@ -157,17 +159,9 @@ def oozie_server_specific():
   if params.jdbc_driver_name=="com.mysql.jdbc.Driver" or \
      params.jdbc_driver_name == "com.microsoft.sqlserver.jdbc.SQLServerDriver" or \
      params.jdbc_driver_name=="oracle.jdbc.driver.OracleDriver":
-
-    environment = {
-      "no_proxy": format("{ambari_server_hostname}")
-    }
-
-    Execute(('curl', '-kf', '-x', "", '--retry', '10', params.driver_curl_source, '-o',
-             params.downloaded_custom_connector),
-            not_if=format("test -f {downloaded_custom_connector}"),
-            path=["/bin", "/usr/bin/"],
-            environment=environment,
-            sudo = True)
+    File(params.downloaded_custom_connector,
+         content = DownloadSource(params.driver_curl_source),
+    )
 
 
     Execute(('cp', '--remove-destination', params.downloaded_custom_connector, params.target),
@@ -177,15 +171,15 @@ def oozie_server_specific():
 
   #falcon el extension
   if params.has_falcon_host:
-    Execute(format('sudo cp {falcon_home}/oozie/ext/falcon-oozie-el-extension-*.jar {oozie_libext_dir}'),
+    Execute(format('{sudo} cp {falcon_home}/oozie/ext/falcon-oozie-el-extension-*.jar {oozie_libext_dir}'),
       not_if  = no_op_test,
     )
-    Execute(format('sudo chown {oozie_user}:{user_group} {oozie_libext_dir}/falcon-oozie-el-extension-*.jar'),
+    Execute(format('{sudo} chown {oozie_user}:{user_group} {oozie_libext_dir}/falcon-oozie-el-extension-*.jar'),
       not_if  = no_op_test,
     )
   if params.lzo_enabled:
     Package(params.lzo_packages_for_current_host)
-    Execute(format('sudo cp {hadoop_lib_home}/hadoop-lzo*.jar {oozie_lib_dir}'),
+    Execute(format('{sudo} cp {hadoop_lib_home}/hadoop-lzo*.jar {oozie_lib_dir}'),
       not_if  = no_op_test,
     )
 

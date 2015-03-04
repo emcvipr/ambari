@@ -86,9 +86,11 @@ App.TableView = Em.View.extend(App.UserPref, {
           self.initFilters();
         });
       } else {
-        this.getUserPref(this.displayLengthKey()).complete(function () {
-          self.initFilters();
-        });
+        if (!$.mocho) {
+          this.getUserPref(this.displayLengthKey()).complete(function () {
+            self.initFilters();
+          });
+        }
       }
     }
   },
@@ -412,6 +414,26 @@ App.TableView = Em.View.extend(App.UserPref, {
     return this.get('filteredContent').slice(this.get('startIndex') - 1, this.get('endIndex'));
   }.property('filteredCount', 'startIndex', 'endIndex'),
 
+  /**
+   * flag to toggle displaying filtered hosts counter
+   */
+  showFilteredContent: function () {
+    var result = false;
+    if (this.get('filterConditions.length') > 0) {
+      this.get('filterConditions').forEach(function(f) {
+        if (f.value) {
+          if (Em.typeOf(f.value) == "array") {
+            if (f.value[0] || f.value[1]) {
+              result = true;
+            }
+          } else {
+            result = true;
+          }
+        }
+      });
+    }
+    return result;
+  }.property('filteredContent'),
   /**
    * Filter table by filterConditions
    */

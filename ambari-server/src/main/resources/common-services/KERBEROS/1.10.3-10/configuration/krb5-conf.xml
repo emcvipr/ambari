@@ -78,47 +78,28 @@
     </description>
     <value>true</value>
   </property>
-  <property>
+  <property require-input="false">
     <name>libdefaults_default_tgs_enctypes</name>
     <description>
-      The supported list of session key encryption types that should be returned by the KDC.
+      A space-delimited list of session key encryption types supported by the KDC or Active
+      Directory
     </description>
-    <value>
-      aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 des3-cbc-sha1 arcfour-hmac-md5
-      camellia256-cts-cmac camellia128-cts-cmac des-cbc-crc des-cbc-md5 des-cbc-md4
-    </value>
+    <value/>
   </property>
-  <property>
+  <property require-input="false">
     <name>libdefaults_default_tkt_enctypes</name>
     <description>
-      The supported list of session key encryption types that should be requested by the client.
-    </description>
-    <value>
-      aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 des3-cbc-sha1 arcfour-hmac-md5
-      camellia256-cts-cmac camellia128-cts-cmac des-cbc-crc des-cbc-md5 des-cbc-md4
-    </value>
-  </property>
-
-  <property require-input="true">
-    <name>realm</name>
-    <description>
-      The realm to use when creating Service and Ambari principals from the realms section of your /etc/krb5.conf (e.g. EXAMPLE.COM).
+      A space-delimited list of session key encryption types supported by the KDC or Active
+      Directory.
     </description>
     <value/>
   </property>
-  <property require-input="true">
+  <property require-input="false">
     <name>domains</name>
     <description>
-      A comma-seperated list of domain names used to map server hostnames to the Realm name (e.g. .example.com,example.com). This is optional
+      A comma-separated list of domain names used to map server host names to the Realm name (e.g. .example.com,example.com). This is optional
     </description>
     <value/>
-  </property>
-  <property require-input="true">
-    <name>kdc_type</name>
-    <description>
-      The type of KDC being used. Either mit-kdc or active-directory
-    </description>
-    <value>mit-kdc</value>
   </property>
   <property require-input="true">
     <name>kdc_host</name>
@@ -135,6 +116,13 @@
     <value/>
   </property>
 
+  <property>
+    <name>manage_krb5_conf</name>
+    <description>
+      Indicates whether your krb5.conf file should be managed by the wizard or should you manage it yourself
+    </description>
+    <value>true</value>
+  </property>
 
   <property>
     <name>conf_dir</name>
@@ -152,6 +140,12 @@
   ticket_lifetime = {{libdefaults_ticket_lifetime}}
   dns_lookup_realm = {{libdefaults_dns_lookup_realm}}
   dns_lookup_kdc = {{libdefaults_dns_lookup_kdc}}
+  {% if libdefaults_default_tgs_enctypes %}
+  default_tgs_enctypes = {{libdefaults_default_tgs_enctypes}}
+  {% endif %}
+  {% if libdefaults_default_tkt_enctypes %}
+  default_tkt_enctypes = {{libdefaults_default_tkt_enctypes}}
+  {% endif %}
 
 {% if domains %}
 [domain_realm]

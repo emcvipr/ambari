@@ -63,7 +63,7 @@ class TestHBaseMaster(RMFTestCase):
     )
     
     self.assertResourceCalled('Execute', '/usr/lib/hbase/bin/hbase-daemon.sh --config /etc/hbase/conf stop master',
-        on_timeout = '! ( ls /var/run/hbase/hbase-hbase-master.pid >/dev/null 2>&1 && ps -p `cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1 ) || sudo -H -E kill -9 `cat /var/run/hbase/hbase-hbase-master.pid`',
+        on_timeout = '! ( ls /var/run/hbase/hbase-hbase-master.pid >/dev/null 2>&1 && ps -p `cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1 ) || ambari-sudo.sh -H -E kill -9 `cat /var/run/hbase/hbase-hbase-master.pid`',
         timeout = 30,
         user = 'hbase',
     )
@@ -160,7 +160,7 @@ class TestHBaseMaster(RMFTestCase):
     )
 
     self.assertResourceCalled('Execute', '/usr/lib/hbase/bin/hbase-daemon.sh --config /etc/hbase/conf stop master',
-        on_timeout = '! ( ls /var/run/hbase/hbase-hbase-master.pid >/dev/null 2>&1 && ps -p `cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1 ) || sudo -H -E kill -9 `cat /var/run/hbase/hbase-hbase-master.pid`',
+        on_timeout = '! ( ls /var/run/hbase/hbase-hbase-master.pid >/dev/null 2>&1 && ps -p `cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1 ) || ambari-sudo.sh -H -E kill -9 `cat /var/run/hbase/hbase-hbase-master.pid`',
         timeout = 30,
         user = 'hbase',
     )
@@ -225,6 +225,13 @@ class TestHBaseMaster(RMFTestCase):
       conf_dir = '/etc/hbase/conf',
       configurations = self.getConfig()['configurations']['hbase-site'],
       configuration_attributes = self.getConfig()['configuration_attributes']['hbase-site']
+    )
+    self.assertResourceCalled('XmlConfig', 'core-site.xml',
+      owner = 'hbase',
+      group = 'hadoop',
+      conf_dir = '/etc/hbase/conf',
+      configurations = self.getConfig()['configurations']['core-site'],
+      configuration_attributes = self.getConfig()['configuration_attributes']['core-site']
     )
     self.assertResourceCalled('XmlConfig', 'hdfs-site.xml',
       owner = 'hbase',
@@ -335,6 +342,13 @@ class TestHBaseMaster(RMFTestCase):
       conf_dir = '/etc/hbase/conf',
       configurations = self.getConfig()['configurations']['hbase-site'],
       configuration_attributes = self.getConfig()['configuration_attributes']['hbase-site']
+    )
+    self.assertResourceCalled('XmlConfig', 'core-site.xml',
+      owner = 'hbase',
+      group = 'hadoop',
+      conf_dir = '/etc/hbase/conf',
+      configurations = self.getConfig()['configurations']['core-site'],
+      configuration_attributes = self.getConfig()['configuration_attributes']['core-site']
     )
     self.assertResourceCalled('XmlConfig', 'hdfs-site.xml',
       owner = 'hbase',
@@ -456,7 +470,12 @@ class TestHBaseMaster(RMFTestCase):
       conf_dir = '/etc/hbase/conf',
       configurations = self.getConfig()['configurations']['hbase-site'],
       configuration_attributes = self.getConfig()['configuration_attributes']['hbase-site'])
-
+    self.assertResourceCalled('XmlConfig', 'core-site.xml',
+      owner = 'hbase',
+      group = 'hadoop',
+      conf_dir = '/etc/hbase/conf',
+      configurations = self.getConfig()['configurations']['core-site'],
+      configuration_attributes = self.getConfig()['configuration_attributes']['core-site'])
     self.assertResourceCalled('XmlConfig', 'hdfs-site.xml',
       owner = 'hbase',
       group = 'hadoop',
@@ -548,12 +567,13 @@ class TestHBaseMaster(RMFTestCase):
   @patch("resource_management.libraries.script.Script.put_structured_out")
   def test_security_status(self, put_structured_out_mock, cached_kinit_executor_mock, validate_security_config_mock, get_params_mock, build_exp_mock):
     # Test that function works when is called with correct parameters
-    import status_params
 
-    security_params = {}
-    security_params['hbase-site'] = {}
-    security_params['hbase-site']['hbase.master.kerberos.principal'] = '/path/to/hbase_keytab'
-    security_params['hbase-site']['hbase.master.keytab.file'] = 'hbase_principal'
+    security_params = {
+      'hbase-site': {
+        'hbase.master.kerberos.principal': '/path/to/hbase_keytab',
+        'hbase.master.keytab.file': 'hbase_principal'
+      }
+    }
 
     result_issues = []
     props_value_check = {"hbase.security.authentication": "kerberos",
@@ -576,13 +596,12 @@ class TestHBaseMaster(RMFTestCase):
 
     build_exp_mock.assert_called_with('hbase-site', props_value_check, props_empty_check, props_read_check)
     put_structured_out_mock.assert_called_with({"securityState": "SECURED_KERBEROS"})
-    cached_kinit_executor_mock.called_with(status_params.kinit_path_local,
-                              status_params.hbase_user,
-                              security_params['hbase-site']['hbase.master.keytab.file'],
-                              security_params['hbase-site']['hbase.master.kerberos.principal'],
-                              status_params.hostname,
-                              status_params.tmp_dir,
-                              30)
+    cached_kinit_executor_mock.called_with('/usr/bin/kinit',
+                                           self.config_dict['configurations']['hbase-env']['hbase_user'],
+                                           security_params['hbase-site']['hbase.master.keytab.file'],
+                                           security_params['hbase-site']['hbase.master.kerberos.principal'],
+                                           self.config_dict['hostname'],
+                                           '/tmp')
 
      # Testing that the exception throw by cached_executor is caught
     cached_kinit_executor_mock.reset_mock()
@@ -627,7 +646,7 @@ class TestHBaseMaster(RMFTestCase):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hbase_master.py",
                    classname = "HbaseMaster",
                    command = "security_status",
-                   config_file="secured.json",
+                   config_file="default.json",
                    hdp_stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )

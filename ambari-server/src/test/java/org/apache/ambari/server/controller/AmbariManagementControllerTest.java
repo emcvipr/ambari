@@ -18,13 +18,45 @@
 
 package org.apache.ambari.server.controller;
 
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import com.google.inject.AbstractModule;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
+import static org.easymock.EasyMock.capture;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.createStrictMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.verify;
+import static org.hamcrest.CoreMatchers.is;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.StringReader;
+import java.lang.reflect.Type;
+import java.net.ConnectException;
+import java.net.MalformedURLException;
+import java.net.UnknownHostException;
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+
+import javax.persistence.EntityManager;
+
 import junit.framework.Assert;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ClusterNotFoundException;
 import org.apache.ambari.server.DuplicateResourceException;
@@ -109,41 +141,12 @@ import org.junit.rules.ExpectedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.persistence.EntityManager;
-import java.io.File;
-import java.io.IOException;
-import java.io.StringReader;
-import java.lang.reflect.Type;
-import java.net.ConnectException;
-import java.net.MalformedURLException;
-import java.net.UnknownHostException;
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-
-import static org.easymock.EasyMock.capture;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.createStrictMock;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.verify;
-import static org.hamcrest.CoreMatchers.is;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.google.inject.AbstractModule;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
 
 public class AmbariManagementControllerTest {
 
@@ -159,7 +162,7 @@ public class AmbariManagementControllerTest {
   private static final String PROPERTY_NAME = "hbase.regionserver.msginterval";
   private static final String SERVICE_NAME = "HDFS";
   private static final String FAKE_SERVICE_NAME = "FAKENAGIOS";
-  private static final int STACK_VERSIONS_CNT = 13;
+  private static final int STACK_VERSIONS_CNT = 14;
   private static final int REPOS_CNT = 3;
   private static final int STACKS_CNT = 3;
   private static final int STACK_PROPERTIES_CNT = 103;
@@ -3124,9 +3127,9 @@ public class AmbariManagementControllerTest {
     // sch5 to start
     Stage stage1 = null, stage2 = null, stage3 = null;
     for (Stage s : stages) {
-      if (s.getStageId() == 1) { stage1 = s; }
-      if (s.getStageId() == 2) { stage2 = s; }
-      if (s.getStageId() == 3) { stage3 = s; }
+      if (s.getStageId() == 0) { stage1 = s; }
+      if (s.getStageId() == 1) { stage2 = s; }
+      if (s.getStageId() == 2) { stage3 = s; }
     }
 
     Assert.assertEquals(2, stage1.getExecutionCommands(host1).size());
@@ -6912,7 +6915,7 @@ public class AmbariManagementControllerTest {
     Assert.assertEquals(1, responsesWithParams.size());
     StackVersionResponse resp = responsesWithParams.iterator().next();
     assertNotNull(resp.getUpgradePacks());
-    assertEquals(3, resp.getUpgradePacks().size());
+    assertEquals(4, resp.getUpgradePacks().size());
     assertTrue(resp.getUpgradePacks().contains("upgrade_test"));
   }
 
@@ -8090,7 +8093,8 @@ public class AmbariManagementControllerTest {
       controller.updateRepositories(requests);
     } catch (Exception e) {
       System.err.println(e.getMessage());
-      assertTrue(e.getMessage().contains(IOException.class.getName()));
+      assertTrue(e.getMessage().contains(IOException.class.getName())
+        || e.getMessage().contains("Could not access base url"));
     }
 
     requests.clear();
@@ -8122,8 +8126,14 @@ public class AmbariManagementControllerTest {
     request = new RepositoryRequest(STACK_NAME, STACK_VERSION, OS_TYPE, REPO_ID);
     request.setBaseUrl(repo.getDefaultBaseUrl());
     requests.add(request);
-    controller.updateRepositories(requests);
-    Assert.assertEquals(repo.getBaseUrl(), repo.getDefaultBaseUrl());
+    try {
+      controller.updateRepositories(requests);
+      Assert.assertEquals(repo.getBaseUrl(), repo.getDefaultBaseUrl());
+    } catch (Exception e) {
+      String exceptionMsg = e.getMessage();
+      assertTrue(exceptionMsg.contains("Could not access base url"));
+      LOG.error("Can not complete test. " + exceptionMsg);
+    }
 
     String baseUrl = repo.getDefaultBaseUrl();
     if (!baseUrl.endsWith("/")) {
@@ -8134,36 +8144,66 @@ public class AmbariManagementControllerTest {
     backingProperties.setProperty(Configuration.REPO_SUFFIX_KEY_UBUNTU, "/repodata/repomd.xml");
     Assert.assertTrue(baseUrl.endsWith("/") && configuration.getRepoValidationSuffixes("ubuntu12")[0].startsWith("/"));
     request.setBaseUrl(baseUrl);
-    controller.updateRepositories(requests);
-    Assert.assertEquals(baseUrl, repo.getBaseUrl());
+    try {
+      controller.updateRepositories(requests);
+      Assert.assertEquals(baseUrl, repo.getBaseUrl());
+    } catch (Exception e) {
+      String exceptionMsg = e.getMessage();
+      assertTrue(exceptionMsg.contains("Could not access base url"));
+      LOG.error("Can not complete test. " + exceptionMsg);
+    }
 
     // variation #2: url with trailing slash, suffix no preceding slash
     backingProperties.setProperty(Configuration.REPO_SUFFIX_KEY_DEFAULT, "repodata/repomd.xml");
     Assert.assertTrue(baseUrl.endsWith("/") && !configuration.getRepoValidationSuffixes("redhat6")[0].startsWith("/"));
     request.setBaseUrl(baseUrl);
-    controller.updateRepositories(requests);
-    Assert.assertEquals(baseUrl, repo.getBaseUrl());
+    try {
+      controller.updateRepositories(requests);
+      Assert.assertEquals(baseUrl, repo.getBaseUrl());
+    } catch (Exception e) {
+      String exceptionMsg = e.getMessage();
+      assertTrue(exceptionMsg.contains("Could not access base url"));
+      LOG.error("Can not complete test. " + exceptionMsg);
+    }
 
     baseUrl = baseUrl.substring(0, baseUrl.length()-1);
     // variation #3: url with no trailing slash, suffix no prededing slash
     Assert.assertTrue(!baseUrl.endsWith("/") && !configuration.getRepoValidationSuffixes("redhat6")[0].startsWith("/"));
     request.setBaseUrl(baseUrl);
-    controller.updateRepositories(requests);
-    Assert.assertEquals(baseUrl, repo.getBaseUrl());
+    try {
+      controller.updateRepositories(requests);
+      Assert.assertEquals(baseUrl, repo.getBaseUrl());
+    } catch (Exception e) {
+      String exceptionMsg = e.getMessage();
+      assertTrue(exceptionMsg.contains("Could not access base url"));
+      LOG.error("Can not complete test. " + exceptionMsg);
+    }
 
     // variation #4: url with no trailing slash, suffix preceding slash
     backingProperties.setProperty(Configuration.REPO_SUFFIX_KEY_DEFAULT, "/repodata/repomd.xml");
     Assert.assertTrue(!baseUrl.endsWith("/") && configuration.getRepoValidationSuffixes("suse11")[0].startsWith("/"));
     request.setBaseUrl(baseUrl);
-    controller.updateRepositories(requests);
-    Assert.assertEquals(baseUrl, repo.getBaseUrl());
+    try {
+      controller.updateRepositories(requests);
+      Assert.assertEquals(baseUrl, repo.getBaseUrl());
+    } catch (Exception e) {
+      String exceptionMsg = e.getMessage();
+      assertTrue(exceptionMsg.contains("Could not access base url"));
+      LOG.error("Can not complete test. " + exceptionMsg);
+    }
 
     // variation #5: multiple suffix tests
     backingProperties.setProperty(Configuration.REPO_SUFFIX_KEY_UBUNTU, "/foo/bar.xml,/repodata/repomd.xml");
     Assert.assertTrue(configuration.getRepoValidationSuffixes("ubuntu12").length > 1);
     request.setBaseUrl(baseUrl);
-    controller.updateRepositories(requests);
-    Assert.assertEquals(baseUrl, repo.getBaseUrl());
+    try {
+      controller.updateRepositories(requests);
+      Assert.assertEquals(baseUrl, repo.getBaseUrl());
+    } catch (Exception e) {
+      String exceptionMsg = e.getMessage();
+      assertTrue(exceptionMsg.contains("Could not access base url"));
+      LOG.error("Can not complete test. " + exceptionMsg);
+    }
 
   }
 

@@ -124,7 +124,9 @@ class HostInfoLinux(HostInfo):
     "oozie", "sqoop", "hue", "zookeeper", "mapred", "hdfs", "flume",
     "storm", "hive-hcatalog", "tez", "falcon", "ambari_qa", "hadoop_deploy",
     "rrdcached", "hcat", "ambari-qa", "sqoop-ambari-qa", "sqoop-ambari_qa",
-    "webhcat", "hadoop-hdfs", "hadoop-yarn", "hadoop-mapreduce"
+    "webhcat", "hadoop-hdfs", "hadoop-yarn", "hadoop-mapreduce",
+    "knox", "yarn", "hive-webhcat", "kafka", "slider", "storm-slider-client",
+    "ganglia-web"
   ]
 
   # List of live services checked for on the host, takes a map of plan strings
@@ -141,34 +143,8 @@ class HostInfoLinux(HostInfo):
 
   # Default set of directories that are checked for existence of files and folders
   DEFAULT_DIRS = [
-    "/etc", "/var/run", "/var/log", "/usr/lib", "/var/lib", "/var/tmp", "/tmp", "/var", "/hadoop"
-  ]
-
-  # Packages that are used to find repos (then repos are used to find other packages)
-  PACKAGES = [
-    "hadoop_2_2_*", "hadoop-2-2-.*", "zookeeper_2_2_*", "zookeeper-2-2-.*",
-    "hadoop", "zookeeper", "webhcat", "*-manager-server-db", "*-manager-daemons"
-  ]
-
-  # Additional packages to look for (search packages that start with these)
-  ADDITIONAL_PACKAGES = [
-    "rrdtool", "rrdtool-python", "ganglia", "gmond", "gweb", "libconfuse",
-    "ambari-log4j", "hadoop", "zookeeper", "oozie", "webhcat"
-  ]
-
-  # ignore packages from repos whose names start with these strings
-  IGNORE_PACKAGES_FROM_REPOS = [
-    "ambari", "installed"
-  ]
-
-  # ignore required packages
-  IGNORE_PACKAGES = [
-    "epel-release"
-  ]
-
-  # ignore repos from the list of repos to be cleaned
-  IGNORE_REPOS = [
-    "ambari", "HDP-UTILS"
+    "/etc", "/var/run", "/var/log", "/usr/lib", "/var/lib", "/var/tmp", "/tmp", "/var",
+    "/hadoop", "/usr/hdp"
   ]
 
   DEFAULT_SERVICE_NAME = "ntpd"
@@ -189,38 +165,6 @@ class HostInfoLinux(HostInfo):
       pass
     return diskInfo
 
-  def createAlerts(self, alerts):
-    existingUsers = []
-    self.checkUsers(self.DEFAULT_USERS, existingUsers)
-    dirs = []
-    self.checkFolders(self.DEFAULT_DIRS, self.DEFAULT_PROJECT_NAMES, existingUsers, dirs)
-    alert = {
-      'name': 'host_alert',
-      'instance': None,
-      'service': 'AMBARI',
-      'component': 'host',
-      'host': hostname.hostname(self.config),
-      'state': 'OK',
-      'label': 'Disk space',
-      'text': 'Used disk space less than 80%'}
-    message = ""
-    mountinfoSet = []
-    for dir in dirs:
-      if dir["type"] == 'directory':
-        mountinfo = self.osdiskAvailableSpace(dir['name'])
-        if int(mountinfo["percent"].strip('%')) >= 80:
-          if not mountinfo in mountinfoSet:
-            mountinfoSet.append(mountinfo)
-          message += str(dir['name']) + ";\n"
-
-    if message != "":
-      message = "These discs have low space:\n" + str(
-        mountinfoSet) + "\n They include following critical directories:\n" + message
-      alert['state'] = 'WARNING'
-      alert['text'] = message
-    alerts.append(alert)
-    return alerts
-
   def checkUsers(self, users, results):
     f = open('/etc/passwd', 'r')
     for userLine in f:
@@ -231,8 +175,6 @@ class HostInfoLinux(HostInfo):
         result['name'] = fields[0]
         result['homeDir'] = fields[5]
         result['status'] = "Available"
-        if not os.path.exists(homeDir):
-          result['status'] = "Invalid home directory"
         results.append(result)
 
   def checkFolders(self, basePaths, projectNames, existingUsers, dirs):
@@ -276,18 +218,6 @@ class HostInfoLinux(HostInfo):
     except:
       pass
     pass
-
-  def getReposToRemove(self, repos, ignoreList):
-    reposToRemove = []
-    for repo in repos:
-      addToRemoveList = True
-      for ignoreRepo in ignoreList:
-        if packages_analyzer.nameMatch(ignoreRepo, repo):
-          addToRemoveList = False
-          continue
-      if addToRemoveList:
-        reposToRemove.append(repo)
-    return reposToRemove
 
   def getTransparentHugePage(self):
     # This file exist only on redhat 6
@@ -352,8 +282,6 @@ class HostInfoLinux(HostInfo):
     # If commands are in progress or components are already mapped to this host
     # Then do not perform certain expensive host checks
     if componentsMapped or commandsInProgress:
-      dict['existingRepos'] = [self.RESULT_UNAVAILABLE]
-      dict['installedPackages'] = []
       dict['alternatives'] = []
       dict['stackFoldersAndFiles'] = []
       dict['existingUsers'] = []
@@ -370,23 +298,6 @@ class HostInfoLinux(HostInfo):
       dirs = []
       self.checkFolders(self.DEFAULT_DIRS, self.DEFAULT_PROJECT_NAMES, existingUsers, dirs)
       dict['stackFoldersAndFiles'] = dirs
-
-      installedPackages = []
-      availablePackages = []
-      packages_analyzer.allInstalledPackages(installedPackages)
-      packages_analyzer.allAvailablePackages(availablePackages)
-
-      repos = []
-      packages_analyzer.getInstalledRepos(self.PACKAGES, installedPackages + availablePackages,
-                                      self.IGNORE_PACKAGES_FROM_REPOS, repos)
-      packagesInstalled = packages_analyzer.getInstalledPkgsByRepo(repos, self.IGNORE_PACKAGES, installedPackages)
-      additionalPkgsInstalled = packages_analyzer.getInstalledPkgsByNames(
-        self.ADDITIONAL_PACKAGES, installedPackages)
-      allPackages = list(set(packagesInstalled + additionalPkgsInstalled))
-      dict['installedPackages'] = packages_analyzer.getPackageDetails(installedPackages, allPackages)
-
-      repos = self.getReposToRemove(repos, self.IGNORE_REPOS)
-      dict['existingRepos'] = repos
 
       self.reportFileHandler.writeHostCheckFile(dict)
       pass
@@ -498,8 +409,6 @@ class HostInfoWindows(HostInfo):
     # If commands are in progress or components are already mapped to this host
     # Then do not perform certain expensive host checks
     if componentsMapped or commandsInProgress:
-      dict['existingRepos'] = [self.RESULT_UNAVAILABLE]
-      dict['installedPackages'] = []
       dict['alternatives'] = []
       dict['stackFoldersAndFiles'] = []
       dict['existingUsers'] = []

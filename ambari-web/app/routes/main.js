@@ -19,11 +19,12 @@
 var App = require('app');
 var stringUtils = require('utils/string_utils');
 
-module.exports = Em.Route.extend({
+module.exports = Em.Route.extend(App.RouterRedirections, {
   route: '/main',
   enter: function (router) {
     App.db.updateStorage();
     console.log('in /main:enter');
+    var self = this;
     router.getAuthenticated().done(function (loggedIn) {
       if (loggedIn) {
         var applicationController = App.router.get('applicationController');
@@ -36,10 +37,28 @@ module.exports = Em.Route.extend({
             } else {
               if (router.get('clusterInstallCompleted')) {
                 App.router.get('clusterController').loadClientServerClockDistance().done(function () {
-                  router.get('mainController').initialize();
+                  App.router.get('clusterController').checkDetailedRepoVersion().done(function () {
+                    router.get('mainController').initialize();
+                  });
                 });
               }
               else {
+                Em.run.next(function () {
+                  App.clusterStatus.updateFromServer().complete(function () {
+                    var currentClusterStatus = App.clusterStatus.get('value');
+                    if (currentClusterStatus) {
+                      if (self.get('installerStatuses').contains(currentClusterStatus.clusterState)) {
+                        if (App.isAccessible('ADMIN')) {
+                          self.redirectToInstaller(router, currentClusterStatus, false);
+                        } else {
+                          Em.run.next(function () {
+                            App.router.transitionTo('main.views.index');
+                          });
+                        }
+                      }
+                    }
+                  });
+                });
                 App.router.get('clusterController').set('isLoaded', true);
               }
             }
@@ -221,7 +240,12 @@ module.exports = Em.Route.extend({
       stackVersions: Em.Route.extend({
         route: '/stackVersions',
         connectOutlets: function (router, context) {
-          router.get('mainHostDetailsController').connectOutlet('mainHostStackVersions');
+          if (App.get('stackVersionsAvailable')) {
+            router.get('mainHostDetailsController').connectOutlet('mainHostStackVersions');
+          }
+          else {
+            router.transitionTo('summary');
+          }
         }
       }),
 
@@ -365,80 +389,6 @@ module.exports = Em.Route.extend({
         router.transitionTo('adminAddSecurity');
       },
 
-      disableSecurity: Em.Route.extend({
-        route: '/disableSecurity',
-        enter: function (router) {
-          //after refresh check if the wizard is open then restore it
-          if (router.get('mainAdminSecurityController').getDisableSecurityStatus() === 'RUNNING') {
-            var controller = router.get('addSecurityController');
-            // App.MainAdminSecurityDisableController uses App.Service DS model whose data needs to be loaded first
-            controller.dataLoading().done(Em.run.next(function () {
-              App.router.get('updateController').set('isWorking', false);
-              App.ModalPopup.show({
-                classNames: ['full-width-modal'],
-                header: Em.I18n.t('admin.removeSecurity.header'),
-                bodyClass: App.MainAdminSecurityDisableView.extend({
-                  controllerBinding: 'App.router.mainAdminSecurityDisableController'
-                }),
-                primary: Em.I18n.t('form.cancel'),
-                secondary: null,
-                showFooter: false,
-
-                onClose: function () {
-                  var self = this;
-                  var controller = router.get('mainAdminSecurityDisableController');
-                  if (!controller.get('isSubmitDisabled')) {
-                    self.proceedOnClose();
-                    return;
-                  }
-                  var applyingConfigCommand = controller.get('commands').findProperty('name', 'APPLY_CONFIGURATIONS');
-                  if (applyingConfigCommand && !applyingConfigCommand.get('isCompleted')) {
-                    if (applyingConfigCommand.get('isStarted')) {
-                      App.showAlertPopup(Em.I18n.t('admin.security.applying.config.header'), Em.I18n.t('admin.security.applying.config.body'));
-                    } else {
-                      App.showConfirmationPopup(function () {
-                        self.proceedOnClose();
-                      }, Em.I18n.t('admin.addSecurity.disable.onClose'));
-                    }
-                  } else {
-                    self.proceedOnClose();
-                  }
-                },
-                proceedOnClose: function () {
-                  router.get('mainAdminSecurityDisableController').clearStep();
-                  App.db.setSecurityDeployCommands(undefined);
-                  App.router.get('updateController').set('isWorking', true);
-                  router.get('mainAdminSecurityController').setDisableSecurityStatus(undefined);
-                  router.get('addServiceController').finish();
-                  App.clusterStatus.setClusterStatus({
-                    clusterName: router.get('content.cluster.name'),
-                    clusterState: 'DEFAULT'
-                  });
-                  this.hide();
-                  router.transitionTo('adminSecurity.index');
-                },
-                didInsertElement: function () {
-                  this.fitHeight();
-                }
-              });
-            }));
-          } else {
-            router.transitionTo('adminSecurity.index');
-          }
-        },
-
-        unroutePath: function () {
-          return false;
-        },
-
-        done: function (router, context) {
-          var controller = router.get('mainAdminSecurityDisableController');
-          if (!controller.get('isSubmitDisabled')) {
-            $(context.currentTarget).parents("#modal").find(".close").trigger('click');
-          }
-        }
-      }),
-
       adminAddSecurity: require('routes/add_security')
     }),
 
@@ -451,7 +401,87 @@ module.exports = Em.Route.extend({
           router.get('mainAdminController').connectOutlet('mainAdminKerberos');
         }
       }),
-      adminAddKerberos: require('routes/add_kerberos_routes')
+      adminAddKerberos: require('routes/add_kerberos_routes'),
+
+      disableSecurity: Em.Route.extend({
+        route: '/disableSecurity',
+        enter: function (router) {
+          App.router.get('updateController').set('isWorking', false);
+          router.get('mainController').dataLoading().done(function() {
+            App.ModalPopup.show({
+              classNames: ['full-width-modal'],
+              header: Em.I18n.t('admin.removeSecurity.header'),
+              bodyClass: App.KerberosDisableView.extend({
+                controllerBinding: 'App.router.kerberosDisableController'
+              }),
+              primary: Em.I18n.t('form.cancel'),
+              secondary: null,
+              showFooter: false,
+
+              onClose: function () {
+                var self = this;
+                var controller = router.get('kerberosDisableController');
+                if (!controller.get('isSubmitDisabled')) {
+                  self.proceedOnClose();
+                  return;
+                }
+                // warn user if disable kerberos command in progress
+                var unkerberizeCommand = controller.get('tasks').findProperty('command', 'unkerberize');
+                if (unkerberizeCommand && !unkerberizeCommand.get('isCompleted')) {
+                  // user cannot exit wizard during removing kerberos
+                  if (unkerberizeCommand.get('status') == 'IN_PROGRESS') {
+                    App.showAlertPopup(Em.I18n.t('admin.kerberos.disable.unkerberize.header'), Em.I18n.t('admin.kerberos.disable.unkerberize.message'));
+                  } else {
+                    // otherwise show confirmation window
+                    App.showConfirmationPopup(function () {
+                      self.proceedOnClose();
+                    }, Em.I18n.t('admin.addSecurity.disable.onClose'));
+                  }
+                } else {
+                  self.proceedOnClose();
+                }
+              },
+              proceedOnClose: function () {
+                var self = this;
+                var disableController = router.get('kerberosDisableController');
+                disableController.clearStep();
+                disableController.resetDbNamespace();
+                App.db.setSecurityDeployCommands(undefined);
+                App.router.get('updateController').set('isWorking', true);
+                router.get('mainAdminKerberosController').setDisableSecurityStatus(undefined);
+                router.get('addServiceController').finish();
+                App.clusterStatus.setClusterStatus({
+                  clusterName: router.get('content.cluster.name'),
+                  clusterState: 'DEFAULT',
+                  localdb: App.db.data
+                }, {
+                  alwaysCallback: function() {
+                    self.hide();
+                    router.transitionTo('adminKerberos.index');
+                    location.reload();
+                  }
+                });
+              },
+              didInsertElement: function () {
+                this.fitHeight();
+              }
+            });
+          });
+        },
+
+        unroutePath: function () {
+          return false;
+        },
+        next: function (router, context) {
+          $("#modal").find(".close").trigger('click');
+        },
+        done: function (router, context) {
+          var controller = router.get('kerberosDisableController');
+          if (!controller.get('isSubmitDisabled')) {
+            $(context.currentTarget).parents("#modal").find(".close").trigger('click');
+          }
+        }
+      })
     }),
 
     stackAndUpgrade: Em.Route.extend({
@@ -499,7 +529,7 @@ module.exports = Em.Route.extend({
     adminServiceAccounts: Em.Route.extend({
       route: '/serviceAccounts',
       connectOutlets: function (router) {
-        router.set('mainAdminController.category', "serviceAccounts");
+        router.set('mainAdminController.category', "adminServiceAccounts");
         router.get('mainAdminController').connectOutlet('mainAdminServiceAccounts');
       }
     }),
@@ -537,15 +567,16 @@ module.exports = Em.Route.extend({
         Em.run.next(function () {
           var controller = router.get('mainController');
           controller.dataLoading().done(function () {
-            var service = router.get('mainServiceItemController.content');
-            if (!service || !service.get('isLoaded')) {
-              service = App.Service.find().objectAt(0); // getting the first service to display
-            }
-            if (router.get('mainServiceItemController').get('routeToConfigs')) {
-              router.transitionTo('service.configs', service);
-            }
-            else {
-              router.transitionTo('service.summary', service);
+            if (router.currentState.parentState.name === 'services' && router.currentState.name === 'index') {
+              var service = router.get('mainServiceItemController.content');
+              if (!service || !service.get('isLoaded')) {
+                service = App.Service.find().objectAt(0); // getting the first service to display
+              }
+              if (router.get('mainServiceItemController').get('routeToConfigs')) {
+                router.transitionTo('service.configs', service);
+              } else {
+                router.transitionTo('service.summary', service);
+              }
             }
           });
         });

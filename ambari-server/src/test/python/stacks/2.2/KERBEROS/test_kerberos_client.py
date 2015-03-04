@@ -24,6 +24,7 @@ import sys
 import use_cases
 from stacks.utils.RMFTestCase import *
 
+
 class TestKerberosClient(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "KERBEROS/1.10.3-10/package"
   STACK_VERSION = "2.2"
@@ -65,7 +66,6 @@ class TestKerberosClient(RMFTestCase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
-
     self.assertResourceCalled('Directory', use_cases.get_krb5_conf_dir(json_data),
                               owner='root',
                               group='root',
@@ -80,6 +80,20 @@ class TestKerberosClient(RMFTestCase):
                               owner='root',
                               group='root',
                               mode=0644)
+
+  def test_configure_unmanaged_kdc_and_krb5conf(self):
+    json_data = use_cases.get_unmanged_krb5conf_use_case()
+
+
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/kerberos_client.py",
+                       classname="KerberosClient",
+                       command="configure",
+                       config_dict=json_data,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
+
+    self.assertNoMoreResources()
 
   def test_configure_unmanaged_ad(self):
     json_data = use_cases.get_unmanged_ad_use_case()
@@ -262,7 +276,7 @@ class TestKerberosClient(RMFTestCase):
                               owner='root',
                               group='hadoop',
                               mode=0440,
-                              content=base64.b64decode("BQIAAABbAAIAC0VYQU1QTEUuQ09NAARIVFRQABdjNjU"
+                              content=CallFunctionMock(call_result=base64.b64decode("BQIAAABbAAIAC0VYQU1QTEUuQ09NAARIVFRQABdjNjU"
                                                        "wMS5hbWJhcmkuYXBhY2hlLm9yZwAAAAFUodgKAQASAC"
                                                        "A5N4gKUJsizCzwRD11Q/6sdZhJjlJmuuMeMKw/WefIb"
                                                        "gAAAFMAAgALRVhBTVBMRS5DT00ABEhUVFAAF2M2NTAx"
@@ -274,7 +288,7 @@ class TestKerberosClient(RMFTestCase):
                                                        "jNjUwMS5hbWJhcmkuYXBhY2hlLm9yZwAAAAFUodgKAQ"
                                                        "ADAAiov1LleuaMgwAAAEsAAgALRVhBTVBMRS5DT00AB"
                                                        "EhUVFAAF2M2NTAxLmFtYmFyaS5hcGFjaGUub3JnAAAA"
-                                                       "AVSh2AoBABEAECBTe9uCaSiPxnoGRldhAks=")
+                                                       "AVSh2AoBABEAECBTe9uCaSiPxnoGRldhAks="))
     )
 
     self.assertResourceCalled('Directory', "/etc/security/keytabs",
@@ -287,7 +301,7 @@ class TestKerberosClient(RMFTestCase):
                           owner='ambari-qa',
                           group='hadoop',
                           mode=0400,
-                          content=base64.b64decode("BQIAAABHAAEAC0VYQU1QTEUuQ09NAAlhbWJhcmktcWEAAAA"
+                          content=CallFunctionMock(call_result=base64.b64decode("BQIAAABHAAEAC0VYQU1QTEUuQ09NAAlhbWJhcmktcWEAAAA"
                                                    "BVKHYCgEAEgAg3OBDOecGoznTHZiPwmlmK4TI6bdRdrl/6q"
                                                    "TV8Kml2TAAAAA/AAEAC0VYQU1QTEUuQ09NAAlhbWJhcmktc"
                                                    "WEAAAABVKHYCgEAEAAYzqEjkX/xDoO8ij0cJmc3ZG7Qfzgl"
@@ -295,5 +309,41 @@ class TestKerberosClient(RMFTestCase):
                                                    "AAVSh2AoBABcAEHzLG1kfqxhEoTe4erUldvQAAAAvAAEAC0"
                                                    "VYQU1QTEUuQ09NAAlhbWJhcmktcWEAAAABVKHYCgEAAwAIO"
                                                    "PK6UkwyUSMAAAA3AAEAC0VYQU1QTEUuQ09NAAlhbWJhcmkt"
-                                                   "cWEAAAABVKHYCgEAEQAQVqISRJwXIQnG28lI34mfeA==")
+                                                   "cWEAAAABVKHYCgEAEQAQVqISRJwXIQnG28lI34mfeA=="))
     )
+
+  def test_delete_keytab(self):
+    config_file = "stacks/2.2/configs/default.json"
+
+    with open(config_file, "r") as f:
+      json_data = json.load(f)
+
+    json_data['kerberosCommandParams'] = []
+    json_data['kerberosCommandParams'].append({
+      "service": "HDFS",
+      "hostname": "c6501.ambari.apache.org",
+      "component": "NAMENODE",
+      "keytab_file_path": "/etc/security/keytabs/spnego.service.keytab",
+      "principal": "HTTP/_HOST@EXAMPLE.COM"
+    })
+
+    json_data['kerberosCommandParams'].append({
+      "service": "HDFS",
+      "hostname": "c6501.ambari.apache.org",
+      "component": "NAMENODE",
+      "keytab_file_path": "/etc/security/keytabs/smokeuser.headless.keytab",
+      "principal": "ambari-qa@EXAMPLE.COM"
+    })
+
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/kerberos_client.py",
+                       classname="KerberosClient",
+                       command="remove_keytab",
+                       config_dict=json_data,
+                       hdp_stack_version=self.STACK_VERSION,
+                       target=RMFTestCase.TARGET_COMMON_SERVICES
+    )
+
+    self.assertResourceCalled('File', "/etc/security/keytabs/spnego.service.keytab",
+                              action=['delete'])
+    self.assertResourceCalled('File', "/etc/security/keytabs/smokeuser.headless.keytab",
+                              action=['delete'])

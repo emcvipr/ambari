@@ -18,13 +18,44 @@
 
 package org.apache.ambari.server.controller;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.gson.Gson;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_DRIVER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_PASSWORD;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_URL;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_USERNAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.CLIENTS_TO_UPDATE_CONFIGS;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_TIMEOUT;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.DB_DRIVER_FILENAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.GROUP_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.PACKAGE_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.REPO_INFO;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT_TYPE;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_PACKAGE_FOLDER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_REPO_INFO;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.USER_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.VERSION;
+
+import java.io.File;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
+
+import com.google.gson.reflect.TypeToken;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ClusterNotFoundException;
 import org.apache.ambari.server.DuplicateResourceException;
@@ -45,6 +76,7 @@ import org.apache.ambari.server.actionmanager.StageFactory;
 import org.apache.ambari.server.agent.ExecutionCommand;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.configuration.Configuration.DatabaseType;
 import org.apache.ambari.server.controller.internal.RequestOperationLevel;
 import org.apache.ambari.server.controller.internal.RequestResourceFilter;
 import org.apache.ambari.server.controller.internal.RequestStageContainer;
@@ -54,6 +86,7 @@ import org.apache.ambari.server.customactions.ActionDefinition;
 import org.apache.ambari.server.metadata.ActionMetadata;
 import org.apache.ambari.server.metadata.RoleCommandOrder;
 import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
+import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
 import org.apache.ambari.server.orm.entities.OperatingSystemEntity;
 import org.apache.ambari.server.orm.entities.RepositoryEntity;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
@@ -65,6 +98,8 @@ import org.apache.ambari.server.security.authorization.Users;
 import org.apache.ambari.server.security.ldap.AmbariLdapDataPopulator;
 import org.apache.ambari.server.security.ldap.LdapBatchDto;
 import org.apache.ambari.server.security.ldap.LdapSyncDto;
+import org.apache.ambari.server.serveraction.kerberos.KerberosInvalidConfigurationException;
+import org.apache.ambari.server.serveraction.kerberos.KerberosOperationException;
 import org.apache.ambari.server.stageplanner.RoleGraph;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
@@ -109,42 +144,13 @@ import org.apache.http.client.utils.URIBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.IOException;
-import java.net.InetAddress;
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.EnumMap;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.concurrent.TimeUnit;
-
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_DRIVER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_PASSWORD;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_URL;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_USERNAME;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.CLIENTS_TO_UPDATE_CONFIGS;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_TIMEOUT;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.DB_DRIVER_FILENAME;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.GROUP_LIST;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.PACKAGE_LIST;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.REPO_INFO;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT_TYPE;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_PACKAGE_FOLDER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_REPO_INFO;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.USER_LIST;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.gson.Gson;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
+import com.google.inject.Singleton;
+import com.google.inject.persist.Transactional;
 
 @Singleton
 public class AmbariManagementControllerImpl implements AmbariManagementController {
@@ -1210,6 +1216,15 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
         } else {
           isConfigurationCreationNeeded = true;
         }
+        if (requestConfigProperties == null || requestConfigProperties.isEmpty()) {
+          Config existingConfig = cluster.getConfig(desiredConfig.getType(), desiredConfig.getVersionTag());
+          if (existingConfig != null) {
+            if (!StringUtils.equals(existingConfig.getTag(), clusterConfig.getTag())) {
+              isConfigurationCreationNeeded = true;
+              break;
+            }
+          }
+        }
         if (requestConfigProperties != null && clusterConfigProperties != null) {
           if (requestConfigProperties.size() != clusterConfigProperties.size()) {
             isConfigurationCreationNeeded = true;
@@ -1307,7 +1322,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
 
         if (!isStateTransitionValid) {
           LOG.warn(
-              "Invalid cluster provisioning state {} cannot be set on the cluster {} because the current state is {}",
+              "Invalid cluster provisioning 2state {} cannot be set on the cluster {} because the current state is {}",
               provisioningState, request.getClusterName(), oldProvisioningState);
 
           throw new AmbariException("Invalid transition for"
@@ -1362,7 +1377,11 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       // if any custom operations are valid and requested, the process of executing them should be initiated,
       // most of the validation logic will be left to the KerberosHelper to avoid polluting the controller
       if (kerberosHelper.shouldExecuteCustomOperations(securityType, requestProperties)) {
-        requestStageContainer = kerberosHelper.executeCustomOperations(cluster, requestProperties, requestStageContainer);
+        try {
+          requestStageContainer = kerberosHelper.executeCustomOperations(cluster, requestProperties, requestStageContainer);
+        } catch (KerberosOperationException e) {
+          throw new IllegalArgumentException(e.getMessage(), e);
+        }
       } else if (cluster.getSecurityType() != securityType) {
         LOG.info("Received cluster security type change request from {} to {}",
             cluster.getSecurityType().name(), securityType.name());
@@ -1371,7 +1390,11 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
           // Since the security state of the cluster has changed, invoke toggleKerberos to handle
           // adding or removing Kerberos from the cluster. This may generate multiple stages
           // or not depending the current state of the cluster.
-          requestStageContainer = kerberosHelper.toggleKerberos(cluster, securityType, requestStageContainer);
+          try {
+            requestStageContainer = kerberosHelper.toggleKerberos(cluster, securityType, requestStageContainer);
+          } catch (KerberosOperationException e) {
+            throw new IllegalArgumentException(e.getMessage(), e);
+          }
         } else {
           throw new IllegalArgumentException(String.format("Unexpected security type encountered: %s", securityType.name()));
         }
@@ -1657,7 +1680,8 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     if (commandParams == null) { // if not defined
       commandParams = new TreeMap<String, String>();
     }
-    String agentDefaultCommandTimeout = configs.getDefaultAgentTaskTimeout();
+    boolean isInstallCommand = roleCommand.equals(RoleCommand.INSTALL);
+    String agentDefaultCommandTimeout = configs.getDefaultAgentTaskTimeout(isInstallCommand);
     String scriptCommandTimeout = "";
     /*
      * This script is only used for
@@ -1668,6 +1692,10 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       if (script != null) {
         commandParams.put(SCRIPT, script.getScript());
         commandParams.put(SCRIPT_TYPE, script.getScriptType().toString());
+        ClusterVersionEntity currentClusterVersion = cluster.getCurrentClusterVersion();
+        if (currentClusterVersion != null) {
+         commandParams.put(VERSION, currentClusterVersion.getRepositoryVersion().getVersion());
+        }
         if (script.getTimeout() > 0) {
           scriptCommandTimeout = String.valueOf(script.getTimeout());
         }
@@ -1720,11 +1748,10 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     String groupList = gson.toJson(groupSet);
     hostParams.put(GROUP_LIST, groupList);
 
-    if (configs.getServerDBName().equalsIgnoreCase(Configuration
-      .ORACLE_DB_NAME)) {
+    DatabaseType databaseType = configs.getDatabaseType();
+    if (databaseType == DatabaseType.ORACLE) {
       hostParams.put(DB_DRIVER_FILENAME, configs.getOjdbcJarName());
-    } else if (configs.getServerDBName().equalsIgnoreCase(Configuration
-      .MYSQL_DB_NAME)) {
+    } else if (databaseType == DatabaseType.MYSQL) {
       hostParams.put(DB_DRIVER_FILENAME, configs.getMySQLJarName());
     }
 
@@ -1834,7 +1861,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     }
   }
 
-  private List<Stage> doStageCreation(RequestStageContainer requestStages,
+  private RequestStageContainer doStageCreation(RequestStageContainer requestStages,
       Cluster cluster,
       Map<State, List<Service>> changedServices,
       Map<State, List<ServiceComponent>> changedComps,
@@ -1856,7 +1883,8 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     if ((changedServices == null || changedServices.isEmpty())
         && (changedComps == null || changedComps.isEmpty())
         && (changedScHosts == null || changedScHosts.isEmpty())) {
-      return null;
+      LOG.debug("Created 0 stages");
+      return requestStages;
     }
 
     // smoke test any service that goes from installed to started
@@ -1882,9 +1910,12 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       String HostParamsJson = StageUtils.getGson().toJson(
           customCommandExecutionHelper.createDefaultHostParams(cluster));
 
-      Stage stage = createNewStage(requestStages.getLastStageId() + 1, cluster,
+      Stage stage = createNewStage(requestStages.getLastStageId(), cluster,
           requestStages.getId(), requestProperties.get(REQUEST_CONTEXT_PROPERTY),
           clusterHostInfoJson, "{}", HostParamsJson);
+
+      Collection<ServiceComponentHost> componentsToEnableKerberos = new ArrayList<ServiceComponentHost>();
+      Set<String> hostsToForceKerberosOperations = new HashSet<String>();
 
       //HACK
       String jobtrackerHost = getJobTrackerHost(cluster);
@@ -1923,6 +1954,32 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
                       scHost.getServiceComponentName(), scHost.getHostName(),
                       nowTimestamp,
                       scHost.getDesiredStackVersion().getStackId());
+
+                  // If the state is transitioning from INIT TO INSTALLED and the cluster has Kerberos
+                  // enabled, mark this ServiceComponentHost to see if anything needs to be done to
+                  // make sure it is properly configured.  The Kerberos-related stages needs to be
+                  // between the INSTALLED and STARTED states because some services need to set up
+                  // the host (i,e, create user accounts, etc...) before Kerberos-related tasks an
+                  // occur (like distribute keytabs)
+                  if((oldSchState == State.INIT) && kerberosHelper.isClusterKerberosEnabled(cluster)) {
+                    try {
+                      kerberosHelper.configureService(cluster, scHost);
+                    } catch (KerberosInvalidConfigurationException e) {
+                      throw new AmbariException(e.getMessage(), e);
+                    }
+
+                    componentsToEnableKerberos.add(scHost);
+
+                    if(Service.Type.KERBEROS.name().equalsIgnoreCase(scHost.getServiceName()) &&
+                        Role.KERBEROS_CLIENT.name().equalsIgnoreCase(scHost.getServiceComponentName())) {
+                      // Since the KERBEROS/KERBEROS_CLIENT is about to be moved from the INIT to the
+                      // INSTALLED state (and it should be by the time the stages (in this request)
+                      // that need to be execute), collect the relevant hostname to make sure the
+                      // Kerberos logic doest not skip operations for it.
+                      hostsToForceKerberosOperations.add(scHost.getHostName());
+                    }
+
+                  }
                 } else if (oldSchState == State.STARTED
                       // TODO: oldSchState == State.INSTALLED is always false, looks like a bug
                       //|| oldSchState == State.INSTALLED
@@ -2102,13 +2159,41 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
 
       RoleCommandOrder rco = getRoleCommandOrder(cluster);
       RoleGraph rg = new RoleGraph(rco);
+
       rg.build(stage);
-      return rg.getStages();
+      requestStages.addStages(rg.getStages());
+
+      if (!componentsToEnableKerberos.isEmpty()) {
+        Map<String, Collection<String>> serviceFilter = new HashMap<String, Collection<String>>();
+
+        for (ServiceComponentHost scHost : componentsToEnableKerberos) {
+          String serviceName = scHost.getServiceName();
+          Collection<String> componentFilter = serviceFilter.get(serviceName);
+
+          if (componentFilter == null) {
+            componentFilter = new HashSet<String>();
+            serviceFilter.put(serviceName, componentFilter);
+          }
+
+          componentFilter.add(scHost.getServiceComponentName());
+        }
+
+        try {
+          kerberosHelper.ensureIdentities(cluster, serviceFilter, null, hostsToForceKerberosOperations, requestStages);
+        } catch (KerberosOperationException e) {
+          throw new IllegalArgumentException(e.getMessage(), e);
+        }
+      }
+
+      List<Stage> stages = requestStages.getStages();
+      LOG.debug("Created {} stages", ((stages != null) ? stages.size() : 0));
+
+    } else {
+      LOG.debug("Created 0 stages");
     }
 
-    return null;
+    return requestStages;
   }
-
 
   @Transactional
   void updateServiceStates(
@@ -2186,12 +2271,10 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       requestStages = new RequestStageContainer(actionManager.getNextRequestId(), null, requestFactory, actionManager);
     }
 
-    List<Stage> stages = doStageCreation(requestStages, cluster, changedServices, changedComponents,
+    requestStages = doStageCreation(requestStages, cluster, changedServices, changedComponents,
         changedHosts, requestParameters, requestProperties,
         runSmokeTest, reconfigureClients);
-    LOG.debug("Created {} stages", ((stages != null) ? stages.size() : 0));
 
-    requestStages.addStages(stages);
     updateServiceStates(changedServices, changedComponents, changedHosts, ignoredHosts);
     return requestStages;
   }
@@ -2845,22 +2928,30 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
         actionManager,
         actionRequest);
 
+    ExecuteCommandJson jsons = customCommandExecutionHelper.getCommandJson(actionExecContext, cluster);
+    String commandParamsForStage = jsons.getCommandParamsForStage();
+
     // If the request is to perform the Kerberos service check, set up the stages to
     // ensure that the (cluster-level) smoke user principal and keytab is available on all hosts
-    if (Role.KERBEROS_SERVICE_CHECK.name().equals(actionRequest.getCommandName())) {
-      Map<String, Collection<String>> serviceComponentFilter = new HashMap<String, Collection<String>>();
-      Collection<String> identityFilter = Arrays.asList("/smokeuser");
+    boolean kerberosServiceCheck = Role.KERBEROS_SERVICE_CHECK.name().equals(actionRequest.getCommandName());
+    if (kerberosServiceCheck) {
+      // Parse the command parameters into a map so that additional values may be added to it
+      Map<String, String> commandParamsStage = gson.fromJson(commandParamsForStage,
+          new TypeToken<Map<String, String>>() {
+          }.getType());
 
-      serviceComponentFilter.put("KERBEROS", null);
+      try {
+        requestStageContainer = kerberosHelper.createTestIdentity(cluster, commandParamsStage, requestStageContainer);
+      } catch (KerberosOperationException e) {
+        throw new IllegalArgumentException(e.getMessage(), e);
+      }
 
-      requestStageContainer = kerberosHelper.ensureIdentities(cluster, serviceComponentFilter, identityFilter, requestStageContainer);
+      // Recreate commandParamsForStage with the added values
+      commandParamsForStage = gson.toJson(commandParamsStage);
     }
 
-    ExecuteCommandJson jsons = customCommandExecutionHelper.getCommandJson(
-        actionExecContext, cluster);
-
     Stage stage = createNewStage(requestStageContainer.getLastStageId(), cluster, requestId, requestContext,
-        jsons.getClusterHostInfo(), jsons.getCommandParamsForStage(), jsons.getHostParamsForStage());
+        jsons.getClusterHostInfo(), commandParamsForStage, jsons.getHostParamsForStage());
 
     if (actionRequest.isCommand()) {
       customCommandExecutionHelper.addExecutionCommandsToStage(actionExecContext, stage, requestProperties, false);
@@ -2880,7 +2971,31 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     List<Stage> stages = rg.getStages();
 
     if (stages != null && !stages.isEmpty()) {
+      // If this is a Kerberos service check, set the service check stage(s) to be skip-able so that
+      // the clean up stages will still be triggered in the event of a failure.
+      if (kerberosServiceCheck) {
+        for (Stage s : stages) {
+          s.setSkippable(true);
+        }
+      }
+
       requestStageContainer.addStages(stages);
+    }
+
+    // If the request is to perform the Kerberos service check, delete the test-specific principal
+    // and keytab that was created for this service check
+    if (kerberosServiceCheck) {
+      // Parse the command parameters into a map so that existing values may be accessed and
+      // additional values may be added to it.
+      Map<String, String> commandParamsStage = gson.fromJson(commandParamsForStage,
+          new TypeToken<Map<String, String>>() {
+          }.getType());
+
+      try {
+        requestStageContainer = kerberosHelper.deleteTestIdentity(cluster, commandParamsStage, requestStageContainer);
+      } catch (KerberosOperationException e) {
+        throw new IllegalArgumentException(e.getMessage(), e);
+      }
     }
 
     requestStageContainer.persist();
@@ -3074,26 +3189,41 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     String[] suffixes = configs.getRepoValidationSuffixes(request.getOsType());
     for (String suffix : suffixes) {
       String formatted_suffix = String.format(suffix, repoName);
-      String spec = request.getBaseUrl();
+      String spec = request.getBaseUrl().trim();
 
+      // This logic is to identify if the end of baseurl has a slash ('/') and/or the beginning of suffix String (e.g. "/repodata/repomd.xml")
+      // has a slash and they can form a good url.
+      // e.g. "http://baseurl.com/" + "/repodata/repomd.xml" becomes "http://baseurl.com/repodata/repomd.xml" but not "http://baseurl.com//repodata/repomd.xml"
       if (spec.charAt(spec.length() - 1) != '/' && formatted_suffix.charAt(0) != '/') {
-        spec = request.getBaseUrl() + "/" + formatted_suffix;
+        spec = spec + "/" + formatted_suffix;
       } else if (spec.charAt(spec.length() - 1) == '/' && formatted_suffix.charAt(0) == '/') {
-        spec = request.getBaseUrl() + formatted_suffix.substring(1);
+        spec = spec + formatted_suffix.substring(1);
       } else {
-        spec = request.getBaseUrl() + formatted_suffix;
+        spec = spec + formatted_suffix;
       }
 
-      try {
-        IOUtils.readLines(usp.readFrom(spec));
-      } catch (IOException ioe) {
-        errorMessage = "Could not access base url . " + request.getBaseUrl() + " . ";
-        if (LOG.isDebugEnabled()) {
-          errorMessage += ioe;
-        } else {
-          errorMessage += ioe.getMessage();
+      // if spec contains "file://" then check local file system.
+      final String FILE_SCHEME = "file://";
+      if(spec.toLowerCase().startsWith(FILE_SCHEME)){
+        String filePath = spec.substring(FILE_SCHEME.length());
+        File f = new File(filePath);
+        if(!f.exists()){
+          errorMessage = "Could not access base url . " + spec + " . ";
+          break;
         }
-        break;
+
+      }else{
+        try {
+          IOUtils.readLines(usp.readFrom(spec));
+        } catch (IOException ioe) {
+          errorMessage = "Could not access base url . " + request.getBaseUrl() + " . ";
+          if (LOG.isDebugEnabled()) {
+            errorMessage += ioe;
+          } else {
+            errorMessage += ioe.getMessage();
+          }
+          break;
+        }
       }
     }
 

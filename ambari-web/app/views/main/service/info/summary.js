@@ -44,6 +44,7 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
       HDFS: App.MainDashboardServiceHdfsView,
       STORM: App.MainDashboardServiceStormView,
       YARN: App.MainDashboardServiceYARNView,
+      RANGER: App.MainDashboardServiceRangerView,
       FLUME: Em.View.extend({
         template: Em.Handlebars.compile('' +
           '<tr>' +
@@ -66,12 +67,6 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
   servicesHaveClients: function() {
     return App.get('services.hasClient');
   }.property('App.services.hasClient'),
-
-  noTemplateService: function () {
-    var serviceName = this.get("service.serviceName");
-    //services with only master components
-    return serviceName == "NAGIOS";
-  }.property('controller.content'),
 
   hasManyServers: function () {
     return this.get('servers').length > 1;
@@ -256,12 +251,8 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
     return App.AlertDefinition.find().someProperty('serviceName', this.get('controller.content.serviceName'));
   }.property('controller.content.serviceName'),
 
-  restartRequiredHostsAndComponents:function () {
-    return this.get('controller.content.restartRequiredHostsAndComponents');
-  }.property('controller.content.restartRequiredHostsAndComponents'),
-
   updateComponentInformation: function() {
-    var hc = this.get('restartRequiredHostsAndComponents');
+    var hc = this.get('controller.content.restartRequiredHostsAndComponents');
     var hostsCount = 0;
     var componentsCount = 0;
     for (var host in hc) {
@@ -270,7 +261,7 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
     }
     this.set('componentsCount', componentsCount);
     this.set('hostsCount', hostsCount);
-  }.observes('restartRequiredHostsAndComponents'),
+  }.observes('controller.content.restartRequiredHostsAndComponents'),
 
   rollingRestartSlaveComponentName : function() {
     return batchUtils.getRollingRestartComponentName(this.get('serviceName'));
@@ -283,14 +274,7 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
     }
     return label;
   }.property('rollingRestartSlaveComponentName'),
-  showComponentsShouldBeRestarted: function () {
-    var rhc = this.get('restartRequiredHostsAndComponents');
-    App.router.get('mainServiceInfoConfigsController').showComponentsShouldBeRestarted(rhc);
-  },
-  showHostsShouldBeRestarted: function () {
-    var rhc = this.get('restartRequiredHostsAndComponents');
-    App.router.get('mainServiceInfoConfigsController').showHostsShouldBeRestarted(rhc);
-  },
+
   restartAllStaleConfigComponents: function () {
     var self = this;
     var serviceDisplayName = this.get('service.displayName');
@@ -476,7 +460,8 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
 
   didInsertElement: function () {
     var svcName = this.get('service.serviceName');
-    if (svcName) {
+    var isMetricsSupported = svcName != 'STORM' || App.get('isStormMetricsSupported');
+    if (svcName && isMetricsSupported) {
       this.constructGraphObjects(App.service_graph_config[svcName.toLowerCase()]);
     }
     // adjust the summary table height

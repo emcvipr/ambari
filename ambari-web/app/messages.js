@@ -354,7 +354,6 @@ Em.I18n.translations = {
   'host.trimspacesValidation': 'Cannot contain leading or trailing whitespace',
 
   'services.hdfs.rebalance.title' : 'HDFS Rebalance',
-  'services.nagios.description':'Nagios Monitoring and Alerting system',
   'services.ganglia.description':'Ganglia Metrics Collection system',
   'services.hdfs.description':'Apache Hadoop Distributed File System',
   'services.glusterfs.description':'Apache Hadoop Compatible File System (must be installed manually)',
@@ -380,6 +379,8 @@ Em.I18n.translations = {
   'services.storm.topology.metrics.total': 'Total topologies',
   'services.storm.tasks.metrics.title': 'Number of tasks',
   'services.storm.tasks.metrics.total': 'Total tasks',
+  'services.storm.configs.range-plugin-enable.dialog.title': 'Enable Ranger for STORM',
+  'services.storm.configs.range-plugin-enable.dialog.message': 'Enabling Ranger plugin for STORM is effective only on a secured cluster.',
 
 
   'services.alerts.head':'You have {0} critical alert notification(s).',
@@ -397,7 +398,6 @@ Em.I18n.translations = {
   'services.alerts.brLastCheck': '<br>Last Checked {0}',
   'services.alerts.occurredOn': 'Occurred on {0}, {1}',
   'services.alerts.goToService': 'Go to Service',
-  'services.alerts.goToNagios': 'Go to Nagios Web UI',
 
   'services.summary.selectHostForComponent': 'Select the host to add {0} component',
   'services.summary.allHostsAlreadyRunComponent': 'All hosts already running {0} component',
@@ -532,7 +532,7 @@ Em.I18n.translations = {
   'installer.step3.hostWarningsPopup.report.fileFolders': '<br><br>######################################<br># Files and Folders<br>#<br># A space delimited list of files and folders which should not exist.<br># Provided so that administrators can easily copy paths into scripts, email etc.<br># Example: rm -r /etc/hadoop /etc/hbase<br>######################################<br>FILES AND FOLDERS<br>',
   'installer.step3.hostWarningsPopup.report.reverseLookup': '<br><br>######################################<br># Reverse Lookup<br># <br># The hostname was not found in the reverse DNS lookup. This may result in incorrect behavior. <br># Please check the DNS setup and fix the issue.<br>######################################<br>REVERSE LOOKUP<br>',
   'installer.step3.hostWarningsPopup.report.process': '<br><br>######################################<br># Processes<br>#<br># A comma separated list of process tuples which should not be running.<br># Provided so that administrators can easily copy paths into scripts, email etc.<br>######################################<br>PROCESSES<br>',
-  'installer.step3.hostWarningsPopup.report.package': '<br><br>######################################<br># Packages<br>#<br># A space delimited list of software packages which should be uninstalled.<br># Provided so that administrators can easily copy paths into scripts, email etc.<br># Example: yum remove hadoop-hdfs nagios<br>######################################<br>PACKAGES<br>',
+  'installer.step3.hostWarningsPopup.report.package': '<br><br>######################################<br># Packages<br>#<br># A space delimited list of software packages which should be uninstalled.<br># Provided so that administrators can easily copy paths into scripts, email etc.<br># Example: yum remove hadoop-hdfs yarn<br>######################################<br>PACKAGES<br>',
   'installer.step3.hostWarningsPopup.report.service': '<br><br>######################################<br># Services<br>#<br># A space delimited list of services which should be up and running.<br># Provided so that administrators can easily copy paths into scripts, email etc.<br># Example: services start ntpd httpd<br>######################################<br>SERVICES<br>',
   'installer.step3.hostWarningsPopup.report.user': '<br><br>######################################<br># Users<br>#<br># A space delimited list of users who should not exist.<br># Provided so that administrators can easily copy paths into scripts, email etc.<br># Example: userdel hdfs<br>######################################<br>USERS<br>',
   'installer.step3.hostWarningsPopup.report.folder': '\\ /folder',
@@ -664,6 +664,7 @@ Em.I18n.translations = {
     '<li>Execute the following command on the Ambari Server host. Replace <code>database-type</code> with <strong>mysql</strong> or <strong>oracle</strong> and <code>/jdbc/driver/path</code> based on the location of the MySQL or Oracle JDBC driver:' +
     '<pre>ambari-server setup --jdbc-db={database-type} --jdbc-driver={/jdbc/driver/path}</pre></li></ol>',
   'installer.step4.rangerRequirements.popup.body.confirmation': 'I have met all the requirements above.',
+  'installer.step4.sparkWarning.popup.body': 'Spark requires HDP 2.2.2 or later. Attempting to install Spark to a HDP 2.2.0 cluster will fail. Confirm you are using HDP 2.2.2 or later packages. Are you sure you want to proceed?',
 
   'installer.step5.header':'Assign Masters',
   'installer.step5.reassign.header':'Select Target Host',
@@ -734,9 +735,6 @@ Em.I18n.translations = {
   'installer.step8.repoInfo.osType.redhat5':'RHEL 5/CentOS 5/Oracle Linux 5',
   'installer.step8.repoInfo.osType.sles11':'SLES 11/SUSE 11',
   'installer.step8.repoInfo.displayName':'Repositories',
-  'installer.step8.securityWarning':'You are running your cluster in secure mode. You must set up the keytabs for all the hosts you are adding before you proceed.',
-  'installer.step8.securityConfirmationPopupBody':'Before you proceed, please make sure that the keytabs have been set up on the hosts you are adding per the instructions on the Review page. Otherwise, the assigned components will not be able to start properly on the hosts being added.',
-
   'installer.step9.header':'Install, Start and Test',
   'installer.step9.body':'Please wait while the selected services are installed and started.',
   'installer.step9.status.success':'Successfully installed and started the services.',
@@ -801,9 +799,6 @@ Em.I18n.translations = {
 
   'installer.step10.header':'Summary',
   'installer.step10.body':'Here is the summary of the install process.',
-  'installer.step10.nagiosRestartRequired':' Restarting Nagios service is required for alerts and ' +
-    'notifications to work properly.  After clicking on the Complete button to dismiss this wizard, go to ' +
-    '<i>Services -> Nagios</i> to restart the Nagios service.',
   'installer.step10.staleServicesRestartRequired':' You may also need to restart other services for the newly added ' +
     'services to function properly (for example, HDFS and YARN/MapReduce need to be restarted after adding Oozie). After closing this ' +
     'wizard, please restart all services that have the restart indicator <i class="icon-refresh"></i> next to the service name.',
@@ -942,6 +937,7 @@ Em.I18n.translations = {
   'admin.kerberos.wizard.header':'Enable Kerberos Wizard',
   'admin.kerberos.button.enable': 'Enable Kerberos',
   'admin.kerberos.button.disable': 'Disable Kerberos',
+  'admin.kerberos.button.regenerateKeytabs': 'Regenerate Keytabs',
   'admin.kerberos.wizard.exit.warning.msg': 'Configuring Kerberos is in progress. Do you really want to exit the Enable Kerberos Wizard?',
   'admin.kerberos.wizard.exit.critical.msg': 'Configuring Kerberos is in progress. <strong>Before dismissing, you should complete the wizard.</strong> Do you really want to exit the Enable Kerberos Wizard?',
   'admin.kerberos.wizard.step1.header': 'Get Started',
@@ -957,13 +953,13 @@ Em.I18n.translations = {
   'admin.kerberos.wizard.step1.option.kdc': 'Existing MIT KDC',
   'admin.kerberos.wizard.step1.option.kdc.condition.1': 'Ambari Server and cluster hosts have network access to both the KDC and KDC admin hosts.',
   'admin.kerberos.wizard.step1.option.kdc.condition.2': 'KDC administrative credentials are on-hand.',
-  'admin.kerberos.wizard.step1.option.kdc.condition.3': 'The Java Cryptography Extensions (JCE) have been setup on the Ambari Server host.',
+  'admin.kerberos.wizard.step1.option.kdc.condition.3': 'The Java Cryptography Extensions (JCE) have been setup on the Ambari Server host and all hosts in the cluster.',
   'admin.kerberos.wizard.step1.option.ad': 'Existing Active Directory',
   'admin.kerberos.wizard.step1.option.ad.condition.1': 'Ambari Server and cluster hosts have network access to the Domain Controllers.',
   'admin.kerberos.wizard.step1.option.ad.condition.2': 'Active Directory secure LDAP (LDAPS) connectivity has been configured.',
   'admin.kerberos.wizard.step1.option.ad.condition.3': 'Active Directory User container for principals has been created and is on-hand (e.g. OU=Hadoop,OU=People,dc=apache,dc=org)',
   'admin.kerberos.wizard.step1.option.ad.condition.4': 'Active Directory administrative credentials with delegated control of “Create, delete, and manage user accounts” on the previously mentioned User container are on-hand.',
-  'admin.kerberos.wizard.step1.option.ad.condition.5': 'The Java Cryptography Extensions (JCE) have been setup on the Ambari Server host.',
+  'admin.kerberos.wizard.step1.option.ad.condition.5': 'The Java Cryptography Extensions (JCE) have been setup on the Ambari Server host and all hosts in the cluster.',
   'admin.kerberos.wizard.step1.prerequisites.label': 'Following prerequisites needs to be checked to progress ahead in the wizard.',
   'admin.kerberos.wizard.step2.info.body': 'Please configure kerberos related properties.',
   'admin.kerberos.wizard.step3.task0.title': 'Install Kerberos Client',
@@ -973,6 +969,7 @@ Em.I18n.translations = {
   'admin.kerberos.wizard.progressPage.notice.inProgress': 'Please wait while cluster is being kerberized',
   'admin.kerberos.wizard.step4.info.body': 'Configure principal name and keytab location for service users and hadoop service components.',
   'admin.kerberos.wizard.step5.task0.title' : 'Stop Services',
+  'admin.kerberos.wizard.step5.task1.title' : 'Delete ATS',
   'admin.kerberos.wizard.step5.notice.inProgress': 'Please wait while services are being stopped.',
   'admin.kerberos.wizard.step5.notice.completed': 'Services have been successfully stopped.',
   'admin.kerberos.wizard.step6.notice.inProgress': 'Please wait while cluster is being kerberized.',
@@ -981,6 +978,19 @@ Em.I18n.translations = {
   'admin.kerberos.wizard.step7.notice.completed': 'Services have been successfully tested with kerberos environment.',
   'admin.kerberos.wizard.step7.notice.failed': 'Some services failed to start and execute tests successfully. Click Retry to attempt again or click Complete to dismiss the wizard and fix manually.',
   'admin.kerberos.wizard.step7.task0.title' : 'Start and Test Services',
+
+  'admin.kerberos.regenerate_keytabs.popup.body': 'You are about to regenerate keytabs for the hosts in the cluster. This will stop all the services in your cluster and regenerate the Kerberos keytabs. <strong>Are you sure you wish to proceed with keytab regeneration?</strong>',
+  'admin.kerberos.regenerate_keytabs.checkbox.label': ' Only regenerate keytabs for missing hosts and components',
+
+  'admin.kerberos.disable.step1.task0.title': 'Stop Services',
+  'admin.kerberos.disable.step1.task1.title': 'Unkerberize Cluster',
+  'admin.kerberos.disable.step1.task2.title': 'Remove Kerberos',
+  'admin.kerberos.disable.step1.task3.title': 'Start Services',
+  'admin.kerberos.disable.unkerberize.header': 'Unkerberize cluster',
+  'admin.kerberos.disable.unkerberize.message': 'You cannot quit wizard while cluster is being unkerberized',
+  'admin.kerberos.disable.inProgress': 'Please wait while cluster is being unkerberized',
+  'admin.kerberos.disable.notice.completed': 'Services have been successfully tested without kerberos environment.',
+  'admin.kerberos.wizard.step1.notice.inProgress': 'Please wait while cluster is being unkerberized',
 
   'admin.highAvailability':' High Availability',
   'admin.highAvailability.button.enable':'Enable NameNode HA',
@@ -1173,7 +1183,7 @@ Em.I18n.translations = {
   'admin.security.enable.popup.body': 'We will walk you through add security wizard',
   'admin.security.enable.popup.header': 'Add security',
   'admin.security.disable.popup.header': 'Remove security',
-  'admin.security.disable.popup.body': 'Kerberos security will be disabled on the cluster',
+  'admin.security.disable.popup.body': 'You are about to disable Kerberos on the cluster. This will stop all the services in your cluster and remove the Kerberos configurations. <strong>Are you sure you wish to proceed with disabling Kerberos?</strong>',
   'admin.addSecurity.header': 'Enable Security Wizard',
   'admin.security.step1.header': 'Get Started',
   'admin.security.step2.header': 'Configure Services',
@@ -1279,7 +1289,7 @@ Em.I18n.translations = {
   'admin.stackVersions.filter.upgradeReady': "Upgrade Ready ({0})",
   'admin.stackVersions.filter.installed': "Installed ({0})",
   'admin.stackVersions.filter.current': "Current ({0})",
-  'admin.stackVersions.filter.upgrading': "Upgrade In Process ({0})",
+  'admin.stackVersions.filter.upgrading': "Upgrade/Downgrade In Process ({0})",
   'admin.stackVersions.filter.upgraded': "Ready to Finalize ({0})",
 
   'admin.stackVersions.editRepositories.info': 'Provide Base URLs for the Operating Systems you are configuring. Uncheck all other Operating Systems.',
@@ -1321,8 +1331,8 @@ Em.I18n.translations = {
   'admin.stackUpgrade.doThisLater': "Do This Later",
   'admin.stackUpgrade.pauseUpgrade': "Pause Upgrade",
   'admin.stackUpgrade.downgrade.proceed': "Proceed with Downgrade",
-  'admin.stackUpgrade.downgrade.title': "Downgrade to {0}",
-  'admin.stackUpgrade.downgrade.body': "Are you sure you wish to abort the upgrade process and downgrade to {0}",
+  'admin.stackUpgrade.downgrade.body': "Are you sure you wish to abort the upgrade process and downgrade to <b>{0}</b>?",
+  'admin.stackUpgrade.upgrade.confirm.body': "You are about to perform an upgrade to {0}.",
   'admin.stackUpgrade.title': "Stack and Versions",
   'admin.stackUpgrade.state.inProgress': "Upgrade in Progress",
   'admin.stackUpgrade.state.paused': "Upgrade Paused",
@@ -1446,9 +1456,25 @@ Em.I18n.translations = {
   'services.service.summary.flume.start.context': 'Start Flume {0}',
   'services.service.summary.flume.noAgents': 'No Flume to display',
 
+  'services.service.summary.ranger.plugin.title': 'Ranger {0} plugin',
+  'services.service.summary.ranger.plugin.loadingStatus': 'Loading status...',
+
   'services.service.summary.alerts.noAlerts': 'No alerts',
   'services.service.summary.alerts.alertsExist': '{0} alerts',
   'services.service.summary.alerts.popup.header': 'Alerts for {0}',
+
+  'services.service.info.metrics.ambariMetrics.master.averageLoad': 'Average load',
+  'services.service.info.metrics.ambariMetrics.master.displayNames.averageLoad': 'Average load',
+  'services.service.info.metrics.ambariMetrics.regionServer.storeFiles': 'Number of StoreFiles',
+  'services.service.info.metrics.ambariMetrics.regionServer.displayNames.storeFilesCount': 'Number of StoreFiles',
+  'services.service.info.metrics.ambariMetrics.regionServer.regions': 'Number of Regions',
+  'services.service.info.metrics.ambariMetrics.regionServer.displayNames.regionsCount': 'Number of Regions',
+  'services.service.info.metrics.ambariMetrics.regionServer.requests': 'Total Request Count',
+  'services.service.info.metrics.ambariMetrics.regionServer.displayNames.requestCount': 'Total Request Count',
+  'services.service.info.metrics.ambariMetrics.regionServer.blockCacheHitPercent': 'Block Cache Hit Percent',
+  'services.service.info.metrics.ambariMetrics.regionServer.displayNames.blockCacheHitPercent': 'Block Cache Hit Percent',
+  'services.service.info.metrics.ambariMetrics.regionServer.compactionQueueSize': 'Compaction Queue Size',
+  'services.service.info.metrics.ambariMetrics.regionServer.displayNames.compactionQueueSize': 'Compaction Queue Size',
 
   'services.service.info.metrics.flume.channelFillPercent':'Channel Fill Percentage',
   'services.service.info.metrics.flume.channelSize':'Channel Size',
@@ -1585,9 +1611,6 @@ Em.I18n.translations = {
   'services.service.info.menu.configs':'Configs',
   'services.service.info.summary.hostsRunningMonitor':'{0}/{1}',
   'services.service.info.summary.serversHostCount':'{0} more',
-  'services.service.info.summary.nagiosWebUI':'Nagios Web UI',
-  'services.service.info.summary.nagios.noAlerts':'No alerts',
-  'services.service.info.summary.nagios.alerts':'Nagios service required for viewing alerts',
 
   'services.service.config.final':'Final',
   'services.service.config.saved':'Save Configuration Changes',
@@ -1745,7 +1768,7 @@ Em.I18n.translations = {
       '<li>Login to the target host <b>{2}</b> and change permissions for the NameNode dirs by running:' +
       '<div class="code-snippet">chown -R {3}:{5} {6}</div></li>' +
       '<li>Create marker directory by running:' +
-      '<div class="code-snippet">mkdir -p /var/run/hadoop/hdfs/namenode/formatted</div></li>' +
+      '<div class="code-snippet">mkdir -p /var/lib/hdfs/namenode/formatted</div></li>' +
       '</ol>' +
       '</div>',
   'services.reassign.step5.body.namenode_ha':
@@ -1775,7 +1798,15 @@ Em.I18n.translations = {
       '</div>',
   'services.reassign.step5.body.oozie_server':
     '<div class="alert alert-info">' +
-    'Copy the contents of <b>/hadoop/oozie/data/oozie-db</b> on the source host <b>{1}</b> to <b>/hadoop/oozie/data/oozie-db</b> on the target host <b>{2}</b>.' +
+    '<ol>' +
+    '<li>On <b>{1}</b> copy the contents of' +
+    '<div class="code-snippet"><b>/hadoop/oozie/data/oozie-db</b></div></li>' +
+    '<li>To the target host <b>{2}</b></li>' +
+    '<li>If the directory doesn\'t exists you can create by running' +
+    '<div class="code-snippet">mkdir -p /hadoop/oozie/data/oozie-db</div></li>' +
+    '<li>Update directory permissions by running' +
+    '<div class="code-snippet">chown -R oozie:{5} /hadoop/oozie/data</div></li>' +
+    '</ol>' +
     '</div>',
   'services.reassign.step5.body.mysql_server':
     '<div class="alert alert-info">' +
@@ -1957,6 +1988,7 @@ Em.I18n.translations = {
 
   'hosts.host.menu.stackVersions': 'Versions',
   'hosts.host.stackVersions.table.allVersions': 'All Versions',
+  'hosts.host.stackVersions.table.allNames': 'All Names',
   'hosts.host.stackVersions.table.noVersions': 'No versions',
   'hosts.host.stackVersions.table.filteredInfo': '{0} of {1} versions showing',
   'hosts.host.stackVersions.status.init': 'Uninstalled',
@@ -2024,7 +2056,6 @@ Em.I18n.translations = {
   'host.host.componentFilter.slave':'Slave Components',
   'host.host.componentFilter.client':'Client Components',
   'hosts.host.deleteComponent.popup.msg1':'Are you sure you want to delete {0}?',
-  'hosts.host.deleteComponent.popup.msg2':'<b>Important:</b> After this <i>{0}</i> is deleted, go to <i>Services -> Nagios</i> to restart the Nagios service.  This is required for the alerts and notifications to work properly.',
   'hosts.host.deleteComponent.popup.deleteZooKeeperServer':'Deleting <i>ZooKeeper Server</i> may reconfigure such properties:<ul><li>ha.zookeeper.quorum</li><li>hbase.zookeeper.quorum</li><li>templeton.zookeeper.hosts</li><li>yarn.resourcemanager.zk-address</li><li>hive.zookeeper.quorum</li><li>hive.cluster.delegation.token.store.zookeeper.connectString</li></ul>',
   'hosts.host.deleteComponent.popup.warning':'<b>WARNING!</b> Delete the last <i>{0}</i> component in the cluster?</br>Deleting the last component in the cluster could result in permanent loss of service data.',
   'hosts.host.deleteComponent.popup.confirm':'Confirm Delete',
@@ -2036,7 +2067,6 @@ Em.I18n.translations = {
   'host.host.addComponent.popup.dependedComponents.body': '{0} requires {1} to be installed along with it on the same host. Please add them first and then try adding {0}',
   'host.host.addComponent.popup.dependedComponents.header': 'Component dependencies',
   'hosts.host.zooKeeper.configs.save.note': 'This configuration is created by ambari while installing/deleting zookeeper component on a host',
-  'hosts.host.addComponent.note':'<b>Important:</b> After this <i>{0}</i> is installed, go to <i>Services -> Nagios</i> to restart the Nagios service.  This is required for the alerts and notifications to work properly.',
   'hosts.host.addComponent.securityNote':'You are running your cluster in secure mode. You must set up the keytab for {0} on {1} before you proceed. Otherwise, the component will not be able to start properly.',
   'hosts.host.addComponent.popup.confirm':'Confirm Add',
   'hosts.host.datanode.decommission':'Decommission DataNode',
@@ -2083,7 +2113,6 @@ Em.I18n.translations = {
   'hosts.decommission.tooltip.warning':'Cannot {0} since {1} is not running',
   'hosts.delete.popup.body':'Are you sure you want to delete host <i>{0}</i>?',
   'hosts.delete.popup.body.msg1':'By removing this host, Ambari will ignore future communications from this host. Software packages will not be removed from the host. The components on the host should not be restarted. If you wish to readd this host to the cluster, be sure to clean the host.',
-  'hosts.delete.popup.body.msg2':'After deleting this host, Nagios should be restarted to remove this host from Nagios monitoring. Go to the <i>Services</i> page to restart Nagios.',
   'hosts.delete.popup.body.msg3':'If this host was hosting a Zookeeper Server, the Zookeeper Service should be restarted. Go to the <i>Services</i> page.',
   'hosts.delete.popup.body.msg4':'<b>WARNING!</b> Delete the last <i>{0}</i> component[s] in the cluster?</br>Deleting the last components in the cluster could result in permanent loss of service data.',
   'hosts.delete.popup.body.msg.unknownComponents':'This host does not appear to be online and Ambari communication with the Agent has been lost.',

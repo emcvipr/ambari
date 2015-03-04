@@ -19,6 +19,7 @@ limitations under the License.
 """
 
 from resource_management.core.resources import File
+from resource_management.core.resources import Execute
 from resource_management.core.resources import Directory
 from resource_management.core.source import InlineTemplate
 from resource_management.libraries.resources.template_config import TemplateConfig
@@ -26,7 +27,6 @@ from resource_management.libraries.functions.format import format
 from resource_management.core.source import Template
 from resource_management.libraries.functions import compare_versions
 from yaml_utils import escape_yaml_propetry
-import sys
 
 def storm():
   import params
@@ -38,8 +38,14 @@ def storm():
             recursive=True
   )
 
-  Directory([params.pid_dir, params.local_dir, params.conf_dir],
+  Directory([params.pid_dir, params.local_dir],
             owner=params.storm_user,
+            group=params.user_group,
+            recursive=True,
+            cd_access="a",
+  )
+
+  Directory(params.conf_dir,
             group=params.user_group,
             recursive=True,
             cd_access="a",
@@ -69,6 +75,11 @@ def storm():
         content=Template("storm-metrics2.properties.j2")
     )
 
+    Execute(format("{sudo} ln -s {metric_collector_sink_jar} {storm_lib_dir}/ambari-metrics-storm-sink.jar"),
+            not_if=format("ls {storm_lib_dir}/ambari-metrics-storm-sink.jar"),
+            only_if=format("ls {metric_collector_sink_jar}")
+    )
+
   File(format("{conf_dir}/storm-env.sh"),
     owner=params.storm_user,
     content=InlineTemplate(params.storm_env_sh_template)
@@ -91,7 +102,7 @@ def storm():
            owner='root',
            group=params.user_group
       )
-    
+
 
 '''
 Finds minimal real user UID

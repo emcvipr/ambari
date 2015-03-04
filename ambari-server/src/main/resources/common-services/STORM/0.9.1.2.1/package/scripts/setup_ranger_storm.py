@@ -28,20 +28,13 @@ from resource_management import *
 from resource_management.core.logger import Logger
 from resource_management.libraries.functions.ranger_functions import Rangeradmin
 
-def setup_ranger_storm(env):
+def setup_ranger_storm():
   import params
-  env.set_params(params)
 
   if params.has_ranger_admin and params.security_enabled:
-
-    environment = {"no_proxy": format("{params.ambari_server_hostname}")}
-
-    Execute(('curl', '-kf', '-x', "", '--retry', '10', params.driver_curl_source, '-o',
-            params.downloaded_custom_connector),
-            not_if=format("test -f {params.downloaded_custom_connector}"),
-            path=["/bin", "/usr/bin/"],
-            environment=environment,
-            sudo=True)
+    File(params.downloaded_custom_connector,
+         content = DownloadSource(params.driver_curl_source)
+    )
 
     if not os.path.isfile(params.driver_curl_target):
       Execute(('cp', '--remove-destination', params.downloaded_custom_connector, params.driver_curl_target),
@@ -58,18 +51,18 @@ def setup_ranger_storm(env):
     if return_code != 0:
       raise Fail('Unable to determine the current version because of a non-zero return code of {0}'.format(str(return_code)))
 
-    cmd_split = hdp_output.strip().split( ) 
-    hdp_version = cmd_split[2]
-
+    hdp_version = re.sub('storm-nimbus - ', '', hdp_output).strip()
     match = re.match('[0-9]+.[0-9]+.[0-9]+.[0-9]+-[0-9]+', hdp_version)
 
     if match is None:
       raise Fail('Failed to get extracted version')
 
     file_path = '/usr/hdp/'+ hdp_version +'/ranger-storm-plugin/install.properties'
+    if not os.path.isfile(file_path):
+      raise Fail('Ranger Storm plugin install.properties file does not exist at {0}'.format(file_path))
 
-    ranger_storm_dict = ranger_storm_properties(params)
-    storm_repo_data = storm_repo_properties(params)        
+    ranger_storm_dict = ranger_storm_properties()
+    storm_repo_data = storm_repo_properties()        
 
     write_properties_to_file(file_path, ranger_storm_dict)
 
@@ -78,17 +71,15 @@ def setup_ranger_storm(env):
       ranger_adm_obj = Rangeradmin(url=ranger_storm_dict['POLICY_MGR_URL'])
       response_code, response_recieved = ranger_adm_obj.check_ranger_login_urllib2(ranger_storm_dict['POLICY_MGR_URL'] + '/login.jsp', 'test:test')
 
-      if response_code is not None and response_code == 200:      
-        ambari_ranger_admin = params.config['configurations']['ranger-env']['ranger_admin_username']
-        ambari_ranger_password = params.config['configurations']['ranger-env']['ranger_admin_password']
-        ambari_ranger_admin,ambari_ranger_password = ranger_adm_obj.create_ambari_admin_user(ambari_ranger_admin, ambari_ranger_password, 'admin:admin')
+      if response_code is not None and response_code == 200:
+        ambari_ranger_admin, ambari_ranger_password = ranger_adm_obj.create_ambari_admin_user(params.ambari_ranger_admin, params.ambari_ranger_password, params.admin_uname_password)
         ambari_username_password_for_ranger = ambari_ranger_admin + ':' + ambari_ranger_password
         if ambari_ranger_admin != '' and ambari_ranger_password != '':
           repo = ranger_adm_obj.get_repository_by_name_urllib2(ranger_storm_dict['REPOSITORY_NAME'], 'storm', 'true', ambari_username_password_for_ranger)
           if repo and repo['name'] == ranger_storm_dict['REPOSITORY_NAME']:
             Logger.info('STORM Repository exist')
           else:
-            response = ranger_adm_obj.create_repository_urllib2(storm_repo_data, ambari_username_password_for_ranger)
+            response = ranger_adm_obj.create_repository_urllib2(storm_repo_data, ambari_username_password_for_ranger, params.policy_user)
             if response is not None:
               Logger.info('STORM Repository created in Ranger Admin')
             else:
@@ -146,58 +137,56 @@ def modify_config(filepath, variable, setting):
 
   return
 
-def ranger_storm_properties(params):
+def ranger_storm_properties():
+  import params
+
   ranger_storm_properties = dict()
 
-  ranger_storm_properties['POLICY_MGR_URL']           = params.config['configurations']['admin-properties']['policymgr_external_url']
-  ranger_storm_properties['SQL_CONNECTOR_JAR']        = params.config['configurations']['admin-properties']['SQL_CONNECTOR_JAR']
-  ranger_storm_properties['XAAUDIT.DB.FLAVOUR']       = params.config['configurations']['admin-properties']['DB_FLAVOR']
-  ranger_storm_properties['XAAUDIT.DB.DATABASE_NAME'] = params.config['configurations']['admin-properties']['audit_db_name']
-  ranger_storm_properties['XAAUDIT.DB.USER_NAME']     = params.config['configurations']['admin-properties']['audit_db_user']
-  ranger_storm_properties['XAAUDIT.DB.PASSWORD']      = params.config['configurations']['admin-properties']['audit_db_password']
-  ranger_storm_properties['XAAUDIT.DB.HOSTNAME']      = params.config['configurations']['admin-properties']['db_host']
-  ranger_storm_properties['REPOSITORY_NAME']          = str(params.config['clusterName']) + '_storm'
+  ranger_storm_properties['POLICY_MGR_URL'] = params.policymgr_mgr_url
+  ranger_storm_properties['SQL_CONNECTOR_JAR'] = params.sql_connector_jar
+  ranger_storm_properties['XAAUDIT.DB.FLAVOUR'] = params.xa_audit_db_flavor
+  ranger_storm_properties['XAAUDIT.DB.DATABASE_NAME'] = params.xa_audit_db_name
+  ranger_storm_properties['XAAUDIT.DB.USER_NAME'] = params.xa_audit_db_user
+  ranger_storm_properties['XAAUDIT.DB.PASSWORD'] = params.xa_audit_db_password
+  ranger_storm_properties['XAAUDIT.DB.HOSTNAME'] = params.xa_db_host
+  ranger_storm_properties['REPOSITORY_NAME'] = params.repo_name
+  ranger_storm_properties['XAAUDIT.DB.IS_ENABLED'] = params.db_enabled
 
-  ranger_storm_properties['XAAUDIT.DB.IS_ENABLED']   = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.DB.IS_ENABLED']
+  ranger_storm_properties['XAAUDIT.HDFS.IS_ENABLED'] = params.hdfs_enabled
+  ranger_storm_properties['XAAUDIT.HDFS.DESTINATION_DIRECTORY'] = params.hdfs_dest_dir
+  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_BUFFER_DIRECTORY'] = params.hdfs_buffer_dir
+  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_ARCHIVE_DIRECTORY'] = params.hdfs_archive_dir
+  ranger_storm_properties['XAAUDIT.HDFS.DESTINTATION_FILE'] = params.hdfs_dest_file
+  ranger_storm_properties['XAAUDIT.HDFS.DESTINTATION_FLUSH_INTERVAL_SECONDS'] = params.hdfs_dest_flush_int_sec
+  ranger_storm_properties['XAAUDIT.HDFS.DESTINTATION_ROLLOVER_INTERVAL_SECONDS'] = params.hdfs_dest_rollover_int_sec
+  ranger_storm_properties['XAAUDIT.HDFS.DESTINTATION_OPEN_RETRY_INTERVAL_SECONDS'] = params.hdfs_dest_open_retry_int_sec
+  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_BUFFER_FILE'] = params.hdfs_buffer_file
+  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_BUFFER_FLUSH_INTERVAL_SECONDS'] = params.hdfs_buffer_flush_int_sec
+  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_BUFFER_ROLLOVER_INTERVAL_SECONDS'] = params.hdfs_buffer_rollover_int_sec
+  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_ARCHIVE_MAX_FILE_COUNT'] = params.hdfs_archive_max_file_count
 
-  ranger_storm_properties['XAAUDIT.HDFS.IS_ENABLED'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.IS_ENABLED']
-  ranger_storm_properties['XAAUDIT.HDFS.DESTINATION_DIRECTORY'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.DESTINATION_DIRECTORY']
-  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_BUFFER_DIRECTORY'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.LOCAL_BUFFER_DIRECTORY']
-  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_ARCHIVE_DIRECTORY'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.LOCAL_ARCHIVE_DIRECTORY']
-  ranger_storm_properties['XAAUDIT.HDFS.DESTINTATION_FILE'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.DESTINTATION_FILE']
-  ranger_storm_properties['XAAUDIT.HDFS.DESTINTATION_FLUSH_INTERVAL_SECONDS'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.DESTINTATION_FLUSH_INTERVAL_SECONDS']
-  ranger_storm_properties['XAAUDIT.HDFS.DESTINTATION_ROLLOVER_INTERVAL_SECONDS'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.DESTINTATION_ROLLOVER_INTERVAL_SECONDS']
-  ranger_storm_properties['XAAUDIT.HDFS.DESTINTATION_OPEN_RETRY_INTERVAL_SECONDS'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.DESTINTATION_OPEN_RETRY_INTERVAL_SECONDS']
-  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_BUFFER_FILE'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.LOCAL_BUFFER_FILE']
-  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_BUFFER_FLUSH_INTERVAL_SECONDS'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.LOCAL_BUFFER_FLUSH_INTERVAL_SECONDS']
-  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_BUFFER_ROLLOVER_INTERVAL_SECONDS'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.LOCAL_BUFFER_ROLLOVER_INTERVAL_SECONDS']
-  ranger_storm_properties['XAAUDIT.HDFS.LOCAL_ARCHIVE_MAX_FILE_COUNT'] = params.config['configurations']['ranger-storm-plugin-properties']['XAAUDIT.HDFS.LOCAL_ARCHIVE_MAX_FILE_COUNT']
-  
-
-  ranger_storm_properties['SSL_KEYSTORE_FILE_PATH'] = params.config['configurations']['ranger-storm-plugin-properties']['SSL_KEYSTORE_FILE_PATH']
-  ranger_storm_properties['SSL_KEYSTORE_PASSWORD'] = params.config['configurations']['ranger-storm-plugin-properties']['SSL_KEYSTORE_PASSWORD']
-  ranger_storm_properties['SSL_TRUSTSTORE_FILE_PATH'] = params.config['configurations']['ranger-storm-plugin-properties']['SSL_TRUSTSTORE_FILE_PATH']
-  ranger_storm_properties['SSL_TRUSTSTORE_PASSWORD'] = params.config['configurations']['ranger-storm-plugin-properties']['SSL_TRUSTSTORE_PASSWORD']
+  ranger_storm_properties['SSL_KEYSTORE_FILE_PATH'] = params.ssl_keystore_file
+  ranger_storm_properties['SSL_KEYSTORE_PASSWORD'] = params.ssl_keystore_password
+  ranger_storm_properties['SSL_TRUSTSTORE_FILE_PATH'] = params.ssl_truststore_file
+  ranger_storm_properties['SSL_TRUSTSTORE_PASSWORD'] = params.ssl_truststore_password
 
   return ranger_storm_properties
 
 
-def storm_repo_properties(params):
-
-  storm_ui_server_host = params.config['clusterHostInfo']['storm_ui_server_hosts'][0]
+def storm_repo_properties():
+  import params
 
   config_dict = dict()
-  config_dict['username'] = params.config['configurations']['ranger-storm-plugin-properties']['REPOSITORY_CONFIG_USERNAME']
-  config_dict['password'] = params.config['configurations']['ranger-storm-plugin-properties']['REPOSITORY_CONFIG_PASSWORD']
-  config_dict['nimbus.url'] = 'http://' + storm_ui_server_host + ':' + str(params.config['configurations']['storm-site']['ui.port'])
-  config_dict['commonNameForCertificate'] = params.config['configurations']['ranger-storm-plugin-properties']['common.name.for.certificate']
-
+  config_dict['username'] = params.repo_config_username
+  config_dict['password'] = params.repo_config_password
+  config_dict['nimbus.url'] = 'http://' + params.storm_ui_host[0].lower() + ':' + str(params.storm_ui_port)
+  config_dict['commonNameForCertificate'] = params.common_name_for_certificate
 
   repo = dict()
   repo['isActive'] = "true"
   repo['config'] = json.dumps(config_dict)
   repo['description'] = "storm repo"
-  repo['name'] = str(params.config['clusterName']) + "_storm"
+  repo['name'] = params.repo_name
   repo['repositoryType'] = "Storm"
   repo['assetType'] = '6'
 

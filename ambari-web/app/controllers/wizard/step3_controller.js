@@ -71,6 +71,14 @@ App.WizardStep3Controller = Em.Controller.extend({
   isRetryDisabled: true,
 
   /**
+   * Is Back button disabled
+   * @return {bool}
+   */
+  isBackDisabled: function () {
+    return this.get('isRegistrationInProgress') || !this.get('isWarningsLoaded');
+  }.property('isRegistrationInProgress', 'isWarningsLoaded'),
+
+  /**
    * @type {bool}
    */
   isLoaded: false,
@@ -92,6 +100,12 @@ App.WizardStep3Controller = Em.Controller.extend({
    * @type {bool}
    */
   hasMoreRegisteredHosts: false,
+
+  /**
+   * Contain data about installed packages on hosts
+   * @type {Array}
+   */
+  hostsPackagesData: [],
 
   /**
    * List of installed hostnames
@@ -217,7 +231,7 @@ App.WizardStep3Controller = Em.Controller.extend({
         'sshKey': this.get('content.installOptions.sshKey'),
         'hosts': Em.keys(this.get('content.hosts')),
         'user': this.get('content.installOptions.sshUser'),
-        'userRunAs': App.get('supports.customizeAgentUserAccount') ? this.get('agentUser') : 'root'
+        'userRunAs': App.get('supports.customizeAgentUserAccount') ? this.get('content.installOptions.agentUser') : 'root'
     });
     App.router.get(this.get('content.controllerName')).launchBootstrap(bootStrapData, function (requestId) {
       if (requestId == '0') {
@@ -451,11 +465,11 @@ App.WizardStep3Controller = Em.Controller.extend({
   disablePreviousSteps: function () {
     App.router.get('installerController.isStepDisabled').filter(function (step) {
       return step.step >= 0 && step.step <= 2;
-    }).setEach('value', this.get('isRegistrationInProgress'));
-    if (this.get('isRegistrationInProgress')) {
+    }).setEach('value', this.get('isBackDisabled'));
+    if (this.get('isBackDisabled')) {
       this.set('isSubmitDisabled', true);
     }
-  }.observes('isRegistrationInProgress'),
+  }.observes('isBackDisabled'),
 
   /**
    * Do bootstrap calls
@@ -855,7 +869,7 @@ App.WizardStep3Controller = Em.Controller.extend({
       this.getHostCheckSuccess();
     } else {
       var data = this.getDataForCheckRequest("host_resolution_check", true);
-      this.requestToPerformHostCheck(data);
+      data ? this.requestToPerformHostCheck(data) : this.stopHostCheck();
     }
   },
 
@@ -863,9 +877,19 @@ App.WizardStep3Controller = Em.Controller.extend({
     if (App.get('testMode')) {
       this.getHostInfo();
     } else {
-      var data = this.getDataForCheckRequest("last_agent_env_check", false);
-      this.requestToPerformHostCheck(data);
+      var data = this.getDataForCheckRequest("last_agent_env_check,installed_packages,existing_repos", false);
+      data ? this.requestToPerformHostCheck(data) : this.stopHostCheck();
     }
+  },
+
+  /**
+   * set all fields from which depends running host check to true value
+   * which force finish checking;
+   */
+  stopHostCheck: function() {
+    this.set('stopChecking', true);
+    this.set('isJDKWarningsLoaded', true);
+    this.set('isHostsWarningsLoaded', true);
   },
 
   getHostCheckSuccess: function(response) {
@@ -881,12 +905,12 @@ App.WizardStep3Controller = Em.Controller.extend({
    *  <code>"last_agent_env_check"<code>
    *  <code>"host_resolution_check"<code>
    * @param {boolean} addHosts - true
+   * @return {object|null}
    * @method getDataForCheckRequest
    */
   getDataForCheckRequest: function (checkExecuteList, addHosts) {
-    var hosts = (!this.get('content.installOptions.manualInstall'))
-      ? this.get('bootHosts').filterProperty('bootStatus', 'REGISTERED').getEach('name').join(",")
-      : this.get('bootHosts').getEach('name').join(",");
+    var hosts = this.get('bootHosts').filterProperty('bootStatus', 'REGISTERED').getEach('name').join(",");
+    if (hosts.length == 0) return null;
     var jdk_location = App.router.get('clusterController.ambariProperties.jdk_location');
     var RequestInfo = {
       "action": "check_host",
@@ -951,7 +975,7 @@ App.WizardStep3Controller = Em.Controller.extend({
     var requestId = this.get("requestId");
     var checker = setTimeout(function () {
       if (self.get('stopChecking') == true) {
-        clearInterval(checker);
+        clearTimeout(checker);
       } else {
         App.ajax.send({
           name: 'preinstalled.checks.tasks',
@@ -980,7 +1004,13 @@ App.WizardStep3Controller = Em.Controller.extend({
     if (["FAILED", "COMPLETED", "TIMEDOUT"].contains(data.Requests.request_status)) {
       if (data.Requests.inputs.indexOf("last_agent_env_check") != -1) {
         this.set('stopChecking', true);
-         this.getHostInfo();
+        this.set('hostsPackagesData', data.tasks.map(function (task) {
+          return {
+            hostName: Em.get(task, 'Tasks.host_name'),
+            installedPackages: Em.get(task, 'Tasks.structured_out.installed_packages')
+          }
+        }));
+        this.getHostInfo();
       } else if (data.Requests.inputs.indexOf("host_resolution_check") != -1) {
         this.parseHostNameResolution(data);
         this.getGeneralHostCheck();
@@ -1414,6 +1444,7 @@ App.WizardStep3Controller = Em.Controller.extend({
       usersWarnings: {},
       alternativeWarnings: {}
     };
+    var hostsPackagesData = this.get('hostsPackagesData');
 
     data.items.sortPropertyLight('Hosts.host_name').forEach(function (_host) {
       var host = {
@@ -1448,8 +1479,9 @@ App.WizardStep3Controller = Em.Controller.extend({
       }, this);
 
       //parse all package warnings for host
-      if (_host.Hosts.last_agent_env.installedPackages) {
-        _host.Hosts.last_agent_env.installedPackages.forEach(function (_package) {
+      var hostPackagesData = hostsPackagesData.findProperty('hostName', _host.Hosts.host_name);
+      if (hostPackagesData) {
+        hostPackagesData.installedPackages.forEach(function (_package) {
           warning = warningCategories.packagesWarnings[_package.name];
           if (warning) {
             warning.hosts.push(_host.Hosts.host_name);
@@ -1623,13 +1655,6 @@ App.WizardStep3Controller = Em.Controller.extend({
       }
     }
 
-    warnings.forEach(function (warn) {
-      if (warn.hosts.length < 11) {
-        warn.hostsList = warn.hosts.join('<br>')
-      } else {
-        warn.hostsList = warn.hosts.slice(0, 10).join('<br>') + '<br> ' + Em.I18n.t('installer.step3.hostWarningsPopup.moreHosts').format(warn.hosts.length - 10);
-      }
-    });
     hosts.unshift({
       name: 'All Hosts',
       warnings: warnings

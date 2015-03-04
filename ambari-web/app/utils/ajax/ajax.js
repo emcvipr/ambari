@@ -187,7 +187,7 @@ var urls = {
   },
 
   'common.request.polling': {
-    'real': '/clusters/{clusterName}/requests/{requestId}?fields=tasks/*,Requests/*&tasks/Tasks/stage_id={stageId}',
+    'real': '/clusters/{clusterName}/requests/{requestId}?fields=tasks/Tasks/request_id,tasks/Tasks/command,tasks/Tasks/command_detail,tasks/Tasks/start_time,tasks/Tasks/end_time,tasks/Tasks/exit_code,Requests/*&tasks/Tasks/stage_id={stageId}',
     'mock': '/data/background_operations/host_upgrade_tasks.json'
   },
 
@@ -415,7 +415,7 @@ var urls = {
     'type': 'DELETE'
   },
   'alerts.create_alert_notification': {
-    'real': '/alert_targets',
+    'real': '/alert_targets?{urlParams}',
     'mock': '',
     'format': function (data) {
       return {
@@ -449,7 +449,7 @@ var urls = {
     'testInProduction': true
   },
   'background_operations.get_by_request': {
-    'real': '/clusters/{clusterName}/requests/{requestId}?fields=*,tasks/Tasks/command,tasks/Tasks/command_detail,tasks/Tasks/start_time,tasks/Tasks/end_time,tasks/Tasks/exit_code,tasks/Tasks/host_name,tasks/Tasks/id,tasks/Tasks/role,tasks/Tasks/status&minimal_response=true',
+    'real': '/clusters/{clusterName}/requests/{requestId}?fields=*,tasks/Tasks/request_id,tasks/Tasks/command,tasks/Tasks/command_detail,tasks/Tasks/start_time,tasks/Tasks/end_time,tasks/Tasks/exit_code,tasks/Tasks/host_name,tasks/Tasks/id,tasks/Tasks/role,tasks/Tasks/status&minimal_response=true',
     'mock': '/data/background_operations/task_by_request{requestId}.json',
     'testInProduction': true
   },
@@ -794,32 +794,32 @@ var urls = {
     'mock': '/data/cluster_metrics/cpu_1hr.json'
   },
   'service.metrics.flume.channel_fill_percent': {
-    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/flume/flume/CHANNEL/*/ChannelFillPercentage[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/flume/flume/CHANNEL/ChannelFillPercentage[{fromSeconds},{toSeconds},{stepSeconds}]',
     'mock': '/data/services/metrics/flume/channelFillPct.json',
     'testInProduction': true
   },
   'service.metrics.flume.channel_size': {
-    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/flume/flume/CHANNEL/*/ChannelSize[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/flume/flume/CHANNEL/ChannelSize[{fromSeconds},{toSeconds},{stepSeconds}]',
     'mock': '/data/services/metrics/flume/channelSize.json',
     'testInProduction': true
   },
   'service.metrics.flume.sink_drain_success': {
-    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/flume/flume/SINK/*/EventDrainSuccessCount[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/flume/flume/SINK/EventDrainSuccessCount[{fromSeconds},{toSeconds},{stepSeconds}]',
     'mock': '/data/services/metrics/flume/sinkDrainSuccessCount.json',
     'testInProduction': true
   },
   'service.metrics.flume.sink_connection_failed': {
-    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/flume/flume/SINK/*/ConnectionFailedCount[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/flume/flume/SINK/ConnectionFailedCount[{fromSeconds},{toSeconds},{stepSeconds}]',
     'mock': '/data/services/metrics/flume/sinkConnectionFailedCount.json',
     'testInProduction': true
   },
   'service.metrics.flume.source_accepted': {
-    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/flume/flume/SOURCE/*/EventAcceptedCount[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/flume/flume/SOURCE/EventAcceptedCount[{fromSeconds},{toSeconds},{stepSeconds}]',
     'mock': '/data/services/metrics/flume/sourceEventAccepted.json',
     'testInProduction': true
   },
   'service.metrics.flume.channel_size_for_all': {
-    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/ChannelSize/_sum[{fromSeconds},{toSeconds},{stepSeconds}]'
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/ChannelSize/rate[{fromSeconds},{toSeconds},{stepSeconds}]'
   },
   'service.metrics.flume.gc': {
     'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/jvm/gcTimeMillis[{fromSeconds},{toSeconds},{stepSeconds}]',
@@ -875,6 +875,36 @@ var urls = {
   'service.metrics.hbase.regionserver_rw_requests': {
     'real': '/clusters/{clusterName}/services/HBASE/components/HBASE_REGIONSERVER?fields=metrics/hbase/regionserver/readRequestsCount[{fromSeconds},{toSeconds},{stepSeconds}],metrics/hbase/regionserver/writeRequestsCount[{fromSeconds},{toSeconds},{stepSeconds}]',
     'mock': '/data/services/metrics/hbase/regionserver_rw_requests.json',
+    'testInProduction': true
+  },
+  'service.metrics.ambari_metrics.master.average_load': {
+    'real': '/clusters/{clusterName}/services/AMBARI_METRICS/components/METRICS_COLLECTOR?fields=metrics/hbase/master/AverageLoad[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'mock': '/data/services/metrics/ambari_metrics/master_average_load.json',
+    'testInProduction': true
+  },
+  'service.metrics.ambari_metrics.region_server.store_files': {
+    'real': '/clusters/{clusterName}/services/AMBARI_METRICS/components/METRICS_COLLECTOR?fields=metrics/hbase/regionserver/storefiles[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'mock': '/data/services/metrics/ambari_metrics/regionserver_store_files.json',
+    'testInProduction': true
+  },
+  'service.metrics.ambari_metrics.region_server.regions': {
+    'real': '/clusters/{clusterName}/services/AMBARI_METRICS/components/METRICS_COLLECTOR?fields=metrics/hbase/regionserver/regions[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'mock': '/data/services/metrics/ambari_metrics/regionserver_regions.json',
+    'testInProduction': true
+  },
+  'service.metrics.ambari_metrics.region_server.request': {
+    'real': '/clusters/{clusterName}/services/AMBARI_METRICS/components/METRICS_COLLECTOR?fields=metrics/hbase/regionserver/requests[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'mock': '/data/services/metrics/ambari_metrics/regionserver_requests.json',
+    'testInProduction': true
+  },
+  'service.metrics.ambari_metrics.region_server.block_cache_hit_percent': {
+    'real': '/clusters/{clusterName}/services/AMBARI_METRICS/components/METRICS_COLLECTOR?fields=metrics/hbase/regionserver/blockCacheHitPercent[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'mock': '/data/services/metrics/ambari_metrics/regionserver_blockcache_hitpercent.json',
+    'testInProduction': true
+  },
+  'service.metrics.ambari_metrics.region_server.compaction_queue_size': {
+    'real': '/clusters/{clusterName}/services/AMBARI_METRICS/components/METRICS_COLLECTOR?fields=metrics/hbase/regionserver/compactionQueueSize[{fromSeconds},{toSeconds},{stepSeconds}]',
+    'mock': '/data/services/metrics/ambari_metrics/regionserver_compaction_queue_size.json',
     'testInProduction': true
   },
   'service.metrics.hdfs.block_status': {
@@ -1104,6 +1134,10 @@ var urls = {
       };
     }
   },
+  'cluster.load_detailed_repo_version': {
+    'real': '/clusters/{clusterName}/stack_versions?ClusterStackVersions/state=CURRENT&fields=repository_versions/RepositoryVersions/repository_version&minimal_response=true',
+    'mock': '/data/stack_versions/stack_version_all.json'
+  },
   'cluster.save_provisioning_state': {
     'real': '/clusters/{clusterName}',
     'type': 'PUT',
@@ -1258,6 +1292,12 @@ var urls = {
       };
     }
   },
+
+  'kerberos.session.state': {
+    'real': '/clusters/{clusterName}/services/KERBEROS?fields=Services/attributes/kdc_validation_result,Services/attributes/kdc_validation_failure_details',
+    'mock': ''
+  },
+
   'admin.kerberize.cluster': {
     'type': 'PUT',
     'real': '/clusters/{clusterName}',
@@ -1265,6 +1305,19 @@ var urls = {
     'format' : function (data) {
       return {
         data: JSON.stringify(data.data)
+      }
+    }
+  },
+  'admin.unkerberize.cluster': {
+    'type': 'PUT',
+    'real': '/clusters/{clusterName}',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          Clusters: {
+            security_type: "NONE"
+          }
+        })
       }
     }
   },
@@ -1339,20 +1392,32 @@ var urls = {
     'mock': '/data/wizard/{mock}'
   },
   'admin.upgrade.data': {
-    'real': '/clusters/{clusterName}/upgrades/{id}?fields=Upgrade,upgrade_groups/UpgradeGroup,upgrade_groups/upgrade_items/*,' +
-      'upgrade_groups/upgrade_items/tasks/Tasks/id,' +
-      'upgrade_groups/upgrade_items/tasks/Tasks/command_detail,' +
-      'upgrade_groups/upgrade_items/tasks/Tasks/request_id,' +
-      'upgrade_groups/upgrade_items/tasks/Tasks/status',
+    'real': '/clusters/{clusterName}/upgrades/{id}?upgrade_groups/UpgradeGroup/status!=PENDING&fields=' +
+    'Upgrade/progress_percent,Upgrade/request_context,Upgrade/request_status,Upgrade/direction,' +
+    'upgrade_groups/UpgradeGroup,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/status,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/context,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/group_id,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/progress_percent,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/request_id,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/skippable,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/stage_id,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/status,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/text&' +
+    'minimal_response=true',
     'mock': '/data/stack_versions/upgrade.json'
   },
   'admin.upgrade.state': {
     'real': '/clusters/{clusterName}/upgrades/{id}?fields=Upgrade',
     'mock': '/data/stack_versions/upgrade.json'
   },
-  'admin.upgrade.task': {
-    'real': '/clusters/{clusterName}/upgrades/{upgradeId}/upgrade_groups?upgrade_items/tasks/Tasks/id={taskId}&fields=upgrade_items/tasks/Tasks/*',
-    'mock': '/data/stack_versions/upgrade_task.json'
+  'admin.upgrade.upgrade_item': {
+    'real': '/clusters/{clusterName}/upgrades/{upgradeId}/upgrade_groups/{groupId}/upgrade_items/{stageId}?fields=' +
+    'UpgradeItem/group_id,' +
+    'UpgradeItem/stage_id,' +
+    'tasks/Tasks/*&' +
+    'minimal_response=true',
+    'mock': '/data/stack_versions/upgrade_item.json'
   },
   'admin.upgrade.start': {
     'real': '/clusters/{clusterName}/upgrades',
@@ -1378,6 +1443,20 @@ var urls = {
           "Upgrade": {
             "repository_version": data.value,
             "force_downgrade": true
+          }
+        })
+      }
+    }
+  },
+  'admin.upgrade.abort': {
+    'real': '/clusters/{clusterName}/upgrades/{upgradeId}',
+    'mock': '',
+    'type': 'PUT',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          "Upgrade": {
+            "request_status": "ABORTED"
           }
         })
       }
@@ -1457,6 +1536,21 @@ var urls = {
       return {
         dataType: 'text'
       };
+    }
+  },
+
+  'admin.kerberos_security.regenerate_keytabs': {
+    'real': '/clusters/{clusterName}?regenerate_keytabs={type}',
+    'mock': '',
+    'type': 'PUT',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          "Clusters" : {
+            "security_type" : "KERBEROS"
+          }
+        })
+      }
     }
   },
 
@@ -2265,15 +2359,6 @@ var formatRequest = function (data) {
 };
 
 /**
- * Error messages for KDC administrator credentials error
- * is used for checking if error message is caused by bad KDC credentials
- * @type {{missingKDC: string, invalidKDC: string}}
- */
-var specialMsg = {
-  "missingKDC": "Missing KDC administrator credentials.",
-  "invalidKDC": "Invalid KDC administrator credentials."
-};
-/**
  * Wrapper for all ajax requests
  *
  * @type {Object}
@@ -2335,6 +2420,20 @@ var ajax = Em.Object.extend({
     opt.error = function (request, ajaxOptions, error) {
       var KDCErrorMsg = this.getKDCErrorMgs(request);
       if (!Em.isNone(KDCErrorMsg)) {
+        /**
+         * run this handler before show KDC error popup
+         */
+        if (config.kdcFailHandler) {
+          config.sender[config.kdcFailHandler](request, ajaxOptions, error, opt, params);
+        }
+        /**
+         * run this handler when click cancle on KDC error popup
+         */
+        if (config.kdcCancelHandler) {
+          opt.kdcCancelHandler = function() {
+            config.sender[config.kdcCancelHandler]();
+          };
+        }
         this.defaultErrorKDCHandler(opt, KDCErrorMsg);
       } else if (config.error) {
         config.sender[config.error](request, ajaxOptions, error, opt, params);
@@ -2402,12 +2501,8 @@ var ajax = Em.Object.extend({
       var message = $.parseJSON(jqXHR.responseText).message;
     } catch (err) {}
     if (jqXHR.status === 400 && message) {
-      return message.contains(specialMsg.missingKDC) ? specialMsg.missingKDC
-        : message.contains(specialMsg.invalidKDC) ? specialMsg.invalidKDC : null;
-    } else {
-      return null;
+      return App.format.kdcErrorMsg(message, true);
     }
-
   },
 
   /**

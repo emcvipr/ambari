@@ -54,49 +54,28 @@
     <name>libdefaults_forwardable</name>
     <value>true</value>
   </property>
-  <property>
+  <property require-input="false">
     <name>libdefaults_default_tgs_enctypes</name>
     <description>
-      a space-delimited list of session key encryption types supported by the KDC or Active
+      A space-delimited list of session key encryption types supported by the KDC or Active
       Directory
-    </description>
-    <value>
-      aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 des3-cbc-sha1 arcfour-hmac-md5
-      camellia256-cts-cmac camellia128-cts-cmac des-cbc-crc des-cbc-md5 des-cbc-md4
-    </value>
-  </property>
-  <property>
-    <name>libdefaults_default_tkt_enctypes</name>
-    <description>
-      a space-delimited list of session key encryption types supported by the KDC or Active
-      Directory
-    </description>
-    <value>
-      aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 des3-cbc-sha1 arcfour-hmac-md5
-      camellia256-cts-cmac camellia128-cts-cmac des-cbc-crc des-cbc-md5 des-cbc-md4
-    </value>
-  </property>
-
-  <property require-input="true">
-    <name>realm</name>
-    <description>
-      The realm to use when creating service principals
     </description>
     <value/>
   </property>
-  <property require-input="true">
+  <property require-input="false">
+    <name>libdefaults_default_tkt_enctypes</name>
+    <description>
+      A space-delimited list of session key encryption types supported by the KDC or Active
+      Directory
+    </description>
+    <value/>
+  </property>
+  <property require-input="false">
     <name>domains</name>
     <description>
       A comma-delimited list of domain names that the realm serves (optional)
     </description>
     <value/>
-  </property>
-  <property require-input="true">
-    <name>kdc_type</name>
-    <description>
-      The type of KDC being used. Either mit-kdc or active-directory
-    </description>
-    <value>mit-kdc</value>
   </property>
   <property require-input="true">
     <name>kdc_host</name>
@@ -141,6 +120,13 @@
     </value>
   </property>
 
+  <property>
+    <name>manage_krb5_conf</name>
+    <description>
+      Indicates weather the Kerberos client krb5.conf file should be managed by Ambari or you will manage manually
+    </description>
+    <value>true</value>
+  </property>
 
   <property>
     <name>conf_dir</name>
@@ -158,6 +144,12 @@
   ticket_lifetime = {{libdefaults_ticket_lifetime}}
   dns_lookup_realm = {{libdefaults_dns_lookup_realm}}
   dns_lookup_kdc = {{libdefaults_dns_lookup_kdc}}
+  {% if libdefaults_default_tgs_enctypes %}
+  default_tgs_enctypes = {{libdefaults_default_tgs_enctypes}}
+  {% endif %}
+  {% if libdefaults_default_tkt_enctypes %}
+  default_tkt_enctypes = {{libdefaults_default_tkt_enctypes}}
+  {% endif %}
 
 {% if domains %}
 [domain_realm]

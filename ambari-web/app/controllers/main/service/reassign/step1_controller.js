@@ -73,15 +73,17 @@ App.ReassignMasterWizardStep1Controller = Em.Controller.extend({
   onLoadConfigsTags: function (data) {
     var urlParams = this.getConfigUrlParams(this.get('content.reassign.component_name'), data);
 
-    App.ajax.send({
-      name: 'reassign.load_configs',
-      sender: this,
-      data: {
-        urlParams: urlParams.join('|')
-      },
-      success: 'onLoadConfigs',
-      error: ''
-    });
+    if (urlParams.length > 0) {
+      App.ajax.send({
+        name: 'reassign.load_configs',
+        sender: this,
+        data: {
+          urlParams: urlParams.join('|')
+        },
+        success: 'onLoadConfigs',
+        error: ''
+      });
+    }
   },
 
   onLoadConfigs: function (data) {
@@ -100,8 +102,10 @@ App.ReassignMasterWizardStep1Controller = Em.Controller.extend({
     databaseType = databaseProperty.match(/MySQL|PostgreS|Oracle|Derby|MSSQL/gi)[0];
     this.set('databaseType', databaseType);
 
-    if (databaseType !== 'derby') {
+    if (this.get('content.reassign.component_name') == 'OOZIE_SERVER' && databaseType !== 'derby') {
       App.router.reassignMasterController.set('content.hasManualSteps', false);
+    } else {
+      App.router.reassignMasterController.set('content.hasManualSteps', true);
     }
 
     var serviceDbProp = this.get('content.reassign.service_id').toLowerCase() + "_database";

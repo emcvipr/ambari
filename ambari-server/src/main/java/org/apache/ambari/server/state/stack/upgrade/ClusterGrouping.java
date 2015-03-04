@@ -53,7 +53,7 @@ public class ClusterGrouping extends Grouping {
    * Stages against a Service and Component, or the Server
    */
   @XmlElement(name="execute-stage")
-  private List<ExecuteStage> executionStages;
+  public List<ExecuteStage> executionStages;
 
   @XmlTransient
   private ClusterBuilder m_builder = new ClusterBuilder();
@@ -64,12 +64,19 @@ public class ClusterGrouping extends Grouping {
   }
 
 
-  private static class ExecuteStage {
+  /**
+   * Represents a single-stage execution that happens as part of a cluster-wide
+   * upgrade or downgrade.
+   */
+  public static class ExecuteStage {
     @XmlAttribute(name="title")
     public String title;
 
     @XmlAttribute(name="id")
     public String id;
+
+    @XmlElement(name="direction")
+    public Direction intendedDirection = null;
 
     /**
      * Optional service name, can be ""
@@ -90,8 +97,8 @@ public class ClusterGrouping extends Grouping {
   public class ClusterBuilder extends StageWrapperBuilder {
 
     @Override
-    public void add(HostsType hostsType, String service,
-        boolean forUpgrade, boolean clientOnly, ProcessingComponent pc) {
+    public void add(UpgradeContext ctx, HostsType hostsType, String service,
+        boolean clientOnly, ProcessingComponent pc) {
       // !!! no-op in this case
     }
 
@@ -105,6 +112,11 @@ public class ClusterGrouping extends Grouping {
 
       if (executionStages != null) {
         for (ExecuteStage execution : executionStages) {
+          if (null != execution.intendedDirection &&
+              execution.intendedDirection != ctx.getDirection()) {
+            continue;
+          }
+
           Task task = execution.task;
 
           StageWrapper wrapper = null;

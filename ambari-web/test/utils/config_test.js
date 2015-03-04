@@ -72,26 +72,6 @@ describe('App.config', function () {
       expect(config.value).to.equal('1024');
       expect(config.defaultValue).to.equal('1024');
     });
-    it('value should be transformed to true from "true"', function () {
-      config = {
-        displayType: 'checkbox',
-        value: 'true',
-        defaultValue: 'true'
-      };
-      App.config.handleSpecialProperties(config);
-      expect(config.value).to.equal(true);
-      expect(config.defaultValue).to.equal(true);
-    });
-    it('value should be transformed to false from "false"', function () {
-      config = {
-        displayType: 'checkbox',
-        value: 'false',
-        defaultValue: 'false'
-      };
-      App.config.handleSpecialProperties(config);
-      expect(config.value).to.equal(false);
-      expect(config.defaultValue).to.equal(false);
-    });
   });
 
   describe('#capacitySchedulerFilter', function() {
@@ -274,7 +254,7 @@ describe('App.config', function () {
       expect(properties).to.have.length(2);
       expect(hbaseProperty.serviceName).to.equal('HBASE');
       expect(hbaseProperty.value).to.equal('/hadoop/hbase');
-      expect(amsProperty.serviceName).to.equal('AMS');
+      expect(amsProperty.serviceName).to.equal('AMBARI_METRICS');
       expect(amsProperty.value).to.equal('/hadoop/ams-hbase');
     });
   });
@@ -815,6 +795,194 @@ describe('App.config', function () {
     cases.forEach(function (item) {
       it(item.title, function () {
         expect(App.config.replaceConfigValues(item.name, item.express, item.value, item.globValue)).to.equal(item.expected);
+      });
+    });
+
+  });
+
+  describe('#addKerberosDescriptorConfigs', function() {
+    var configs = [
+      { name: 'prop1', displayName: 'Prop1' },
+      { name: 'prop2', displayName: 'Prop2' },
+      { name: 'prop3', displayName: 'Prop3' },
+    ];
+    var descriptor = [
+      Em.Object.create({ name: 'prop4', filename: 'file-1'}),
+      Em.Object.create({ name: 'prop1', filename: 'file-1'}),
+    ];
+    App.config.addKerberosDescriptorConfigs(configs, descriptor);
+    var propertiesAttrTests = [
+      {
+        attr: 'isUserProperty', val: false,
+        m: 'descriptor properties should not be marked as custom'
+      },
+      {
+        attr: 'category', val: 'Advanced file-1',
+        m: 'descriptor properties should be added to Advanced category'
+      },
+      {
+        attr: 'isOverridable', val: false,
+        m: 'descriptor properties should not be overriden'
+      },
+    ];
+
+    propertiesAttrTests.forEach(function(test) {
+      it(test.m, function() {
+        expect(configs.findProperty('name', 'prop1')[test.attr]).to.be.eql(test.val);
+      });
+    });
+  });
+
+  describe('#advancedConfigIdentityData', function () {
+
+    var configs = [
+      {
+        input: {
+          property_type: ['USER'],
+          property_name: 'hdfs_user'
+        },
+        output: {
+          id: 'puppet var',
+          category: 'Users and Groups',
+          isVisible: true,
+          serviceName: 'MISC',
+          isOverridable: false,
+          isReconfigurable: false,
+          displayName: 'HDFS User',
+          displayType: 'user',
+          index: 30
+        },
+        title: 'user, no service name specified, default display name behaviour'
+      },
+      {
+        input: {
+          property_type: ['GROUP'],
+          property_name: 'knox_group',
+          service_name: 'KNOX'
+        },
+        output: {
+          id: 'puppet var',
+          category: 'Users and Groups',
+          isVisible: true,
+          serviceName: 'MISC',
+          isOverridable: false,
+          isReconfigurable: false,
+          displayName: 'Knox Group',
+          displayType: 'user',
+          index: 0
+        },
+        title: 'group, service_name = KNOX, default display name behaviour'
+      },
+      {
+        input: {
+          property_type: ['USER']
+        },
+        output: {
+          isVisible: false
+        },
+        isHDPWIN: true,
+        title: 'HDPWIN stack'
+      },
+      {
+        input: {
+          property_type: ['USER'],
+          property_name: 'smokeuser',
+          service_name: 'MISC'
+        },
+        output: {
+          displayName: 'Smoke Test User',
+          serviceName: 'MISC',
+          belongsToService: ['MISC'],
+          index: 30
+        },
+        title: 'smokeuser, service_name = MISC'
+      },
+      {
+        input: {
+          property_type: ['GROUP'],
+          property_name: 'user_group'
+        },
+        output: {
+          displayName: 'Hadoop Group'
+        },
+        title: 'user_group'
+      },
+      {
+        input: {
+          property_type: ['USER'],
+          property_name: 'mapred_user'
+        },
+        output: {
+          displayName: 'MapReduce User'
+        },
+        title: 'mapred_user'
+      },
+      {
+        input: {
+          property_type: ['USER'],
+          property_name: 'zk_user'
+        },
+        output: {
+          displayName: 'ZooKeeper User'
+        },
+        title: 'zk_user'
+      },
+      {
+        input: {
+          property_type: ['USER'],
+          property_name: 'ignore_groupsusers_create'
+        },
+        output: {
+          displayName: 'Skip group modifications during install',
+          displayType: 'checkbox'
+        },
+        title: 'ignore_groupsusers_create'
+      },
+      {
+        input: {
+          property_type: ['GROUP'],
+          property_name: 'proxyuser_group'
+        },
+        output: {
+          belongsToService: ['HIVE', 'OOZIE', 'FALCON']
+        },
+        title: 'proxyuser_group'
+      },
+      {
+        input: {
+          property_type: ['PASSWORD'],
+          property_name: 'javax.jdo.option.ConnectionPassword'
+        },
+        output: {
+          displayType: 'password'
+        },
+        title: 'password'
+      }
+    ];
+
+    before(function () {
+      sinon.stub(App.StackService, 'find').returns([
+        {
+          serviceName: 'KNOX'
+        }
+      ]);
+    });
+
+    afterEach(function () {
+      App.get.restore();
+    });
+
+    after(function () {
+      App.StackService.find.restore();
+    });
+
+    configs.forEach(function (item) {
+      it(item.title, function () {
+        sinon.stub(App, 'get').withArgs('isHadoopWindowsStack').returns(Boolean(item.isHDPWIN));
+        var propertyData = App.config.advancedConfigIdentityData(item.input);
+        Em.keys(item.output).forEach(function (key) {
+          expect(propertyData[key]).to.eql(item.output[key]);
+        });
       });
     });
 

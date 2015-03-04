@@ -30,6 +30,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -92,9 +93,7 @@ import org.apache.ambari.server.state.ConfigVersionHelper;
 import org.apache.ambari.server.state.DesiredConfig;
 import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.state.HostHealthStatus;
-import org.apache.ambari.server.state.HostState;
 import org.apache.ambari.server.state.MaintenanceState;
-import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.Service;
@@ -173,6 +172,10 @@ public class ClusterImpl implements Cluster {
   private Map<Long, RequestExecution> requestExecutions;
 
   private final ReadWriteLock clusterGlobalLock = new ReentrantReadWriteLock();
+
+  // This is a lock for operations that do not need to be cluster global
+  private final ReentrantReadWriteLock hostTransitionStateLock = new ReentrantReadWriteLock();
+  private final Lock hostTransitionStateWriteLock = hostTransitionStateLock.writeLock();
 
   private ClusterEntity clusterEntity;
 
@@ -301,14 +304,9 @@ public class ClusterImpl implements Cluster {
     for (Entry<String, ServiceInfo> entry : serviceInfoMap.entrySet()) {
       String serviceName = entry.getKey();
       ServiceInfo serviceInfo = entry.getValue();
-      //collect config types for service
-      Set<PropertyInfo> properties = ambariMetaInfo.getServiceProperties(desiredStackVersion.getStackName(),
-          desiredStackVersion.getStackVersion(), serviceName);
-      for (PropertyInfo property : properties) {
-        String configType = ConfigHelper.fileNameToConfigType(property.getFilename());
-        if (serviceInfo.hasConfigType(configType)) {
-          serviceConfigTypes.put(serviceName, configType);
-        }
+      Set<String> configTypes = serviceInfo.getConfigTypeAttributes().keySet();
+      for (String configType : configTypes) {
+        serviceConfigTypes.put(serviceName, configType);
       }
     }
 
@@ -621,23 +619,25 @@ public class ClusterImpl implements Cluster {
     }
   }
 
-  public void addServiceComponentHost(
-    ServiceComponentHost svcCompHost) throws AmbariException {
+  public void addServiceComponentHost(ServiceComponentHost svcCompHost)
+      throws AmbariException {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Trying to add component {} of service {} on {} to the cache",
+          svcCompHost.getServiceComponentName(), svcCompHost.getServiceName(),
+          svcCompHost.getHostName());
+    }
+
     loadServiceHostComponents();
+
+    final String hostname = svcCompHost.getHostName();
+    final String serviceName = svcCompHost.getServiceName();
+    final String componentName = svcCompHost.getServiceComponentName();
+
+    Set<Cluster> cs = clusters.getClustersForHost(hostname);
+
     clusterGlobalLock.writeLock().lock();
 
     try {
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Trying to add ServiceComponentHost to ClusterHostMap cache"
-            + ", serviceName=" + svcCompHost.getServiceName()
-            + ", componentName=" + svcCompHost.getServiceComponentName()
-            + ", hostname=" + svcCompHost.getHostName());
-      }
-
-      final String hostname = svcCompHost.getHostName();
-      final String serviceName = svcCompHost.getServiceName();
-      final String componentName = svcCompHost.getServiceComponentName();
-      Set<Cluster> cs = clusters.getClustersForHost(hostname);
       boolean clusterFound = false;
       Iterator<Cluster> iter = cs.iterator();
       while (iter.hasNext()) {
@@ -647,6 +647,7 @@ public class ClusterImpl implements Cluster {
           break;
         }
       }
+
       if (!clusterFound) {
         throw new AmbariException("Host does not belong this cluster"
             + ", hostname=" + hostname + ", clusterName=" + getClusterName()
@@ -657,6 +658,7 @@ public class ClusterImpl implements Cluster {
         serviceComponentHosts.put(serviceName,
             new HashMap<String, Map<String, ServiceComponentHost>>());
       }
+
       if (!serviceComponentHosts.get(serviceName).containsKey(componentName)) {
         serviceComponentHosts.get(serviceName).put(componentName,
             new HashMap<String, ServiceComponentHost>());
@@ -692,22 +694,22 @@ public class ClusterImpl implements Cluster {
   @Override
   public void removeServiceComponentHost(ServiceComponentHost svcCompHost)
     throws AmbariException {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug(
+          "Trying to remove component {} of service {} on {} from the cache",
+          svcCompHost.getServiceComponentName(), svcCompHost.getServiceName(),
+          svcCompHost.getHostName());
+    }
+
     loadServiceHostComponents();
+
+    final String hostname = svcCompHost.getHostName();
+    final String serviceName = svcCompHost.getServiceName();
+    final String componentName = svcCompHost.getServiceComponentName();
+    Set<Cluster> cs = clusters.getClustersForHost(hostname);
+
     clusterGlobalLock.writeLock().lock();
     try {
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Trying to remove ServiceComponentHost to ClusterHostMap cache"
-            + ", serviceName="
-            + svcCompHost.getServiceName()
-            + ", componentName="
-            + svcCompHost.getServiceComponentName()
-            + ", hostname=" + svcCompHost.getHostName());
-      }
-
-      final String hostname = svcCompHost.getHostName();
-      final String serviceName = svcCompHost.getServiceName();
-      final String componentName = svcCompHost.getServiceComponentName();
-      Set<Cluster> cs = clusters.getClustersForHost(hostname);
       boolean clusterFound = false;
       Iterator<Cluster> iter = cs.iterator();
       while (iter.hasNext()) {
@@ -732,6 +734,7 @@ public class ClusterImpl implements Cluster {
             + ", serviceName=" + serviceName + ", serviceComponentName"
             + componentName + ", hostname= " + hostname);
       }
+
       if (!serviceComponentHostsByHost.containsKey(hostname)) {
         throw new AmbariException("Invalid host entry for ServiceComponentHost"
             + ", serviceName=" + serviceName + ", serviceComponentName"
@@ -1073,6 +1076,7 @@ public class ClusterImpl implements Cluster {
 
     RepositoryVersionState desiredState = sourceClusterVersion.getState();
 
+    @SuppressWarnings("serial")
     Set<RepositoryVersionState> validStates = new HashSet<RepositoryVersionState>(){{
       add(RepositoryVersionState.INSTALLING);
     }};
@@ -1081,22 +1085,23 @@ public class ClusterImpl implements Cluster {
       throw new AmbariException("The state must be one of " + validStates);
     }
 
+    Map<String, Host> hosts = clusters.getHostsForCluster(getClusterName());
+    Set<String> existingHostsWithClusterStackAndVersion = new HashSet<String>();
+    HashMap<String, HostVersionEntity> existingHostStackVersions = new HashMap<String, HostVersionEntity>();
+
     clusterGlobalLock.writeLock().lock();
     try {
-      Set<String> existingHostsWithClusterStackAndVersion = new HashSet<String>();
-      HashMap<String, HostVersionEntity> existingHostStackVersions = new HashMap<String, HostVersionEntity>();
       List<HostVersionEntity> existingHostVersionEntities = hostVersionDAO.findByClusterStackAndVersion(
           getClusterName(),
           sourceClusterVersion.getRepositoryVersion().getStack(),
           sourceClusterVersion.getRepositoryVersion().getVersion());
+
       if (existingHostVersionEntities != null) {
         for (HostVersionEntity entity : existingHostVersionEntities) {
           existingHostsWithClusterStackAndVersion.add(entity.getHostName());
           existingHostStackVersions.put(entity.getHostName(), entity);
         }
       }
-
-      Map<String, Host> hosts = clusters.getHostsForCluster(getClusterName());
 
       Sets.SetView<String> hostsMissingRepoVersion = Sets.difference(
           hosts.keySet(), existingHostsWithClusterStackAndVersion);
@@ -1176,11 +1181,18 @@ public class ClusterImpl implements Cluster {
     return RepositoryVersionState.OUT_OF_SYNC;
   }
 
+  /**
+   * Recalculate what the Cluster Version state should be, depending on the individual Host Versions.
+   * @param repositoryVersion Repository version (e.g., 2.2.0.0-1234)
+   * @throws AmbariException
+   */
   @Override
   public void recalculateClusterVersionState(String repositoryVersion) throws AmbariException {
     if (repositoryVersion == null) {
       return;
     }
+
+    Map<String, Host> hosts = clusters.getHostsForCluster(getClusterName());
 
     clusterGlobalLock.writeLock().lock();
     try {
@@ -1194,6 +1206,9 @@ public class ClusterImpl implements Cluster {
         if (clusterVersionDAO.findByCluster(getClusterName()).isEmpty()) {
           // During an Ambari Upgrade from 1.7.0 -> 2.0.0, the Cluster Version
           // will not exist, so bootstrap it.
+          // This can still fail if the Repository Version has not yet been created,
+          // which can happen if the first HostComponentState to trigger this method
+          // cannot advertise a version.
           createClusterVersionInternal(
               stackId.getStackId(),
               repositoryVersion,
@@ -1201,10 +1216,18 @@ public class ClusterImpl implements Cluster {
               RepositoryVersionState.UPGRADING);
           clusterVersion = clusterVersionDAO.findByClusterAndStackAndVersion(
               getClusterName(), stackId.getStackId(), repositoryVersion);
+
+          if (clusterVersion == null) {
+            LOG.warn(String.format(
+                "Could not create a cluster version for cluster %s and stack %s using repo version %s",
+                getClusterName(), stackId.getStackId(), repositoryVersion));
+            return;
+          }
         } else {
-          throw new AmbariException(String.format(
+          LOG.warn(String.format(
               "Repository version %s not found for cluster %s",
               repositoryVersion, getClusterName()));
+          return;
         }
       }
 
@@ -1220,14 +1243,13 @@ public class ClusterImpl implements Cluster {
       }
 
       // Part 2, check for transitions.
-      Map<String, Host> hosts = clusters.getHostsForCluster(getClusterName());
-
       Set<Host> hostsWithoutHostVersion = new HashSet<Host>();
       Map<RepositoryVersionState, Set<String>> stateToHosts = new HashMap<RepositoryVersionState, Set<String>>();
       for (Host host : hosts.values()) {
         String hostName = host.getHostName();
         HostVersionEntity hostVersion = hostVersionDAO.findByClusterStackVersionAndHost(
             getClusterName(), stackId.getStackId(), repositoryVersion, hostName);
+
         if (hostVersion == null) {
           // This host either has not had a chance to heartbeat yet with its
           // installed component, or it has components
@@ -1237,13 +1259,6 @@ public class ClusterImpl implements Cluster {
         }
 
         RepositoryVersionState hostState = hostVersion.getState();
-        if (host.getState() != HostState.HEALTHY) {
-          hostState = RepositoryVersionState.OUT_OF_SYNC;
-          LOG.warn(String.format(
-              "Host %s is in unhealthy state, treating as %s", hostName,
-              hostState));
-        }
-
         if (stateToHosts.containsKey(hostState)) {
           stateToHosts.get(hostState).add(hostName);
         } else {
@@ -1263,7 +1278,7 @@ public class ClusterImpl implements Cluster {
         for (HostComponentStateEntity hostComponentStateEntity : allHostComponents) {
           if (hostComponentStateEntity.getVersion().equalsIgnoreCase(
               State.UNKNOWN.toString())) {
-            // Some Components cannot advertise a version. E.g., ZKF, AMS,
+            // Some Components cannot advertise a version. E.g., ZKF, AMBARI_METRICS,
             // Kerberos
             ComponentInfo compInfo = ambariMetaInfo.getComponent(
                 stackId.getStackName(), stackId.getStackVersion(),
@@ -1298,70 +1313,52 @@ public class ClusterImpl implements Cluster {
 
   /**
    * Transition the Host Version across states.
-   * If a Host Component has a valid version, then create a Host Version if it does not already exist.
-   * Pre-req is for a Repository Version to exist.
-   * If no no cluster version exists, or exactly one, then potentially transition to CURRENT when no more work is needed.
-   * If in the middle of an upgrade and no more work exists, transition to UPGRADED.
-   * Otherwise, if a mismatch of versions exist, transition to UPGRADING since in the middle of an upgrade.
-   * @param host
-   * @param repositoryVersion
-   * @param stack
+   * @param host Host object
+   * @param repositoryVersion Repository Version with stack and version information
+   * @param stack Stack information
    * @throws AmbariException
    */
-  @Override
   @Transactional
   public HostVersionEntity transitionHostVersionState(HostEntity host, final RepositoryVersionEntity repositoryVersion, final StackId stack) throws AmbariException {
-    HostVersionEntity hostVersionEntity = null;
-    List<HostVersionEntity> hostVersions = hostVersionDAO.findByHost(host.getHostName());
-    if (hostVersions == null || hostVersions.isEmpty()) {
-      // Since the host has no versions, allow bootstrapping a version for it.
-      hostVersionEntity = new HostVersionEntity(host.getHostName(), repositoryVersion, RepositoryVersionState.UPGRADING);
-      hostVersionEntity.setHostEntity(host);
-      hostVersionDAO.create(hostVersionEntity);
-    } else {
-      hostVersionEntity = hostVersionDAO.findByClusterStackVersionAndHost(getClusterName(), repositoryVersion.getStack(), repositoryVersion.getVersion(), host.getHostName());
+    HostVersionEntity hostVersionEntity = hostVersionDAO.findByClusterStackVersionAndHost(getClusterName(), repositoryVersion.getStack(), repositoryVersion.getVersion(), host.getHostName());
+
+    hostTransitionStateWriteLock.lock();
+    try {
+      // Create one if it doesn't already exist. It will be possible to make further transitions below.
       if (hostVersionEntity == null) {
-        throw new AmbariException("Host " + host.getHostName() + " is expected to have a Host Version for stack " + repositoryVersion.getStackVersion());
+        hostVersionEntity = new HostVersionEntity(host.getHostName(), repositoryVersion, RepositoryVersionState.UPGRADING);
+        hostVersionEntity.setHostEntity(host);
+        hostVersionDAO.create(hostVersionEntity);
       }
-    }
 
-    final ServiceComponentHostSummary hostSummary = new ServiceComponentHostSummary(ambariMetaInfo, host, stack);
-    final Collection<HostComponentStateEntity> versionedHostComponents = hostSummary.getVersionedHostComponents();
+      HostVersionEntity currentVersionEntity = hostVersionDAO.findByHostAndStateCurrent(getClusterName(), host.getHostName());
+      boolean isCurrentPresent = (currentVersionEntity != null);
+      final ServiceComponentHostSummary hostSummary = new ServiceComponentHostSummary(ambariMetaInfo, host, stack);
 
-    // If 0 or 1 cluster version exists, then a brand new cluster permits the host to transition from UPGRADING->CURRENT
-    // If multiple cluster versions exist, then it means that the change in versions is happening due to an Upgrade,
-    // so should only allow transitioning to UPGRADED or UPGRADING, depending on further circumstances.
-    List<ClusterVersionEntity> clusterVersions = clusterVersionDAO.findByCluster(getClusterName());
-    if (clusterVersions.size() <= 1) {
-      // Transition from UPGRADING -> CURRENT. This is allowed because Host Version Entity is bootstrapped in an UPGRADING state.
-      // This also covers hosts that do not advertise a version when the cluster was created, and then have another component added
-      // that does advertise a version.
-      if (hostSummary.haveAllComponentsFinishedAdvertisingVersion() &&
-          (hostVersionEntity.getState().equals(RepositoryVersionState.UPGRADING) || hostVersionEntity.getState().equals(RepositoryVersionState.UPGRADED)) &&
-          ServiceComponentHostSummary.haveSameVersion(versionedHostComponents)) {
-        hostVersionEntity.setState(RepositoryVersionState.CURRENT);
-        hostVersionDAO.merge(hostVersionEntity);
-      }
-    } else {
-      // Transition from UPGRADING -> UPGRADED.
-      // We should never transition directly from INSTALLED -> UPGRADED without first going to UPGRADING because
-      // they belong in different phases (1. distribute bits 2. perform upgrade).
-      if (hostSummary.haveAllComponentsFinishedAdvertisingVersion() &&
-          hostVersionEntity.getState().equals(RepositoryVersionState.UPGRADING) &&
-          ServiceComponentHostSummary.haveSameVersion(versionedHostComponents)) {
-        hostVersionEntity.setState(RepositoryVersionState.UPGRADED);
-        hostVersionDAO.merge(hostVersionEntity);
-      } else{
-        // HostVersion is INSTALLED and an upgrade is in-progress because at least 2 components have different versions,
-        // Or the host has no components that advertise a version, so still consider it as UPGRADING.
-        if (hostVersionEntity.getState().equals(RepositoryVersionState.INSTALLED) && versionedHostComponents.size() > 0 &&
-          !ServiceComponentHostSummary.haveSameVersion(versionedHostComponents)) {
+      if (!isCurrentPresent) {
+        // Transition from UPGRADING -> CURRENT. This is allowed because Host Version Entity is bootstrapped in an UPGRADING state.
+        if (hostSummary.isUpgradeFinished() && hostVersionEntity.getState().equals(RepositoryVersionState.UPGRADING)) {
+          hostVersionEntity.setState(RepositoryVersionState.CURRENT);
+          hostVersionDAO.merge(hostVersionEntity);
+        }
+      } else {
+        // Handle transitions during a Rolling Upgrade
+
+        // If a host only has one Component to update, that single report can still transition the host version from
+        // INSTALLED->UPGRADING->UPGRADED in one shot.
+        if (hostSummary.isUpgradeInProgress(currentVersionEntity.getRepositoryVersion().getVersion()) && hostVersionEntity.getState().equals(RepositoryVersionState.INSTALLED)) {
           hostVersionEntity.setState(RepositoryVersionState.UPGRADING);
           hostVersionDAO.merge(hostVersionEntity);
         }
-      }
-    }
 
+        if (hostSummary.isUpgradeFinished() && hostVersionEntity.getState().equals(RepositoryVersionState.UPGRADING)) {
+          hostVersionEntity.setState(RepositoryVersionState.UPGRADED);
+          hostVersionDAO.merge(hostVersionEntity);
+        }
+      }
+    } finally {
+      hostTransitionStateWriteLock.unlock();
+    }
     return hostVersionEntity;
   }
 
@@ -1419,7 +1416,8 @@ public class ClusterImpl implements Cluster {
 
     RepositoryVersionEntity repositoryVersionEntity = repositoryVersionDAO.findByStackAndVersion(stack, version);
     if (repositoryVersionEntity == null) {
-      throw new AmbariException("Could not find repository version for stack=" + stack + ", version=" + version );
+      LOG.warn("Could not find repository version for stack=" + stack + ", version=" + version);
+      return;
     }
 
     ClusterVersionEntity clusterVersionEntity = new ClusterVersionEntity(clusterEntity, repositoryVersionEntity, state, System.currentTimeMillis(), System.currentTimeMillis(), userName);
@@ -1506,6 +1504,41 @@ public class ClusterImpl implements Cluster {
         existingClusterVersion.setState(state);
         existingClusterVersion.setEndTime(System.currentTimeMillis());
         clusterVersionDAO.merge(existingClusterVersion);
+
+        if (RepositoryVersionState.CURRENT == state) {
+          for (HostEntity he : clusterEntity.getHostEntities()) {
+            if (hostHasReportables(existingClusterVersion.getRepositoryVersion(), he)) {
+              continue;
+            }
+
+            Collection<HostVersionEntity> versions = hostVersionDAO.findByHost(
+                he.getHostName());
+
+            HostVersionEntity target = null;
+            if (null != versions) {
+              // Set anything that was previously marked CURRENT as INSTALLED, and the matching version as CURRENT
+              for (HostVersionEntity entity : versions) {
+                if (entity.getRepositoryVersion().getId().equals(existingClusterVersion.getRepositoryVersion().getId())) {
+                  target = entity;
+                  target.setState(state);
+                  hostVersionDAO.merge(target);
+                } else if (entity.getState() == RepositoryVersionState.CURRENT) {
+                  entity.setState(RepositoryVersionState.INSTALLED);
+                  hostVersionDAO.merge(entity);
+                }
+              }
+            }
+            if (null == target) {
+              // If no matching version was found, create one with the desired state
+              HostVersionEntity hve = new HostVersionEntity();
+              hve.setHostEntity(he);
+              hve.setHostName(he.getHostName());
+              hve.setRepositoryVersion(existingClusterVersion.getRepositoryVersion());
+              hve.setState(state);
+              hostVersionDAO.create(hve);
+            }
+          }
+        }
       }
     } catch (RollbackException e) {
       String message = "Unable to transition stack " + stack + " at version "
@@ -1515,6 +1548,30 @@ public class ClusterImpl implements Cluster {
     } finally {
       clusterGlobalLock.writeLock().unlock();
     }
+  }
+
+  /**
+   * Checks if the host has any components reporting version information.
+   * @param repoVersion the repo version
+   * @param host        the host entity
+   * @return {@code true} if the host has any component that report version
+   * @throws AmbariException
+   */
+  private boolean hostHasReportables(RepositoryVersionEntity repoVersion, HostEntity host)
+      throws AmbariException {
+
+    for (HostComponentStateEntity hcse : host.getHostComponentStateEntities()) {
+      ComponentInfo ci = ambariMetaInfo.getComponent(
+          repoVersion.getStackName(),
+          repoVersion.getStackVersion(),
+          hcse.getServiceName(),
+          hcse.getComponentName());
+
+      if (ci.isVersionAdvertised()) {
+        return true;
+      }
+    }
+    return false;
   }
 
   @Override
@@ -1611,14 +1668,14 @@ public class ClusterImpl implements Cluster {
   @Override
   public ClusterResponse convertToResponse()
     throws AmbariException {
+    String clusterName = getClusterName();
+    Map<String, Host> hosts = clusters.getHostsForCluster(clusterName);
     clusterGlobalLock.readLock().lock();
     try {
-      Map<String, Host> hosts = clusters.getHostsForCluster(getClusterName());
-
-      return new ClusterResponse(getClusterId(), getClusterName(),
+      return new ClusterResponse(getClusterId(), clusterName,
           getProvisioningState(), getSecurityType(), hosts.keySet(),
           hosts.size(), getDesiredStackVersion().getStackId(),
-          getClusterHealthReport());
+          getClusterHealthReport(hosts));
     } finally {
       clusterGlobalLock.readLock().unlock();
     }
@@ -1753,12 +1810,12 @@ public class ClusterImpl implements Cluster {
   }
 
   @Override
-  public ServiceConfigVersionResponse addDesiredConfig(String user, Set<Config> configs) throws AmbariException {
+  public ServiceConfigVersionResponse addDesiredConfig(String user, Set<Config> configs) {
     return addDesiredConfig(user, configs, null);
   }
 
   @Override
-  public ServiceConfigVersionResponse addDesiredConfig(String user, Set<Config> configs, String serviceConfigVersionNote) throws AmbariException {
+  public ServiceConfigVersionResponse addDesiredConfig(String user, Set<Config> configs, String serviceConfigVersionNote) {
     if (null == user) {
       throw new NullPointerException("User must be specified.");
     }
@@ -2161,7 +2218,7 @@ public class ClusterImpl implements Cluster {
   }
 
   @Transactional
-  ServiceConfigVersionResponse applyConfigs(Set<Config> configs, String user, String serviceConfigVersionNote) throws AmbariException {
+  ServiceConfigVersionResponse applyConfigs(Set<Config> configs, String user, String serviceConfigVersionNote) {
 
     String serviceName = null;
     for (Config config : configs) {
@@ -2173,7 +2230,7 @@ public class ClusterImpl implements Cluster {
           } else if (!serviceName.equals(entry.getKey())) {
             String error = "Updating configs for multiple services by a " +
                 "single API request isn't supported";
-            AmbariException exception = new AmbariException(error);
+            IllegalArgumentException exception = new IllegalArgumentException(error);
             LOG.error(error + ", config version not created");
             throw exception;
           } else {
@@ -2368,7 +2425,8 @@ public class ClusterImpl implements Cluster {
     return components.get(componentName).getServiceComponentHosts().keySet();
   }
 
-  private ClusterHealthReport getClusterHealthReport() throws AmbariException {
+  private ClusterHealthReport getClusterHealthReport(
+      Map<String, Host> clusterHosts) throws AmbariException {
 
     int staleConfigsHosts = 0;
     int maintenanceStateHosts = 0;
@@ -2383,17 +2441,11 @@ public class ClusterImpl implements Cluster {
     int alertStatusHosts = 0;
     int heartbeatLostStateHosts = 0;
 
-    Set<String> hostnames;
-
-    try {
-      hostnames = clusters.getHostsForCluster(clusterEntity.getClusterName()).keySet();
-    } catch (AmbariException ignored) {
-      hostnames = Collections.emptySet();
-    }
-
-    for (String hostname : hostnames) {
-
-      Host host = clusters.getHost(hostname);
+    Collection<Host> hosts = clusterHosts.values();
+    Iterator<Host> iterator = hosts.iterator();
+    while (iterator.hasNext()) {
+      Host host = iterator.next();
+      String hostName = host.getHostName();
 
       switch (host.getState()) {
         case HEALTHY:
@@ -2428,8 +2480,8 @@ public class ClusterImpl implements Cluster {
       boolean staleConfig = false;
       boolean maintenanceState = false;
 
-      if (serviceComponentHostsByHost.containsKey(hostname)) {
-        for (ServiceComponentHost sch : serviceComponentHostsByHost.get(hostname)) {
+      if (serviceComponentHostsByHost.containsKey(hostName)) {
+        for (ServiceComponentHost sch : serviceComponentHostsByHost.get(hostName)) {
           staleConfig = staleConfig || configHelper.isStaleConfigs(sch);
           maintenanceState = maintenanceState ||
             maintenanceStateHelper.getEffectiveState(sch) != MaintenanceState.OFF;

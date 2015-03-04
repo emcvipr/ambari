@@ -313,6 +313,14 @@
   </property>
 
   <property>
+    <name>yarn.resourcemanager.webapp.https.address</name>
+    <value>localhost:8090</value>
+    <description>
+      The https address of the RM web application.
+    </description>
+  </property>
+
+  <property>
     <name>yarn.nodemanager.vmem-check-enabled</name>
     <value>false</value>
     <description>
@@ -336,6 +344,14 @@
       not permitted to connect to the resource manager.  The full pathname of the
       file must be specified.  If the value is empty, no hosts are
       excluded.
+    </description>
+  </property>
+
+  <property>
+    <name>yarn.http.policy</name>
+    <value>HTTP_ONLY</value>
+    <description>
+      This configures the HTTP endpoint for Yarn Daemons.The following values are supported: - HTTP_ONLY : Service is provided only on http - HTTPS_ONLY : Service is provided only on https
     </description>
   </property>
 

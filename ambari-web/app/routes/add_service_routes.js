@@ -49,12 +49,13 @@ module.exports = App.WizardRoute.extend({
             App.router.get('updateController').updateServices(function(){
               App.router.get('updateController').updateServiceMetric();
             });
+            var exitPath = addServiceController.getDBProperty('onClosePath') || 'main.services.index';
             addServiceController.finish();
             // We need to do recovery based on whether we are in Add Host or Installer wizard
             App.clusterStatus.setClusterStatus({
               clusterName: App.router.get('content.cluster.name'),
               clusterState: 'DEFAULT'
-            }, {alwaysCallback: function() {self.hide();App.router.transitionTo('main.services.index');location.reload();}});
+            }, {alwaysCallback: function() {self.hide();App.router.transitionTo(exitPath);location.reload();}});
 
           },
           didInsertElement: function(){
@@ -128,8 +129,10 @@ module.exports = App.WizardRoute.extend({
     connectOutlets: function (router) {
       console.log('in addService.step2:connectOutlets');
       var controller = router.get('addServiceController');
+      var wizardStep2Controller = router.get('wizardStep5Controller');
       controller.setCurrentStep('2');
       controller.set('hideBackButton', false);
+      wizardStep2Controller.set('isInitialLayout', true);
       controller.dataLoading().done(function () {
         controller.loadAllPriorSteps().done(function () {
           controller.connectOutlet('wizardStep5', controller.get('content'));
@@ -263,6 +266,9 @@ module.exports = App.WizardRoute.extend({
       }
     },
     next: function (router) {
+      if (App.supports.automatedKerberos && router.get('mainAdminKerberosController.securityEnabled')) {
+        router.get('kerberosWizardStep2Controller').createKerberosAdminSession(router.get('kerberosWizardStep4Controller.stepConfigs')[0].get('configs'));
+      }
       router.transitionTo('step6');
     }
   }),
@@ -306,13 +312,11 @@ module.exports = App.WizardRoute.extend({
     },
     next: function (router) {
       var addServiceController = router.get('addServiceController');
-      var wizardStep8Controller = router.get('wizardStep8Controller');
       addServiceController.installServices(function () {
+        router.get('wizardStep8Controller').set('servicesInstalled', true);
         addServiceController.setInfoForStep9();
-
         addServiceController.saveClusterState('ADD_SERVICES_INSTALLING_3');
-        wizardStep8Controller.set('servicesInstalled', true);
-        router.transitionTo('step7');
+        App.router.transitionTo('step7');
       });
     }
   }),

@@ -17,7 +17,6 @@
  */
 package org.apache.ambari.server.state;
 
-import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -29,7 +28,6 @@ import java.util.regex.Pattern;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
-import org.apache.ambari.server.controller.internal.RequestResourceProvider;
 import org.apache.ambari.server.controller.internal.StageResourceProvider;
 import org.apache.ambari.server.controller.predicate.AndPredicate;
 import org.apache.ambari.server.controller.spi.ClusterController;
@@ -189,13 +187,12 @@ public class UpgradeHelper {
 
     context.setAmbariMetaInfo(m_ambariMetaInfo.get());
     Cluster cluster = context.getCluster();
-    boolean forUpgrade = context.getDirection() == Direction.UPGRADE;
     MasterHostResolver mhr = context.getResolver();
 
     Map<String, Map<String, ProcessingComponent>> allTasks = upgradePack.getTasks();
     List<UpgradeGroupHolder> groups = new ArrayList<UpgradeGroupHolder>();
 
-    for (Grouping group : upgradePack.getGroups(forUpgrade)) {
+    for (Grouping group : upgradePack.getGroups(context.getDirection())) {
 
       UpgradeGroupHolder groupHolder = new UpgradeGroupHolder();
       groupHolder.name = group.name;
@@ -204,7 +201,7 @@ public class UpgradeHelper {
       groupHolder.allowRetry = group.allowRetry;
 
       // !!! all downgrades are skippable
-      if (Direction.DOWNGRADE == context.getDirection()) {
+      if (context.getDirection().isDowngrade()) {
         groupHolder.skippable = true;
       }
 
@@ -212,7 +209,7 @@ public class UpgradeHelper {
 
       List<UpgradePack.OrderService> services = group.services;
 
-      if (context.getDirection() == Direction.DOWNGRADE && !services.isEmpty()) {
+      if (context.getDirection().isDowngrade() && !services.isEmpty()) {
         List<UpgradePack.OrderService> reverse = new ArrayList<UpgradePack.OrderService>(services);
         Collections.reverse(reverse);
         services = reverse;
@@ -242,28 +239,27 @@ public class UpgradeHelper {
           Service svc = cluster.getService(service.serviceName);
           ProcessingComponent pc = allTasks.get(service.serviceName).get(component);
 
+          setDisplayNames(context, service.serviceName, component);
+
           // Special case for NAMENODE
           if (service.serviceName.equalsIgnoreCase("HDFS") && component.equalsIgnoreCase("NAMENODE")) {
             // !!! revisit if needed
-            if (hostsType.master != null && hostsType.secondary != null) {
+            if (!hostsType.hosts.isEmpty() && hostsType.master != null && hostsType.secondary != null) {
               // The order is important, first do the standby, then the active namenode.
-              Set<String> order = new LinkedHashSet<String>();
+              LinkedHashSet<String> order = new LinkedHashSet<String>();
 
-              // TODO Upgrade Pack, somehow, running the secondary first causes them to swap, even before the restart.
-              order.add(hostsType.master);
               order.add(hostsType.secondary);
+              order.add(hostsType.master);
 
               // Override the hosts with the ordered collection
               hostsType.hosts = order;
-            } else {
-                throw new AmbariException(MessageFormat.format("Could not find active and standby namenodes using hosts: {0}", StringUtils.join(hostsType.hosts, ", ").toString()));
             }
 
-            builder.add(hostsType, service.serviceName, forUpgrade,
+            builder.add(context, hostsType, service.serviceName,
                 svc.isClientOnlyService(), pc);
 
           } else {
-            builder.add(hostsType, service.serviceName, forUpgrade,
+            builder.add(context, hostsType, service.serviceName,
                 svc.isClientOnlyService(), pc);
           }
         }
@@ -486,37 +482,26 @@ public class UpgradeHelper {
   }
 
   /**
-   * Gets a Request resource to aggreate with an Upgrade
-   * @param clusterName the cluster name
-   * @param requestId the request id
-   * @return the resource for the Request
-   * @throws UnsupportedPropertyException
-   * @throws NoSuchResourceException
-   * @throws NoSuchParentResourceException
-   * @throws SystemException
+   * Helper to set service and component display names on the context
+   * @param context   the context to update
+   * @param service   the service name
+   * @param component the component name
    */
-  // !!! FIXME this feels very wrong
-  public Resource getRequestResource(String clusterName, Long requestId)
-      throws UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException, SystemException {
+  private void setDisplayNames(UpgradeContext context, String service, String component) {
+    StackId stackId = context.getCluster().getDesiredStackVersion();
+    try {
+      ServiceInfo serviceInfo = m_ambariMetaInfo.get().getService(stackId.getStackName(),
+          stackId.getStackVersion(), service);
+      context.setServiceDisplay(service, serviceInfo.getDisplayName());
 
-    ClusterController clusterController = ClusterControllerHelper.getClusterController();
+      ComponentInfo compInfo = serviceInfo.getComponentByName(component);
+      context.setComponentDisplay(service, component, compInfo.getDisplayName());
 
-    Request request = PropertyHelper.getReadRequest();
-
-    Predicate predicate = new PredicateBuilder().property(RequestResourceProvider.REQUEST_CLUSTER_NAME_PROPERTY_ID).equals(clusterName).and()
-        // !!! RequestResourceProvider is expecting a string, not a Long for the requestId
-        .property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals(requestId.toString()).toPredicate();
-
-    QueryResponse response = clusterController.getResources(Resource.Type.Request,
-        request, predicate);
-
-    Set<Resource> resources = response.getResources();
-    if (1 != resources.size()) {
-      throw new SystemException(String.format(
-          "Cannot uniquely identify the request resource for %s", requestId));
+    } catch (AmbariException e) {
+      LOG.debug("Could not get service detail", e);
     }
 
-    return resources.iterator().next();
+
   }
 
 }

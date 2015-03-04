@@ -194,15 +194,19 @@ describe("App.MainServiceInfoConfigsController", function () {
     var tests = [
       {
         input: {
-          'publicHostName1': ['TaskTracker'],
-          'publicHostName2': ['JobTracker', 'TaskTracker']
+          context: {
+            'publicHostName1': ['TaskTracker'],
+            'publicHostName2': ['JobTracker', 'TaskTracker']
+          }
         },
         components: "2 TaskTrackers, 1 JobTracker",
         text: Em.I18n.t('service.service.config.restartService.shouldBeRestarted').format(Em.I18n.t('common.components'))
       },
       {
         input: {
-          'publicHostName1': ['TaskTracker']
+          context: {
+            'publicHostName1': ['TaskTracker']
+          }
         },
         components: "1 TaskTracker",
         text: Em.I18n.t('service.service.config.restartService.shouldBeRestarted').format(Em.I18n.t('common.component'))
@@ -229,15 +233,19 @@ describe("App.MainServiceInfoConfigsController", function () {
     var tests = [
       {
         input: {
-          'publicHostName1': ['TaskTracker'],
-          'publicHostName2': ['JobTracker', 'TaskTracker']
+          context: {
+            'publicHostName1': ['TaskTracker'],
+            'publicHostName2': ['JobTracker', 'TaskTracker']
+          }
         },
         hosts: "publicHostName1, publicHostName2",
         text: Em.I18n.t('service.service.config.restartService.shouldBeRestarted').format(Em.I18n.t('common.hosts'))
       },
       {
         input: {
-          'publicHostName1': ['TaskTracker']
+          context: {
+            'publicHostName1': ['TaskTracker']
+          }
         },
         hosts: "publicHostName1",
         text: Em.I18n.t('service.service.config.restartService.shouldBeRestarted').format(Em.I18n.t('common.host'))
@@ -968,52 +976,6 @@ describe("App.MainServiceInfoConfigsController", function () {
     });
   });
 
-  describe("#setValueForCheckBox", function() {
-    var tests = [
-      {
-        serviceConfigPropertyInput: Em.Object.create({
-          value: "true",
-          defaultValue: "true",
-          displayType: 'checkbox'
-        }),
-        serviceConfigProperty: Em.Object.create({
-          value: true,
-          defaultValue: true,
-          displayType: 'checkbox'
-        })
-      },
-      {
-        serviceConfigPropertyInput: Em.Object.create({
-          value: "false",
-          defaultValue: "false",
-          displayType: 'checkbox'
-        }),
-        serviceConfigProperty: Em.Object.create({
-          value: false,
-          defaultValue: false,
-          displayType: 'checkbox'
-        })
-      },
-      {
-        serviceConfigPropertyInput: Em.Object.create({
-          value: "false",
-          defaultValue: "false"
-        }),
-        serviceConfigProperty: Em.Object.create({
-          value: "false",
-          defaultValue: "false"
-        })
-      }
-    ];
-    tests.forEach(function(t) {
-      it("set " + t.serviceConfigPropertyInput.value, function(){
-        var serviceConfigProperty = t.serviceConfigPropertyInput;
-        mainServiceInfoConfigsController.setValueForCheckBox(serviceConfigProperty);
-        expect(serviceConfigProperty).to.eql(t.serviceConfigProperty);
-      });
-    });
-  });
-
   describe("#setEditability", function () {
 
     var tests = [
@@ -1211,19 +1173,16 @@ describe("App.MainServiceInfoConfigsController", function () {
         }
       }];
     beforeEach(function() {
-      sinon.stub(mainServiceInfoConfigsController, "setValueForCheckBox", Em.K);
       sinon.stub(mainServiceInfoConfigsController, "setValuesForOverrides", Em.K);
       sinon.stub(mainServiceInfoConfigsController, "setEditability", Em.K);
     });
     afterEach(function() {
-      mainServiceInfoConfigsController.setValueForCheckBox.restore();
       mainServiceInfoConfigsController.setValuesForOverrides.restore();
       mainServiceInfoConfigsController.setEditability.restore();
     });
     tests.forEach(function(t) {
       it("create service config. run methods to correctly set object fileds", function() {
         var result = mainServiceInfoConfigsController.createConfigProperty(t._serviceConfigProperty, t.defaultGroupSelected, t.restartData, t.serviceConfigsData);
-        expect(mainServiceInfoConfigsController.setValueForCheckBox.calledWith(t.serviceConfigProperty));
         expect(mainServiceInfoConfigsController.setValuesForOverrides.calledWith(t._serviceConfigProperty.overrides, t._serviceConfigProperty, t.serviceConfigProperty, t.defaultGroupSelected));
         expect(result.getProperties('overrides','isOverridable')).to.eql(t.serviceConfigProperty);
       });

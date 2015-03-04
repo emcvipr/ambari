@@ -203,11 +203,75 @@ App.ServiceConfigBigTextArea = App.ServiceConfigTextArea.extend(App.ServiceConfi
  */
 App.ServiceConfigCheckbox = Ember.Checkbox.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, {
 
-  checkedBinding: 'serviceConfig.value',
+  allowedPairs: {
+    'trueFalse': ["true", "false"],
+    'YesNo': ["Yes", "No"],
+    'YESNO': ["YES", "NO"],
+    'yesNo': ["yes", "no"]
+  },
+
+  trueValue: true,
+  falseValue: false,
+
+  checked: false,
+
+  /**
+   * set appropriate config values pair
+   * to define which value is positive (checked) property
+   * and what value is negative (unchecked) proeprty
+   */
+  didInsertElement: function() {
+    this._super();
+    this.addObserver('serviceConfig.value', this, 'toggleChecker');
+    Object.keys(this.get('allowedPairs')).forEach(function(key) {
+      if (this.get('allowedPairs')[key].contains(this.get('serviceConfig.value'))) {
+        this.set('trueValue', this.get('allowedPairs')[key][0]);
+        this.set('falseValue', this.get('allowedPairs')[key][1]);
+      }
+    }, this);
+    this.set('checked', this.get('serviceConfig.value') === this.get('trueValue'))
+  },
+
+  willDestroyElement: function() {
+    this.removeObserver('serviceConfig.value', this, 'checkedBinding');
+  },
+
+  /***
+   * defines if checkbox value appropriate to the config value
+   * @returns {boolean}
+   */
+  isNotAppropriateValue: function() {
+    return this.get('serviceConfig.value') !== this.get(this.get('checked') + 'Value');
+  },
+
+  /**
+   * change service config value if click on checkbox
+   */
+  toggleValue: function() {
+    if (this.isNotAppropriateValue()){
+      this.set('serviceConfig.value', this.get(this.get('checked') + 'Value'));
+      this.get('serviceConfig').set("editDone", true);
+    }
+  }.observes('checked'),
+
+  /**
+   * change checkbox value if click on undo
+   */
+  toggleChecker: function() {
+    if (this.isNotAppropriateValue())
+      this.set('checked', !this.get('checked'));
+  },
 
   disabled: function () {
     return !this.get('serviceConfig.isEditable');
-  }.property('serviceConfig.isEditable')
+  }.property('serviceConfig.isEditable'),
+
+  //Set editDone false for all current category config text field parameter
+  focusIn: function (event) {
+    if (!this.get('serviceConfig.isOverridden') && !this.get('serviceConfig.isComparison')) {
+      this.get("parentView.categoryConfigsAll").setEach("editDone", false);
+    }
+  }
 });
 
 /**
@@ -216,19 +280,27 @@ App.ServiceConfigCheckbox = Ember.Checkbox.extend(App.ServiceConfigPopoverSuppor
  */
 App.ServiceConfigCheckboxWithDependencies = App.ServiceConfigCheckbox.extend({
 
-  didInsertElement: function() {
-    this._super();
-    this.showHideDependentConfigs();
+  toggleDependentConfigs: function() {
+    if (this.get('serviceConfig.dependentConfigPattern')) {
+      if (this.get('serviceConfig.dependentConfigPattern') === "CATEGORY") {
+        this.disableEnableCategoryConfigs();
+      } else {
+        this.showHideDependentConfigs();
+      }
+    }
+  }.observes('checked'),
+
+  disableEnableCategoryConfigs: function () {
+    this.get('categoryConfigsAll').setEach('isEditable', this.get('checked'));
+    this.set('serviceConfig.isEditable', true);
   },
 
-  showHideDependentConfigs: function() {
-    if (this.get('serviceConfig.dependentConfigPattern')) {
-      this.get('categoryConfigsAll').forEach(function(c) {
-        if (c.get('name').match(this.get('serviceConfig.dependentConfigPattern')) && c.get('name') != this.get('serviceConfig.name'))
-          c.set('isVisible', this.get('checked'))
-      }, this);
-    }
-  }.observes('checked')
+  showHideDependentConfigs: function () {
+    this.get('categoryConfigsAll').forEach(function (c) {
+      if (c.get('name').match(this.get('serviceConfig.dependentConfigPattern')) && c.get('name') != this.get('serviceConfig.name'))
+        c.set('isVisible', this.get('checked'))
+    }, this);
+  }
 });
 
 App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, {
@@ -263,85 +335,124 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
     // The following if condition will be satisfied only for installer wizard flow
     if (this.get('configs').length) {
       var connectionUrl = this.get('connectionUrl');
-      var dbClass = this.get('dbClass');
       if (connectionUrl) {
-        if (this.get('serviceConfig.serviceName') === 'HIVE') {
-          var hiveDbType = this.get('parentView.serviceConfigs').findProperty('name', 'hive_database_type');
-          switch (this.get('serviceConfig.value')) {
-            case 'New MySQL Database':
-            case 'Existing MySQL Database':
-              connectionUrl.set('value', "jdbc:mysql://" + this.get('hostName') + "/" + this.get('databaseName') + "?createDatabaseIfNotExist=true");
-              dbClass.set('value', "com.mysql.jdbc.Driver");
-              Em.set(hiveDbType, 'value', 'mysql');
-              break;
-            case Em.I18n.t('services.service.config.hive.oozie.postgresql'):
-              connectionUrl.set('value', "jdbc:postgresql://" + this.get('hostName') + ":5432/" + this.get('databaseName'));
-              dbClass.set('value', "org.postgresql.Driver");
-              Em.set(hiveDbType, 'value', 'postgres');
-              break;
-            case 'Existing Oracle Database':
-              connectionUrl.set('value', "jdbc:oracle:thin:@//" + this.get('hostName') + ":1521/" + this.get('databaseName'));
-              dbClass.set('value', "oracle.jdbc.driver.OracleDriver");
-              Em.set(hiveDbType, 'value', 'oracle');
-              break;
-            case 'Existing MSSQL Server database with SQL authentication':
-              connectionUrl.set('value', "jdbc:sqlserver://" + this.get('hostName') + ";databaseName=" + this.get('databaseName'));
-              dbClass.set('value', "com.microsoft.sqlserver.jdbc.SQLServerDriver");
-              Em.set(hiveDbType, 'value', 'mssql');
-              break;
-            case 'Existing MSSQL Server database with integrated authentication':
-              connectionUrl.set('value', "jdbc:sqlserver://" + this.get('hostName') + ";databaseName=" + this.get('databaseName') + ";integratedSecurity=true");
-              dbClass.set('value', "com.microsoft.sqlserver.jdbc.SQLServerDriver");
-              Em.set(hiveDbType, 'value', 'mssql');
-              break;
-          }
-          var isNotExistingMySQLServer = this.get('serviceConfig.value') !== 'Existing MSSQL Server database with integrated authentication';
-          this.get('categoryConfigsAll').findProperty('name', 'javax.jdo.option.ConnectionUserName').setProperties({
-            isVisible: isNotExistingMySQLServer,
-            isRequired: isNotExistingMySQLServer
-          });
-          this.get('categoryConfigsAll').findProperty('name', 'javax.jdo.option.ConnectionPassword').setProperties({
-            isVisible: isNotExistingMySQLServer,
-            isRequired: isNotExistingMySQLServer
-          });
-        } else if (this.get('serviceConfig.serviceName') === 'OOZIE') {
-          switch (this.get('serviceConfig.value')) {
-            case 'New Derby Database':
-              connectionUrl.set('value', "jdbc:derby:${oozie.data.dir}/${oozie.db.schema.name}-db;create=true");
-              dbClass.set('value', "org.apache.derby.jdbc.EmbeddedDriver");
-              break;
-            case 'Existing MySQL Database':
-              connectionUrl.set('value', "jdbc:mysql://" + this.get('hostName') + "/" + this.get('databaseName'));
-              dbClass.set('value', "com.mysql.jdbc.Driver");
-              break;
-            case Em.I18n.t('services.service.config.hive.oozie.postgresql'):
-              connectionUrl.set('value', "jdbc:postgresql://" + this.get('hostName') + ":5432/" + this.get('databaseName'));
-              dbClass.set('value', "org.postgresql.Driver");
-              break;
-            case 'Existing Oracle Database':
-              connectionUrl.set('value', "jdbc:oracle:thin:@//" + this.get('hostName') + ":1521/" + this.get('databaseName'));
-              dbClass.set('value', "oracle.jdbc.driver.OracleDriver");
-              break;
-            case 'Existing MSSQL Server database with SQL authentication':
-              connectionUrl.set('value', "jdbc:sqlserver://" + this.get('hostName') + ";databaseName=" + this.get('databaseName'));
-              dbClass.set('value', "com.microsoft.sqlserver.jdbc.SQLServerDriver");
-              break;
-            case 'Existing MSSQL Server database with integrated authentication':
-              connectionUrl.set('value', "jdbc:sqlserver://" + this.get('hostName') + ";databaseName=" + this.get('databaseName') + ";integratedSecurity=true");
-              dbClass.set('value', "com.microsoft.sqlserver.jdbc.SQLServerDriver");
-              break;
-          }
-          isNotExistingMySQLServer = this.get('serviceConfig.value') !== 'Existing MSSQL Server database with integrated authentication';
-          this.get('categoryConfigsAll').findProperty('name', 'oozie.service.JPAService.jdbc.username').setProperties({
-            isVisible: isNotExistingMySQLServer,
-            isRequired: isNotExistingMySQLServer
-          });
-          this.get('categoryConfigsAll').findProperty('name', 'oozie.service.JPAService.jdbc.password').setProperties({
-            isVisible: isNotExistingMySQLServer,
-            isRequired: isNotExistingMySQLServer
-          });
+        var dbClass = this.get('dbClass');
+        var hostName = this.get('hostName');
+        var databaseName = this.get('databaseName');
+        var hostNameDefault;
+        var databaseNameDefault;
+        var connectionUrlValue = connectionUrl.get('value');
+        var connectionUrlDefaultValue = connectionUrl.get('defaultValue');
+        var dbClassValue = dbClass.get('value');
+        var serviceName = this.get('serviceConfig.serviceName');
+        var isServiceInstalled = App.Service.find().someProperty('serviceName', serviceName);
+        var postgresUrl = 'jdbc:postgresql://{0}:5432/{1}';
+        var oracleUrl = 'jdbc:oracle:thin:@//{0}:1521/{1}';
+        var mssqlUrl = 'jdbc:sqlserver://{0};databaseName={1}';
+        var mssqlIntegratedAuthUrl = 'jdbc:sqlserver://{0};databaseName={1};integratedSecurity=true';
+        var isNotExistingMySQLServer = this.get('serviceConfig.value') !== 'Existing MSSQL Server database with integrated authentication';
+        var categoryConfigsAll = this.get('categoryConfigsAll');
+        if (isServiceInstalled) {
+          hostNameDefault = this.get('hostNameProperty.defaultValue');
+          databaseNameDefault = this.get('databaseNameProperty.defaultValue');
+        } else {
+          hostNameDefault = hostName;
+          databaseNameDefault = databaseName;
         }
-        connectionUrl.set('defaultValue', connectionUrl.get('value'));
+        switch (serviceName) {
+          case 'HIVE':
+            var hiveDbType = this.get('parentView.serviceConfigs').findProperty('name', 'hive_database_type');
+            var mysqlUrl = 'jdbc:mysql://{0}/{1}?createDatabaseIfNotExist=true';
+            switch (this.get('serviceConfig.value')) {
+              case 'New MySQL Database':
+              case 'Existing MySQL Database':
+                connectionUrlValue = mysqlUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = mysqlUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'com.mysql.jdbc.Driver';
+                Em.set(hiveDbType, 'value', 'mysql');
+                break;
+              case Em.I18n.t('services.service.config.hive.oozie.postgresql'):
+                connectionUrlValue = postgresUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = postgresUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'org.postgresql.Driver';
+                Em.set(hiveDbType, 'value', 'postgres');
+                break;
+              case 'Existing Oracle Database':
+                connectionUrlValue = oracleUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = oracleUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'oracle.jdbc.driver.OracleDriver';
+                Em.set(hiveDbType, 'value', 'oracle');
+                break;
+              case 'Existing MSSQL Server database with SQL authentication':
+                connectionUrlValue = mssqlUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = mssqlUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'com.microsoft.sqlserver.jdbc.SQLServerDriver';
+                Em.set(hiveDbType, 'value', 'mssql');
+                break;
+              case 'Existing MSSQL Server database with integrated authentication':
+                connectionUrlValue = mssqlIntegratedAuthUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = mssqlIntegratedAuthUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'com.microsoft.sqlserver.jdbc.SQLServerDriver';
+                Em.set(hiveDbType, 'value', 'mssql');
+                break;
+            }
+            categoryConfigsAll.findProperty('name', 'javax.jdo.option.ConnectionUserName').setProperties({
+              isVisible: isNotExistingMySQLServer,
+              isRequired: isNotExistingMySQLServer
+            });
+            categoryConfigsAll.findProperty('name', 'javax.jdo.option.ConnectionPassword').setProperties({
+              isVisible: isNotExistingMySQLServer,
+              isRequired: isNotExistingMySQLServer
+            });
+            break;
+          case 'OOZIE':
+            var derbyUrl = 'jdbc:derby:${oozie.data.dir}/${oozie.db.schema.name}-db;create=true';
+            var mysqlUrl = 'jdbc:mysql://{0}/{1}';
+            switch (this.get('serviceConfig.value')) {
+              case 'New Derby Database':
+                connectionUrlValue = derbyUrl;
+                connectionUrlDefaultValue = derbyUrl;
+                dbClassValue = 'org.apache.derby.jdbc.EmbeddedDriver';
+                break;
+              case 'Existing MySQL Database':
+                connectionUrlValue = mysqlUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = mysqlUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'com.mysql.jdbc.Driver';
+                break;
+              case Em.I18n.t('services.service.config.hive.oozie.postgresql'):
+                connectionUrlValue = postgresUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = postgresUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'org.postgresql.Driver';
+                break;
+              case 'Existing Oracle Database':
+                connectionUrlValue = oracleUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = oracleUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'oracle.jdbc.driver.OracleDriver';
+                break;
+              case 'Existing MSSQL Server database with SQL authentication':
+                connectionUrlValue = mssqlUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = mssqlUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'com.microsoft.sqlserver.jdbc.SQLServerDriver';
+                break;
+              case 'Existing MSSQL Server database with integrated authentication':
+                connectionUrlValue = mssqlIntegratedAuthUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = mssqlIntegratedAuthUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'com.microsoft.sqlserver.jdbc.SQLServerDriver';
+                break;
+            }
+            categoryConfigsAll.findProperty('name', 'oozie.service.JPAService.jdbc.username').setProperties({
+              isVisible: isNotExistingMySQLServer,
+              isRequired: isNotExistingMySQLServer
+            });
+            categoryConfigsAll.findProperty('name', 'oozie.service.JPAService.jdbc.password').setProperties({
+              isVisible: isNotExistingMySQLServer,
+              isRequired: isNotExistingMySQLServer
+            });
+            break;
+        }
+        connectionUrl.set('value', connectionUrlValue);
+        connectionUrl.set('defaultValue', connectionUrlDefaultValue);
+        dbClass.set('value', dbClassValue);
       }
     }
   }.observes('databaseName', 'hostName'),
@@ -389,6 +500,7 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
           break;
       }
       if (hostname) {
+        Em.set(hostname, 'isUserProperty', false);
         returnValue = hostname;
       } else {
         returnValue = this.get('categoryConfigsAll').findProperty('name', 'hive_hostname');
@@ -415,6 +527,7 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
           break;
       }
       if (hostname) {
+        Em.set(hostname, 'isUserProperty', false);
         returnValue = hostname;
       } else {
         returnValue = this.get('categoryConfigsAll').findProperty('name', 'oozie_hostname');
@@ -525,8 +638,8 @@ App.ServiceConfigRadioButton = Ember.Checkbox.extend({
         components.forEach(function (_component) {
           if (_component.foreignKeys) {
             _component.foreignKeys.forEach(function (_componentName) {
-              if (this.get('parentView.categoryConfigsAll').someProperty('name', _componentName)) {
-                var component = this.get('parentView.categoryConfigsAll').findProperty('name', _componentName);
+              if (this.get('parentView.parentView.serviceConfigs').someProperty('name', _componentName)) {
+                var component = this.get('parentView.parentView.serviceConfigs').findProperty('name', _componentName);
                 component.set('isVisible', _component.displayName === this.get('value'));
               }
             }, this);
@@ -908,7 +1021,7 @@ App.CheckDBConnectionView = Ember.View.extend({
   /** @property {String} masterHostName - host name location of Master Component related to Service **/
   masterHostName: function() {
     var serviceMasterMap = {
-      'OOZIE': 'oozieserver_host',
+      'OOZIE': 'oozie_ambari_host',
       'HDFS': 'hadoop_host',
       'HIVE': 'hive_ambari_host',
       'KERBEROS': 'kdc_host'

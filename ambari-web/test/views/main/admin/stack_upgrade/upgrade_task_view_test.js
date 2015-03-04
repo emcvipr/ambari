@@ -26,6 +26,7 @@ describe('App.upgradeTaskView', function () {
     taskDetailsProperties: ['prop1']
   });
   view.removeObserver('content.isExpanded', view, 'doPolling');
+  view.removeObserver('outsideView', view, 'doPolling');
 
   describe("#logTabId", function() {
     it("", function() {
@@ -60,79 +61,6 @@ describe('App.upgradeTaskView', function () {
         errorTabId: 'elementId-error-tab'
       });
       expect(view.get('errorTabIdLInk')).to.equal('#elementId-error-tab');
-    });
-  });
-
-  describe("#doPolling()", function () {
-    beforeEach(function () {
-      sinon.stub(view, 'getTaskDetails', Em.K);
-      sinon.spy(view, 'doPolling');
-      this.clock = sinon.useFakeTimers();
-    });
-    afterEach(function () {
-      view.getTaskDetails.restore();
-      view.doPolling.restore();
-      this.clock.restore();
-    });
-    it("isExpanded false", function () {
-      view.set('content.isExpanded', false);
-      view.doPolling();
-      expect(view.getTaskDetails.called).to.be.false;
-    });
-    it("isExpanded true", function () {
-      view.set('content.isExpanded', true);
-      view.doPolling();
-      expect(view.getTaskDetails.calledOnce).to.be.true;
-      this.clock.tick(App.bgOperationsUpdateInterval);
-      expect(view.doPolling.calledTwice).to.be.true;
-    });
-  });
-
-  describe("#getTaskDetails()", function () {
-    beforeEach(function () {
-      sinon.stub(App.ajax, 'send', Em.K);
-
-    });
-    afterEach(function () {
-      App.ajax.send.restore();
-    });
-    it("call App.ajax.send()", function () {
-      view.set('content.id', 1);
-      view.set('content.request_id', 1);
-      view.getTaskDetails();
-      expect(App.ajax.send.getCall(0).args[0]).to.eql({
-        name: 'admin.upgrade.task',
-        sender: view,
-        data: {
-          upgradeId: 1,
-          taskId: 1
-        },
-        success: 'getTaskDetailsSuccessCallback'
-      });
-    });
-  });
-
-  describe("#getTaskDetailsSuccessCallback()", function () {
-    it("", function () {
-      var data = {
-        items: [
-          {
-            upgrade_items: [
-              {
-                tasks: [
-                  {
-                    Tasks: {
-                      prop1: 'value'
-                    }
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      };
-      view.getTaskDetailsSuccessCallback(data);
-      expect(view.get('content.prop1')).to.equal('value');
     });
   });
 
@@ -214,4 +142,32 @@ describe('App.upgradeTaskView', function () {
       expect(mockWindow.document.close.calledOnce).to.be.true;
     });
   });
+
+  describe("#showContent", function() {
+    it("outsideView = false, content.isExpanded = false", function() {
+      view.set('outsideView', false);
+      view.set('content.isExpanded', false);
+      view.propertyDidChange('showContent');
+      expect(view.get('showContent')).to.be.false;
+    });
+    it("outsideView = true, content.isExpanded = false", function() {
+      view.set('outsideView', true);
+      view.set('content.isExpanded', false);
+      view.propertyDidChange('showContent');
+      expect(view.get('showContent')).to.be.true;
+    });
+    it("outsideView = false, content.isExpanded = true", function() {
+      view.set('outsideView', false);
+      view.set('content.isExpanded', true);
+      view.propertyDidChange('showContent');
+      expect(view.get('showContent')).to.be.true;
+    });
+    it("outsideView = true, content.isExpanded = true", function() {
+      view.set('outsideView', true);
+      view.set('content.isExpanded', true);
+      view.propertyDidChange('showContent');
+      expect(view.get('showContent')).to.be.true;
+    });
+  });
+
 });

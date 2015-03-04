@@ -573,8 +573,6 @@ describe('App.InstallerStep7Controller', function () {
       installerStep7Controller.reopen({
         stepConfigs: [Em.Object.create({serviceName: serviceName, displayName: serviceName, configGroups: configGroups})]
       });
-      var manageCGController = App.router.get('manageConfigGroupsController');
-      sinon.stub(manageCGController, 'hostsToPublic', function(data){return ['c6401','c6402','c6403']});
       installerStep7Controller.loadConfigGroups(serviceConfigGroups);
       expect(installerStep7Controller.get('stepConfigs.firstObject.configGroups.length')).to.equal(1);
       var group = installerStep7Controller.get('stepConfigs.firstObject.configGroups.firstObject');
@@ -584,7 +582,6 @@ describe('App.InstallerStep7Controller', function () {
       expect(group.get('hosts')).to.eql(['h1', 'h2', 'h3']);
       expect(group.get('service.id')).to.equal(serviceName);
       expect(group.get('serviceName')).to.equal(serviceName);
-      manageCGController.hostsToPublic.restore();
     });
     it('should update configGroups for service (only default group)', function () {
       var configGroups = [],
@@ -1172,26 +1169,6 @@ describe('App.InstallerStep7Controller', function () {
     });
   });
 
-  describe('#_updateValueForCheckBoxConfig', function () {
-    Em.A([
-        {
-          v: 'true',
-          e: true
-        },
-        {
-          v: 'false',
-          e: false
-        }
-      ]).forEach(function (test) {
-        it(test.v, function () {
-          var serviceConfigProperty = Em.Object.create({value: test.v});
-          installerStep7Controller._updateValueForCheckBoxConfig(serviceConfigProperty);
-          expect(serviceConfigProperty.get('value')).to.equal(test.e);
-          expect(serviceConfigProperty.get('defaultValue')).to.equal(test.e);
-        });
-      });
-  });
-
   describe('#_updateIsEditableFlagForConfig', function () {
     beforeEach(function(){
       this.mock = sinon.stub(App, 'isAccessible');
@@ -1305,44 +1282,10 @@ describe('App.InstallerStep7Controller', function () {
 
   });
 
-  describe('#setSecureConfigs', function() {
-    var serviceConfigObj = Em.Object.create({
-      serviceName: 'HDFS',
-      configs: [
-        Em.Object.create({ name: 'hadoop.http.authentication.signature.secret.file' }),
-        Em.Object.create({ name: 'hadoop.security.authentication' })
-      ]
-    });
-    var tests = [
-      { name: 'hadoop.http.authentication.signature.secret.file', e: false },
-      { name: 'hadoop.security.authentication', e: true }
-    ];
-
-    sinon.stub(App, 'get', function(key) {
-      if (['isHadoop22Stack'].contains(key)) return true;
-      else App.get(key);
-    });
-    var controller = App.WizardStep7Controller.create({});
-    controller.get('secureConfigs').pushObjects([
-      {
-        name: 'hadoop.http.authentication.signature.secret.file',
-        serviceName: 'HDFS',
-        value: ''
-      }
-    ]);
-    controller.setSecureConfigs(serviceConfigObj, 'HDFS');
-    App.get.restore();
-    tests.forEach(function(test) {
-      it('{0} is {1}required'.format(test.name, !!test.e ? '' : 'non ' ), function() {
-        expect(serviceConfigObj.get('configs').findProperty('name', test.name).get('isRequired')).to.eql(test.e);
-      });
-    });
-  });
-
   describe('#setInstalledServiceConfigs', function () {
 
     var controller = App.WizardStep7Controller.create({
-        installedServiceNames: ['HBASE', 'AMS']
+        installedServiceNames: ['HBASE', 'AMBARI_METRICS']
       }),
       serviceConfigTags = [
         {
@@ -1368,7 +1311,7 @@ describe('App.InstallerStep7Controller', function () {
         {
           name: 'hbase.client.scanner.caching',
           value: '2000',
-          serviceName: 'AMS',
+          serviceName: 'AMBARI_METRICS',
           filename: 'ams-hbase-site.xml'
         }
       ],
@@ -1392,7 +1335,7 @@ describe('App.InstallerStep7Controller', function () {
           tag: 'version1'
         }
       ],
-      installedServiceNames = ['HBASE', 'AMS'];
+      installedServiceNames = ['HBASE', 'AMBARI_METRICS'];
 
     it('should handle properties with the same name', function () {
       controller.setInstalledServiceConfigs(serviceConfigTags, configs, configsByTags, installedServiceNames);

@@ -22,11 +22,19 @@
 
 <configuration supports_final="false">
   <property require-input="true">
+    <name>kdc_type</name>
+    <description>
+      The type of KDC being used. Either mit-kdc or active-directory
+    </description>
+    <value>mit-kdc</value>
+  </property>
+
+  <property require-input="true">
     <name>ldap_url</name>
     <description>
       The URL to the Active Directory LDAP Interface
     </description>
-    <value></value>
+    <value/>
   </property>
 
   <property require-input="true">
@@ -34,10 +42,27 @@
     <description>
       The distinguished name (DN) of the container used store service principals
     </description>
-    <value></value>
+    <value/>
   </property>
 
   <property require-input="true">
+    <name>encryption_types</name>
+    <description>
+      The supported list of session key encryption types that should be returned by the KDC.
+    </description>
+    <value>aes des3-cbc-sha1 rc4 des-cbc-md5</value>
+  </property>
+
+  <property require-input="true">
+    <name>realm</name>
+    <description>
+      The default realm to use when creating service principals
+    </description>
+    <value/>
+  </property>
+
+
+    <property require-input="true">
     <name>create_attributes_template</name>
     <description>
       A Velocity template to use to generate a JSON-formatted document containing the set of

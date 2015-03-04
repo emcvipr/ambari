@@ -95,7 +95,7 @@ App.ServiceConfigCategory = Ember.Object.extend({
 
   isForMasterComponent: function () {
     var masterServices = [ 'NameNode', 'SNameNode', 'JobTracker', 'HBase Master', 'Oozie Master',
-      'Hive Metastore', 'WebHCat Server', 'ZooKeeper Server', 'Nagios', 'Ganglia' ];
+      'Hive Metastore', 'WebHCat Server', 'ZooKeeper Server', 'Ganglia' ];
 
     return (masterServices.contains(this.get('name')));
   }.property('name'),
@@ -372,6 +372,10 @@ App.ServiceConfigProperty = Em.Object.extend({
         var rmHost = masterComponentHostsInDB.findProperty('component', 'RESOURCEMANAGER').hostName;
         this.setDefaultValue(hostWithPort,rmHost);
         break;
+      case 'yarn.resourcemanager.webapp.https.address':
+        var rmHost = masterComponentHostsInDB.findProperty('component', 'RESOURCEMANAGER').hostName;
+        this.setDefaultValue(hostWithPort,rmHost);
+        break;
       case 'yarn.resourcemanager.webapp.address':
         var rmHost = masterComponentHostsInDB.findProperty('component', 'RESOURCEMANAGER').hostName;
         this.setDefaultValue(hostWithPort,rmHost);
@@ -457,7 +461,7 @@ App.ServiceConfigProperty = Em.Object.extend({
         }
         break;
       case 'oozieserver_host':
-        this.set('value', masterComponentHostsInDB.findProperty('component', 'OOZIE_SERVER').hostName);
+        this.set('value', masterComponentHostsInDB.filterProperty('component', 'OOZIE_SERVER').mapProperty('hostName'));
         break;
       case 'oozie.base.url':
         var oozieHost = masterComponentHostsInDB.findProperty('component', 'OOZIE_SERVER').hostName;
@@ -523,7 +527,7 @@ App.ServiceConfigProperty = Em.Object.extend({
         this.set('value', slaveComponentHostsInDB.findProperty('componentName', 'SUPERVISOR').hosts.mapProperty('hostName'));
         break;
       case 'knox_gateway_host':
-        this.set('value', masterComponentHostsInDB.findProperty('component', 'KNOX_GATEWAY').hostName);
+        this.set('value', masterComponentHostsInDB.filterProperty('component', 'KNOX_GATEWAY').mapProperty('hostName'));
         break;
       case 'kafka_broker_hosts':
         this.set('value', masterComponentHostsInDB.filterProperty('component', 'KAFKA_BROKER').mapProperty('hostName'));

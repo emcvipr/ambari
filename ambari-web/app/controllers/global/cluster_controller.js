@@ -17,6 +17,7 @@
  */
 
 var App = require('app');
+var stringUtils = require('utils/string_utils');
 
 App.ClusterController = Em.Controller.extend({
   name: 'clusterController',
@@ -25,7 +26,6 @@ App.ClusterController = Em.Controller.extend({
   clusterDataLoadedPercent: 'width:0', // 0 to 1
 
   isGangliaUrlLoaded: false,
-  isNagiosUrlLoaded: false,
 
   /**
    * Provides the URL to use for Ganglia server. This URL
@@ -34,15 +34,6 @@ App.ClusterController = Em.Controller.extend({
    * If null is returned, it means GANGLIA service is not installed.
    */
   gangliaUrl: null,
-
-  /**
-   * Provides the URL to use for NAGIOS server. This URL
-   * is helpful in getting alerts data from server and also
-   * in populating links in UI.
-   *
-   * If null is returned, it means NAGIOS service is not installed.
-   */
-  nagiosUrl: null,
 
   clusterName: function () {
     return App.get('clusterName');
@@ -70,12 +61,6 @@ App.ClusterController = Em.Controller.extend({
     this.set('clusterDataLoadedPercent', 'width:' + (Math.floor(numLoaded / loadListLength * 100)).toString() + '%');
   },
 
-  doOnClusterLoad: function (item) {
-    if (this.get('isLoaded')) {
-      App.router.get('mainAdminKerberosController').getUpdatedSecurityStatus();
-    }
-  }.observes('isLoaded'),
-
   dataLoadList: Em.Object.create({
     'hosts': false,
     'serviceMetrics': false,
@@ -87,7 +72,8 @@ App.ClusterController = Em.Controller.extend({
     'componentConfigs': false,
     'componentsState': false,
     'rootService': false,
-    'alertDefinitions': false
+    'alertDefinitions': false,
+    'securityStatus': false
   }),
 
   /**
@@ -273,6 +259,7 @@ App.ClusterController = Em.Controller.extend({
      * 11. load root service (Ambari)
      * 12. load alert definitions to model
      * 13. load unhealthy alert instances
+     * 14. load security status
      */
     self.loadStackServiceComponents(function (data) {
       data.items.forEach(function (service) {
@@ -320,6 +307,10 @@ App.ClusterController = Em.Controller.extend({
         App.rootServiceMapper.map(data);
         self.updateLoadStatus('rootService');
       });
+      // load security status
+      App.router.get('mainAdminKerberosController').getSecurityStatus().always(function() {
+        self.updateLoadStatus('securityStatus');
+      });
     });
   },
 
@@ -334,6 +325,9 @@ App.ClusterController = Em.Controller.extend({
     }
     App.router.get('mainAdminStackAndUpgradeController').initDBProperties();
     App.router.get('mainAdminStackAndUpgradeController').loadUpgradeData(true);
+    App.router.get('mainAdminStackAndUpgradeController').loadStackVersionsToModel(true).done(function () {
+      App.set('stackVersionsAvailable', App.StackVersion.find().content.length > 0);
+    });
   },
 
   loadRootService: function () {
@@ -444,5 +438,45 @@ App.ClusterController = Em.Controller.extend({
         $.ajax(ajaxOpt);
       }
     });
+  },
+
+  //TODO Replace this check with any other which is applicable to non-HDP stack
+  /**
+   * Check if HDP stack version is more or equal than 2.2.2 to determine if pluggable metrics for Storm are supported
+   * @method checkDetailedRepoVersion
+   * @returns {promise|*|promise|promise|HTMLElement|promise}
+   */
+  checkDetailedRepoVersion: function () {
+    var dfd;
+    var currentStackName = App.get('currentStackName');
+    var currentStackVersionNumber = App.get('currentStackVersionNumber');
+    if (currentStackName == 'HDP' && currentStackVersionNumber == '2.2') {
+      dfd = App.ajax.send({
+        name: 'cluster.load_detailed_repo_version',
+        sender: this,
+        success: 'checkDetailedRepoVersionSuccessCallback',
+        error: 'checkDetailedRepoVersionErrorCallback'
+      });
+    } else {
+      dfd = $.Deferred();
+      App.set('isStormMetricsSupported', currentStackName != 'HDP' || stringUtils.compareVersions(currentStackVersionNumber, '2.2') == 1);
+      dfd.resolve();
+    }
+    return dfd.promise();
+  },
+
+  checkDetailedRepoVersionSuccessCallback: function (data) {
+    var items = data.items;
+    var version;
+    if (items && items.length) {
+      var repoVersions = items[0].repository_versions;
+      if (repoVersions && repoVersions.length) {
+        version = Em.get(repoVersions[0], 'RepositoryVersions.repository_version');
+      }
+    }
+    App.set('isStormMetricsSupported', stringUtils.compareVersions(version, '2.2.2') > -1 || !version);
+  },
+  checkDetailedRepoVersionErrorCallback: function () {
+    App.set('isStormMetricsSupported', true);
   }
 });

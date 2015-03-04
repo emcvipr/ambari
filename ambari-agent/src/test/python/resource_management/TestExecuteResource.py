@@ -101,10 +101,12 @@ class TestExecuteResource(TestCase):
   def test_attribute_try_sleep_tries(self, popen_mock, time_mock):
     expected_call = "call('Retrying after %d seconds. Reason: %s', 1, 'Fail')"
 
-    subproc_mock = MagicMock()
-    subproc_mock.returncode = 0
-    subproc_mock.stdout.readline = MagicMock(side_effect = [Fail("Fail"), "OK"])
-    popen_mock.return_value = subproc_mock
+    subproc_mock_one = MagicMock()
+    subproc_mock_one.returncode = 1
+    subproc_mock_zero = MagicMock()
+    subproc_mock_zero.returncode = 0
+    #subproc_mock.stdout.readline = MagicMock(side_effect = [Fail("Fail"), "OK"])
+    popen_mock.side_effect = [subproc_mock_one, subproc_mock_zero]
 
     with Environment("/") as env:
       Execute('echo "1"',
@@ -113,7 +115,7 @@ class TestExecuteResource(TestCase):
       )
     pass
 
-    time_mock.assert_called_once_with(10)
+    self.assertTrue(call(10) in time_mock.call_args_list)
 
   @patch.object(pwd, "getpwnam")
   def test_attribute_group(self, getpwnam_mock):
@@ -183,7 +185,7 @@ class TestExecuteResource(TestCase):
       )
       
 
-    expected_command = ['/bin/bash', '--login', '--noprofile', '-c', '/usr/bin/sudo su test_user -l -s /bin/bash -c \'export  PATH=' + os.environ['PATH'] + ':/bin JAVA_HOME=/test/java/home ; echo "1"\'']
+    expected_command = ['/bin/bash', '--login', '--noprofile', '-c', 'ambari-sudo.sh su test_user -l -s /bin/bash -c \'export  PATH=' + os.environ['PATH'] + ':/bin JAVA_HOME=/test/java/home ; echo "1"\'']
     self.assertEqual(popen_mock.call_args_list[0][0][0], expected_command)
 
 

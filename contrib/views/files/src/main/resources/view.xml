@@ -26,7 +26,12 @@
     </parameter>
     <parameter>
         <name>webhdfs.username</name>
-        <description>User and doAs for proxy user for HDFS</description>
+        <description>doAs for proxy user for HDFS</description>
+        <required>false</required>
+    </parameter>
+    <parameter>
+        <name>webhdfs.auth</name>
+        <description>Semicolon-separated authentication configs. Default: auth=SIMPLE</description>
         <required>false</required>
     </parameter>
 

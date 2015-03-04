@@ -29,7 +29,8 @@ class KerberosClient(KerberosScript):
   def configure(self, env):
     import params
     env.set_params(params)
-    self.write_krb5_conf()
+    if params.manage_krb5_conf:
+      self.write_krb5_conf()
 
   def status(self, env):
     raise ClientComponentHasNoStatus()
@@ -42,7 +43,7 @@ class KerberosClient(KerberosScript):
           cached_kinit_executor(status_params.kinit_path_local,
                                 status_params.smoke_user,
                                 status_params.smoke_user_keytab,
-                                status_params.smoke_user,
+                                status_params.smoke_user_principal,
                                 status_params.hostname,
                                 status_params.tmp_dir)
           self.put_structured_out({"securityState": "SECURED_KERBEROS"})
@@ -56,7 +57,10 @@ class KerberosClient(KerberosScript):
       self.put_structured_out({"securityState": "UNSECURED"})
 
   def set_keytab(self, env):
-    KerberosScript.write_keytab_file()
+    self.write_keytab_file()
+
+  def remove_keytab(self, env):
+    self.delete_keytab_file()
 
 if __name__ == "__main__":
   KerberosClient().execute()

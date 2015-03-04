@@ -301,95 +301,6 @@ var hdp2properties = [
     "serviceName": "YARN",
     "filename": "yarn-site.xml"
   },
-  {
-    "id": "site property",
-    "name": "yarn.timeline-service.enabled",
-    "displayName": "yarn.timeline-service.enabled",
-    "category": "APP_TIMELINE_SERVER",
-    "displayType": "checkbox",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
-  {
-    "id": "site property",
-    "name": "yarn.timeline-service.leveldb-timeline-store.path",
-    "displayName": "yarn.timeline-service.leveldb-timeline-store.path",
-    "defaultDirectory": "/hadoop/yarn/timeline",
-    "category": "APP_TIMELINE_SERVER",
-    "displayType": "directory",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
-  {
-    "id": "site property",
-    "name": "yarn.timeline-service.leveldb-timeline-store.ttl-interval-ms",
-    "displayName": "yarn.timeline-service.leveldb-timeline-store.ttl-interval-ms",
-    "displayType": "int",
-    "category": "APP_TIMELINE_SERVER",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
-  {
-    "id": "site property",
-    "name": "yarn.timeline-service.store-class",
-    "displayName": "yarn.timeline-service.store-class",
-    "category": "APP_TIMELINE_SERVER",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
-  {
-    "id": "site property",
-    "name": "yarn.timeline-service.ttl-enable",
-    "displayName": "yarn.timeline-service.ttl-enable",
-    "displayType": "checkbox",
-    "category": "APP_TIMELINE_SERVER",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
-  {
-    "id": "site property",
-    "name": "yarn.timeline-service.ttl-ms",
-    "displayName": "yarn.timeline-service.ttl-ms",
-    "displayType": "int",
-    "category": "APP_TIMELINE_SERVER",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
-  {
-    "id": "site property",
-    "name": "yarn.timeline-service.generic-application-history.store-class",
-    "displayName": "yarn.timeline-service.generic-application-history.store-class",
-    "category": "APP_TIMELINE_SERVER",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
-  {
-    "id": "site property",
-    "name": "yarn.timeline-service.webapp.address",
-    "displayName": "yarn.timeline-service.webapp.address",
-    "displayType": "string",
-    "category": "APP_TIMELINE_SERVER",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
-  {
-    "id": "site property",
-    "name": "yarn.timeline-service.webapp.https.address",
-    "displayName": "yarn.timeline-service.webapp.https.address",
-    "displayType": "string",
-    "category": "APP_TIMELINE_SERVER",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
-  {
-    "id": "site property",
-    "name": "yarn.timeline-service.address",
-    "displayName": "yarn.timeline-service.address",
-    "displayType": "string",
-    "category": "APP_TIMELINE_SERVER",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
 /**********************************************MAPREDUCE2***************************************/
   {
     "id": "site property",
@@ -1824,8 +1735,8 @@ var hdp2properties = [
     "displayName": "Knox Gateway host",
     "value": "",
     "defaultValue": "",
-    "description": "The host that has been assigned to run Knox Gateway",
-    "displayType": "masterHost",
+    "description": "The hosts that have been assigned to run Knox Gateway",
+    "displayType": "masterHosts",
     "isOverridable": false,
     "isVisible": true,
     "isRequiredByAgent": false,
@@ -1964,7 +1875,7 @@ var hdp2properties = [
     "isRequiredByAgent": true,
     "displayType": "masterHost",
     "serviceName": "KERBEROS",
-    "filename": "krb5-conf.xml",
+    "filename": "kerberos-env.xml",
     "category": "KDC",
     "index": 0
   },
@@ -1989,7 +1900,7 @@ var hdp2properties = [
     "isVisible": true,
     "isRequiredByAgent": true,
     "serviceName": "KERBEROS",
-    "filename": "krb5-conf.xml",
+    "filename": "kerberos-env.xml",
     "category": "KDC",
     "index": 2
   },
@@ -2021,6 +1932,15 @@ var hdp2properties = [
     "serviceName": "KERBEROS",
     "filename": "kerberos-env.xml",
     "displayType": "content",
+    "category": "Advanced kerberos-env"
+  },
+  {
+    "id": "puppet var",
+    "name": "encryption_types",
+    "displayName": "Encryption Types",
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "displayType": "multiLine",
     "category": "Advanced kerberos-env"
   },
   {
@@ -2076,6 +1996,17 @@ var hdp2properties = [
   },
   {
     "id": "puppet var",
+    "name": "manage_krb5_conf",
+    "displayName": "Manage Kerberos client krb5.conf",
+    "displayType": "checkbox",
+    "dependentConfigPattern": "CATEGORY",
+    "serviceName": "KERBEROS",
+    "filename": "krb5-conf.xml",
+    "category": "Advanced krb5-conf",
+    "index": 0
+  },
+  {
+    "id": "puppet var",
     "name": "conf_dir",
     "displayName": "krb5-conf directory path",
     "value": "",
@@ -2088,7 +2019,7 @@ var hdp2properties = [
     "serviceName": "KERBEROS",
     "filename": "krb5-conf.xml",
     "category": "Advanced krb5-conf",
-    "index": 0
+    "index": 1
   },
   {
     "id": "puppet var",
@@ -2104,7 +2035,37 @@ var hdp2properties = [
     "serviceName": "KERBEROS",
     "filename": "krb5-conf.xml",
     "category": "Advanced krb5-conf",
-    "index": 1
+    "index": 2
+  },
+  {
+    "id": "puppet var",
+    "name": "libdefaults_default_tgs_enctypes",
+    "displayName": "libdefaults_default_tgs_enctypes",
+    "value": "",
+    "defaultValue": "",
+    "description": "",
+    "isOverridable": false,
+    "isVisible": true,
+    "isRequiredByAgent": true,
+    "isRequired": false,
+    "serviceName": "KERBEROS",
+    "filename": "krb5-conf.xml",
+    "category": "Advanced krb5-conf"
+  },
+  {
+    "id": "puppet var",
+    "name": "libdefaults_default_tkt_enctypes",
+    "displayName": "libdefaults_default_tkt_enctypes",
+    "value": "",
+    "defaultValue": "",
+    "description": "",
+    "isOverridable": false,
+    "isVisible": true,
+    "isRequiredByAgent": true,
+    "isRequired": false,
+    "serviceName": "KERBEROS",
+    "filename": "krb5-conf.xml",
+    "category": "Advanced krb5-conf"
   },
 /********************************************* flume-agent *****************************/
   {
@@ -3114,6 +3075,7 @@ var hdp2properties = [
     "displayType": "masterHost",
     "isOverridable": false,
     "isVisible": false,
+    "isRequiredByAgent": false,
     "serviceName": "HIVE",
     "filename": "hive-env.xml",
     "category": "HIVE_METASTORE",
@@ -3293,8 +3255,8 @@ var hdp2properties = [
     "displayName": "Oozie Server host",
     "value": "",
     "defaultValue": "",
-    "description": "The host that has been assigned to run Oozie Server",
-    "displayType": "masterHost",
+    "description": "The hosts that have been assigned to run Oozie Server",
+    "displayType": "masterHosts",
     "isOverridable": false,
     "isVisible": true,
     "isRequiredByAgent": false,
@@ -3634,51 +3596,6 @@ var hdp2properties = [
     "serviceName": "OOZIE",
     "filename": "oozie-env.xml",
     "category": "Advanced oozie-env"
-  },
-/**********************************************NAGIOS***************************************/
-  {
-    "id": "puppet var",
-    "name": "nagios_web_login",
-    "displayName": "Nagios Admin username",
-    "description": "Nagios Web UI Admin username",
-    "defaultValue": "nagiosadmin",
-    "isReconfigurable": false,
-    "displayType": "user",
-    "isOverridable": false,
-    "isVisible": true,
-    "serviceName": "NAGIOS",
-    "category": "General",
-    "filename": "nagios-env.xml",
-    "index": 0
-  },
-  {
-    "id": "puppet var",
-    "name": "nagios_web_password",
-    "displayName": "Nagios Admin password",
-    "description": "Nagios Web UI Admin password",
-    "defaultValue": "",
-    "isReconfigurable": true,
-    "displayType": "password",
-    "isOverridable": false,
-    "isVisible": true,
-    "serviceName": "NAGIOS",
-    "filename": "nagios-env.xml",
-    "category": "General",
-    "index": 1
-  },
-  {
-    "id": "puppet var",
-    "name": "nagios_contact",
-    "displayName": "Hadoop Admin email",
-    "description": "Hadoop Administrator email for alert notification",
-    "defaultValue": "",
-    "displayType": "email",
-    "isOverridable": false,
-    "isVisible": true,
-    "serviceName": "NAGIOS",
-    "filename": "nagios-env.xml",
-    "category": "General",
-    "index": 2
   },
 /**********************************************ZOOKEEPER***************************************/
   {
@@ -4225,7 +4142,7 @@ var hdp2properties = [
     "rowStyleClass": "indent-1",
     "filename": "alert_notification"
   },
-/************************************************AMS******************************************/
+/************************************************AMBARI_METRICS******************************************/
   {
     "id": "site property",
     "name": "timeline.metrics.service.operation.mode",
@@ -4233,55 +4150,55 @@ var hdp2properties = [
     "description": "\n      Service Operation modes:\n      1) embedded: Metrics stored on local FS, HBase in Standalone mode\n      2) distributed: HBase daemons writing to HDFS\n      3) external: External HBase storage backend\n    ",
     "defaultValue": "embedded",
     "displayType": "string",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "General",
     "index": 1
   },
   {
     "id": "site property",
-    "name": "ams_collector_log_dir",
+    "name": "metrics_collector_log_dir",
     "displayName": "Metrics Collector log dir",
     "description": "\n      Log location for collector logs\n    ",
     "defaultValue": "embedded",
     "displayType": "string",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-env.xml",
     "category": "General",
     "index": 2
   },
   {
     "id": "site property",
-    "name": "ams_collector_pid_dir",
+    "name": "metrics_collector_pid_dir",
     "displayName": "Metrics Collector pid dir",
     "description": "\n      pid location for collector\n    ",
     "defaultValue": "embedded",
     "displayType": "string",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-env.xml",
     "category": "General",
     "index": 3
   },
   {
     "id": "site property",
-    "name": "ams_monitor_log_dir",
+    "name": "metrics_monitor_log_dir",
     "displayName": "Metrics Monitor log dir",
     "description": "\n      Log location for monitor logs\n    ",
     "defaultValue": "embedded",
     "displayType": "string",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-env.xml",
     "category": "General",
     "index": 4
   },
   {
     "id": "site property",
-    "name": "ams_monitor_pid_dir",
+    "name": "metrics_monitor_pid_dir",
     "displayName": "Metrics Monitor pid dir",
     "description": "\n      pid location for monitor\n    ",
     "defaultValue": "embedded",
     "displayType": "string",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-env.xml",
     "category": "General",
     "index": 5
@@ -4293,7 +4210,7 @@ var hdp2properties = [
     "description": "\n      Directory to store aggregator checkpoints\n    ",
     "defaultValue": "/tmp",
     "displayType": "directory",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 17
@@ -4305,7 +4222,7 @@ var hdp2properties = [
     "description": "\n      Multiplier value * interval = Max allowed checkpoint lag. Effectively\n      if aggregator checkpoint is greater than max allowed checkpoint delay,\n      the checkpoint will be discarded by the aggregator.\n    ",
     "defaultValue": "2",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 16
@@ -4317,7 +4234,7 @@ var hdp2properties = [
     "description": "\n      Disable cluster based hourly aggregations.\n    ",
     "defaultValue": "false",
     "displayType": "string",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 14
@@ -4329,7 +4246,7 @@ var hdp2properties = [
     "description": "\n      Time in seconds to sleep for the hourly resolution cluster wide\n      aggregator. Default is 1 hour.\n    ",
     "defaultValue": "3600",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 15
@@ -4341,7 +4258,7 @@ var hdp2properties = [
     "description": "\n      Multiplier value * interval = Max allowed checkpoint lag. Effectively\n      if aggregator checkpoint is greater than max allowed checkpoint delay,\n      the checkpoint will be discarded by the aggregator.\n    ",
     "defaultValue": "2",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 13
@@ -4353,7 +4270,7 @@ var hdp2properties = [
     "description": "\n      Disable cluster based minute aggregations.\n    ",
     "defaultValue": "false",
     "displayType": "string",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 10
@@ -4365,7 +4282,7 @@ var hdp2properties = [
     "description": "\n      Time in seconds to sleep for the minute resolution cluster wide\n      aggregator. Default resolution is 2 minutes.\n    ",
     "defaultValue": "120",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 11
@@ -4377,7 +4294,7 @@ var hdp2properties = [
     "description": "\n      Lowest resolution of desired data for cluster level minute aggregates.\n    ",
     "defaultValue": "15",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 12
@@ -4389,7 +4306,7 @@ var hdp2properties = [
     "description": "\n      Multiplier value * interval = Max allowed checkpoint lag. Effectively\n      if aggregator checkpoint is greater than max allowed checkpoint delay,\n      the checkpoint will be discarded by the aggregator.\n    ",
     "defaultValue": "2",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 9
@@ -4401,7 +4318,7 @@ var hdp2properties = [
     "description": "\n      Disable host based hourly aggregations\n    ",
     "defaultValue": "false",
     "displayType": "string",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 7
@@ -4413,7 +4330,7 @@ var hdp2properties = [
     "description": "\n      Time in seconds to sleep for the hourly resolution host based\n      aggregator. Default resolution is 1 hour.\n    ",
     "defaultValue": "3600",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 8
@@ -4425,7 +4342,7 @@ var hdp2properties = [
     "description": "\n      Multiplier value * interval = Max allowed checkpoint lag. Effectively\n      if aggregator checkpoint is greater than max allowed checkpoint delay,\n      the checkpoint will be discarded by the aggregator.\n    ",
     "defaultValue": "2",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 6
@@ -4437,7 +4354,7 @@ var hdp2properties = [
     "description": "\n      Disable host based minute aggregations.\n    ",
     "defaultValue": "false",
     "displayType": "string",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 4
@@ -4449,7 +4366,7 @@ var hdp2properties = [
     "description": "\n      Time in seconds to sleep for the minute resolution host based\n      aggregator. Default resolution is 5 minutes.\n    ",
     "defaultValue": "300",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 5
@@ -4461,7 +4378,7 @@ var hdp2properties = [
     "description": "\n      Time in seconds to sleep on the first run or when the checkpoint is\n      too old.\n    ",
     "defaultValue": "120",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 1
@@ -4473,7 +4390,7 @@ var hdp2properties = [
     "description": "\n      Max result limit on number of rows returned. Calculated as follows:\n      4 aggregate metrics/min * 60 * 24: Retrieve aggregate data for 1 day.\n    ",
     "defaultValue": "5760",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 2
@@ -4485,10 +4402,172 @@ var hdp2properties = [
     "description": "\n      JDBC resultset prefect size for aggregator queries.\n    ",
     "defaultValue": "2000",
     "displayType": "int",
-    "serviceName": "AMS",
+    "serviceName": "AMBARI_METRICS",
     "filename": "ams-site.xml",
     "category": "MetricCollector",
     "index": 3
+  },
+  {
+    "id": "site property",
+    "name": "ams.zookeeper.keytab",
+    "displayName": "ams.zookeeper.keytab",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "ams.zookeeper.principal",
+    "displayName": "ams.zookeeper.principal",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hadoop.security.authentication",
+    "displayName": "hadoop.security.authentication",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.coprocessor.master.classes",
+    "displayName": "hbase.coprocessor.master.classes",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.coprocessor.region.classes",
+    "displayName": "hbase.coprocessor.region.classes",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.master.kerberos.principal",
+    "displayName": "hbase.master.kerberos.principal",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.master.keytab.file",
+    "displayName": "hbase.master.keytab.file",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.myclient.keytab",
+    "displayName": "hbase.myclient.keytab",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.myclient.principal",
+    "displayName": "hbase.myclient.principal",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.regionserver.kerberos.principal",
+    "displayName": "hbase.regionserver.kerberos.principal",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.regionserver.keytab.file",
+    "displayName": "hbase.regionserver.keytab.file",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.security.authentication",
+    "displayName": "hbase.security.authentication",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.security.authorization",
+    "displayName": "hbase.security.authorization",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.zookeeper.property.authProvider.1",
+    "displayName": "hbase.zookeeper.property.authProvider.1",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.zookeeper.property.jaasLoginRenew",
+    "displayName": "hbase.zookeeper.property.jaasLoginRenew",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.zookeeper.property.kerberos.removeHostFromPrincipal",
+    "displayName": "hbase.zookeeper.property.kerberos.removeHostFromPrincipal",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.zookeeper.property.kerberos.removeRealmFromPrincipal",
+    "displayName": "hbase.zookeeper.property.kerberos.removeRealmFromPrincipal",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "zookeeper.znode.parent",
+    "displayName": "zookeeper.znode.parent",
+    "isRequired": false,
+    "serviceName": "AMBARI_METRICS",
+    "category": "Advanced ams-hbase-security-site",
+    "filename": "ams-hbase-security-site.xml"
   },
 /************************************************Kerberos Descriptor******************************************/
   {
@@ -4528,6 +4607,7 @@ var hdp2properties = [
     "index": 6
   }
 ];
+
 if (App.get('isHadoopWindowsStack')) {
   hdp2properties.push(
     {
@@ -4562,6 +4642,102 @@ if (App.get('isHadoopWindowsStack')) {
       "index": 1
     }
   );
+}
+
+var atsProperties = [
+  {
+    "id": "site property",
+    "name": "yarn.timeline-service.enabled",
+    "displayName": "yarn.timeline-service.enabled",
+    "category": "APP_TIMELINE_SERVER",
+    "displayType": "checkbox",
+    "serviceName": "YARN",
+    "filename": "yarn-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "yarn.timeline-service.leveldb-timeline-store.path",
+    "displayName": "yarn.timeline-service.leveldb-timeline-store.path",
+    "defaultDirectory": "/hadoop/yarn/timeline",
+    "category": "APP_TIMELINE_SERVER",
+    "displayType": "directory",
+    "serviceName": "YARN",
+    "filename": "yarn-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "yarn.timeline-service.leveldb-timeline-store.ttl-interval-ms",
+    "displayName": "yarn.timeline-service.leveldb-timeline-store.ttl-interval-ms",
+    "displayType": "int",
+    "category": "APP_TIMELINE_SERVER",
+    "serviceName": "YARN",
+    "filename": "yarn-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "yarn.timeline-service.store-class",
+    "displayName": "yarn.timeline-service.store-class",
+    "category": "APP_TIMELINE_SERVER",
+    "serviceName": "YARN",
+    "filename": "yarn-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "yarn.timeline-service.ttl-enable",
+    "displayName": "yarn.timeline-service.ttl-enable",
+    "displayType": "checkbox",
+    "category": "APP_TIMELINE_SERVER",
+    "serviceName": "YARN",
+    "filename": "yarn-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "yarn.timeline-service.ttl-ms",
+    "displayName": "yarn.timeline-service.ttl-ms",
+    "displayType": "int",
+    "category": "APP_TIMELINE_SERVER",
+    "serviceName": "YARN",
+    "filename": "yarn-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "yarn.timeline-service.generic-application-history.store-class",
+    "displayName": "yarn.timeline-service.generic-application-history.store-class",
+    "category": "APP_TIMELINE_SERVER",
+    "serviceName": "YARN",
+    "filename": "yarn-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "yarn.timeline-service.webapp.address",
+    "displayName": "yarn.timeline-service.webapp.address",
+    "displayType": "string",
+    "category": "APP_TIMELINE_SERVER",
+    "serviceName": "YARN",
+    "filename": "yarn-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "yarn.timeline-service.webapp.https.address",
+    "displayName": "yarn.timeline-service.webapp.https.address",
+    "displayType": "string",
+    "category": "APP_TIMELINE_SERVER",
+    "serviceName": "YARN",
+    "filename": "yarn-site.xml"
+  },
+  {
+    "id": "site property",
+    "name": "yarn.timeline-service.address",
+    "displayName": "yarn.timeline-service.address",
+    "displayType": "string",
+    "category": "APP_TIMELINE_SERVER",
+    "serviceName": "YARN",
+    "filename": "yarn-site.xml"
+  }
+];
+
+if (!App.get('isHadoop20Stack')) {
+  hdp2properties.pushObjects(atsProperties);
 }
 
 module.exports =

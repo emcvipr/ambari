@@ -21,27 +21,30 @@ package org.apache.ambari.server.state;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.google.inject.AbstractModule;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.util.Providers;
 import junit.framework.Assert;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ClusterNotFoundException;
+import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.checks.AbstractCheckDescriptor;
+import org.apache.ambari.server.checks.CheckDescription;
 import org.apache.ambari.server.checks.ServicesUpCheck;
-import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.PrereqCheckRequest;
 import org.apache.ambari.server.orm.dao.HostVersionDAO;
 import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
-import org.apache.ambari.server.state.stack.PrerequisiteCheck;
 import org.apache.ambari.server.state.stack.PrereqCheckStatus;
+import org.apache.ambari.server.state.stack.PrerequisiteCheck;
+import org.apache.ambari.server.state.stack.upgrade.RepositoryVersionHelper;
 import org.easymock.EasyMock;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
+
+import com.google.inject.AbstractModule;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.util.Providers;
 
 
 /**
@@ -86,9 +89,11 @@ public class CheckHelperTest {
     final CheckHelper helper = new CheckHelper();
     List<AbstractCheckDescriptor> updateChecksRegistry = new ArrayList<AbstractCheckDescriptor>();
     AbstractCheckDescriptor descriptor = EasyMock.createNiceMock(AbstractCheckDescriptor.class);
+
     descriptor.perform(EasyMock.<PrerequisiteCheck> anyObject(), EasyMock.<PrereqCheckRequest> anyObject());
     EasyMock.expectLastCall().andThrow(new AmbariException("error"));
     EasyMock.expect(descriptor.isApplicable(EasyMock.<PrereqCheckRequest> anyObject())).andReturn(true);
+    EasyMock.expect(descriptor.getDescription()).andReturn(CheckDescription.HOSTS_HEARTBEAT).anyTimes();
     EasyMock.replay(descriptor);
     updateChecksRegistry.add(descriptor);
     final List<PrerequisiteCheck> upgradeChecks = helper.performChecks(new PrereqCheckRequest("cluster"), updateChecksRegistry);
@@ -115,9 +120,10 @@ public class CheckHelperTest {
       @Override
       protected void configure() {
         bind(Clusters.class).toInstance(clusters);
-        bind(ConfigHelper.class).toProvider(Providers.<ConfigHelper>of(null));
         bind(HostVersionDAO.class).toProvider(Providers.<HostVersionDAO>of(null));
         bind(RepositoryVersionDAO.class).toProvider(Providers.<RepositoryVersionDAO>of(null));
+        bind(RepositoryVersionHelper.class).toProvider(Providers.<RepositoryVersionHelper>of(null));
+        bind(AmbariMetaInfo.class).toProvider(Providers.<AmbariMetaInfo>of(null));
       }
     });
     final CheckHelper helper = injector.getInstance(CheckHelper.class);

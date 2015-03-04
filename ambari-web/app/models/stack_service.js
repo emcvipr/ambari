@@ -95,7 +95,7 @@ App.StackService = DS.Model.extend({
 
   // Is the service required for monitoring of other hadoop ecosystem services
   isMonitoringService: function () {
-    var services = ['NAGIOS', 'GANGLIA'];
+    var services = ['GANGLIA'];
     return services.contains(this.get('serviceName'));
   }.property('serviceName'),
 
@@ -108,12 +108,6 @@ App.StackService = DS.Model.extend({
   // Is the service required for reporting hadoop service metrics
   isServiceMetricsService: function () {
       var services = ['GANGLIA'];
-      return services.contains(this.get('serviceName'));
-  }.property('serviceName'),
-
-  // Is the service required for reporting aleerts
-  isAlertingService: function () {
-      var services = ['NAGIOS'];
       return services.contains(this.get('serviceName'));
   }.property('serviceName'),
 
@@ -194,7 +188,6 @@ App.StackService.displayOrder = [
   'MAPREDUCE2',
   'YARN',
   'TEZ',
-  'NAGIOS',
   'GANGLIA',
   'HIVE',
   'HBASE',
@@ -216,9 +209,6 @@ App.StackService.coSelected = {
 App.StackService.reviewPageHandlers = {
   'HIVE': {
     'Database': 'loadHiveDbValue'
-  },
-  'NAGIOS': {
-    'Administrator': 'loadNagiosAdminValue'
   },
   'OOZIE': {
     'Database': 'loadOozieDbValue'
@@ -329,7 +319,7 @@ App.StackService.configCategories = function () {
         App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'})
       ]);
       break;
-    case 'AMS':
+    case 'AMBARI_METRICS':
       serviceConfigCategories.pushObjects([
         App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'}),
         App.ServiceConfigCategory.create({ name: 'MetricCollector', displayName: 'Metric Collector'})
@@ -338,7 +328,11 @@ App.StackService.configCategories = function () {
     case 'RANGER':
       serviceConfigCategories.pushObjects([
         App.ServiceConfigCategory.create({ name: 'AdminSettings', displayName: 'Admin Settings'}),
-        App.ServiceConfigCategory.create({ name: 'DBSettings', displayName: 'DB Settings'})
+        App.ServiceConfigCategory.create({ name: 'DBSettings', displayName: 'DB Settings'}),
+        App.ServiceConfigCategory.create({ name: 'RangerSettings', displayName: 'Ranger Settings'}),
+        App.ServiceConfigCategory.create({ name: 'UnixAuthenticationSettings', displayName: 'Unix Authentication Settings'}),
+        App.ServiceConfigCategory.create({ name: 'ADSettings', displayName: 'AD Settings'}),
+        App.ServiceConfigCategory.create({ name: 'LDAPSettings', displayName: 'LDAP Settings'})
       ]);
       break;
     case 'PIG':

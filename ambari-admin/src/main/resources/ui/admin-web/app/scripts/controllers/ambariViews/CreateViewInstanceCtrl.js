@@ -31,6 +31,7 @@ angular.module('ambariAdminConsole')
 
       angular.forEach(parameters, function (item) {
         item.value = item['defaultValue'];
+        item.displayName = item.name.replace(/\./g, '\.\u200B');
       });
 
       $scope.instance = {
@@ -89,7 +90,7 @@ angular.module('ambariAdminConsole')
         })
         .catch(function (data) {
           var errorMessage = data.message;
-          if (data.status === 500) {
+          if (data.status >= 400) {
             try {
               var errorObject = JSON.parse(errorMessage);
               errorMessage = errorObject.detail;

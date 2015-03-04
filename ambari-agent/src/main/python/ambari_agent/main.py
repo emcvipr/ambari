@@ -41,6 +41,7 @@ from ambari_commons.shell import shellRunner
 from ambari_commons import shell
 import HeartbeatHandlers
 from HeartbeatHandlers import bind_signal_handlers
+from ambari_commons.constants import AMBARI_SUDO_BINARY
 logger = logging.getLogger()
 
 formatstr = "%(levelname)s %(asctime)s %(filename)s:%(lineno)d - %(message)s"
@@ -153,7 +154,7 @@ def stop_agent():
     pid = int(pid)
     f.close()
     runner = shellRunner()
-    runner.run(['sudo', 'kill', '-15', str(pid)])
+    runner.run([AMBARI_SUDO_BINARY, 'kill', '-15', str(pid)])
     time.sleep(5)
     if os.path.exists(ProcessHelper.pidfile):
       raise Exception("PID file still exists.")
@@ -162,7 +163,7 @@ def stop_agent():
     if pid == -1:
       print ("Agent process is not running")
     else:
-      res = runner.run(['sudo', 'kill', '-9', str(pid)])
+      res = runner.run([AMBARI_SUDO_BINARY, 'kill', '-9', str(pid)])
       if res['exitCode'] != 0:
         raise Exception("Error while performing agent stop. " + res['error'] + res['output'])
     os._exit(1)
@@ -232,11 +233,10 @@ def main(heartbeat_stop_callback=None):
 
   perform_prestart_checks(expected_hostname)
 
-  if not OSCheck.get_os_family() == OSConst.WINSRV_FAMILY:
-    daemonize()
-
   # Starting ping port listener
   try:
+    #This acts as a single process machine-wide lock (albeit incomplete, since
+    # we still need an extra file to track the Agent PID)
     ping_port_listener = PingPortListener(config)
   except Exception as ex:
     err_message = "Failed to start ping port listener of: " + str(ex)
@@ -249,6 +249,9 @@ def main(heartbeat_stop_callback=None):
 
   server_hostname = config.get('server', 'hostname')
   server_url = config.get_api_url()
+
+  if not OSCheck.get_os_family() == OSConst.WINSRV_FAMILY:
+    daemonize()
 
   try:
     server_ip = socket.gethostbyname(server_hostname)

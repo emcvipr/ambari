@@ -35,23 +35,19 @@ def setup_java():
   if not params.jdk_name:
     return
 
-  environment = {
-    "no_proxy": format("{ambari_server_hostname}")
-  }
-
-  Execute(format("mkdir -p {artifact_dir} ; \
-  curl -kf -x \"\" \
-  --retry 10 {jdk_location}/{jdk_name} -o {jdk_curl_target}"),
-          path = ["/bin","/usr/bin/"],
-          not_if = format("test -e {java_exec}"),
-          environment = environment)
+  Directory(params.artifact_dir,
+      recursive = True,
+  )
+  File(jdk_curl_target,
+       content = DownloadSource(format("{jdk_location}/{jdk_name}")),
+  )
 
   if params.jdk_name.endswith(".bin"):
     chmod_cmd = ("chmod", "+x", jdk_curl_target)
-    install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && echo A | {jdk_curl_target} -noregister && sudo cp -r {tmp_java_dir}/* {java_dir}")
+    install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && echo A | {jdk_curl_target} -noregister && {sudo} cp -r {tmp_java_dir}/* {java_dir}")
   elif params.jdk_name.endswith(".gz"):
     chmod_cmd = ("chmod","a+x", java_dir)
-    install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && tar -xf {jdk_curl_target} && sudo cp -r {tmp_java_dir}/* {java_dir}")
+    install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && tar -xf {jdk_curl_target} && {sudo} cp -r {tmp_java_dir}/* {java_dir}")
 
   Directory(java_dir
   )

@@ -12,8 +12,8 @@
         {
           "name": "storm_components",
           "principal": {
-            "value": "storm/_HOST@${realm}",
-            "type" : "service",
+            "value": "storm@${realm}",
+            "type": "user",
             "configuration": "storm-env/storm_principal_name"
           },
           "keytab": {
@@ -27,6 +27,17 @@
               "access": ""
             },
             "configuration": "storm-env/storm_keytab"
+          }
+        }
+      ],
+      "configurations": [
+        {
+          "storm-site": {
+            "nimbus.authorizer": "backtype.storm.security.auth.authorizer.SimpleACLAuthorizer",
+            "drpc.authorizer": "backtype.storm.security.auth.authorizer.DRPCSimpleACLAuthorizer",
+            "ui.filter": "org.apache.hadoop.security.authentication.server.AuthenticationFilter",
+            "storm.principal.tolocal": "backtype.storm.security.auth.KerberosPrincipalToLocal",
+            "supervisor.enable": "true"
           }
         }
       ],
@@ -52,7 +63,7 @@
               "name": "nimbus_server",
               "principal": {
                 "value": "nimbus/_HOST@${realm}",
-                "type" : "service",
+                "type": "service",
                 "configuration": "storm-env/nimbus_principal_name"
               },
               "keytab": {
@@ -77,7 +88,7 @@
               "name": "nimbus_server",
               "principal": {
                 "value": "nimbus/_HOST@${realm}",
-                "type" : "service",
+                "type": "service",
                 "configuration": "storm-env/nimbus_principal_name"
               },
               "keytab": {
@@ -94,6 +105,9 @@
               }
             }
           ]
+        },
+        {
+          "name" : "SUPERVISOR"
         }
       ]
     }

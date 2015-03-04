@@ -32,6 +32,7 @@ import java.util.Set;
 
 import org.apache.ambari.server.actionmanager.ActionManager;
 import org.apache.ambari.server.actionmanager.HostRoleCommand;
+import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.actionmanager.RequestStatus;
 import org.apache.ambari.server.actionmanager.Stage;
 import org.apache.ambari.server.api.resources.UpgradeResourceDefinition;
@@ -46,9 +47,11 @@ import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.OrmTestHelper;
+import org.apache.ambari.server.orm.dao.HostRoleCommandDAO;
 import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
 import org.apache.ambari.server.orm.dao.StageDAO;
 import org.apache.ambari.server.orm.dao.UpgradeDAO;
+import org.apache.ambari.server.orm.entities.HostRoleCommandEntity;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.orm.entities.StageEntity;
 import org.apache.ambari.server.orm.entities.UpgradeEntity;
@@ -58,6 +61,7 @@ import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.ConfigHelper;
 import org.apache.ambari.server.state.Host;
+import org.apache.ambari.server.state.HostState;
 import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponent;
@@ -109,6 +113,7 @@ public class UpgradeResourceProviderTest {
 
     injector.getInstance(GuiceJpaInitializer.class);
 
+
     helper = injector.getInstance(OrmTestHelper.class);
 
     amc = injector.getInstance(AmbariManagementController.class);
@@ -154,6 +159,7 @@ public class UpgradeResourceProviderTest {
     hostAttributes.put("os_family", "redhat");
     hostAttributes.put("os_release_version", "6.3");
     host.setHostAttributes(hostAttributes);
+    host.setState(HostState.HEALTHY);
     host.persist();
 
     clusters.mapHostToCluster("h1", "c1");
@@ -178,7 +184,7 @@ public class UpgradeResourceProviderTest {
     injector = null;
   }
 
-  public org.apache.ambari.server.controller.spi.RequestStatus testCreateResources() throws Exception {
+  private org.apache.ambari.server.controller.spi.RequestStatus testCreateResources() throws Exception {
 
     Cluster cluster = clusters.getCluster("c1");
 
@@ -210,7 +216,7 @@ public class UpgradeResourceProviderTest {
     }
 
     List<UpgradeGroupEntity> upgradeGroups = entity.getUpgradeGroups();
-    assertEquals(4, upgradeGroups.size());
+    assertEquals(3, upgradeGroups.size());
 
     UpgradeGroupEntity group = upgradeGroups.get(1);
     assertEquals(4, group.getItems().size());
@@ -231,15 +237,15 @@ public class UpgradeResourceProviderTest {
 
     List<Stage> stages = am.getRequestStatus(requests.get(0).longValue());
 
-    assertEquals(9, stages.size());
+    assertEquals(8, stages.size());
 
     List<HostRoleCommand> tasks = am.getRequestTasks(requests.get(0).longValue());
     // same number of tasks as stages here
-    assertEquals(9, tasks.size());
+    assertEquals(8, tasks.size());
 
     Set<Long> slaveStageIds = new HashSet<Long>();
 
-    UpgradeGroupEntity coreSlavesGroup = upgradeGroups.get(2);
+    UpgradeGroupEntity coreSlavesGroup = upgradeGroups.get(1);
 
     for (UpgradeItemEntity itemEntity : coreSlavesGroup.getItems()) {
       slaveStageIds.add(itemEntity.getStageId());
@@ -303,10 +309,13 @@ public class UpgradeResourceProviderTest {
     ResourceProvider upgradeGroupResourceProvider = new UpgradeGroupResourceProvider(amc);
     resources = upgradeGroupResourceProvider.getResources(request, predicate);
 
-    assertEquals(4, resources.size());
+    assertEquals(3, resources.size());
     res = resources.iterator().next();
     assertNotNull(res.getPropertyValue("UpgradeGroup/status"));
     assertNotNull(res.getPropertyValue("UpgradeGroup/group_id"));
+    assertNotNull(res.getPropertyValue("UpgradeGroup/total_task_count"));
+    assertNotNull(res.getPropertyValue("UpgradeGroup/in_progress_task_count"));
+    assertNotNull(res.getPropertyValue("UpgradeGroup/completed_task_count"));
 
     // upgrade items
     propertyIds.clear();
@@ -340,11 +349,11 @@ public class UpgradeResourceProviderTest {
 
     upgradeItemResourceProvider = new UpgradeItemResourceProvider(amc);
     resources = upgradeItemResourceProvider.getResources(request, predicate);
-    assertEquals(1, resources.size());
+    assertEquals(2, resources.size());
     res = resources.iterator().next();
 
-    assertEquals("Validate Partial Upgrade", res.getPropertyValue("UpgradeItem/context"));
-    assertTrue(res.getPropertyValue("UpgradeItem/text").toString().startsWith("Please run"));
+    assertEquals("Confirm Finalize", res.getPropertyValue("UpgradeItem/context"));
+    assertTrue(res.getPropertyValue("UpgradeItem/text").toString().startsWith("Please confirm"));
   }
 
   @Test
@@ -390,9 +399,9 @@ public class UpgradeResourceProviderTest {
     assertEquals(cluster.getClusterId(), entity.getClusterId().longValue());
 
     List<UpgradeGroupEntity> upgradeGroups = entity.getUpgradeGroups();
-    assertEquals(4, upgradeGroups.size());
+    assertEquals(3, upgradeGroups.size());
 
-    UpgradeGroupEntity group = upgradeGroups.get(2);
+    UpgradeGroupEntity group = upgradeGroups.get(1);
     assertEquals("ZOOKEEPER", group.getName());
     assertEquals(3, group.getItems().size());
 
@@ -455,7 +464,130 @@ public class UpgradeResourceProviderTest {
       assertEquals("downgrade", map.get("upgrade_direction"));
     }
 
+  }
 
+  @Test
+  public void testAbort() throws Exception {
+    org.apache.ambari.server.controller.spi.RequestStatus status = testCreateResources();
+
+    Set<Resource> createdResources = status.getAssociatedResources();
+    assertEquals(1, createdResources.size());
+    Resource res = createdResources.iterator().next();
+    Long id = (Long) res.getPropertyValue("Upgrade/request_id");
+    assertNotNull(id);
+    assertEquals(Long.valueOf(1), id);
+
+    Map<String, Object> requestProps = new HashMap<String, Object>();
+    requestProps.put(UpgradeResourceProvider.UPGRADE_REQUEST_ID, id.toString());
+    requestProps.put(UpgradeResourceProvider.UPGRADE_REQUEST_STATUS, "ABORTED");
+
+    UpgradeResourceProvider urp = createProvider(amc);
+
+    // !!! make sure we can.  actual abort is tested elsewhere
+    Request req = PropertyHelper.getUpdateRequest(requestProps, null);
+    urp.updateResources(req, null);
+
+  }
+
+  @Test
+  public void testDirectionUpgrade() throws Exception {
+    Cluster cluster = clusters.getCluster("c1");
+
+    RepositoryVersionEntity repoVersionEntity = new RepositoryVersionEntity();
+    repoVersionEntity.setDisplayName("My New Version 3");
+    repoVersionEntity.setOperatingSystems("");
+    repoVersionEntity.setStack("HDP-2.1.1");
+    repoVersionEntity.setUpgradePackage("upgrade_direction");
+    repoVersionEntity.setVersion("2.2.2.3");
+    repoVersionDao.create(repoVersionEntity);
+
+    Map<String, Object> requestProps = new HashMap<String, Object>();
+    requestProps.put(UpgradeResourceProvider.UPGRADE_CLUSTER_NAME, "c1");
+    requestProps.put(UpgradeResourceProvider.UPGRADE_VERSION, "2.2.2.3");
+
+    ResourceProvider upgradeResourceProvider = createProvider(amc);
+
+    Request request = PropertyHelper.getCreateRequest(Collections.singleton(requestProps), null);
+    upgradeResourceProvider.createResources(request);
+
+    List<UpgradeEntity> upgrades = upgradeDao.findUpgrades(cluster.getClusterId());
+    assertEquals(1, upgrades.size());
+
+    UpgradeEntity upgrade = upgrades.get(0);
+    Long id = upgrade.getRequestId();
+    assertEquals(3, upgrade.getUpgradeGroups().size());
+    UpgradeGroupEntity group = upgrade.getUpgradeGroups().get(2);
+    assertEquals(1, group.getItems().size());
+
+    requestProps.put(UpgradeResourceProvider.UPGRADE_VERSION, "2.2");
+    requestProps.put(UpgradeResourceProvider.UPGRADE_FROM_VERSION, "2.2.2.3");
+    requestProps.put(UpgradeResourceProvider.UPGRADE_FORCE_DOWNGRADE, "true");
+
+    request = PropertyHelper.getCreateRequest(Collections.singleton(requestProps), null);
+    upgradeResourceProvider.createResources(request);
+
+    upgrades = upgradeDao.findUpgrades(cluster.getClusterId());
+    assertEquals(2, upgrades.size());
+
+    upgrade = null;
+    for (UpgradeEntity u : upgrades) {
+      if (!u.getRequestId().equals(id)) {
+        upgrade = u;
+      }
+    }
+    assertNotNull(upgrade);
+    assertEquals("Downgrade groups reduced from 3 to 2", 2, upgrade.getUpgradeGroups().size());
+    group = upgrade.getUpgradeGroups().get(1);
+    assertEquals("Execution items increased from 1 to 2", 2, group.getItems().size());
+  }
+
+
+  @Test
+  public void testPercents() throws Exception {
+    org.apache.ambari.server.controller.spi.RequestStatus status = testCreateResources();
+
+    Set<Resource> createdResources = status.getAssociatedResources();
+    assertEquals(1, createdResources.size());
+    Resource res = createdResources.iterator().next();
+    Long id = (Long) res.getPropertyValue("Upgrade/request_id");
+    assertNotNull(id);
+    assertEquals(Long.valueOf(1), id);
+
+    StageDAO stageDao = injector.getInstance(StageDAO.class);
+    HostRoleCommandDAO hrcDao = injector.getInstance(HostRoleCommandDAO.class);
+
+    List<StageEntity> stages = stageDao.findByRequestId(id);
+    List<HostRoleCommandEntity> tasks = hrcDao.findByRequest(id);
+
+    Set<Long> stageIds = new HashSet<Long>();
+    for (StageEntity se : stages) {
+      stageIds.add(se.getStageId());
+    }
+
+    CalculatedStatus calc = null;
+    int i = 0;
+    for (HostRoleCommandEntity hrce : tasks) {
+      hrce.setStatus(HostRoleStatus.IN_PROGRESS);
+      hrcDao.merge(hrce);
+      calc = CalculatedStatus.statusFromStageSummary(hrcDao.findAggregateCounts(id), stageIds);
+      assertEquals(((i++) + 1) * 4.375d, calc.getPercent(), 0.01d);
+      assertEquals(HostRoleStatus.IN_PROGRESS, calc.getStatus());
+    }
+
+    i = 0;
+    for (HostRoleCommandEntity hrce : tasks) {
+      hrce.setStatus(HostRoleStatus.COMPLETED);
+      hrcDao.merge(hrce);
+      calc = CalculatedStatus.statusFromStageSummary(hrcDao.findAggregateCounts(id), stageIds);
+      assertEquals(35 + (((i++) + 1) * 8.125), calc.getPercent(), 0.01d);
+      if (i < 8) {
+        assertEquals(HostRoleStatus.IN_PROGRESS, calc.getStatus());
+      }
+    }
+
+    calc = CalculatedStatus.statusFromStageSummary(hrcDao.findAggregateCounts(id), stageIds);
+    assertEquals(HostRoleStatus.COMPLETED, calc.getStatus());
+    assertEquals(100d, calc.getPercent(), 0.01d);
   }
 
   /**

@@ -384,7 +384,7 @@ App.AddHostController = App.WizardController.extend({
    * send request to server in order to install services
    * @param isRetry
    */
-  installServices: function (isRetry, callback) {
+  installServices: function (isRetry, callback, errorCallback) {
     callback = callback || Em.K;
     this.set('content.cluster.oldRequestsId', []);
     var clusterName = this.get('content.cluster.name');
@@ -407,7 +407,7 @@ App.AddHostController = App.WizardController.extend({
       },
       success: 'installServicesSuccessCallback',
       error: 'installServicesErrorCallback'
-    }).then(callback, callback);
+    }).then(callback, errorCallback || callback);
     return true;
   }
 });

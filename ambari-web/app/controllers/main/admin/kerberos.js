@@ -59,6 +59,63 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
     });
   },
 
+  /**
+   * Show confirmation popup and after confirmation send request to regenerate keytabs
+   * @method regenerateKeytabs
+   * @return {App.ModalPopup}
+   */
+  regenerateKeytabs: function () {
+    var self = this;
+
+    return App.ModalPopup.show({
+
+      /**
+       * True - regenerate keytabs only for missing hosts and components, false - regenerate for all hosts and components
+       * @type {boolean}
+       */
+      regenerateKeytabsOnlyForMissing: false,
+
+      header: Em.I18n.t('admin.kerberos.button.regenerateKeytabs'),
+
+      bodyClass: Em.View.extend({
+        templateName: require('templates/main/admin/kerberos/regenerate_keytabs_popup_body')
+      }),
+
+      onPrimary: function () {
+        this._super();
+        self.regenerateKeytabsRequest(this.get('regenerateKeytabsOnlyForMissing'));
+      }
+    });
+  },
+
+  /**
+   * Send request to regenerate keytabs
+   * @param {boolean} missingOnly determines type of regeneration - missing|all
+   * @returns {$.ajax}
+   */
+  regenerateKeytabsRequest: function (missingOnly) {
+    return App.ajax.send({
+      name: "admin.kerberos_security.regenerate_keytabs",
+      sender: this,
+      data: {
+        type: missingOnly ? 'missing' : 'all'
+      },
+      success: "regenerateKeytabsSuccess"
+    });
+  },
+
+  /**
+   * Success callback of <code>regenerateKeytabs</code>
+   * show background operations popup if appropriate option is set
+   */
+  regenerateKeytabsSuccess: function () {
+    App.router.get('applicationController').dataLoading().done(function (initValue) {
+      if (initValue) {
+        App.router.get('backgroundOperationsController').showPopup();
+      }
+    });
+  },
+
   getUpdatedSecurityStatus: function () {
     this.getSecurityStatus();
     return this.get('securityEnabled');
@@ -104,6 +161,7 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
 
   startKerberosWizard: function () {
     this.setAddSecurityWizardStatus('RUNNING');
+    App.router.get('kerberosWizardController').setDBProperty('onClosePath', 'main.admin.adminKerberos.index');
     App.router.transitionTo('adminKerberos.adminAddKerberos');
   },
 
@@ -116,14 +174,21 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
       this.set('dataIsLoaded', true);
     } else {
       //get Security Status From Server
-      this.getSecurityStatus();
+      return this.getSecurityStatus();
     }
   },
 
+  /**
+   * Load security status from server.
+   * @returns {$.Deferred}
+   */
   getSecurityStatus: function () {
+    var self = this;
+    var dfd = $.Deferred();
     if (App.get('testMode')) {
       this.set('securityEnabled', !App.get('testEnableSecurity'));
       this.set('dataIsLoaded', true);
+      dfd.resolve();
     } else {
       //get Security Status From Server
       App.ajax.send({
@@ -131,8 +196,23 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
         sender: this,
         success: 'getSecurityStatusSuccessCallback',
         error: 'errorCallback'
+      }).always(function() {
+        // check for kerberos descriptor artifact
+        if (self.get('securityEnabled')) {
+          self.loadClusterDescriptorConfigs().then(function() {
+            dfd.resolve();
+          }, function() {
+            // if kerberos descriptor doesn't exist in cluster artifacts we have to kerberize cluster. 
+            // Show `Enable kerberos` button and set unsecure status.
+            self.set('securityEnabled', false);
+            dfd.resolve();
+          });
+        } else {
+          dfd.resolve();
+        }
       });
     }
+    return dfd.promise();
   },
 
   getSecurityStatusSuccessCallback: function(data) {
@@ -205,10 +285,37 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
             property.set('index', siteProperty.index);
           }
         }
+        if (siteProperty.displayType) {
+          property.set('displayType', siteProperty.displayType);
+        }
       }
     });
     configProperties.setEach('isEditable', false);
     return configProperties;
+  },
+
+  getKDCSessionState: function(callback) {
+    if (this.get('securityEnabled')) {
+      App.ajax.send({
+        name: 'kerberos.session.state',
+        sender: this,
+        data: {
+          callback: callback
+        },
+        success: 'checkState'
+      })
+    } else {
+      callback();
+    }
+  },
+
+  checkState: function(data, opt, params) {
+    var res = Em.get(data, 'Services.attributes.kdc_validation_result');
+    var message = Em.get(data, 'Services.attributes.kdc_validation_failure_details');
+    if (res.toUpperCase() === "OK") {
+      params.callback();
+    } else {
+      App.showInvalidKDCPopup(opt, App.format.kdcErrorMsg(message, false));
+    }
   }
-  
 });

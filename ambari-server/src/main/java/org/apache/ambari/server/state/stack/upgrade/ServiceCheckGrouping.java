@@ -65,8 +65,8 @@ public class ServiceCheckGrouping extends Grouping {
 
 
     @Override
-    public void add(HostsType hostsType, String service, boolean forUpgrade, boolean clientOnly,
-        ProcessingComponent pc) {
+    public void add(UpgradeContext ctx, HostsType hostsType, String service,
+        boolean clientOnly, ProcessingComponent pc) {
       // !!! nothing to do here
     }
 
@@ -76,7 +76,7 @@ public class ServiceCheckGrouping extends Grouping {
       m_metaInfo = ctx.getAmbariMetaInfo();
 
       List<StageWrapper> result = new ArrayList<StageWrapper>();
-      if (Direction.DOWNGRADE == ctx.getDirection()) {
+      if (ctx.getDirection().isDowngrade()) {
         return result;
       }
 
@@ -86,10 +86,10 @@ public class ServiceCheckGrouping extends Grouping {
 
       // create stages for the priorities
       for (String service : ServiceCheckGrouping.this.priorityServices) {
-        if (checkServiceValidity(service, serviceMap)) {
+        if (checkServiceValidity(ctx, service, serviceMap)) {
           StageWrapper wrapper = new StageWrapper(
               StageWrapper.Type.SERVICE_CHECK,
-              "Service Check " + service,
+              "Service Check " + ctx.getServiceDisplay(service),
               new TaskWrapper(service, "", Collections.<String>emptySet(),
                   new ServiceCheckTask()));
           result.add(wrapper);
@@ -100,10 +100,10 @@ public class ServiceCheckGrouping extends Grouping {
 
       // create stages for everything else
       for (String service : clusterServices) {
-        if (checkServiceValidity(service, serviceMap)) {
+        if (checkServiceValidity(ctx, service, serviceMap)) {
           StageWrapper wrapper = new StageWrapper(
               StageWrapper.Type.SERVICE_CHECK,
-              "Service Check " + service,
+              "Service Check " + ctx.getServiceDisplay(service),
               new TaskWrapper(service, "", Collections.<String>emptySet(),
                   new ServiceCheckTask()));
           result.add(wrapper);
@@ -114,12 +114,12 @@ public class ServiceCheckGrouping extends Grouping {
 
     /**
      * Checks if the service is valid for a service check
-     *
+     * @param ctx             the upgrade context to set the display name
      * @param service         the name of the service to check
      * @param clusterServices the map of available services for a cluster
      * @return {@code true} if the service is valid and can execute a service check
      */
-    private boolean checkServiceValidity(String service, Map<String, Service> clusterServices) {
+    private boolean checkServiceValidity(UpgradeContext ctx, String service, Map<String, Service> clusterServices) {
       if (!clusterServices.containsKey(service)) {
         return false;
       } else {
@@ -134,6 +134,9 @@ public class ServiceCheckGrouping extends Grouping {
             try {
               ServiceInfo si = m_metaInfo.getService(stackId.getStackName(),
                   stackId.getStackVersion(), service);
+
+              ctx.setServiceDisplay(service, si.getDisplayName());
+
               if (null == si.getCommandScript()) {
                 return false;
               }
@@ -146,6 +149,7 @@ public class ServiceCheckGrouping extends Grouping {
 
       return true;
     }
+
   }
 
 }

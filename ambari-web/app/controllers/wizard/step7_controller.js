@@ -70,7 +70,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
     return App.router.get('mainAdminKerberosController.securityEnabled');
   }.property('App.router.mainAdminKerberosController.securityEnabled'),
   /**
-   * If miscConfigChange Modal is shown
+   * If configChangeObserver Modal is shown
    * @type {bool}
    */
   miscModalVisible: false,
@@ -317,8 +317,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
       service = this.get('stepConfigs').findProperty('serviceName', serviceName),
       defaultConfigGroupHosts = this.get('wizardController.allHosts').mapProperty('hostName'),
       siteToTagMap = this._createSiteToTagMap(data.Clusters.desired_configs, params.serviceConfigsDef.get('configTypes')),
-      selectedConfigGroup,
-      manageCGController = App.router.get('manageConfigGroupsController');
+      selectedConfigGroup;
     this.set('loadedClusterSiteToTagMap', siteToTagMap);
 
     //parse loaded config groups
@@ -336,7 +335,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
             parentConfigGroup: null,
             service: App.Service.find().findProperty('serviceName', item.tag),
             hosts: groupHosts,
-            publicHosts: manageCGController.hostsToPublic(groupHosts),
             configSiteTags: []
           });
           groupHosts.forEach(function (host) {
@@ -357,7 +355,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
       description: "Default cluster level " + serviceName + " configuration",
       isDefault: true,
       hosts: defaultConfigGroupHosts,
-      publicHosts: manageCGController.hostsToPublic(defaultConfigGroupHosts),
       parentConfigGroup: null,
       service: Em.Object.create({
         id: serviceName
@@ -395,28 +392,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
     service.set('selectedConfigGroup', this.get('preSelectedConfigGroup'));
     this.loadComponentConfigs(service.get('configs'), serviceConfig, service);
     service.set('configs', serviceConfig.get('configs'));
-  },
-
-  /**
-   * By default <code>value</code>-property is string "true|false".
-   * Should update it to boolean type
-   * Also affects <code>defaultValue</code>
-   * @param {Ember.Object} serviceConfigProperty
-   * @returns {Ember.Object} Updated config-object
-   * @method _updateValueForCheckBoxConfig
-   */
-  _updateValueForCheckBoxConfig: function (serviceConfigProperty) {
-    var v = serviceConfigProperty.get('value');
-    switch (serviceConfigProperty.get('value')) {
-      case 'true':
-        v = true;
-        break;
-      case 'false':
-        v = false;
-        break;
-    }
-    serviceConfigProperty.setProperties({value: v, defaultValue: v});
-    return serviceConfigProperty;
   },
 
   /**
@@ -502,9 +477,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
 
       if (Em.isNone(serviceConfigProperty.get('isOverridable'))) {
         serviceConfigProperty.set('isOverridable', true);
-      }
-      if (serviceConfigProperty.get('displayType') === 'checkbox') {
-        this._updateValueForCheckBoxConfig(serviceConfigProperty);
       }
       this._updateOverridesForConfig(serviceConfigProperty, component);
       this._updateIsEditableFlagForConfig(serviceConfigProperty, defaultGroupSelected);
@@ -648,6 +620,10 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
     var self = this;
     this.loadServerSideConfigsRecommendations().always(function () {
       self.set('isRecommendedLoaded', true);
+      // format descriptor configs
+      if (self.get('securityEnabled') && self.get('wizardController.name') == 'addServiceController') {
+        App.config.addKerberosDescriptorConfigs(configs, self.get('wizardController.kerberosDescriptorConfigs') || []);
+      }
       self.setStepConfigs(configs, storedConfigs);
       self.checkHostOverrideInstaller();
       self.activateSpecialConfigs();
@@ -692,18 +668,11 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
       this.get('selectedServiceNames').forEach(function (serviceName) {
         if (!serviceConfigs.findProperty('serviceName', serviceName)) return;
         var selectedService = serviceConfigs.findProperty('serviceName', serviceName).set('selected', true);
-        // add secure configs when security is enabled
-        if (this.get('securityEnabled')) {
-          this.addSecureConfigs(selectedService, serviceName);
-        }
       }, this);
       this.get('installedServiceNames').forEach(function (serviceName) {
         var serviceConfigObj = serviceConfigs.findProperty('serviceName', serviceName);
         var isInstallableService = App.StackService.find(serviceName).get('isInstallable');
         if (!isInstallableService) serviceConfigObj.set('showConfig', false);
-        if (this.get('securityEnabled')) {
-          this.setSecureConfigs(serviceConfigObj, serviceName);
-        }
       }, this);
       // if HA is enabled -> Remove SNameNode, hbase.rootdir should use Name Service ID
       if (App.get('isHaEnabled')) {
@@ -741,45 +710,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
     }
 
     this.set('stepConfigs', serviceConfigs);
-  },
-
-  /**
-   * Set secure properties for installed services. Mark secure properties and
-   * properties with default empty value as non required to pass validation.
-   *
-   * @param {Em.Object} serviceConfigObj
-   * @param {String} serviceName
-   */
-  setSecureConfigs: function (serviceConfigObj, serviceName) {
-    var configProperties = serviceConfigObj.get('configs');
-    if (!configProperties) return;
-    var secureConfigs = this.get('secureConfigs').filterProperty('serviceName', serviceName);
-    secureConfigs.forEach(function (secureConfig) {
-      var property = configProperties.findProperty('name', secureConfig.name);
-      if (property) {
-        property.set('isRequired', secureConfig.value != "");
-        if (!property.get('isRequired')) property.set('errorMessage', '');
-      }
-    });
-  },
-  /**
-   *
-   * @param selectedService
-   * @param serviceName
-   */
-  addSecureConfigs: function (selectedService, serviceName) {
-    var secureService = this.get('secureServices').findProperty('serviceName', serviceName);
-    if (!secureService) {
-      return;
-    }
-    secureService.configCategories.forEach(function (category) {
-      selectedService.get('configCategories').push(category);
-    });
-    secureService.configs.forEach(function (conf) {
-      conf.isVisible = !conf.displayType.contains('masterHost') && !conf.displayType.contains('slaveHost');
-      var config = App.ServiceConfigProperty.create(conf);
-      selectedService.get('configs').push(config);
-    }, this);
   },
 
   /**
@@ -971,8 +901,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
   loadConfigGroups: function (serviceConfigGroups) {
     var services = this.get('stepConfigs');
     var hosts = this.get('wizardController.allHosts').mapProperty('hostName');
-    var manageCGController = App.router.get('manageConfigGroupsController');
-    this.setupManageConfigGroupsController();
     services.forEach(function (service) {
       if (service.get('serviceName') === 'MISC') return;
       var serviceRawGroups = serviceConfigGroups.filterProperty('service.id', service.serviceName);
@@ -983,7 +911,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
             description: "Default cluster level " + service.serviceName + " configuration",
             isDefault: true,
             hosts: Em.copy(hosts),
-            publicHosts: Em.copy(manageCGController.hostsToPublic(hosts)),
             service: Em.Object.create({
               id: service.serviceName
             }),
@@ -1017,11 +944,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
     });
   },
 
-  setupManageConfigGroupsController: function () {
-    var manageCGController = App.router.get('manageConfigGroupsController');
-    manageCGController.set('isInstaller', true);
-    manageCGController.set('isAddService', this.get('wizardController.name') === 'addServiceController');
-  },
   /**
    * Click-handler on config-group to make it selected
    * @param {object} event

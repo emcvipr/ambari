@@ -16,6 +16,81 @@
  * limitations under the License.
  */
 
+App.deferReadiness();
+
+var PATH_PARAM_NAME = "viewPath";
+
+/**
+ * Creates an object from query string
+ * @param getQueryObject {String}
+ * @return {Object}
+ */
+function getQueryObject(queryString) {
+  queryString = queryString ? queryString.replace('?', '') : '';
+
+  return queryString.split('&').reduce(function (obj, param) {
+    var paramParts;
+    if(param.trim()) {
+      paramParts = param.split('=');
+      if(paramParts[0] == PATH_PARAM_NAME) {
+        paramParts[1] = decodeURIComponent(paramParts[1]);
+      }
+      obj[paramParts[0]] = paramParts[1];
+    }
+    return obj;
+  }, {});
+}
+
+/**
+ * Creates query string from an object
+ * @param getQueryObject {String}
+ * @return {Object}
+ */
+function getQueryString(object) {
+  var params = [];
+
+  function addParam(key, value) {
+    params.push('%@=%@'.fmt(key, value));
+  }
+
+  object = $.extend({}, object);
+
+  // Because of the way Ambari handles viewPath, its better to put it at the front
+  if(object.hasOwnProperty(PATH_PARAM_NAME)) {
+    addParam(
+      PATH_PARAM_NAME,
+      encodeURIComponent(object[PATH_PARAM_NAME])
+    );
+    delete object[PATH_PARAM_NAME];
+  }
+  $.each(object, addParam);
+
+  return params.join('&');
+}
+
+// Redirect if required
+function redirectionCheck() {
+  var href = window.location.href;
+
+  // If opened outside ambari, redirect
+  if(window.parent == window) {
+    var hrefParts = href.split('/#/'),
+        pathParts = hrefParts[1].split('?'),
+        queryParams =getQueryObject(pathParts[1]);
+
+        if(pathParts[0]) {
+          queryParams[PATH_PARAM_NAME] = '/#/' + pathParts[0];
+        }
+
+    window.location = '%@?%@'.fmt(
+      hrefParts[0].replace('/views/', '/#/main/views/'),
+      getQueryString(queryParams)
+    );
+
+    return true;
+  }
+}
+
 App.Helpers.ambari = (function () {
   /**
    * Stores parameters from Ambari.
@@ -40,7 +115,7 @@ App.Helpers.ambari = (function () {
     /**
      * Key for the property representing ATS url.
      */
-    TIMELINE_URL: 'yarn.ats.url',
+    TIMELINE_URL: 'yarn.timeline-server.url',
     RM_URL: 'yarn.resourcemanager.url',
 
     /**
@@ -100,21 +175,74 @@ App.Helpers.ambari = (function () {
 
 })();
 
-App.deferReadiness();
-App.Helpers.ambari.getInstanceParameters().then(function () {
-  $.extend(true, App.Configs, {
-    envDefaults: {
-      isStandalone: false,
-      timelineBaseUrl: App.Helpers.ambari.getParam(App.Helpers.ambari.TIMELINE_URL),
-      RMWebUrl: App.Helpers.ambari.getParam(App.Helpers.ambari.RM_URL)
+function allowFullScreen() {
+  if(window.parent) {
+    var arrFrames = parent.document.getElementsByTagName("IFRAME"),
+        iframe;
+    for (var i = 0; i < arrFrames.length; i++) {
+      if (arrFrames[i].contentWindow === window) {
+        iframe = arrFrames[i];
+        break;
+      }
+    }
+
+    if(iframe) {
+      iframe.setAttribute('AllowFullScreen', true);
+    }
+  }
+}
+
+function loadParams() {
+  App.Helpers.ambari.getInstanceParameters().then(function () {
+    $.extend(true, App.Configs, {
+      envDefaults: {
+        isStandalone: false,
+        timelineBaseUrl: App.Helpers.ambari.getParam(App.Helpers.ambari.TIMELINE_URL),
+        RMWebUrl: App.Helpers.ambari.getParam(App.Helpers.ambari.RM_URL)
+      }
+    });
+
+    App.advanceReadiness();
+  });
+}
+
+function onPathChange() {
+
+  var path = window.location.hash.substr(2).trim(),
+      pathParts = path.split('?'),
+
+      parentUrlParts = window.parent.location.href.split('?'),
+      parentQueryParam = getQueryObject(parentUrlParts[1]);
+
+      $.extend(parentQueryParam, getQueryObject(pathParts[1]));
+      delete parentQueryParam[PATH_PARAM_NAME];
+      if(pathParts[0]) {
+        parentQueryParam[PATH_PARAM_NAME] = '/#/' + pathParts[0];
+      }
+
+  path = getQueryString(parentQueryParam);
+  window.parent.history.replaceState(
+    null,
+    null,
+    path ? '%@?%@'.fmt(parentUrlParts[0], path) : parentUrlParts[0]
+  );
+}
+
+if(!redirectionCheck()) {
+  App.ApplicationRoute.reopen({
+    actions: {
+      didTransition: function (arguments) {
+        setTimeout(onPathChange, 100);
+      }
     }
   });
 
-  App.advanceReadiness();
-});
+  allowFullScreen();
+  loadParams();
 
-Ember.$.ajaxSetup({
-  beforeSend: function (jqXHR, settings) {
-    settings.url = location.pathname + 'proxy?url=' + encodeURIComponent(settings.url);
-  }
-});
+  Ember.$.ajaxSetup({
+    beforeSend: function (jqXHR, settings) {
+      settings.url = location.pathname + 'proxy?url=' + encodeURIComponent(settings.url);
+    }
+  });
+}

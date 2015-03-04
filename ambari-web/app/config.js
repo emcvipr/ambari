@@ -51,9 +51,12 @@ App.healthIconClassRed = 'icon-warning-sign'; // bootstrap icon class for master
 App.healthIconClassOrange = 'icon-minus-sign'; // bootstrap icon class for slave down/decommissioned host/host-component
 App.healthIconClassYellow = 'icon-question-sign'; // bootstrap icon class for heartbeat lost service/host/host-component
 App.isManagedMySQLForHiveEnabled = false;
+App.isStormMetricsSupported = true;
 App.healthStatusRed = '#ff0000';
 App.healthStatusGreen = '#5AB400';
 App.healthStatusOrange = '#FF8E00';
+
+App.stackVersionsAvailable = true;
 
 // experimental features are automatically enabled if running on brunch server
 App.enableExperimental = false;

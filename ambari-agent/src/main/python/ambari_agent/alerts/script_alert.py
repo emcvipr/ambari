@@ -24,12 +24,11 @@ import os
 import re
 from alerts.base_alert import BaseAlert
 from resource_management.core.environment import Environment
-from symbol import parameters
 
 logger = logging.getLogger()
 
 class ScriptAlert(BaseAlert):
-  def __init__(self, alert_meta, alert_source_meta):
+  def __init__(self, alert_meta, alert_source_meta, config):
     """ ScriptAlert reporting structure is output from the script itself """
     
     alert_source_meta['reporting'] = {
@@ -41,6 +40,7 @@ class ScriptAlert(BaseAlert):
     
     super(ScriptAlert, self).__init__(alert_meta, alert_source_meta)
     
+    self.config = config
     self.path = None
     self.stacks_dir = None
     self.common_services_dir = None
@@ -58,39 +58,33 @@ class ScriptAlert(BaseAlert):
 
     if 'host_scripts_directory' in alert_source_meta:
       self.host_scripts_dir = alert_source_meta['host_scripts_directory']
-      
-    # execute the get_tokens() method so that this script correctly populates
-    # its list of keys
-    try:
-      cmd_module = self._load_source()
-      tokens = cmd_module.get_tokens()
-        
-      # for every token, populate the array keys that this alert will need
-      if tokens is not None:
-        for token in tokens:
-          # append the key to the list of keys for this alert
-          self._find_lookup_property(token)
-    except:
-      logger.exception("Unable to parameterize tokens for script {0}".format(self.path))
-      pass
-              
-    
+
   def _collect(self):
     cmd_module = self._load_source()
+
     if cmd_module is not None:
-      # convert the dictionary from 
-      # {'foo-site/bar': 'baz'} into 
-      # {'{{foo-site/bar}}': 'baz'}
       parameters = {}
-      for key in self.config_value_dict:
-        parameters['{{' + key + '}}'] = self.config_value_dict[key]
+
+      try:
+        tokens = cmd_module.get_tokens()
+        if tokens is not None:
+          # for each token, if there is a value, store in; otherwise don't store
+          # a key with a value of None
+          for token in tokens:
+            value = self._get_configuration_value(token)
+            if value is not None:
+              parameters[token] = value
+      except AttributeError:
+        # it's OK if the module doesn't have get_tokens() ; no tokens will
+        # be passed in so hopefully the script doesn't need any
+        logger.debug("The script {0} does not have a get_tokens() function".format(str(cmd_module)))
 
       # try to get basedir for scripts
       # it's needed for server side scripts to properly use resource management
       matchObj = re.match( r'((.*)services\/(.*)\/package\/)', self.path_to_script)
       if matchObj:
         basedir = matchObj.group(1)
-        with Environment(basedir) as env:
+        with Environment(basedir, tmp_dir=self.config.get('agent', 'tmp_dir')) as env:
           return cmd_module.execute(parameters, self.host_name)
       else:
         return cmd_module.execute(parameters, self.host_name)
@@ -124,14 +118,17 @@ class ScriptAlert(BaseAlert):
           self.stacks_dir, self.host_scripts_dir))
 
     if logger.isEnabledFor(logging.DEBUG):
-      logger.debug("Executing script check {0}".format(self.path_to_script))
+      logger.debug("[Alert][{0}] Executing script check {1}".format(
+        self.get_name(), self.path_to_script))
 
           
     if (not self.path_to_script.endswith('.py')):
-      logger.error("Unable to execute script {0}".format(self.path_to_script))
+      logger.error("[Alert][{0}] Unable to execute script {1}".format(
+        self.get_name(), self.path_to_script))
+
       return None
 
-    return imp.load_source(self._find_value('name'), self.path_to_script)
+    return imp.load_source(self._get_alert_meta_value_safely('name'), self.path_to_script)
 
 
   def _get_reporting_text(self, state):

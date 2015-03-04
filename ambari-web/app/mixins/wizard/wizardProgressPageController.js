@@ -36,6 +36,11 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
   isSubmitDisabled: true,
   isBackButtonDisabled: true,
   stages: [],
+  /**
+   * List of statuses that inform about the end of request progress.
+   * @type {String[]}
+   */
+  completedStatuses: ['COMPLETED', 'FAILED', 'TIMEDOUT', 'ABORTED'],
   currentPageRequestId: null,
   isSingleRequestPage: false,
   isCommandLevelRetry: function () {
@@ -55,35 +60,24 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
   tasksMessagesPrefix: '',
 
   loadStep: function () {
+    this.clearStep();
     var self = this;
     if (!self.isSingleRequestPage) {
       this.initStep();
     } else {
-      var runningOperations = App.router.get('backgroundOperationsController.services').filterProperty('isRunning');
-      var currentOperation = runningOperations.findProperty('name', this.contextForPollingRequest);
-      if (!currentOperation) {
-        this.submitRequest().done(function (data, result, request) {
-          if (data) {
-            self.set('currentPageRequestId', data.Requests.id);
-            self.doPollingForPageRequest();
-          } else {
-            //Step has been successfully completed
-            if (request.status === 200) {
-              self.set('status', 'COMPLETED');
-              self.set('isSubmitDisabled', false);
-              self.set('isLoaded', true);
-            }
-          }
-        });
+      var requestIds = this.get('content.tasksRequestIds');
+      var currentRequestId = requestIds && requestIds[0][0];
+      if (!currentRequestId) {
+        this.set('isLoaded', false);
+        this.submitRequest();
       } else {
-        self.set('currentPageRequestId',currentOperation.get('id'));
+        self.set('currentPageRequestId', currentRequestId);
         self.doPollingForPageRequest();
       }
     }
   },
 
   initStep: function () {
-    this.clearStep();
     this.initializeTasks();
     if (!this.isSingleRequestPage) {
       this.loadTasks();
@@ -111,6 +105,19 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
     this.set('isLoaded', false);
   },
 
+  /**
+   * Clear stages info for single page request.
+   */
+  clearStage: function() {
+    this.setDBProperty('tasksRequestIds', null);
+    this.setDBProperty('tasksStatuses', null);
+    this.set('showRetry', false);
+    this.set('content.tasksRequestIds', null);
+    this.set('content.tasksStatuses', null);
+    this.set('content.currentTaskId', null);
+    this.get('stages').clear();
+  },
+
   retry: function () {
     this.set('showRetry', false);
     this.get('tasks').setEach('status','PENDING');
@@ -118,14 +125,34 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
   },
 
   submitRequest: function () {
-    var dfd;
-    var self = this;
-    dfd = App.ajax.send({
-      name: self.get('request.ajaxName'),
-      data: self.get('request.ajaxData'),
-      sender: this
+    return App.ajax.send({
+      name: this.get('request.ajaxName'),
+      data: this.get('request.ajaxData'),
+      sender: this,
+      error: 'onSingleRequestError',
+      success: 'submitRequestSuccess',
+      kdcCancelHandler: 'failTaskOnKdcCheck'
     });
-    return dfd.promise();
+  },
+
+  submitRequestSuccess: function(data, result, request) {
+    if (data) {
+      this.set('currentPageRequestId', data.Requests.id);
+      this.doPollingForPageRequest();
+    } else {
+      //Step has been successfully completed
+      if (request.status === 200) {
+        this.set('status', 'COMPLETED');
+        this.set('isSubmitDisabled', false);
+        this.set('isLoaded', true);
+      }
+    }
+  },
+
+  failTaskOnKdcCheck: function() {
+    this.set('status', 'FAILED');
+    this.set('isLoaded', true);
+    this.set('showRetry', true);
   },
 
   doPollingForPageRequest: function () {
@@ -157,6 +184,9 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
   },
 
   updatePageWithPolledData: function(data) {
+    // If all tasks completed no need to update each task status.
+    // Preferable to skip polling of data for completed tasks after page refresh.
+    if (this.get('status') === 'COMPLETED') return;
     var self = this;
     var tasks = [];
     var currentPageRequestId = this.get('currentPageRequestId');
@@ -182,11 +212,12 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
         + tasksInCurrentStage.filterProperty('Tasks.status', 'TIMEDOUT').length;
       var queuedActions = tasksInCurrentStage.filterProperty('Tasks.status', 'QUEUED').length;
       var inProgressActions = tasksInCurrentStage.filterProperty('Tasks.status', 'IN_PROGRESS').length;
-      var progress = Math.ceil(((queuedActions * 0.09) + (inProgressActions * 0.35) + completedActions ) / tasksInCurrentStage.length * 100);
+      var progress = Math.floor(((queuedActions * 0.09) + (inProgressActions * 0.35) + completedActions ) / tasksInCurrentStage.length * 100);
       this.get('tasks').findProperty('id', currentTaskId).set('progress', progress);
     }
 
-    if (!(this.get('status') === 'COMPLETED')) {
+    // start polling if current request not completed
+    if (!(this.get('completedStatuses').contains(this.get('status')))) {
       window.setTimeout(function () {
         self.doPollingForPageRequest();
       }, self.POLL_INTERVAL);
@@ -198,10 +229,13 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
     var commands = this.isSingleRequestPage ? this.get('stages') : this.get('commands');
     var currentStep = App.router.get(this.get('content.controllerName') + '.currentStep');
     var tasksMessagesPrefix = this.get('tasksMessagesPrefix');
+    // check that all stages have been completed for single request type
+    var allStagesCompleted = commands.everyProperty('status', 'COMPLETED');
     for (var i = 0; i < commands.length; i++) {
       this.get('tasks').pushObject(Ember.Object.create({
         title: self.isSingleRequestPage ? commands[i].get('context') : Em.I18n.t(tasksMessagesPrefix + currentStep + '.task' + i + '.title'),
-        status: 'PENDING',
+        // set COMPLETED status for task if all stages completed successfully
+        status: allStagesCompleted ? 'COMPLETED' : 'PENDING',
         id: i,
         stageId: self.isSingleRequestPage ? commands[i].get('stage_id') : null,
         command: self.isSingleRequestPage ? 'k' : commands[i],
@@ -211,7 +245,7 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
         displayName: self.isSingleRequestPage ? commands[i].get('context') : Em.I18n.t(tasksMessagesPrefix + currentStep + '.task' + i + '.title'),
         progress: 0,
         isRunning: false,
-        requestIds: []
+        requestIds: self.isSingleRequestPage ? [this.get('stages')[0].request_id] : []
       }));
     }
     this.set('isLoaded', true);
@@ -325,6 +359,13 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
     this.setTaskStatus(this.get('currentTaskId'), 'FAILED');
   },
 
+  onSingleRequestError: function (jqXHR, ajaxOptions, error, opt) {
+    App.ajax.defaultErrorHandler(jqXHR, opt.url, opt.method, jqXHR.status);
+    this.set('status', 'FAILED');
+    this.set('isLoaded', true);
+    this.set('showRetry', true);
+  },
+
   onTaskCompleted: function () {
     this.setTaskStatus(this.get('currentTaskId'), 'COMPLETED');
   },
@@ -358,6 +399,8 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
   createComponent: function (componentName, hostName, serviceName) {
     var hostNames = (Array.isArray(hostName)) ? hostName : [hostName];
     var self = this;
+
+    this.set('showRetry', false);
 
     this.checkInstalledComponents(componentName, hostNames).then(function (data) {
       var hostsWithComponents = data.items.mapProperty('HostRoles.host_name');
@@ -481,7 +524,7 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
     this.set('logs', []);
     for (var i = 0; i < requestIds.length; i++) {
       App.ajax.send({
-        name: 'admin.high_availability.polling',
+        name: 'background_operations.get_by_request',
         sender: this,
         data: {
           requestId: requestIds[i]
@@ -516,7 +559,7 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create({
           + tasks.filterProperty('Tasks.status', 'TIMEDOUT').length;
         var queuedActions = tasks.filterProperty('Tasks.status', 'QUEUED').length;
         var inProgressActions = tasks.filterProperty('Tasks.status', 'IN_PROGRESS').length;
-        var progress = Math.ceil(((queuedActions * 0.09) + (inProgressActions * 0.35) + completedActions ) / actionsPerHost * 100);
+        var progress = Math.floor(((queuedActions * 0.09) + (inProgressActions * 0.35) + completedActions ) / actionsPerHost * 100);
         this.get('tasks').findProperty('id', currentTaskId).set('progress', progress);
         window.setTimeout(function () {
           self.doPolling();

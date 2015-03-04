@@ -196,7 +196,7 @@ App.MainServiceItemView = Em.View.extend({
 
   observeMaintenance: function() {
     Em.run.once(this, 'observeMaintenanceOnce');
-  }.observes('controller.isStopDisabled','controller.isClientsOnlyService', 'controller.content.isRestartRequired'),
+  },
 
   observeMaintenanceOnce: function() {
     var self = this;
@@ -319,14 +319,14 @@ App.MainServiceItemView = Em.View.extend({
       });
       options.forEach(function(opt, index) {
         if ( JSON.stringify(opt) != JSON.stringify(self.get('maintenance')[index])  ) {
-          self.get('maintenance').push(opt);
+          self.get('maintenance').pushObject(opt);
         }
       });
     }
   },
 
   isMaintenanceActive: function() {
-    return this.get('maintenance').length !== 0;
+    return this.get('state') !== 'inDOM' || this.get('maintenance').length !== 0;
   }.property('maintenance'),
 
   hasConfigTab: function() {
@@ -335,6 +335,18 @@ App.MainServiceItemView = Em.View.extend({
 
   didInsertElement: function () {
     this.get('controller').setStartStopState();
+  },
+
+  willInsertElement: function () {
+    this.addObserver('controller.isStopDisabled', this, 'observeMaintenance');
+    this.addObserver('controller.isClientsOnlyService', this, 'observeMaintenance');
+    this.addObserver('controller.content.isRestartRequired', this, 'observeMaintenance');
+  },
+
+  willDestroyElement: function() {
+    this.removeObserver('controller.isStopDisabled', this, 'observeMaintenance');
+    this.removeObserver('controller.isClientsOnlyService', this, 'observeMaintenance');
+    this.removeObserver('controller.content.isRestartRequired', this, 'observeMaintenance');
   },
   service:function () {
     var svc = this.get('controller.content');

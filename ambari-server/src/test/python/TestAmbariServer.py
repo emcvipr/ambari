@@ -69,6 +69,7 @@ with patch("platform.linux_distribution", return_value = os_distro_value):
           PERSISTENCE_TYPE_PROPERTY, JDBC_URL_PROPERTY, get_conf_dir, JDBC_USER_NAME_PROPERTY, JDBC_PASSWORD_PROPERTY, \
           JDBC_DATABASE_NAME_PROPERTY, OS_TYPE_PROPERTY, validate_jdk, JDBC_POSTGRES_SCHEMA_PROPERTY, \
           RESOURCES_DIR_PROPERTY, JDBC_RCA_PASSWORD_ALIAS, JDBC_RCA_SCHEMA_PROPERTY, IS_LDAP_CONFIGURED, \
+          SSL_API, SSL_API_PORT, \
           LDAP_MGR_PASSWORD_PROPERTY, LDAP_MGR_PASSWORD_ALIAS, JDBC_PASSWORD_FILENAME, NR_USER_PROPERTY, SECURITY_KEY_IS_PERSISTED, \
           SSL_TRUSTSTORE_PASSWORD_PROPERTY, SECURITY_IS_ENCRYPTION_ENABLED, SSL_TRUSTSTORE_PASSWORD_ALIAS, \
           SECURITY_MASTER_KEY_LOCATION, SECURITY_KEYS_DIR, LDAP_PRIMARY_URL_PROPERTY, store_password_file, \
@@ -92,6 +93,8 @@ with patch("platform.linux_distribution", return_value = os_distro_value):
 
 CURR_AMBARI_VERSION = "2.0.0"
 
+@patch("ambari_server.dbConfiguration_linux.get_postgre_hba_dir", new = MagicMock(return_value = "/var/lib/pgsql/data"))
+@patch("ambari_server.dbConfiguration_linux.get_postgre_running_status", new = MagicMock(return_value = "running"))
 class TestAmbariServer(TestCase):
   def setUp(self):
     out = StringIO.StringIO()
@@ -270,9 +273,9 @@ class TestAmbariServer(TestCase):
     options.sid_or_sname = "sid"
     setup_security_method.return_value = None
 
-    _ambari_server_.main()
+    _ambari_server_.mainBody()
 
-    _ambari_server_.main()
+    _ambari_server_.mainBody()
     self.assertTrue(setup_security_method.called)
     self.assertFalse(False, get_verbose())
     self.assertFalse(False, get_silent())
@@ -295,15 +298,9 @@ class TestAmbariServer(TestCase):
 
     get_validated_string_input_mock.return_value = '2'
     _ambari_server_.setup_security(args)
-    self.assertTrue(setup_component_https_mock.called)
-    setup_component_https_mock.assert_called_with("Ganglia", "setup-ganglia-https",
-                          GANGLIA_HTTPS, "ganglia_cert")
-
-    get_validated_string_input_mock.return_value = '3'
-    _ambari_server_.setup_security(args)
     self.assertTrue(setup_master_key_mock.called)
 
-    get_validated_string_input_mock.return_value = '4'
+    get_validated_string_input_mock.return_value = '3'
     _ambari_server_.setup_security(args)
     self.assertTrue(setup_ambari_krb5_jaas_mock.called)
     pass
@@ -346,6 +343,7 @@ class TestAmbariServer(TestCase):
                                                  ('pathtokeytab')])
     pass
 
+  @patch("sys.exit")
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(_ambari_server_, "setup")
   @patch.object(_ambari_server_, "start")
@@ -353,7 +351,7 @@ class TestAmbariServer(TestCase):
   @patch.object(_ambari_server_, "reset")
   @patch("optparse.OptionParser")
   def test_main_test_setup(self, OptionParserMock, reset_method, stop_method,
-                           start_method, setup_method):
+                           start_method, setup_method, exit_mock):
     opm = OptionParserMock.return_value
     options = MagicMock()
     args = ["setup"]
@@ -361,7 +359,7 @@ class TestAmbariServer(TestCase):
 
     options.dbms = None
     options.sid_or_sname = "sid"
-    _ambari_server_.main()
+    _ambari_server_.mainBody()
 
     self.assertTrue(setup_method.called)
     self.assertFalse(start_method.called)
@@ -370,6 +368,48 @@ class TestAmbariServer(TestCase):
 
     self.assertFalse(False, get_verbose())
     self.assertFalse(False, get_silent())
+
+    setup_method.reset_mock()
+    start_method.reset_mock()
+    stop_method.reset_mock()
+    reset_method.reset_mock()
+    exit_mock.reset_mock()
+    args = ["setup", "-v"]
+    options = MagicMock()
+    opm.parse_args.return_value = (options, args)
+    options.dbms = None
+    options.sid_or_sname = "sid"
+    setup_method.side_effect = Exception("Unexpected error")
+    try:
+      _ambari_server_.mainBody()
+    except Exception:
+      self.assertTrue(True)
+    self.assertTrue(setup_method.called)
+    self.assertFalse(start_method.called)
+    self.assertFalse(stop_method.called)
+    self.assertFalse(reset_method.called)
+    self.assertTrue(get_verbose())
+
+    setup_method.reset_mock()
+    start_method.reset_mock()
+    stop_method.reset_mock()
+    reset_method.reset_mock()
+    exit_mock.reset_mock()
+    args = ["setup"]
+    options = MagicMock()
+    opm.parse_args.return_value = (options, args)
+    options.dbms = None
+    options.sid_or_sname = "sid"
+    options.verbose = False
+    setup_method.side_effect = Exception("Unexpected error")
+    _ambari_server_.mainBody()
+    self.assertTrue(exit_mock.called)
+    self.assertTrue(setup_method.called)
+    self.assertFalse(start_method.called)
+    self.assertFalse(stop_method.called)
+    self.assertFalse(reset_method.called)
+    self.assertFalse(get_verbose())
+
     pass
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
@@ -387,7 +427,7 @@ class TestAmbariServer(TestCase):
 
     options.dbms = None
     options.sid_or_sname = "sname"
-    _ambari_server_.main()
+    _ambari_server_.mainBody()
 
     self.assertTrue(setup_method.called)
     self.assertFalse(start_method.called)
@@ -414,7 +454,7 @@ class TestAmbariServer(TestCase):
     options.dbms = None
     options.sid_or_sname = "sid"
 
-    _ambari_server_.main()
+    _ambari_server_.mainBody()
 
     self.assertFalse(setup_method.called)
     self.assertTrue(start_method.called)
@@ -439,7 +479,7 @@ class TestAmbariServer(TestCase):
     options.dbms = None
     options.sid_or_sname = "sid"
 
-    _ambari_server_.main()
+    _ambari_server_.mainBody()
 
     self.assertFalse(setup_method.called)
     self.assertTrue(start_method.called)
@@ -466,7 +506,7 @@ class TestAmbariServer(TestCase):
 
     options.dbms = None
     options.sid_or_sname = "sname"
-    _ambari_server_.main()
+    _ambari_server_.mainBody()
 
     self.assertTrue(backup_mock.called)
     self.assertFalse(restore_mock.called)
@@ -496,7 +536,7 @@ class TestAmbariServer(TestCase):
 
     options.dbms = None
     options.sid_or_sname = "sname"
-    _ambari_server_.main()
+    _ambari_server_.mainBody()
 
     self.assertTrue(restore_mock.called)
     self.assertFalse(backup_mock.called)
@@ -529,7 +569,7 @@ class TestAmbariServer(TestCase):
     options.dbms = None
     options.sid_or_sname = "sid"
 
-    _ambari_server_.main()
+    _ambari_server_.mainBody()
 
     self.assertFalse(setup_method.called)
     self.assertFalse(start_method.called)
@@ -558,7 +598,7 @@ class TestAmbariServer(TestCase):
     options.dbms = None
     options.sid_or_sname = "sid"
 
-    _ambari_server_.main()
+    _ambari_server_.mainBody()
 
     self.assertFalse(setup_method.called)
     self.assertFalse(start_method.called)
@@ -2806,7 +2846,8 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
   @patch("ambari_server.serverSetup.adjust_directory_permissions")
   @patch("ambari_server.serverSetup.read_ambari_user")
   @patch("ambari_server.serverSetup.expand_jce_zip_file")
-  def test_setup(self, expand_jce_zip_file_mock, read_ambari_user_mock, adjust_dirs_mock, extract_views_mock, proceedJDBCProperties_mock, is_root_mock,
+  def test_setup(self, expand_jce_zip_file_mock,
+                 read_ambari_user_mock, adjust_dirs_mock, extract_views_mock, proceedJDBCProperties_mock, is_root_mock,
                  disable_security_enhancements_mock, check_jdbc_drivers_mock, check_ambari_user_mock,
                  download_jdk_mock, configure_os_settings_mock, get_ambari_properties_mock,
                  get_YN_input_mock, gvsi_mock, gvsi_1_mock,
@@ -3473,7 +3514,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
     self.assertTrue(chdir_mock.called)
     self.assertTrue(popenMock.called)
     popen_arg = popenMock.call_args_list[0][0][0]
-    self.assertTrue(popen_arg[0] == "/bin/su")
+    self.assertTrue("; /bin/su" in popen_arg[2])
     self.assertTrue(perform_housekeeping_mock.called)
 
     args = reset_mocks()
@@ -4323,7 +4364,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
     sys.argv = list(base_args)
 
     try:
-      _ambari_server_.main()
+      _ambari_server_.mainBody()
     except SystemExit:
       failed = True
       pass
@@ -4341,7 +4382,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
     sys.argv.extend(["--database", "embedded"])
 
     try:
-      _ambari_server_.main()
+      _ambari_server_.mainBody()
     except SystemExit:
       failed = True
       pass
@@ -4356,7 +4397,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
     sys.argv.extend(db_args)
 
     try:
-      _ambari_server_.main()
+      _ambari_server_.mainBody()
     except SystemExit:
       failed = True
       pass
@@ -4372,7 +4413,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
     sys.argv.extend(["--database", "postgres"])
 
     try:
-      _ambari_server_.main()
+      _ambari_server_.mainBody()
     except SystemExit:
       failed = True
       pass
@@ -4389,7 +4430,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
     sys.argv.extend(db_args[2:])
 
     try:
-      _ambari_server_.main()
+      _ambari_server_.mainBody()
     except SystemExit:
       failed = True
       pass
@@ -4407,7 +4448,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
     sys.argv.extend(db_args[6:])
 
     try:
-      _ambari_server_.main()
+      _ambari_server_.mainBody()
     except SystemExit:
       failed = True
       pass
@@ -5433,7 +5474,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
     }
 
     get_ambari_properties_method.return_value = configs
-    raw_input_mock.side_effect = ['a:3', 'b:b', 'hody', 'b:2', 'false', 'user', 'uid', 'group', 'cn', 'member', 'dn', 'base', 'true']
+    raw_input_mock.side_effect = ['a:3', 'b:b', 'hody', 'b:2', 'false', 'user', 'uid', 'group', 'cn', 'member', 'dn', 'base', 'follow', 'true']
     set_silent(False)
     get_YN_input_method.return_value = True
 
@@ -5451,6 +5492,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
         "authentication.ldap.groupMembershipAttr": "member",
         "authentication.ldap.dnAttribute": "dn",
         "authentication.ldap.baseDn": "base",
+        "authentication.ldap.referral": "follow",
         "authentication.ldap.bindAnonymously": "true",
         "client.security": "ldap",
         "ambari.ldap.isConfigured": "true"
@@ -5464,7 +5506,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
     self.assertTrue(8, raw_input_mock.call_count)
 
     raw_input_mock.reset_mock()
-    raw_input_mock.side_effect = ['a:3', '', 'b:2', 'false', 'user', 'uid', 'group', 'cn', 'member', 'dn', 'base', 'true']
+    raw_input_mock.side_effect = ['a:3', '', 'b:2', 'false', 'user', 'uid', 'group', 'cn', 'member', 'dn', 'base', 'follow', 'true']
 
     setup_ldap()
 
@@ -5479,6 +5521,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
         "authentication.ldap.groupMembershipAttr": "member",
         "authentication.ldap.dnAttribute": "dn",
         "authentication.ldap.baseDn": "base",
+        "authentication.ldap.referral": "follow",
         "authentication.ldap.bindAnonymously": "true",
         "client.security": "ldap",
         "ambari.ldap.isConfigured": "true"
@@ -5576,6 +5619,7 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
         "authentication.ldap.groupMembershipAttr": "test",
         "authentication.ldap.groupNamingAttr": "test",
         "authentication.ldap.dnAttribute": "test",
+        "authentication.ldap.referral": "test",
         "client.security": "ldap", \
         LDAP_MGR_PASSWORD_PROPERTY: "ldap-password.dat",
         "ambari.ldap.isConfigured": "true"
@@ -5683,6 +5727,147 @@ MIIFHjCCAwYCCQDpHKOBI+Lt0zANBgkqhkiG9w0BAQUFADBRMQswCQYDVQQGEwJV
     options.ldap_sync_groups = None
 
     sync_ldap(options)
+
+    url = '{0}://{1}:{2!s}{3}'.format('http', '127.0.0.1', '8080', '/api/v1/ldap_sync_events')
+    request = urlopen_mock.call_args_list[0][0][0]
+
+    self.assertEquals(url, str(request.get_full_url()))
+    self.assertEquals('[{"Event": {"specs": [{"principal_type": "users", "sync_type": "all"}, {"principal_type": "groups", "sync_type": "all"}]}}]', request.data)
+
+    self.assertTrue(response.getcode.called)
+    self.assertTrue(response.read.called)
+    pass
+
+  @patch("__builtin__.open")
+  @patch("os.path.exists")
+  @patch("urllib2.urlopen")
+  @patch("ambari_server.setupSecurity.get_validated_string_input")
+  @patch("ambari_server.setupSecurity.get_ambari_properties")
+  @patch("ambari_server.setupSecurity.is_server_runing")
+  @patch("ambari_server.setupSecurity.is_root")
+  def test_ldap_sync_users(self, is_root_method, is_server_runing_mock, get_ambari_properties_mock,
+                         get_validated_string_input_mock, urlopen_mock, os_path_exists_mock, open_mock):
+
+    os_path_exists_mock.return_value = 1
+    f = MagicMock()
+    f.__enter__().read.return_value = "bob, tom"
+
+    open_mock.return_value = f
+    is_root_method.return_value = True
+    is_server_runing_mock.return_value = (True, 0)
+    properties = Properties()
+    properties.process_pair(IS_LDAP_CONFIGURED, 'true')
+    get_ambari_properties_mock.return_value = properties
+    get_validated_string_input_mock.side_effect = ['admin', 'admin']
+
+    response = MagicMock()
+    response.getcode.side_effect = [201, 200, 200]
+    response.read.side_effect = ['{"resources" : [{"href" : "http://c6401.ambari.apache.org:8080/api/v1/ldap_sync_events/16","Event" : {"id" : 16}}]}',
+                                 '{"Event":{"status" : "RUNNING","summary" : {"groups" : {"created" : 0,"removed" : 0,"updated" : 0},"memberships" : {"created" : 0,"removed" : 0},"users" : {"created" : 0,"removed" : 0,"updated" : 0}}}}',
+                                 '{"Event":{"status" : "COMPLETE","summary" : {"groups" : {"created" : 1,"removed" : 0,"updated" : 0},"memberships" : {"created" : 5,"removed" : 0},"users" : {"created" : 5,"removed" : 0,"updated" : 0}}}}']
+
+    urlopen_mock.return_value = response
+
+    options = MagicMock()
+    options.ldap_sync_all = False
+    options.ldap_sync_existing = False
+    options.ldap_sync_users = 'users.txt'
+    options.ldap_sync_groups = None
+
+    sync_ldap(options)
+
+    request = urlopen_mock.call_args_list[0][0][0]
+
+    self.assertEquals('[{"Event": {"specs": [{"principal_type": "users", "sync_type": "specific", "names": "bob, tom"}]}}]', request.data)
+
+    self.assertTrue(response.getcode.called)
+    self.assertTrue(response.read.called)
+    pass
+
+  @patch("__builtin__.open")
+  @patch("os.path.exists")
+  @patch("urllib2.urlopen")
+  @patch("ambari_server.setupSecurity.get_validated_string_input")
+  @patch("ambari_server.setupSecurity.get_ambari_properties")
+  @patch("ambari_server.setupSecurity.is_server_runing")
+  @patch("ambari_server.setupSecurity.is_root")
+  def test_ldap_sync_groups(self, is_root_method, is_server_runing_mock, get_ambari_properties_mock,
+                           get_validated_string_input_mock, urlopen_mock, os_path_exists_mock, open_mock):
+
+    os_path_exists_mock.return_value = 1
+    f = MagicMock()
+    f.__enter__().read.return_value = "group1, group2"
+
+    open_mock.return_value = f
+    is_root_method.return_value = True
+    is_server_runing_mock.return_value = (True, 0)
+    properties = Properties()
+    properties.process_pair(IS_LDAP_CONFIGURED, 'true')
+    get_ambari_properties_mock.return_value = properties
+    get_validated_string_input_mock.side_effect = ['admin', 'admin']
+
+    response = MagicMock()
+    response.getcode.side_effect = [201, 200, 200]
+    response.read.side_effect = ['{"resources" : [{"href" : "http://c6401.ambari.apache.org:8080/api/v1/ldap_sync_events/16","Event" : {"id" : 16}}]}',
+                                 '{"Event":{"status" : "RUNNING","summary" : {"groups" : {"created" : 0,"removed" : 0,"updated" : 0},"memberships" : {"created" : 0,"removed" : 0},"users" : {"created" : 0,"removed" : 0,"updated" : 0}}}}',
+                                 '{"Event":{"status" : "COMPLETE","summary" : {"groups" : {"created" : 1,"removed" : 0,"updated" : 0},"memberships" : {"created" : 5,"removed" : 0},"users" : {"created" : 5,"removed" : 0,"updated" : 0}}}}']
+
+    urlopen_mock.return_value = response
+
+    options = MagicMock()
+    options.ldap_sync_all = False
+    options.ldap_sync_existing = False
+    options.ldap_sync_users = None
+    options.ldap_sync_groups = 'groups.txt'
+
+    sync_ldap(options)
+
+    request = urlopen_mock.call_args_list[0][0][0]
+
+    self.assertEquals('[{"Event": {"specs": [{"principal_type": "groups", "sync_type": "specific", "names": "group1, group2"}]}}]', request.data)
+
+    self.assertTrue(response.getcode.called)
+    self.assertTrue(response.read.called)
+    pass
+
+  @patch("urllib2.urlopen")
+  @patch("ambari_server.setupSecurity.get_validated_string_input")
+  @patch("ambari_server.setupSecurity.get_ambari_properties")
+  @patch("ambari_server.setupSecurity.is_server_runing")
+  @patch("ambari_server.setupSecurity.is_root")
+  def test_ldap_sync_ssl(self, is_root_method, is_server_runing_mock, get_ambari_properties_mock,
+                         get_validated_string_input_mock, urlopen_mock):
+
+    is_root_method.return_value = True
+    is_server_runing_mock.return_value = (True, 0)
+    properties = Properties()
+    properties.process_pair(IS_LDAP_CONFIGURED, 'true')
+    properties.process_pair(SSL_API, 'true')
+    properties.process_pair(SSL_API_PORT, '8443')
+    get_ambari_properties_mock.return_value = properties
+    get_validated_string_input_mock.side_effect = ['admin', 'admin']
+
+
+    response = MagicMock()
+    response.getcode.side_effect = [201, 200, 200]
+    response.read.side_effect = ['{"resources" : [{"href" : "https://c6401.ambari.apache.org:8443/api/v1/ldap_sync_events/16","Event" : {"id" : 16}}]}',
+                                 '{"Event":{"status" : "RUNNING","summary" : {"groups" : {"created" : 0,"removed" : 0,"updated" : 0},"memberships" : {"created" : 0,"removed" : 0},"users" : {"created" : 0,"removed" : 0,"updated" : 0}}}}',
+                                 '{"Event":{"status" : "COMPLETE","summary" : {"groups" : {"created" : 1,"removed" : 0,"updated" : 0},"memberships" : {"created" : 5,"removed" : 0},"users" : {"created" : 5,"removed" : 0,"updated" : 0}}}}']
+
+    urlopen_mock.return_value = response
+
+    options = MagicMock()
+    options.ldap_sync_all = True
+    options.ldap_sync_existing = False
+    options.ldap_sync_users = None
+    options.ldap_sync_groups = None
+
+    sync_ldap(options)
+
+    url = '{0}://{1}:{2!s}{3}'.format('https', '127.0.0.1', '8443', '/api/v1/ldap_sync_events')
+    request = urlopen_mock.call_args_list[0][0][0]
+
+    self.assertEquals(url, str(request.get_full_url()))
 
     self.assertTrue(response.getcode.called)
     self.assertTrue(response.read.called)

@@ -67,7 +67,9 @@ App.MainServiceItemController = Em.Controller.extend({
     });
 
     self.set('add' + componentName, function() {
-      self.addComponent(componentName);
+      App.get('router.mainAdminKerberosController').getKDCSessionState(function() {
+        self.addComponent(componentName);
+      });
     });
 
     Em.defineProperty(self, 'addDisabledTooltip-' + componentName, Em.computed('isAddDisabled-' + componentName, 'addDisabledMsg-' + componentName, function() {
@@ -619,15 +621,20 @@ App.MainServiceItemController = Em.Controller.extend({
         templateName: require('templates/main/service/add_host_popup')
       }),
 
-      restartNagiosMsg: Em.View.extend({
-        template: Em.Handlebars.compile(Em.I18n.t('hosts.host.addComponent.note').format(componentDisplayName))
-      }),
-
       onPrimary: function () {
         var selectedHost = this.get('selectedHost');
 
         // Install
-        componentsUtils.installHostComponent(selectedHost, component);
+        if(component.get('componentName') == "HIVE_METASTORE" && !!selectedHost){
+          App.router.get('mainHostDetailsController').addComponent(
+            {
+              context: component,
+              hiveMetastoreHost: selectedHost
+            }
+          );
+        } else {
+          componentsUtils.installHostComponent(selectedHost, component);
+        }
 
         // Remove host from 'without' collection to immediate recalculate add menu item state
         var hostsWithoutComponent = this.get('hostsWithoutComponent');

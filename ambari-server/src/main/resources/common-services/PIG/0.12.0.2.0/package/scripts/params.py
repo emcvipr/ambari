@@ -54,7 +54,7 @@ smokeuser_principal = config['configurations']['cluster-env']['smokeuser_princip
 user_group = config['configurations']['cluster-env']['user_group']
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 smoke_user_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
-kinit_path_local = functions.get_kinit_path(["/usr/bin", "/usr/kerberos/bin", "/usr/sbin"])
+kinit_path_local = functions.get_kinit_path()
 pig_env_sh_template = config['configurations']['pig-env']['content']
 
 # not supporting 32 bit jdk.
@@ -70,7 +70,7 @@ import functools
 HdfsDirectory = functools.partial(
   HdfsDirectory,
   conf_dir=hadoop_conf_dir,
-  hdfs_user=hdfs_principal_name if security_enabled else hdfs_user,
+  hdfs_user=hdfs_user,
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,

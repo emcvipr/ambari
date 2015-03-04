@@ -739,72 +739,41 @@ describe('App.WizardStep8Controller', function () {
       });
   });
 
-  describe('#loadNagiosAdminValue', function() {
-    it('should use serviceConfigProperties nagios_web_login and nagios_contact', function() {
-      installerStep8Controller.set('content', {
-        serviceConfigProperties: [
-          {name: 'nagios_web_login', value: 'admin'},
-          {name: 'nagios_contact', value: 'admin@admin.com'}
-        ]
-      });
-      var nagiosAdmin = installerStep8Controller.loadNagiosAdminValue();
-      expect(nagiosAdmin).to.equal('admin / (admin@admin.com)');
-    });
-  });
-
   describe('#submit', function() {
     beforeEach(function() {
       sinon.stub(installerStep8Controller, 'submitProceed', Em.K);
-      sinon.spy(App, 'showConfirmationPopup');
+      sinon.stub(App.get('router.mainAdminKerberosController'), 'getKDCSessionState', Em.K);
     });
     afterEach(function() {
       installerStep8Controller.submitProceed.restore();
-      App.showConfirmationPopup.restore();
+      App.get('router.mainAdminKerberosController').getKDCSessionState.restore();
     });
     Em.A([
         {
-          controllerName: 'addHostController',
-          securityEnabled: true,
-          e: true
-        },
-        {
-          controllerName: 'addHostController',
-          securityEnabled: false,
-          e: false
+          controllerName: 'addServiceController',
+          securityEnabled: true
         },
         {
           controllerName: 'addServiceController',
-          securityEnabled: true,
-          e: false
-        },
-        {
-          controllerName: 'addServiceController',
-          securityEnabled: false,
-          e: false
+          securityEnabled: false
         }
       ]).forEach(function (test) {
         it(test.controllerName + ' ' + test.securityEnabled.toString(), function () {
           installerStep8Controller.reopen({isSubmitDisabled: false, securityEnabled: test.securityEnabled, content: {controllerName: test.controllerName}});
           installerStep8Controller.submit();
-          if (test.e) {
-            expect(App.showConfirmationPopup.calledOnce).to.equal(true);
+          if (test.securityEnabled) {
+            expect(App.get('router.mainAdminKerberosController').getKDCSessionState.called).to.equal(true);
             expect(installerStep8Controller.submitProceed.called).to.equal(false);
-          }
-          else {
-            expect(App.showConfirmationPopup.called).to.equal(false);
-            expect(installerStep8Controller.submitProceed.calledOnce).to.equal(true);
+          } else {
+            expect(App.get('router.mainAdminKerberosController').getKDCSessionState.called).to.equal(false);
+            expect(installerStep8Controller.submitProceed.called).to.equal(true);
           }
         });
       });
-    it('should call submitProceed when Ok clicked', function() {
-      installerStep8Controller.reopen({isSubmitDisabled: false, securityEnabled: true, content: {controllerName: 'addHostController'}});
-      installerStep8Controller.submit().onPrimary();
-      expect(installerStep8Controller.submitProceed.calledOnce).to.equal(true);
-    });
     it('shouldn\'t do nothing if isSubmitDisabled is true', function() {
       installerStep8Controller.reopen({isSubmitDisabled: true});
       installerStep8Controller.submit();
-      expect(App.showConfirmationPopup.called).to.equal(false);
+      expect(App.get('router.mainAdminKerberosController').getKDCSessionState.called).to.equal(false);
       expect(installerStep8Controller.submitProceed.called).to.equal(false);
     });
   });
@@ -1400,10 +1369,8 @@ describe('App.WizardStep8Controller', function () {
     describe('#createNotification', function () {
 
       beforeEach(function () {
-        sinon.stub(App, 'get', function (k) {
-          if ('testMode' === k) return false;
-          return Em.get(App, k);
-        });
+        var stub = sinon.stub(App, 'get');
+        stub.withArgs('testMode').returns(false);
         installerStep8Controller.clearStep();
         installerStep8Controller.set('content', {controllerName: 'installerController'});
         installerStep8Controller.set('configs', [
@@ -1420,16 +1387,20 @@ describe('App.WizardStep8Controller', function () {
           {name: 'some_p', value: 'some_v', serviceName: 'MISC', filename: 'alert_notification'}
         ]);
         installerStep8Controller.get('ajaxRequestsQueue').clear();
+        sinon.stub($, 'ajax', function () {return {complete: Em.K}});
       });
 
       afterEach(function () {
         App.get.restore();
+        $.ajax.restore();
       });
 
       it('should add request to queue', function () {
         installerStep8Controller.createNotification();
         expect(installerStep8Controller.get('ajaxRequestsQueue.queue.length')).to.equal(1);
-
+        installerStep8Controller.get('ajaxRequestsQueue').runNextRequest();
+        expect($.ajax.calledOnce).to.be.true;
+        expect($.ajax.args[0][0].url.contains('overwrite_existing=true')).to.be.true;
       });
 
       it('sent data should be valid', function () {

@@ -45,12 +45,16 @@ App.KerberosWizardStep3Controller = App.KerberosProgressPageController.extend({
           error: 'onTaskError'
         });
       } else {
-        var hostNames = self.get('content.hosts');
+        var hostNames = App.get('allHostNames');
         self.updateComponent('KERBEROS_CLIENT', hostNames, "KERBEROS", "Install");
       }
     });
   },
 
+  onKDCCancel: function() {
+    App.router.get(this.get('content.controllerName')).setStepsEnable();
+    this.get('tasks').objectAt(this.get('currentTaskId')).set('status', 'FAILED');
+  },
 
   getKerberosClientState: function() {
     return App.ajax.send({
@@ -69,13 +73,19 @@ App.KerberosWizardStep3Controller = App.KerberosProgressPageController.extend({
       'name': 'service.item.smoke',
       'sender': this,
       'success': 'startPolling',
-      'error': 'onTaskError',
+      'error': 'onTestKerberosError',
+      'kdcCancelHandler': 'onKDCCancel',
       'data': {
         'serviceName': this.serviceName,
         'displayName': App.format.role(this.serviceName),
         'actionName': this.serviceName + '_SERVICE_CHECK'
       }
     });
+  },
+
+  onTestKerberosError: function (jqXHR, ajaxOptions, error, opt) {
+    App.ajax.defaultErrorHandler(jqXHR, opt.url, opt.type, jqXHR.status);
+    this.onTaskError(jqXHR, ajaxOptions, error, opt);
   },
 
   /**

@@ -18,7 +18,7 @@
 
 
 var App = require('app');
-App.AddServiceController = App.WizardController.extend({
+App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
 
   name: 'addServiceController',
   // @TODO: remove after Kerberos Automation supports
@@ -34,6 +34,11 @@ App.AddServiceController = App.WizardController.extend({
    * @default null
    */
   serviceToInstall: null,
+
+  /**
+   *
+   */
+  installClientQueueLength: 0,
 
   /**
    * All wizards data will be stored in this variable
@@ -74,15 +79,6 @@ App.AddServiceController = App.WizardController.extend({
     ],
     '2': [
       {
-        type: 'sync',
-        callback: function () {
-          this.loadMasterComponentHosts();
-          this.load('hosts');
-        }
-      }
-    ],
-    '2': [
-      {
         type: 'async',
         callback: function () {
           var dfd = $.Deferred();
@@ -114,10 +110,16 @@ App.AddServiceController = App.WizardController.extend({
     ],
     '4': [
       {
-        type: 'sync',
+        type: 'async',
         callback: function () {
-          this.loadServiceConfigGroups();
-          this.loadServiceConfigProperties();
+          var self = this;
+          var dfd = $.Deferred();
+          this.loadKerberosDescriptorConfigs().done(function() {
+            self.loadServiceConfigGroups();
+            self.loadServiceConfigProperties();
+            dfd.resolve();
+          });
+          return dfd.promise();
         }
       }
     ],
@@ -128,6 +130,8 @@ App.AddServiceController = App.WizardController.extend({
           this.checkSecurityStatus();
           this.load('cluster');
           this.set('content.additionalClients', []);
+          this.set('installClientQueueLength', 0);
+          this.set('installClietsQueue', App.ajaxQueue.create({abortOnError: false}));
         }
       }
     ]
@@ -327,6 +331,24 @@ App.AddServiceController = App.WizardController.extend({
     }
   },
 
+  /**
+   * Load kerberos descriptor configuration
+   * @returns {$.Deferred}
+   */
+  loadKerberosDescriptorConfigs: function() {
+    var self = this,
+        dfd = $.Deferred();
+    if (App.router.get('mainAdminKerberosController.securityEnabled')) {
+      this.getDescriptorConfigs().then(function(properties) {
+        self.set('kerberosDescriptorConfigs', properties);
+        dfd.resolve();
+      });
+    } else {
+      dfd.resolve();
+    }
+    return dfd.promise();
+  },
+
   saveServiceConfigProperties: function (stepController) {
     this._super(stepController);
     if (this.get('currentStep') > 1 && this.get('currentStep') < 6) {
@@ -500,13 +522,30 @@ App.AddServiceController = App.WizardController.extend({
       "urlParams": "ServiceInfo/service_name.in(" + selectedServices.join(',')  + ")"
     };
   },
+
+  /**
+   * main method for installing additional clients and services
+   * @param {function} callback
+   * @method installServices
+   */
   installServices: function (callback) {
+    var self = this;
     this.set('content.cluster.oldRequestsId', []);
-    this.installAdditionalClients();
+    this.installAdditionalClients().done(function () {
+      self.installSelectedServices(callback);
+    });
+  },
+
+  /**
+   * method to install added services
+   * @param {function} callback
+   * @method installSelectedServices
+   */
+  installSelectedServices: function (callback) {
     var name = 'common.services.update';
     var selectedServices = this.get('content.services').filterProperty('isInstalled', false).filterProperty('isSelected', true).mapProperty('serviceName');
     var data = this.generateDataForInstallServices(selectedServices);
-    this.installServicesRequest(name, data, callback);
+    this.installServicesRequest(name, data, callback.bind(this));
   },
 
   installServicesRequest: function (name, data, callback) {
@@ -526,27 +565,72 @@ App.AddServiceController = App.WizardController.extend({
    * @method installAdditionalClients
    */
   installAdditionalClients: function () {
-    this.get('content.additionalClients').forEach(function (c) {
-      if (c.hostNames.length > 0) {
-        var queryStr = 'HostRoles/component_name='+ c.componentName + '&HostRoles/host_name.in(' + c.hostNames.join() + ')';
-        App.ajax.send({
-          name: 'common.host_component.update',
-          sender: this,
-          data: {
-            query: queryStr,
-            context: 'Install ' + App.format.role(c.componentName),
-            HostRoles: {
-              state: 'INSTALLED'
-            }
-          }
-        });
+    var dfd = $.Deferred();
+    if (this.get('content.additionalClients.length') > 0) {
+      this.get('content.additionalClients').forEach(function (c, k) {
+        if (c.hostNames.length > 0) {
+          var queryStr = 'HostRoles/component_name='+ c.componentName + '&HostRoles/host_name.in(' + c.hostNames.join() + ')';
+          this.get('installClietsQueue').addRequest({
+            name: 'common.host_component.update',
+            sender: this,
+            data: {
+              query: queryStr,
+              context: 'Install ' + App.format.role(c.componentName),
+              HostRoles: {
+                state: 'INSTALLED'
+              },
+              counter: k,
+              deferred: dfd
+            },
+            success: 'installClientSuccess',
+            error: 'installClientError'
+          });
+        }
+      }, this);
+      if (this.get('installClietsQueue.queue.length') == 0) {
+        return dfd.resolve();
+      } else {
+        this.set('installClientQueueLength', this.get('installClietsQueue.queue.length'));
+        App.get('router.wizardStep8Controller').set('servicesInstalled', true);
+        this.get('installClietsQueue').start();
       }
-    }, this);
+    } else {
+      dfd.resolve();
+    }
+    return dfd.promise();
+  },
+
+  /**
+   * callback for when install clients success
+   * @param data
+   * @param opt
+   * @param params
+   * @method installClientComplete
+   */
+  installClientSuccess: function(data, opt, params) {
+    if (this.get('installClientQueueLength') - 1 == params.counter) {
+      params.deferred.resolve();
+    }
+  },
+
+  /**
+   * callback for when install clients fail
+   * @param request
+   * @param ajaxOptions
+   * @param error
+   * @param opt
+   * @param params
+   */
+  installClientError: function(request, ajaxOptions, error, opt, params) {
+    if (this.get('installClientQueueLength') - 1 == params.counter) {
+      params.deferred.resolve();
+    }
   },
 
   checkSecurityStatus: function() {
     if (App.supports.automatedKerberos) {
       if (!App.router.get('mainAdminKerberosController.securityEnabled')) {
+        this.set('skipConfigureIdentitiesStep', true);
         this.get('isStepDisabled').findProperty('step', 5).set('value', true);
       }
     }

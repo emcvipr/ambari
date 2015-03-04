@@ -23,6 +23,9 @@ App.UpdateController = Em.Controller.extend({
   isUpdated: false,
   cluster: null,
   isWorking: false,
+  updateAlertInstances: function() {
+    return this.get('isWorking') && !App.get('router.mainAlertInstancesController.isUpdating');
+  }.property('isWorking', 'App.router.mainAlertInstancesController.isUpdating'),
   timeIntervalId: null,
   clusterName: function () {
     return App.router.get('clusterController.clusterName');
@@ -132,9 +135,11 @@ App.UpdateController = Em.Controller.extend({
       App.updater.run(this, 'updateAlertGroups', 'isWorking', App.alertGroupsUpdateInterval);
       App.updater.run(this, 'updateAlertDefinitions', 'isWorking', App.alertDefinitionsUpdateInterval);
       App.updater.run(this, 'updateAlertDefinitionSummary', 'isWorking', App.alertDefinitionsUpdateInterval);
-      App.updater.run(this, 'updateUnhealthyAlertInstances', 'isWorking', App.alertInstancesUpdateInterval);
+      if (!App.get('router.mainAlertInstancesController.isUpdating')) {
+        App.updater.run(this, 'updateUnhealthyAlertInstances', 'updateAlertInstances', App.alertInstancesUpdateInterval);
+      }
     }
-  }.observes('isWorking'),
+  }.observes('isWorking', 'App.router.mainAlertInstancesController.isUpdating'),
   /**
    * Update service metrics depending on which page is open
    * Make a call only on follow pages:
@@ -404,8 +409,7 @@ App.UpdateController = Em.Controller.extend({
   getConditionalFields: function () {
     var conditionalFields = [];
     var serviceSpecificParams = {
-      'FLUME': "host_components/metrics/flume/flume," +
-        "host_components/processes/HostComponentProcess",
+      'FLUME': "host_components/processes/HostComponentProcess",
       'YARN': "host_components/metrics/yarn/Queue," +
         "ServiceComponentInfo/rm_metrics/cluster/activeNMcount," +
         "ServiceComponentInfo/rm_metrics/cluster/lostNMcount," +

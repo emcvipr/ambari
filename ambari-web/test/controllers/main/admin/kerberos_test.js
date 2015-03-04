@@ -54,6 +54,22 @@ describe('App.MainAdminKerberosController', function() {
         expect(prop.get('isEditable')).to.be.false;
       });
     });
+
+    it('should take displayType from predefinedSiteProperties', function () {
+      sinon.stub(App.config, 'get').withArgs('preDefinedSiteProperties').returns([
+        {
+          name: 'hadoop.security.auth_to_local',
+          displayType: 'multiLine'
+        }
+      ]);
+      expect(controller.prepareConfigProperties([
+        Em.Object.create({
+          name: 'hadoop.security.auth_to_local',
+          serviceName: 'HDFS'
+        })
+      ])[0].get('displayType')).to.equal('multiLine');
+      App.config.get.restore();
+    });
   });
 
   describe("#runSecurityCheckSuccess()", function () {
@@ -94,4 +110,38 @@ describe('App.MainAdminKerberosController', function() {
       expect(App.showClusterCheckPopup.called).to.be.false;
     });
   });
+
+  describe('#regenerateKeytabs()', function () {
+
+    beforeEach(function () {
+      sinon.spy(App.ModalPopup, "show");
+      sinon.stub(App.ajax, 'send', Em.K);
+    });
+    afterEach(function () {
+      App.ModalPopup.show.restore();
+      App.ajax.send.restore();
+    });
+
+    it('confirm popup should be displayed', function () {
+      var popup = controller.regenerateKeytabs();
+      expect(App.ModalPopup.show.calledOnce).to.be.true;
+      popup.onPrimary();
+      expect(App.ajax.send.calledOnce).to.be.true;
+    });
+
+    it('user checked regeneration only for missing host/components', function () {
+      var popup = controller.regenerateKeytabs();
+      popup.set('regenerateKeytabsOnlyForMissing', true);
+      popup.onPrimary();
+      expect(App.ajax.send.args[0][0].data.type).to.equal('missing');
+    });
+
+    it('user didn\'t check regeneration only for missing host/components', function () {
+      var popup = controller.regenerateKeytabs();
+      popup.onPrimary();
+      expect(App.ajax.send.args[0][0].data.type).to.equal('all');
+    });
+
+  });
+
 });

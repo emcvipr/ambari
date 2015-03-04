@@ -260,13 +260,19 @@ App.ServerValidatorMixin = Em.Mixin.create({
       // Motivation: for server-side validation warnings and EVEN errors allow user to continue wizard
       return App.ModalPopup.show({
         header: Em. I18n.t('installer.step7.popup.validation.warning.header'),
-        classNames: ['sixty-percent-width-modal'],
+        classNames: ['sixty-percent-width-modal','modal-full-width'],
         primary: Em.I18n.t('common.proceedAnyway'),
+        primaryClass: 'btn-danger',
+        marginBottom: 200,
         onPrimary: function () {
           this.hide();
           deferred.resolve();
         },
         onSecondary: function () {
+          this.hide();
+          deferred.reject("invalid_configs"); // message used to differentiate types of rejections.
+        },
+        onClose: function () {
           this.hide();
           deferred.reject("invalid_configs"); // message used to differentiate types of rejections.
         },

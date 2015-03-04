@@ -39,11 +39,17 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 
 import javax.persistence.EntityManager;
 
+import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.DBAccessor.DBColumnInfo;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
@@ -61,14 +67,24 @@ import org.apache.ambari.server.orm.entities.HostComponentStateEntityPK;
 import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntity;
 import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntityPK;
+import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.Config;
+import org.apache.ambari.server.state.ConfigHelper;
+import org.apache.ambari.server.state.OperatingSystemInfo;
+import org.apache.ambari.server.state.PropertyInfo;
+import org.apache.ambari.server.state.RepositoryInfo;
 import org.apache.ambari.server.state.SecurityState;
 import org.apache.ambari.server.state.SecurityType;
+import org.apache.ambari.server.state.StackId;
 import org.easymock.Capture;
+import org.easymock.EasyMockSupport;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.google.inject.AbstractModule;
 import com.google.inject.Binder;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -135,6 +151,8 @@ public class UpgradeCatalog200Test {
     Capture<DBAccessor.DBColumnInfo> dataValueColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
     Capture<List<DBAccessor.DBColumnInfo>> alertTargetStatesCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
     Capture<List<DBAccessor.DBColumnInfo>> artifactCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
+    Capture<List<DBAccessor.DBColumnInfo>> kerberosPrincipalCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
+    Capture<List<DBAccessor.DBColumnInfo>> kerberosPrincipalHostCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
 
     Capture<List<DBAccessor.DBColumnInfo>> upgradeCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
     Capture<List<DBAccessor.DBColumnInfo>> upgradeGroupCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
@@ -148,7 +166,7 @@ public class UpgradeCatalog200Test {
         capture(alertDefinitionDescriptionColumnCapture));
 
     dbAccessor.createTable(eq("alert_target_states"),
-        capture(alertTargetStatesCapture), eq("target_id"));
+        capture(alertTargetStatesCapture));
 
     // alert target
     dbAccessor.addColumn(eq("alert_target"),
@@ -210,6 +228,20 @@ public class UpgradeCatalog200Test {
     // artifact
     dbAccessor.createTable(eq("artifact"), capture(artifactCapture),
         eq("artifact_name"), eq("foreign_keys"));
+
+    // kerberos_principal
+    dbAccessor.createTable(eq("kerberos_principal"), capture(kerberosPrincipalCapture),
+        eq("principal_name"));
+
+    // kerberos_principal_host
+    dbAccessor.createTable(eq("kerberos_principal_host"), capture(kerberosPrincipalHostCapture),
+        eq("principal_name"), eq("host_name"));
+
+    dbAccessor.addFKConstraint(eq("kerberos_principal_host"), eq("FK_krb_pr_host_hostname"),
+        eq("host_name"), eq("hosts"), eq("host_name"), eq(true), eq(false));
+
+    dbAccessor.addFKConstraint(eq("kerberos_principal_host"), eq("FK_krb_pr_host_principalname"),
+        eq("principal_name"), eq("kerberos_principal"), eq("principal_name"), eq(true), eq(false));
 
     setViewInstancePropertyExpectations(dbAccessor, valueColumnCapture);
     setViewInstanceDataExpectations(dbAccessor, dataValueColumnCapture);
@@ -282,6 +314,11 @@ public class UpgradeCatalog200Test {
     List<DBAccessor.DBColumnInfo> artifactColumns = artifactCapture.getValue();
     testCreateArtifactTable(artifactColumns);
 
+    // verify kerberos_principal columns
+    testCreateKerberosPrincipalTable(kerberosPrincipalCapture.getValue());
+
+    // verify kerberos_principal_host columns
+    testCreateKerberosPrincipalHostTable(kerberosPrincipalHostCapture.getValue());
 
     // Verify capture group sizes
     assertEquals(7, clusterVersionCapture.getValue().size());
@@ -306,15 +343,20 @@ public class UpgradeCatalog200Test {
     Method updateHiveDatabaseType = UpgradeCatalog200.class.getDeclaredMethod("updateHiveDatabaseType");
     Method addNewConfigurationsFromXml = AbstractUpgradeCatalog.class.getDeclaredMethod
         ("addNewConfigurationsFromXml");
-    Method setSecurityType = UpgradeCatalog200.class.getDeclaredMethod("setSecurityType");
-    Method updateDfsClusterAdmintistratorsProperty = UpgradeCatalog200.class.getDeclaredMethod("updateDfsClusterAdmintistratorsProperty");
+    Method updateTezConfiguration = UpgradeCatalog200.class.getDeclaredMethod("updateTezConfiguration");
+    Method updateClusterEnvConfiguration = UpgradeCatalog200.class.getDeclaredMethod("updateClusterEnvConfiguration");
+    Method updateConfigurationProperties = AbstractUpgradeCatalog.class.getDeclaredMethod
+            ("updateConfigurationProperties", String.class, Map.class, boolean.class, boolean.class);
+    Method persistHDPRepo = UpgradeCatalog200.class.getDeclaredMethod("persistHDPRepo");
 
     UpgradeCatalog200 upgradeCatalog = createMockBuilder(UpgradeCatalog200.class)
         .addMockedMethod(removeNagiosService)
         .addMockedMethod(updateHiveDatabaseType)
         .addMockedMethod(addNewConfigurationsFromXml)
-        .addMockedMethod(setSecurityType)
-        .addMockedMethod(updateDfsClusterAdmintistratorsProperty)
+        .addMockedMethod(updateTezConfiguration)
+        .addMockedMethod(updateConfigurationProperties)
+        .addMockedMethod(updateClusterEnvConfiguration)
+        .addMockedMethod(persistHDPRepo)
         .createMock();
 
     upgradeCatalog.removeNagiosService();
@@ -322,19 +364,161 @@ public class UpgradeCatalog200Test {
     upgradeCatalog.addNewConfigurationsFromXml();
     expectLastCall();
 
-    upgradeCatalog.updateDfsClusterAdmintistratorsProperty();
-    expectLastCall();
-    
     upgradeCatalog.updateHiveDatabaseType();
     expectLastCall().once();
-    upgradeCatalog.setSecurityType();
+
+    upgradeCatalog.updateTezConfiguration();
     expectLastCall().once();
+
+    upgradeCatalog.updateConfigurationProperties("hive-site",
+            Collections.singletonMap("hive.server2.transport.mode", "binary"), false, false);
+    expectLastCall();
+
+    upgradeCatalog.persistHDPRepo();
+    expectLastCall().once();
+
+    upgradeCatalog.updateClusterEnvConfiguration();
+    expectLastCall();
 
     replay(upgradeCatalog);
 
     upgradeCatalog.executeDMLUpdates();
 
     verify(upgradeCatalog);
+  }
+
+  @Test
+  public void testPersistHDPRepo() throws Exception {
+    EasyMockSupport easyMockSupport = new EasyMockSupport();
+    final AmbariManagementController  mockAmbariManagementController = easyMockSupport.createStrictMock(AmbariManagementController.class);
+    final AmbariMetaInfo mockAmbariMetaInfo = easyMockSupport.createStrictMock(AmbariMetaInfo.class);
+    final Clusters mockClusters = easyMockSupport.createStrictMock(Clusters.class);
+    final Cluster mockCluster = easyMockSupport.createStrictMock(Cluster.class);
+    final Map<String, Cluster> clusterMap = new HashMap<String, Cluster>();
+    clusterMap.put("c1",mockCluster);
+    OperatingSystemInfo osi = new OperatingSystemInfo("redhat6");
+    HashSet<OperatingSystemInfo> osiSet = new HashSet<OperatingSystemInfo>();
+    osiSet.add(osi);
+    StackId stackId = new StackId("HDP","2.2");
+    RepositoryInfo mockRepositoryInfo = easyMockSupport.createStrictMock(RepositoryInfo.class);
+
+    final Injector mockInjector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(AmbariManagementController.class).toInstance(mockAmbariManagementController);
+        bind(Clusters.class).toInstance(mockClusters);
+        bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
+        bind(EntityManager.class).toInstance(createNiceMock(EntityManager.class));
+      }
+    });
+
+    expect(mockAmbariManagementController.getAmbariMetaInfo()).andReturn(mockAmbariMetaInfo);
+    expect(mockAmbariManagementController.getClusters()).andReturn(mockClusters).once();
+    expect(mockClusters.getClusters()).andReturn(clusterMap).once();
+    expect(mockCluster.getCurrentStackVersion()).andReturn(stackId).once();
+    expect(mockAmbariMetaInfo.getOperatingSystems("HDP", "2.2")).andReturn(osiSet).once();
+    expect(mockAmbariMetaInfo.getRepository("HDP", "2.2", "redhat6", "HDP-2.2")).andReturn(mockRepositoryInfo).once();
+    expect(mockRepositoryInfo.getDefaultBaseUrl()).andReturn("http://baseurl").once();
+    mockAmbariMetaInfo.updateRepoBaseURL("HDP", "2.2", "redhat6", "HDP-2.2", "http://baseurl");
+    expectLastCall().once();
+
+    easyMockSupport.replayAll();
+    mockInjector.getInstance(UpgradeCatalog200.class).persistHDPRepo();
+    easyMockSupport.verifyAll();
+  }
+
+  @Test
+  public void testUpdateClusterEnvConfiguration() throws Exception {
+    EasyMockSupport easyMockSupport = new EasyMockSupport();
+    final AmbariManagementController  mockAmbariManagementController = easyMockSupport.createStrictMock(AmbariManagementController.class);
+    final ConfigHelper mockConfigHelper = easyMockSupport.createMock(ConfigHelper.class);
+
+    final Clusters mockClusters = easyMockSupport.createStrictMock(Clusters.class);
+    final Cluster mockClusterExpected = easyMockSupport.createStrictMock(Cluster.class);
+    final Cluster mockClusterMissingSmokeUser = easyMockSupport.createStrictMock(Cluster.class);
+    final Cluster mockClusterMissingConfig = easyMockSupport.createStrictMock(Cluster.class);
+
+    final Config mockClusterEnvExpected = easyMockSupport.createStrictMock(Config.class);
+    final Config mockClusterEnvMissingSmokeUser = easyMockSupport.createStrictMock(Config.class);
+
+    final Map<String, String> propertiesExpectedT0 = new HashMap<String, String>();
+    propertiesExpectedT0.put("kerberos_domain", "EXAMPLE.COM");
+    propertiesExpectedT0.put("user_group", "hadoop");
+    propertiesExpectedT0.put("kinit_path_local", "/usr/bin");
+    propertiesExpectedT0.put("security_enabled", "true");
+    propertiesExpectedT0.put("hive_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/hive/");
+    propertiesExpectedT0.put("sqoop_tar_source", "/usr/hdp/current/sqoop-client/sqoop.tar.gz");
+    propertiesExpectedT0.put("hadoop-streaming_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/mapreduce/");
+    propertiesExpectedT0.put("pig_tar_source", "/usr/hdp/current/pig-client/pig.tar.gz");
+    propertiesExpectedT0.put("mapreduce_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/mapreduce/");
+    propertiesExpectedT0.put("hive_tar_source", "/usr/hdp/current/hive-client/hive.tar.gz");
+    propertiesExpectedT0.put("mapreduce_tar_source", "/usr/hdp/current/hadoop-client/mapreduce.tar.gz");
+    propertiesExpectedT0.put("smokeuser", "ambari-qa");
+    propertiesExpectedT0.put("pig_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/pig/");
+    propertiesExpectedT0.put("hadoop-streaming_tar_source", "/usr/hdp/current/hadoop-mapreduce-client/hadoop-streaming.jar");
+    propertiesExpectedT0.put("tez_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/tez/");
+    propertiesExpectedT0.put("smokeuser_keytab", "/etc/security/keytabs/smokeuser.headless.keytab");
+    propertiesExpectedT0.put("sqoop_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/sqoop/");
+    propertiesExpectedT0.put("tez_tar_source", "/usr/hdp/current/tez-client/lib/tez.tar.gz");
+    propertiesExpectedT0.put("ignore_groupsusers_create", "false");
+
+    final Map<String, String> propertiesExpectedT1 = new HashMap<String, String>(propertiesExpectedT0);
+    propertiesExpectedT1.put("smokeuser_principal_name", "ambari-qa");
+
+    final Map<String, String> propertiesMissingSmokeUserT0 = new HashMap<String, String>(propertiesExpectedT0);
+    propertiesMissingSmokeUserT0.remove("smokeuser");
+
+    final Map<String, String> propertiesMissingSmokeUserT1 = new HashMap<String, String>(propertiesMissingSmokeUserT0);
+    propertiesMissingSmokeUserT1.put("smokeuser_principal_name", "ambari-qa");
+
+    final PropertyInfo mockSmokeUserPropertyInfo = easyMockSupport.createStrictMock(PropertyInfo.class);
+
+    final Injector mockInjector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(AmbariManagementController.class).toInstance(mockAmbariManagementController);
+        bind(ConfigHelper.class).toInstance(mockConfigHelper);
+        bind(Clusters.class).toInstance(mockClusters);
+
+        bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
+      }
+    });
+
+    expect(mockAmbariManagementController.getClusters()).andReturn(mockClusters).once();
+    expect(mockClusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
+      put("normal", mockClusterExpected);
+      put("missing_smokeuser", mockClusterMissingSmokeUser);
+      put("missing_cluster-env", mockClusterMissingConfig);
+
+    }}).once();
+
+      // Expected operation
+    expect(mockClusterExpected.getDesiredConfigByType("cluster-env")).andReturn(mockClusterEnvExpected).once();
+    expect(mockClusterEnvExpected.getProperties()).andReturn(propertiesExpectedT0).once();
+
+    mockConfigHelper.createConfigType(mockClusterExpected, mockAmbariManagementController,
+        "cluster-env", propertiesExpectedT1, UpgradeCatalog200.AUTHENTICATED_USER_NAME, "Upgrading to Ambari 2.0");
+    expectLastCall().once();
+
+    // Missing smokeuser
+    expect(mockClusterMissingSmokeUser.getDesiredConfigByType("cluster-env")).andReturn(mockClusterEnvMissingSmokeUser).once();
+    expect(mockClusterEnvMissingSmokeUser.getProperties()).andReturn(propertiesMissingSmokeUserT0).once();
+
+    expect(mockConfigHelper.getStackProperties(mockClusterMissingSmokeUser)).andReturn(Collections.singleton(mockSmokeUserPropertyInfo)).once();
+
+    expect(mockSmokeUserPropertyInfo.getFilename()).andReturn("cluster-env.xml").once();
+    expect(mockSmokeUserPropertyInfo.getValue()).andReturn("ambari-qa").once();
+
+    mockConfigHelper.createConfigType(mockClusterMissingSmokeUser, mockAmbariManagementController,
+        "cluster-env", propertiesMissingSmokeUserT1, UpgradeCatalog200.AUTHENTICATED_USER_NAME, "Upgrading to Ambari 2.0");
+    expectLastCall().once();
+
+    // Missing cluster-env config
+    expect(mockClusterMissingConfig.getDesiredConfigByType("cluster-env")).andReturn(null).once();
+
+    easyMockSupport.replayAll();
+    mockInjector.getInstance(UpgradeCatalog200.class).updateClusterEnvConfiguration();
+    easyMockSupport.verifyAll();
   }
 
   /**
@@ -600,6 +784,49 @@ public class UpgradeCatalog200Test {
       } else if (column.getName().equals("artifact_data")) {
         assertNull(column.getDefaultValue());
         assertEquals(char[].class, column.getType());
+        assertEquals(false, column.isNullable());
+      } else {
+        fail("unexpected column name");
+      }
+    }
+  }
+
+  private void testCreateKerberosPrincipalTable(List<DBColumnInfo> columns) {
+    assertEquals(3, columns.size());
+    for (DBColumnInfo column : columns) {
+      if (column.getName().equals("principal_name")) {
+        assertNull(column.getDefaultValue());
+        assertEquals(String.class, column.getType());
+        assertEquals(255, (int) column.getLength());
+        assertEquals(false, column.isNullable());
+      } else if (column.getName().equals("is_service")) {
+        assertEquals(1, column.getDefaultValue());
+        assertEquals(Short.class, column.getType());
+        assertEquals(1, (int) column.getLength());
+        assertEquals(false, column.isNullable());
+      } else if (column.getName().equals("cached_keytab_path")) {
+        assertNull(column.getDefaultValue());
+        assertEquals(String.class, column.getType());
+        assertEquals(255, (int) column.getLength());
+        assertEquals(true, column.isNullable());
+      } else {
+        fail("unexpected column name");
+      }
+    }
+  }
+
+  private void testCreateKerberosPrincipalHostTable(List<DBColumnInfo> columns) {
+    assertEquals(2, columns.size());
+    for (DBColumnInfo column : columns) {
+      if (column.getName().equals("principal_name")) {
+        assertNull(column.getDefaultValue());
+        assertEquals(String.class, column.getType());
+        assertEquals(255, (int) column.getLength());
+        assertEquals(false, column.isNullable());
+      } else if (column.getName().equals("host_name")) {
+        assertNull(column.getDefaultValue());
+        assertEquals(String.class, column.getType());
+        assertEquals(255, (int) column.getLength());
         assertEquals(false, column.isNullable());
       } else {
         fail("unexpected column name");
