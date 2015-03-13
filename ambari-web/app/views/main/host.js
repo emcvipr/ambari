@@ -52,17 +52,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
    * List of hosts in cluster
    * @type {Array}
    */
-  content: function () {
-    var controllerName = this.get('controller.name');
-    var selectedHosts = App.db.getSelectedHosts(controllerName);
-    if (this.get('controller')) {
-      return this.get('controller.content').filter(function (host) {
-        host.set('selected', selectedHosts.contains(host.get('hostName')));
-        return true;
-      });
-    }
-    return [];
-  }.property('controller.content'),
+  contentBinding: 'controller.content',
 
   onRequestErrorHandler: function() {
     this.set('requestError', null);
@@ -91,17 +81,12 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
    * called when trigger property(<code>refreshTriggers</code>) is changed
    */
   refresh: function () {
-    var self = this;
     this.set('filteringComplete', false);
     var updaterMethodName = this.get('updater.tableUpdaterMap')[this.get('tableName')];
-    this.get('updater')[updaterMethodName](function () {
-      self.set('filteringComplete', true);
-      self.propertyDidChange('pageContent');
-    }, function() {
-      self.set('requestError', arguments);
-    });
+    this.get('updater')[updaterMethodName](this.updaterSuccessCb.bind(this), this.updaterErrorCb.bind(this));
     return true;
   },
+
   /**
    * reset filters value by column to which filter belongs
    * @param columns {Array}
@@ -218,10 +203,24 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     this.clearFiltersObs();
     this.addObserver('selectAllHosts', this, this.toggleAllHosts);
     this.addObserver('filteringComplete', this, this.overlayObserver);
-    this.addObserver('startIndex', this, 'updatePagination');
+    this.addObserver('startIndex', this, 'updateHostsPagination');
     this.addObserver('displayLength', this, 'updatePagination');
     this.addObserver('filteredCount', this, this.updatePaging);
     this.overlayObserver();
+  },
+
+  updateHostsPagination: function () {
+    this.clearExpandedSections();
+    this.updatePagination();
+  },
+
+  willDestroyElement: function () {
+    this.clearExpandedSections();
+  },
+
+  clearExpandedSections: function () {
+    this.get('controller.expandedComponentsSections').clear();
+    this.get('controller.expandedVersionsSections').clear();
   },
 
   onInitialLoad: function () {
@@ -507,7 +506,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
   }),
   memorySort: sort.fieldView.extend({
     column: 4,
-    name:'memory',
+    name:'memoryFormatted',
     displayName: Em.I18n.t('common.ram'),
     type: 'number'
   }),
@@ -526,19 +525,30 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     content:null,
     tagName: 'tr',
     didInsertElement: function(){
+      var hostName = this.get('content.hostName');
       App.tooltip(this.$("[rel='HealthTooltip'], [rel='UsageTooltip'], [rel='ComponentsTooltip']"));
-      this.set('isComponentsCollapsed', true);
-      this.set('isVersionsCollapsed', true);
+      this.set('isComponentsCollapsed', !this.get('controller.expandedComponentsSections').contains(hostName));
+      this.set('isVersionsCollapsed', !this.get('controller.expandedVersionsSections').contains(hostName));
     },
 
-    toggleComponents: function(event) {
-      this.toggleProperty('isComponentsCollapsed');
-      this.$('.host-components').toggle();
+    toggleList: function (flagName, arrayName) {
+      var arrayPropertyName = 'controller.' + arrayName;
+      var hostNameArray = this.get(arrayPropertyName);
+      var hostName = this.get('content.hostName');
+      this.toggleProperty(flagName);
+      if (this.get(flagName)) {
+        this.set(arrayPropertyName, hostNameArray.without(hostName));
+      } else {
+        hostNameArray.push(hostName);
+      }
     },
 
-    toggleVersions: function(){
-      this.toggleProperty('isVersionsCollapsed');
-      this.$('.stack-versions').toggle();
+    toggleComponents: function () {
+      this.toggleList('isComponentsCollapsed', 'expandedComponentsSections');
+    },
+
+    toggleVersions: function () {
+      this.toggleList('isVersionsCollapsed', 'expandedVersionsSections');
     },
 
     /**
@@ -594,7 +604,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
      */
     currentVersion: function() {
       var currentRepoVersion = this.get('content.stackVersions').findProperty('isCurrent') || this.get('content.stackVersions').objectAt(0);
-      return currentRepoVersion ? currentRepoVersion.get('repoVersion') + " (" + currentRepoVersion.get('displayStatus') + ")" : "";
+      return currentRepoVersion ? currentRepoVersion.get('displayName') + " (" + currentRepoVersion.get('displayStatus') + ")" : "";
     }.property('content.stackVersions'),
 
     /**
@@ -603,7 +613,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
      */
     versionlabels: function () {
       return this.get('content.stackVersions').filterProperty('isCurrent', false).map(function (version) {
-        return version.get('repoVersion');
+        return version.get('displayName');
       }).join("<br />");
     }.property('content.stackVersions.length'),
 
@@ -788,6 +798,15 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
         this.get('parentView').updateFilter(category.get('column'), category.get('filterValue'), category.get('type'));
       }
     },
+
+    /**
+     * set value
+     * @param {string} value
+     */
+    setValue: function (value) {
+      this.set('value', value);
+    },
+
     clearFilter: function() {
       this.get('categories').setEach('isActive', false);
       this.set('value', '');
@@ -1016,14 +1035,14 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
       versionSelectView: filters.createSelectView({
         classNames: ['notActive'],
         fieldType: 'filter-input-width',
-        filterPropertyName: 'repository_versions/RepositoryVersions/repository_version',
+        filterPropertyName: 'repository_versions/RepositoryVersions/display_name',
         content: function () {
           return  [
             {
               value: '',
-              label: Em.I18n.t('hosts.host.stackVersions.table.allVersions')
+              label: Em.I18n.t('common.all')
             }
-          ].concat(this.get('controller.allHostStackVersions').mapProperty('repoVersion').uniq().map(function (version) {
+          ].concat(this.get('controller.allHostStackVersions').mapProperty('displayName').uniq().map(function (version) {
             return {
               value: version,
               label: version
@@ -1064,7 +1083,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
         var filterProperties = [];
         if (this.get('selectedVersion')) {
           filterProperties.push({
-            property: 'repository_versions/RepositoryVersions/repository_version',
+            property: 'repository_versions/RepositoryVersions/display_name',
             value: this.get('selectedVersion')
           });
         }

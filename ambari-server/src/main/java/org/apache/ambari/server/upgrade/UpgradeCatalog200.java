@@ -21,11 +21,14 @@ package org.apache.ambari.server.upgrade;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.DBAccessor.DBColumnInfo;
@@ -33,6 +36,7 @@ import org.apache.ambari.server.orm.dao.ClusterDAO;
 import org.apache.ambari.server.orm.dao.ClusterServiceDAO;
 import org.apache.ambari.server.orm.dao.HostComponentDesiredStateDAO;
 import org.apache.ambari.server.orm.dao.HostComponentStateDAO;
+import org.apache.ambari.server.orm.dao.MetainfoDAO;
 import org.apache.ambari.server.orm.dao.ServiceComponentDesiredStateDAO;
 import org.apache.ambari.server.orm.dao.ServiceDesiredStateDAO;
 import org.apache.ambari.server.orm.entities.ClusterEntity;
@@ -46,8 +50,13 @@ import org.apache.ambari.server.orm.entities.ServiceDesiredStateEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
+import org.apache.ambari.server.state.ConfigHelper;
+import org.apache.ambari.server.state.OperatingSystemInfo;
+import org.apache.ambari.server.state.PropertyInfo;
+import org.apache.ambari.server.state.RepositoryInfo;
 import org.apache.ambari.server.state.SecurityState;
 import org.apache.ambari.server.state.SecurityType;
+import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.UpgradeState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,6 +75,9 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
   private static final String ALERT_TARGET_STATES_TABLE = "alert_target_states";
   private static final String ALERT_CURRENT_TABLE = "alert_current";
   private static final String ARTIFACT_TABLE = "artifact";
+  private static final String KERBEROS_PRINCIPAL_TABLE = "kerberos_principal";
+  private static final String KERBEROS_PRINCIPAL_HOST_TABLE = "kerberos_principal_host";
+  private static final String TEZ_USE_CLUSTER_HADOOP_LIBS_PROPERTY = "tez.use.cluster.hadoop-libs";
 
   /**
    * {@inheritDoc}
@@ -111,6 +123,17 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
     prepareRollingUpgradesDDL();
     executeAlertDDLUpdates();
     createArtifactTable();
+    createKerberosPrincipalTables();
+
+    // add viewparameter columns
+    dbAccessor.addColumn("viewparameter", new DBColumnInfo("label",
+        String.class, 255, null, true));
+
+    dbAccessor.addColumn("viewparameter", new DBColumnInfo("placeholder",
+        String.class, 255, null, true));
+
+    dbAccessor.addColumn("viewparameter", new DBColumnInfo("default_value",
+        String.class, 2000, null, true));
 
     // add security_type to clusters
     dbAccessor.addColumn("clusters", new DBColumnInfo(
@@ -141,27 +164,22 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
   private void executeAlertDDLUpdates() throws AmbariException, SQLException {
     // add ignore_host column to alert_definition
     dbAccessor.addColumn(ALERT_DEFINITION_TABLE, new DBColumnInfo(
-        "ignore_host", Short.class, 1, 0, false));
+            "ignore_host", Short.class, 1, 0, false));
 
     dbAccessor.addColumn(ALERT_DEFINITION_TABLE, new DBColumnInfo(
-        "description", char[].class, 32672, null, true));
+            "description", char[].class, 32672, null, true));
 
     // update alert target
     dbAccessor.addColumn(ALERT_TARGET_TABLE, new DBColumnInfo("is_global",
         Short.class, 1, 0, false));
 
-    // add viewparameter columns
-    dbAccessor.addColumn("viewparameter", new DBColumnInfo("label", String.class, 255, null, true));
-    dbAccessor.addColumn("viewparameter", new DBColumnInfo("placeholder", String.class, 255, null, true));
-    dbAccessor.addColumn("viewparameter", new DBColumnInfo("default_value", String.class, 2000, null, true));
-
     // create alert_target_states table
     ArrayList<DBColumnInfo> columns = new ArrayList<DBColumnInfo>();
     columns.add(new DBColumnInfo("target_id", Long.class, null, null, false));
     columns.add(new DBColumnInfo("alert_state", String.class, 255, null, false));
-    dbAccessor.createTable(ALERT_TARGET_STATES_TABLE, columns, "target_id");
+    dbAccessor.createTable(ALERT_TARGET_STATES_TABLE, columns);
     dbAccessor.addFKConstraint(ALERT_TARGET_STATES_TABLE,
-        "fk_alert_target_states_target_id", "target_id", ALERT_TARGET_TABLE,
+        "fk_alert_tgt_states_tgt_id", "target_id", ALERT_TARGET_TABLE,
         "target_id", false);
 
     // update alert current maintenance mode
@@ -260,7 +278,7 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
     columns.add(new DBAccessor.DBColumnInfo("tasks", char[].class, 32672, null, true));
     columns.add(new DBAccessor.DBColumnInfo("item_text", String.class, 1024, null, true));
     dbAccessor.createTable("upgrade_item", columns, "upgrade_item_id");
-    dbAccessor.addFKConstraint("upgrade_item", "fk_upgrade_item_upgrade_group_id", "upgrade_group_id", "upgrade_group", "upgrade_group_id", false);
+    dbAccessor.addFKConstraint("upgrade_item", "fk_upg_item_upgrade_group_id", "upgrade_group_id", "upgrade_group", "upgrade_group_id", false);
     dbAccessor.executeQuery("INSERT INTO ambari_sequences(sequence_name, sequence_value) VALUES('upgrade_item_id_seq', 0)", false);
   }
 
@@ -270,6 +288,23 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
     columns.add(new DBColumnInfo("foreign_keys", String.class, 255, null, false));
     columns.add(new DBColumnInfo("artifact_data", char[].class, null, null, false));
     dbAccessor.createTable(ARTIFACT_TABLE, columns, "artifact_name", "foreign_keys");
+  }
+
+  private void createKerberosPrincipalTables() throws SQLException {
+    ArrayList<DBColumnInfo> columns;
+
+    columns = new ArrayList<DBColumnInfo>();
+    columns.add(new DBColumnInfo("principal_name", String.class, 255, null, false));
+    columns.add(new DBColumnInfo("is_service", Short.class, 1, 1, false));
+    columns.add(new DBColumnInfo("cached_keytab_path", String.class, 255, null, true));
+    dbAccessor.createTable(KERBEROS_PRINCIPAL_TABLE, columns, "principal_name");
+
+    columns = new ArrayList<DBColumnInfo>();
+    columns.add(new DBColumnInfo("principal_name", String.class, 255, null, false));
+    columns.add(new DBColumnInfo("host_name", String.class, 255, null, false));
+    dbAccessor.createTable(KERBEROS_PRINCIPAL_HOST_TABLE, columns, "principal_name", "host_name");
+    dbAccessor.addFKConstraint(KERBEROS_PRINCIPAL_HOST_TABLE, "FK_krb_pr_host_hostname", "host_name", "hosts", "host_name", true, false);
+    dbAccessor.addFKConstraint(KERBEROS_PRINCIPAL_HOST_TABLE, "FK_krb_pr_host_principalname", "principal_name", KERBEROS_PRINCIPAL_TABLE, "principal_name", true, false);
   }
 
   // ----- UpgradeCatalog ----------------------------------------------------
@@ -282,43 +317,43 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
     // remove NAGIOS to make way for the new embedded alert framework
     removeNagiosService();
     addNewConfigurationsFromXml();
-    updateDfsClusterAdmintistratorsProperty();
     updateHiveDatabaseType();
-    setSecurityType();
+    updateTezConfiguration();
+    addMissingConfigs();
+    persistHDPRepo();
+    updateClusterEnvConfiguration();
   }
-  
-  protected void updateDfsClusterAdmintistratorsProperty() throws AmbariException {
-    /*
-     * Remove trailing and leading whitespaces from hdfs-site/dfs.cluster.administrators
-     * property.
-     */
-    AmbariManagementController ambariManagementController = injector.getInstance(
-        AmbariManagementController.class);
-    Clusters clusters = ambariManagementController.getClusters();
 
-    if (clusters != null) {
-      Map<String, Cluster> clusterMap = clusters.getClusters();
-      Map<String, String> prop = new HashMap<String, String>();
-      String properyValue = null;
+  protected void persistHDPRepo() throws AmbariException{
+    AmbariManagementController amc = injector.getInstance(
+            AmbariManagementController.class);
+    AmbariMetaInfo ambariMetaInfo = amc.getAmbariMetaInfo();
+    Map<String, Cluster> clusterMap = amc.getClusters().getClusters();
+    for (Cluster cluster : clusterMap.values()) {
+      StackId stackId = cluster.getCurrentStackVersion();
+      String stackName = stackId.getStackName();
+      String stackVersion = stackId.getStackVersion();
+      String stackRepoId = stackName + "-" + stackVersion;
 
-      if (clusterMap != null && !clusterMap.isEmpty()) {
-        for (final Cluster cluster : clusterMap.values()) {
-          properyValue = null;
-          if (cluster.getDesiredConfigByType("hdfs-site") != null) {
-            properyValue = cluster.getDesiredConfigByType(
-                "hdfs-site").getProperties().get("dfs.cluster.administrators");
-          }
-
-          if (properyValue != null) {
-            properyValue = properyValue.trim();
-
-            prop.put("dfs.cluster.administrators", properyValue);
-            updateConfigurationPropertiesForCluster(cluster, "hdfs-site",
-                prop, true, false);
-          }
+      for (OperatingSystemInfo osi : ambariMetaInfo.getOperatingSystems(stackName, stackVersion)) {
+        MetainfoDAO metaInfoDAO = injector.getInstance(MetainfoDAO.class);
+        String repoMetaKey = AmbariMetaInfo.generateRepoMetaKey(stackName,stackVersion,osi.getOsType(),
+                stackRepoId,AmbariMetaInfo.REPOSITORY_XML_PROPERTY_BASEURL);
+        // Check if default repo is used and not persisted
+        if (metaInfoDAO.findByKey(repoMetaKey) == null) {
+          RepositoryInfo repositoryInfo = ambariMetaInfo.getRepository(stackName, stackVersion, osi.getOsType(), stackRepoId);
+          // We save default base url which has not changed during upgrade as base url
+          String baseUrl = repositoryInfo.getDefaultBaseUrl();
+          ambariMetaInfo.updateRepoBaseURL(stackName, stackVersion, osi.getOsType(),
+                  stackRepoId, baseUrl);
         }
       }
     }
+
+  }
+
+  protected void updateTezConfiguration() throws AmbariException {
+    updateConfigurationProperties("tez-site", Collections.singletonMap(TEZ_USE_CLUSTER_HADOOP_LIBS_PROPERTY, String.valueOf(false)), false, false);
   }
 
   protected void updateHiveDatabaseType() throws AmbariException {
@@ -361,43 +396,6 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
    */
   protected void removeNagiosService() {
     executeInTransaction(new RemoveNagiosRunnable());
-  }
-
-  /**
-   * Processes existing clusters to set it's security type as indicated by it's <code>cluster-env/security_enabled</code> flag.
-   * <p/>
-   * If the <code>cluster-env/security_enabled</code is set to "true", the cluster's security state
-   * will be set to "KERBEROS" since that is the only option. Else, the value will be set to  "NONE".
-   */
-  protected void setSecurityType() {
-    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
-    Clusters clusters = ambariManagementController.getClusters();
-
-    if (clusters != null) {
-      Map<String, Cluster> clusterMap = clusters.getClusters();
-
-      if (clusterMap != null) {
-        for (final Cluster cluster : clusterMap.values()) {
-          Config configClusterEnv = cluster.getDesiredConfigByType("cluster-env");
-
-          if (configClusterEnv != null) {
-            Map<String, String> properties = configClusterEnv.getProperties();
-
-            if (properties != null) {
-              String securityEnabled = properties.get("security_enabled");
-
-              if ("true".equalsIgnoreCase(securityEnabled)) {
-                // Currently the only security option is Kerberos. If security is enabled, blindly
-                // set security type to SecurityType.KERBEROS
-                cluster.setSecurityType(SecurityType.KERBEROS);
-              } else {
-                cluster.setSecurityType(SecurityType.NONE);
-              }
-            }
-          }
-        }
-      }
-    }
   }
 
   /**
@@ -466,6 +464,91 @@ public class UpgradeCatalog200 extends AbstractUpgradeCatalog {
         primaryKey.setClusterId(nagios.getClusterId());
         primaryKey.setServiceName(nagios.getServiceName());
         clusterServiceDao.removeByPK(primaryKey);
+      }
+    }
+  }
+  protected void addMissingConfigs() throws AmbariException {
+    updateConfigurationProperties("hive-site", Collections.singletonMap("hive.server2.transport.mode", "binary"), false, false);
+  }
+
+  /**
+   * Update the cluster-env configuration (in all clusters) to add missing properties and remove
+   * obsolete properties.
+   *
+   * @throws org.apache.ambari.server.AmbariException
+   */
+  protected void updateClusterEnvConfiguration() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    ConfigHelper configHelper = injector.getInstance(ConfigHelper.class);
+
+    Clusters clusters = ambariManagementController.getClusters();
+
+    if (clusters != null) {
+      Map<String, Cluster> clusterMap = clusters.getClusters();
+
+      if (clusterMap != null) {
+        for (final Cluster cluster : clusterMap.values()) {
+          Config configClusterEnv = cluster.getDesiredConfigByType("cluster-env");
+
+          if (configClusterEnv != null) {
+            Map<String, String> properties = configClusterEnv.getProperties();
+
+            if (properties != null) {
+              // -----------------------------------------
+              // Add missing properties
+
+              if (!properties.containsKey("smokeuser_principal_name")) {
+                // Add smokeuser_principal_name, from cluster-env/smokeuser
+                // Ideally a realm should be added, but for now we can assume the default realm and
+                // leave it off
+                String smokeUser = properties.get("smokeuser");
+
+                if ((smokeUser == null) || smokeUser.isEmpty()) {
+                  // If the smokeuser property is not set in the current configuration set, grab
+                  // it from the stack defaults:
+                  Set<PropertyInfo> stackProperties = configHelper.getStackProperties(cluster);
+
+                  if (stackProperties != null) {
+                    for (PropertyInfo propertyInfo : stackProperties) {
+                      String filename = propertyInfo.getFilename();
+
+                      if ((filename != null) && "cluster-env".equals(ConfigHelper.fileNameToConfigType(filename))) {
+                        smokeUser = propertyInfo.getValue();
+                        break;
+                      }
+                    }
+                  }
+
+                  // If a default value for smokeuser was not found, force it to be "ambari-qa"
+                  if ((smokeUser == null) || smokeUser.isEmpty()) {
+                    smokeUser = "ambari-qa";
+                  }
+                }
+
+                properties.put("smokeuser_principal_name", smokeUser);
+              }
+
+              // Add missing properties (end)
+              // -----------------------------------------
+
+              // -----------------------------------------
+              // Remove obsolete properties
+
+              // Remove obsolete properties (end)
+              // -----------------------------------------
+
+              // -----------------------------------------
+              // Set the updated configuration
+
+              configHelper.createConfigType(cluster, ambariManagementController, "cluster-env", properties,
+                  AUTHENTICATED_USER_NAME, "Upgrading to Ambari 2.0");
+
+              // Set configuration (end)
+              // -----------------------------------------
+
+            }
+          }
+        }
       }
     }
   }

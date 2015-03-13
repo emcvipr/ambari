@@ -64,7 +64,11 @@ footer {
   padding: 15px 0;
 }
 
-#top-nav {
+.ru-badge {
+  text-align: center;
+}
+
+#top-nav, .ru-badge {
 
   .navbar.navbar-static-top {
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -1435,7 +1439,7 @@ a:focus {
   .modal-body, .modal-footer, .modal-header {
     min-width: 600px;
   }
-  #service-info {
+  #service-info, #host-info, #host-log {
     .log-list-wrap:hover {
       background-color: #e6e6e6;
     }
@@ -1484,6 +1488,7 @@ a:focus {
   }
   #host-info, #service-info, #host-log {
     .log-list-wrap {
+      cursor: pointer;
       padding: 10px 10px 10px 20px;
       border-top: 1px solid #CCC;
       border-bottom: 1px solid #CCC;
@@ -1916,20 +1921,14 @@ a:focus {
   border-collapse: collapse;
   color: #666;
   font-size: 13px;
-  .icon-medkit {
-    color: black!important;
-  }
   tr.component-small {
     font-size: 11px;
-  }
-  td.summary-label {
-    width: 180px;
-    text-align: right;
   }
   .upgrade-status-warning {
     color: @health-status-orange;
   }
   tr td:first-child {
+    width: 180px;
     text-align: right;
   }
   a {
@@ -2274,7 +2273,6 @@ a:focus {
   }
   .icon-medkit {
     padding-left:6px;
-    color: black!important;
   }
 }
 .quick-links-wrapper {
@@ -2472,8 +2470,7 @@ table.graphs {
     }
   }
   .dashboard-widgets-box {
-    position: relative;
-    top: 4px;
+    margin-top: 4px;
   }
   h4{
     line-height: 30px;
@@ -3226,7 +3223,6 @@ table.graphs {
     }
   }
   .collapsed-list {
-    display: none;
     padding-left: 10px;
   }
   .host-table-versions {
@@ -3261,6 +3257,9 @@ table.graphs {
       }
     margin-top: 10px;
     }
+  }
+  .icon-warning-sign {
+    color: @health-status-yellow;
   }
 }
 
@@ -3508,6 +3507,7 @@ table.graphs {
     margin-left: 0;
     background: @health-status-orange;
     cursor: pointer;
+    float: right;
   }
 }
 
@@ -4516,10 +4516,16 @@ ul.inline li {
         }
       }
 
+      .col5,
+      td:first-child + td + td + td + td + td,
+      th:first-child + th + th + th + th + th {
+        width: 13%!important;
+      }
+
       .col6,
       td:first-child + td + td + td + td + td + td,
       th:first-child + th + th + th + th + th + th{
-        width: 12%!important;
+        width: 10%!important;
       }
 
       .col7,
@@ -4531,7 +4537,7 @@ ul.inline li {
       .col8,
       td:first-child + td + td + td + td + td + td + td + td,
       th:first-child + th + th + th + th + th + th + th + th{
-        width: 11%!important;
+        width: 10%!important;
       }
       .col9,
       td:first-child + td + td + td + td + td + td + td + td + td,
@@ -5515,6 +5521,12 @@ input[type="checkbox"].align-checkbox {
         border-right:none;
         td {
           min-width: 150px;
+          .property-message {
+            font-weight: bold;
+          }
+          .property-description {
+            font-size: 0.9em;
+          }
         }
       }
     }

@@ -40,6 +40,7 @@ module.exports = App.WizardRoute.extend({
     console.log('in /service/reassign:enter');
     var context = this;
     var reassignMasterController = router.get('reassignMasterController');
+
     reassignMasterController.dataLoading().done(function () {
       if (App.router.get('mainHostController.hostsCountMap.TOTAL') > 1) {
         Em.run.next(function () {
@@ -60,12 +61,17 @@ module.exports = App.WizardRoute.extend({
               App.router.transitionTo('main.services.index');
             },
             onClose: function () {
-              var reassignMasterController = router.get('reassignMasterController');
               var currStep = reassignMasterController.get('currentStep');
-
               if (parseInt(currStep) > 3) {
                 var self = this;
-                if(reassignMasterController.get('content.hasCheckDBStep') && currStep !== "7") {
+
+                var step4Controller = router.get('reassignMasterWizardStep4Controller');
+                var testDBTaskId = step4Controller.get('tasks').filterProperty('command', 'testDBConnection').get('firstObject.id');
+
+                if(currStep !== "7" 
+                   && testDBTaskId 
+                   && reassignMasterController.get('content.tasksStatuses').get(testDBTaskId) === "FAILED")
+                {
                   App.showConfirmationPopup(function () {
                     App.router.transitionTo('step7');
                   }, Em.I18n.t('services.reassign.rollback.confirm'));
@@ -86,15 +92,18 @@ module.exports = App.WizardRoute.extend({
           reassignMasterController.set('popup', popup);
           reassignMasterController.loadSecurityEnabled();
           reassignMasterController.loadComponentToReassign();
+          var currStep = reassignMasterController.get('currentStep');
           var currentClusterStatus = App.clusterStatus.get('value');
           if (currentClusterStatus) {
             switch (currentClusterStatus.clusterState) {
               case 'REASSIGN_MASTER_INSTALLING' :
-                reassignMasterController.setCurrentStep(currentClusterStatus.localdb.ReassignMaster.currentStep);
+                if (currentClusterStatus.localdb.ReassignMaster.currentStep !== currStep) {
+                  reassignMasterController.setCurrentStep(currentClusterStatus.localdb.ReassignMaster.currentStep);
+                }
                 break;
             }
           }
-          router.transitionTo('step' + reassignMasterController.get('currentStep'));
+          router.transitionTo('step' + currStep);
         });
       } else {
         App.showAlertPopup(Em.I18n.t('common.error'), Em.I18n.t('services.reassign.error.fewHosts'), function () {

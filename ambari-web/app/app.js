@@ -65,6 +65,14 @@ module.exports = Em.Application.create({
   }.property('upgradeState'),
 
   /**
+   * RU is running
+   * @type {boolean}
+   */
+  upgradeIsRunning: function() {
+    return this.get('upgradeInProgress') || this.get('upgradeHolding');
+  }.property('upgradeInProgress', 'upgradeHolding'),
+
+  /**
    * compute user access rights by permission type
    * types:
    *  - ADMIN
@@ -157,6 +165,14 @@ module.exports = Em.Application.create({
     return (stringUtils.compareVersions(this.get('currentStackVersionNumber'), "2.2") > -1);
   }.property('currentStackVersionNumber'),
 
+  /**
+   * Determines if current stack is 2.0.*
+   * @type {boolean}
+   */
+  isHadoop20Stack: function () {
+    return (stringUtils.compareVersions(this.get('currentStackVersionNumber'), "2.1") == -1 && stringUtils.compareVersions(this.get('currentStackVersionNumber'), "2.0") > -1);
+  }.property('currentStackVersionNumber'),
+
   isHadoopWindowsStack: function() {
     return this.get('currentStackName') == "HDPWIN";
   }.property('currentStackName'),
@@ -225,10 +241,6 @@ module.exports = Em.Application.create({
 
     serviceMetrics: function () {
       return App.StackService.find().filterProperty('isServiceMetricsService').mapProperty('serviceName');
-    }.property('App.router.clusterController.isLoaded'),
-
-    alerting: function () {
-      return App.StackService.find().filterProperty('isAlertingService').mapProperty('serviceName');
     }.property('App.router.clusterController.isLoaded'),
 
     supportsServiceCheck: function() {

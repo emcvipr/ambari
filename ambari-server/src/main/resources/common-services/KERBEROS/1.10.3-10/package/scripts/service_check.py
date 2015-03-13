@@ -22,44 +22,40 @@ Ambari Agent
 from kerberos_common import *
 from resource_management import *
 
+# hashlib is supplied as of Python 2.5 as the replacement interface for md5
+# and other secure hashes.  In 2.6, md5 is deprecated.  Import hashlib if
+# available, avoiding a deprecation warning under 2.6.  Import md5 otherwise,
+# preserving 2.4 compatibility.
+try:
+  import hashlib
+  _md5 = hashlib.md5
+except ImportError:
+  import md5
+  _md5 = md5.new
+
 class KerberosServiceCheck(KerberosScript):
   def service_check(self, env):
     import params
 
-    # First attempt to test using the smoke test user, if data is available
     if ((params.smoke_test_principal is not None) and
           (params.smoke_test_keytab_file is not None) and
           os.path.isfile(params.smoke_test_keytab_file)):
-      print "Performing kinit using smoke test user: %s" % params.smoke_test_principal
-      code, out = self.test_kinit({
-        'principal': params.smoke_test_principal,
-        'keytab_file': params.smoke_test_keytab_file
-      }, user=params.smoke_user)
-      test_performed = True
+      print "Performing kinit using %s" % params.smoke_test_principal
 
-    # Else if a test credentials is specified, try to test using that
-    elif params.test_principal is not None:
-      print "Performing kinit using test user: %s" % params.test_principal
-      code, out = self.test_kinit({
-        'principal': params.test_principal,
-        'keytab_file': params.test_keytab_file,
-        'keytab': params.test_keytab,
-        'password': params.test_password
-      }, user=params.smoke_user)
-      test_performed = True
+      ccache_file_name = _md5("{0}|{1}".format(params.smoke_test_principal,params.smoke_test_keytab_file)).hexdigest()
+      ccache_file_path = "{0}{1}kerberos_service_check_cc_{2}".format(params.tmp_dir, os.sep, ccache_file_name)
 
+      kinit_path_local = functions.get_kinit_path()
+      kinit_command = "{0} -c {1} -kt {2} {3}".format(kinit_path_local, ccache_file_path, params.smoke_test_keytab_file, params.smoke_test_principal)
+
+      try:
+        # kinit
+        Execute(kinit_command)
+      finally:
+        os.remove(ccache_file_path)
     else:
-      code = 0
-      out = ''
-      test_performed = False
-
-    if test_performed:
-      if code == 0:
-        print "Test executed successfully."
-      else:
-        print "Test failed with error code %d: %s." % (code, out)
-    else:
-      print "Test not performed - no test principal was available"
+      err_msg = Logger.filter_text("Failed to execute kinit test due to principal or keytab not found or available")
+      raise Fail(err_msg)
 
 if __name__ == "__main__":
   KerberosServiceCheck().execute()

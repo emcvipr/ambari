@@ -93,7 +93,7 @@ smokeuser_principal = config['configurations']['cluster-env']['smokeuser_princip
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 smoke_user_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
 yarn_executor_container_group = config['configurations']['yarn-site']['yarn.nodemanager.linux-container-executor.group']
-kinit_path_local = functions.get_kinit_path(["/usr/bin", "/usr/kerberos/bin", "/usr/sbin"])
+kinit_path_local = functions.get_kinit_path()
 rm_hosts = config['clusterHostInfo']['rm_host']
 rm_host = rm_hosts[0]
 rm_port = config['configurations']['yarn-site']['yarn.resourcemanager.webapp.address'].split(':')[-1]
@@ -172,7 +172,10 @@ if security_enabled:
     yarn_timelineservice_kinit_cmd = format("{kinit_path_local} -kt {_yarn_timelineservice_keytab} {_yarn_timelineservice_principal_name};")
 
   if 'yarn.nodemanager.principal' in config['configurations']['yarn-site']:
-    _nodemanager_principal_name = config['configurations']['yarn-site']['yarn.nodemanager.principal']
+    _nodemanager_principal_name = default('/configurations/yarn-site/yarn.nodemanager.principal', None)
+    if _nodemanager_principal_name:
+      _nodemanager_principal_name = _nodemanager_principal_name.replace('_HOST', hostname.lower())
+
     _nodemanager_keytab = config['configurations']['yarn-site']['yarn.nodemanager.keytab']
     nodemanager_kinit_cmd = format("{kinit_path_local} -kt {_nodemanager_keytab} {_nodemanager_principal_name};")
 

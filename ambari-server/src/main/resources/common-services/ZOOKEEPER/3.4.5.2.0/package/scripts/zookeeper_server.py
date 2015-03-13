@@ -18,35 +18,22 @@ limitations under the License.
 Ambari Agent
 
 """
+import random
 
-import re
-
-from resource_management import *
+from resource_management.libraries.script.script import Script
 from resource_management.libraries.functions import get_unique_id_and_date
-from resource_management.libraries.functions.decorator import retry
 from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 from resource_management.libraries.functions.security_commons import build_expectations, \
   cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties, \
   FILE_TYPE_JAAS_CONF
-from resource_management.libraries.functions.format import format
 from resource_management.core.shell import call
-
+from resource_management.core.logger import Logger
+from resource_management.core.resources.system import Execute
+from resource_management.libraries.functions.check_process_status import check_process_status
+from resource_management.libraries.functions.format import format
+from resource_management.libraries.functions.validate import call_and_match_output
 from zookeeper import zookeeper
 from zookeeper_service import zookeeper_service
-
-
-@retry(times=10, sleep_time=2, err_class=Fail)
-def call_and_match_output(command, regex_expression, err_message):
-  """
-  Call the command and performs a regex match on the output for the specified expression.
-  :param command: Command to call
-  :param regex_expression: Regex expression to search in the output
-  """
-  # TODO Rolling Upgrade, does this work in Ubuntu? If it doesn't see dynamic_variable_interpretation.py to see how stdout was redirected
-  # to a temporary file, which was then read.
-  code, out = call(command)
-  if not (out and re.search(regex_expression, out, re.IGNORECASE)):
-    raise Fail(err_message)
 
 
 class ZookeeperServer(Script):
@@ -81,17 +68,24 @@ class ZookeeperServer(Script):
     Logger.info("Executing Rolling Upgrade post-restart")
     import params
     env.set_params(params)
-
+    zk_server_host = random.choice(params.zookeeper_hosts)
+    cli_shell = format("{zk_cli_shell} -server {zk_server_host}:{client_port}")
     # Ensure that a quorum is still formed.
     unique = get_unique_id_and_date()
-    create_command = format("echo 'create /{unique} mydata' | {zk_cli_shell}")
-    list_command = format("echo 'ls /' | {zk_cli_shell}")
-    delete_command = format("echo 'delete /{unique} ' | {zk_cli_shell}")
+    create_command = format("echo 'create /{unique} mydata' | {cli_shell}")
+    list_command = format("echo 'ls /' | {cli_shell}")
+    delete_command = format("echo 'delete /{unique} ' | {cli_shell}")
 
     quorum_err_message = "Failed to establish zookeeper quorum"
     call_and_match_output(create_command, 'Created', quorum_err_message)
     call_and_match_output(list_command, r"\[.*?" + unique + ".*?\]", quorum_err_message)
     call(delete_command)
+
+    if params.client_port:
+      check_leader_command = format("echo stat | nc localhost {client_port} | grep Mode")
+      code, out = call(check_leader_command, logoutput=False)
+      if code == 0 and out:
+        Logger.info(out)
 
   def stop(self, env, rolling_restart=False):
     import params
@@ -141,8 +135,7 @@ class ZookeeperServer(Script):
                                 security_params['zookeeper_jaas']['Server']['keyTab'],
                                 security_params['zookeeper_jaas']['Server']['principal'],
                                 status_params.hostname,
-                                status_params.tmp_dir,
-                                30)
+                                status_params.tmp_dir)
           self.put_structured_out({"securityState": "SECURED_KERBEROS"})
         else:
           issues = []

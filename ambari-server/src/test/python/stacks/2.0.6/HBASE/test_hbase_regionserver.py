@@ -63,7 +63,7 @@ class TestHbaseRegionServer(RMFTestCase):
     )
     
     self.assertResourceCalled('Execute', '/usr/lib/hbase/bin/hbase-daemon.sh --config /etc/hbase/conf stop regionserver',
-        on_timeout = '! ( ls /var/run/hbase/hbase-hbase-regionserver.pid >/dev/null 2>&1 && ps -p `cat /var/run/hbase/hbase-hbase-regionserver.pid` >/dev/null 2>&1 ) || sudo -H -E kill -9 `cat /var/run/hbase/hbase-hbase-regionserver.pid`',
+        on_timeout = '! ( ls /var/run/hbase/hbase-hbase-regionserver.pid >/dev/null 2>&1 && ps -p `cat /var/run/hbase/hbase-hbase-regionserver.pid` >/dev/null 2>&1 ) || ambari-sudo.sh -H -E kill -9 `cat /var/run/hbase/hbase-hbase-regionserver.pid`',
         timeout = 30,
         user = 'hbase',
     )
@@ -110,7 +110,7 @@ class TestHbaseRegionServer(RMFTestCase):
     )
 
     self.assertResourceCalled('Execute', '/usr/lib/hbase/bin/hbase-daemon.sh --config /etc/hbase/conf stop regionserver',
-        on_timeout = '! ( ls /var/run/hbase/hbase-hbase-regionserver.pid >/dev/null 2>&1 && ps -p `cat /var/run/hbase/hbase-hbase-regionserver.pid` >/dev/null 2>&1 ) || sudo -H -E kill -9 `cat /var/run/hbase/hbase-hbase-regionserver.pid`',
+        on_timeout = '! ( ls /var/run/hbase/hbase-hbase-regionserver.pid >/dev/null 2>&1 && ps -p `cat /var/run/hbase/hbase-hbase-regionserver.pid` >/dev/null 2>&1 ) || ambari-sudo.sh -H -E kill -9 `cat /var/run/hbase/hbase-hbase-regionserver.pid`',
         timeout = 30,
         user = 'hbase',
     )
@@ -152,6 +152,13 @@ class TestHbaseRegionServer(RMFTestCase):
       conf_dir = '/etc/hbase/conf',
       configurations = self.getConfig()['configurations']['hbase-site'],
       configuration_attributes = self.getConfig()['configuration_attributes']['hbase-site']
+    )
+    self.assertResourceCalled('XmlConfig', 'core-site.xml',
+      owner = 'hbase',
+      group = 'hadoop',
+      conf_dir = '/etc/hbase/conf',
+      configurations = self.getConfig()['configurations']['core-site'],
+      configuration_attributes = self.getConfig()['configuration_attributes']['core-site']
     )
     self.assertResourceCalled('XmlConfig', 'hdfs-site.xml',
       owner = 'hbase',
@@ -262,6 +269,13 @@ class TestHbaseRegionServer(RMFTestCase):
       conf_dir = '/etc/hbase/conf',
       configurations = self.getConfig()['configurations']['hbase-site'],
       configuration_attributes = self.getConfig()['configuration_attributes']['hbase-site']
+    )
+    self.assertResourceCalled('XmlConfig', 'core-site.xml',
+      owner = 'hbase',
+      group = 'hadoop',
+      conf_dir = '/etc/hbase/conf',
+      configurations = self.getConfig()['configurations']['core-site'],
+      configuration_attributes = self.getConfig()['configuration_attributes']['core-site']
     )
     self.assertResourceCalled('XmlConfig', 'hdfs-site.xml',
       owner = 'hbase',
@@ -383,7 +397,13 @@ class TestHbaseRegionServer(RMFTestCase):
       conf_dir = '/etc/hbase/conf',
       configurations = self.getConfig()['configurations']['hbase-site'],
       configuration_attributes = self.getConfig()['configuration_attributes']['hbase-site'])
-
+    self.assertResourceCalled('XmlConfig', 'core-site.xml',
+                              owner = 'hbase',
+                              group = 'hadoop',
+                              conf_dir = '/etc/hbase/conf',
+                              configurations = self.getConfig()['configurations']['core-site'],
+                              configuration_attributes = self.getConfig()['configuration_attributes']['core-site']
+    )
     self.assertResourceCalled('XmlConfig', 'hdfs-site.xml',
       owner = 'hbase',
       group = 'hadoop',
@@ -475,12 +495,13 @@ class TestHbaseRegionServer(RMFTestCase):
   @patch("resource_management.libraries.script.Script.put_structured_out")
   def test_security_status(self, put_structured_out_mock, cached_kinit_executor_mock, validate_security_config_mock, get_params_mock, build_exp_mock):
     # Test that function works when is called with correct parameters
-    import status_params
 
-    security_params = {}
-    security_params['hbase-site'] = {}
-    security_params['hbase-site']['hbase.regionserver.keytab.file'] = '/path/to/hbase_keytab'
-    security_params['hbase-site']['hbase.regionserver.kerberos.principal'] = 'hbase_principal'
+    security_params = {
+      'hbase-site': {
+        'hbase.regionserver.keytab.file': '/path/to/hbase_keytab',
+        'hbase.regionserver.kerberos.principal': 'hbase_principal'
+      }
+    }
 
     result_issues = []
     props_value_check = {"hbase.security.authentication": "kerberos",
@@ -503,13 +524,12 @@ class TestHbaseRegionServer(RMFTestCase):
 
     build_exp_mock.assert_called_with('hbase-site', props_value_check, props_empty_check, props_read_check)
     put_structured_out_mock.assert_called_with({"securityState": "SECURED_KERBEROS"})
-    cached_kinit_executor_mock.called_with(status_params.kinit_path_local,
-                              status_params.hbase_user,
-                              security_params['hbase-site']['hbase.regionserver.keytab.file'],
-                              security_params['hbase-site']['hbase.regionserver.kerberos.principal'],
-                              status_params.hostname,
-                              status_params.tmp_dir,
-                              30)
+    cached_kinit_executor_mock.called_with('/usr/bin/kinit',
+                                           self.config_dict['configurations']['hbase-env']['hbase_user'],
+                                           security_params['hbase-site']['hbase.regionserver.keytab.file'],
+                                           security_params['hbase-site']['hbase.regionserver.kerberos.principal'],
+                                           self.config_dict['hostname'],
+                                           '/tmp')
 
      # Testing that the exception throw by cached_executor is caught
     cached_kinit_executor_mock.reset_mock()
@@ -543,8 +563,9 @@ class TestHbaseRegionServer(RMFTestCase):
     put_structured_out_mock.assert_called_with({"securityIssuesFound": "Keytab file or principal are not set property."})
 
     # Testing with not empty result_issues
-    result_issues_with_params = {}
-    result_issues_with_params['hbase-site']="Something bad happened"
+    result_issues_with_params = {
+      'hbase-site' : "Something bad happened"
+    }
 
     validate_security_config_mock.reset_mock()
     get_params_mock.reset_mock()
@@ -564,7 +585,7 @@ class TestHbaseRegionServer(RMFTestCase):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hbase_regionserver.py",
                    classname = "HbaseRegionServer",
                    command = "security_status",
-                   config_file="secured.json",
+                   config_file="default.json",
                    hdp_stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )

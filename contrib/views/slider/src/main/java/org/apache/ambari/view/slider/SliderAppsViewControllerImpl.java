@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 
 import org.apache.ambari.view.ViewContext;
@@ -48,6 +49,8 @@ import org.apache.ambari.view.slider.rest.client.AmbariHttpClient;
 import org.apache.ambari.view.slider.rest.client.Metric;
 import org.apache.ambari.view.slider.rest.client.SliderAppMasterClient;
 import org.apache.ambari.view.slider.rest.client.SliderAppMasterClient.SliderAppMasterData;
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.filefilter.RegexFileFilter;
 import org.apache.hadoop.conf.Configuration;
@@ -78,8 +81,6 @@ import org.apache.slider.providers.agent.application.metadata.Application;
 import org.apache.slider.providers.agent.application.metadata.Component;
 import org.apache.slider.providers.agent.application.metadata.Metainfo;
 import org.apache.slider.providers.agent.application.metadata.MetainfoParser;
-import org.apache.tools.zip.ZipEntry;
-import org.apache.tools.zip.ZipFile;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.type.TypeReference;
 
@@ -262,8 +263,8 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
             }
             if (cluster.getDesiredConfigs().containsKey("ams-site")) {
               Map<String, String> amsConfigs = ambariClient.getConfiguration(cluster, "ams-site", cluster.getDesiredConfigs().get("ams-site"));
-              AmbariService amsService = ambariClient.getService(cluster, "AMS");
-              List<AmbariHostComponent> hostsList = amsService.getComponentsToHostComponentsMap().get("METRIC_COLLECTOR");
+              AmbariService amsService = ambariClient.getService(cluster, "AMBARI_METRICS");
+              List<AmbariHostComponent> hostsList = amsService.getComponentsToHostComponentsMap().get("METRICS_COLLECTOR");
               if (hostsList != null && hostsList.size() > 0) {
                 String collectorHostName = hostsList.get(0).getHostName();
                 newHadoopConfigs.put(PROPERTY_METRICS_SERVER_HOSTNAME, collectorHostName);
@@ -782,8 +783,9 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
           String metricsUrl = quickLinks.get(METRICS_API_NAME);
           MetricsHolder metricsHolder = appMetrics.get(matchedAppType
               .uniqueName());
-          app.setMetrics(sliderAppClient.getMetrics(metricsUrl,
-              metrics, null, viewContext, matchedAppType, metricsHolder));
+          app.setMetrics(sliderAppClient.getMetrics(yarnApp.getName(),
+              metricsUrl, metrics, null, viewContext, matchedAppType,
+              metricsHolder));
         }
       }
     }
@@ -1027,13 +1029,13 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
             // Create app type object
             if (metainfo.getApplication() != null) {
               Application application = metainfo.getApplication();
-              ZipEntry appConfigZipEntry = zipFile.getEntry("appConfig-default.json");
-              ZipEntry appConfigSecuredZipEntry = zipFile.getEntry("appConfig-secured-default.json");
+              ZipArchiveEntry appConfigZipEntry = zipFile.getEntry("appConfig-default.json");
+              ZipArchiveEntry appConfigSecuredZipEntry = zipFile.getEntry("appConfig-secured-default.json");
               if (appConfigZipEntry == null) {
                 throw new IllegalStateException("Slider App package '" + appZip.getName() + "' does not contain 'appConfig-default.json' file");
               }
-              ZipEntry resourcesZipEntry = zipFile.getEntry("resources-default.json");
-              ZipEntry resourcesSecuredZipEntry = zipFile.getEntry("resources-secured-default.json");
+              ZipArchiveEntry resourcesZipEntry = zipFile.getEntry("resources-default.json");
+              ZipArchiveEntry resourcesSecuredZipEntry = zipFile.getEntry("resources-secured-default.json");
               if (resourcesZipEntry == null) {
                 throw new IllegalStateException("Slider App package '" + appZip.getName() + "' does not contain 'resources-default.json' file");
               }
@@ -1105,13 +1107,13 @@ public class SliderAppsViewControllerImpl implements SliderAppsViewController {
     return appTypes;
   }
 
-  private JsonObject parseAppTypeResources(ZipFile zipFile, ZipEntry resourcesZipEntry) throws ZipException, IOException {
+  private JsonObject parseAppTypeResources(ZipFile zipFile, ZipArchiveEntry resourcesZipEntry) throws ZipException, IOException {
     String resourcesJsonString = IOUtils.toString(zipFile.getInputStream(resourcesZipEntry), "UTF-8");
     JsonElement resourcesJson = new JsonParser().parse(resourcesJsonString);
     return resourcesJson.getAsJsonObject().get("components").getAsJsonObject();
   }
 
-  private Map<String, String> parseAppTypeConfigs(ZipFile zipFile, ZipEntry appConfigZipEntry, String zipFileName, String appName) throws IOException,
+  private Map<String, String> parseAppTypeConfigs(ZipFile zipFile, ZipArchiveEntry appConfigZipEntry, String zipFileName, String appName) throws IOException,
       ZipException {
     String appConfigJsonString = IOUtils.toString(zipFile.getInputStream(appConfigZipEntry), "UTF-8");
     JsonElement appConfigJson = new JsonParser().parse(appConfigJsonString);

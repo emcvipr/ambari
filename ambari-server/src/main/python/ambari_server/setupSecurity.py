@@ -43,7 +43,8 @@ from ambari_server.serverConfiguration import configDefaults, \
   LDAP_MGR_PASSWORD_ALIAS, LDAP_MGR_PASSWORD_FILENAME, LDAP_MGR_PASSWORD_PROPERTY, LDAP_MGR_USERNAME_PROPERTY, \
   LDAP_PRIMARY_URL_PROPERTY, SECURITY_IS_ENCRYPTION_ENABLED, SECURITY_KEY_ENV_VAR_NAME, SECURITY_KERBEROS_JASS_FILENAME, \
   SECURITY_PROVIDER_KEY_CMD, SECURITY_MASTER_KEY_FILENAME, SSL_TRUSTSTORE_PASSWORD_ALIAS, \
-  SSL_TRUSTSTORE_PASSWORD_PROPERTY, SSL_TRUSTSTORE_PATH_PROPERTY, SSL_TRUSTSTORE_TYPE_PROPERTY
+  SSL_TRUSTSTORE_PASSWORD_PROPERTY, SSL_TRUSTSTORE_PATH_PROPERTY, SSL_TRUSTSTORE_TYPE_PROPERTY, \
+  SSL_API, SSL_API_PORT, DEFAULT_SSL_API_PORT, CLIENT_API_PORT
 from ambari_server.serverUtils import is_server_runing
 from ambari_server.setupActions import SETUP_ACTION, LDAP_SETUP_ACTION
 from ambari_server.userInput import get_validated_string_input, get_prompt_default, read_password, get_YN_input
@@ -53,14 +54,15 @@ REGEX_IP_ADDRESS = "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-
 REGEX_HOSTNAME = "^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$"
 REGEX_HOSTNAME_PORT = "^(.*:[0-9]{1,5}$)"
 REGEX_TRUE_FALSE = "^(true|false)?$"
+REGEX_REFERRAL = "^(follow|ignore)?$"
 REGEX_ANYTHING = ".*"
 
 CLIENT_SECURITY_KEY = "client.security"
 
-# api properties
+# Ambari server API properties
 SERVER_API_HOST = '127.0.0.1'
 SERVER_API_PROTOCOL = 'http'
-SERVER_API_PORT = '8080'
+SERVER_API_SSL_PROTOCOL = 'https'
 SERVER_API_LDAP_URL = '/api/v1/ldap_sync_events'
 
 
@@ -232,7 +234,7 @@ def sync_ldap(options):
   ldap_sync_options = LdapSyncOptions(options)
 
   if ldap_sync_options.no_ldap_sync_options_set():
-    err = 'Must specify a sync option.  Please see help for more information.'
+    err = 'Must specify a sync option (all, existing, users or groups).  Please invoke ambari-server.py --help to print the options.'
     raise FatalException(1, err)
 
   admin_login = get_validated_string_input(prompt="Enter Ambari Admin login: ", default=None,
@@ -242,7 +244,26 @@ def sync_ldap(options):
                                               pattern=None, description=None,
                                               is_pass=True, allowEmpty=False)
 
-  url = '{0}://{1}:{2!s}{3}'.format(SERVER_API_PROTOCOL, SERVER_API_HOST, SERVER_API_PORT, SERVER_API_LDAP_URL)
+  properties = get_ambari_properties()
+  if properties == -1:
+    raise FatalException(1, "Failed to read properties file.")
+
+  api_protocol = SERVER_API_PROTOCOL
+  api_port = CLIENT_API_PORT
+
+  api_ssl = False
+  api_ssl_prop = properties.get_property(SSL_API)
+  if api_ssl_prop is not None:
+    api_ssl = api_ssl_prop.lower() == "true"
+
+  if api_ssl:
+    api_protocol = SERVER_API_SSL_PROTOCOL
+    api_port = DEFAULT_SSL_API_PORT
+    api_port_prop = properties.get_property(SSL_API_PORT)
+    if api_port_prop is not None:
+      api_port = api_port_prop
+
+  url = '{0}://{1}:{2!s}{3}'.format(api_protocol, SERVER_API_HOST, api_port, SERVER_API_LDAP_URL)
   admin_auth = base64.encodestring('%s:%s' % (admin_login, admin_password)).replace('\n', '')
   request = urllib2.Request(url)
   request.add_header('Authorization', 'Basic %s' % admin_auth)
@@ -263,12 +284,13 @@ def sync_ldap(options):
 
     if ldap_sync_options.ldap_sync_users is not None:
       new_specs = [{"principal_type":"users","sync_type":"specific","names":""}]
+      get_ldap_event_spec_names(ldap_sync_options.ldap_sync_users, specs, new_specs)
     if ldap_sync_options.ldap_sync_groups is not None:
       new_specs = [{"principal_type":"groups","sync_type":"specific","names":""}]
       get_ldap_event_spec_names(ldap_sync_options.ldap_sync_groups, specs, new_specs)
 
   if get_verbose():
-    sys.stdout.write('\nCalling API ' + SERVER_API_LDAP_URL + ' : ' + str(bodies) + '\n')
+    sys.stdout.write('\nCalling API ' + url + ' : ' + str(bodies) + '\n')
 
   request.add_data(json.dumps(bodies))
   request.get_method = lambda: 'POST'
@@ -518,6 +540,7 @@ def init_ldap_properties_list_reqd(properties):
     LdapPropTemplate(properties, "authentication.ldap.useSSL", "Use SSL* [true/false] {0}: ", REGEX_TRUE_FALSE, False, "false"),
     LdapPropTemplate(properties, "authentication.ldap.usernameAttribute", "User name attribute* {0}: ", REGEX_ANYTHING, False, "uid"),
     LdapPropTemplate(properties, "authentication.ldap.baseDn", "Base DN* {0}: ", REGEX_ANYTHING, False),
+    LdapPropTemplate(properties, "authentication.ldap.referral", "Referral method [follow/ignore] {0}: ", REGEX_REFERRAL, True),
     LdapPropTemplate(properties, "authentication.ldap.bindAnonymously" "Bind anonymously* [true/false] {0}: ", REGEX_TRUE_FALSE, False, "false")
   ]
   return ldap_properties
@@ -535,6 +558,7 @@ def init_ldap_properties_list_reqd(properties):
     LdapPropTemplate(properties, "authentication.ldap.groupMembershipAttr", "Group member attribute* {0}: ", REGEX_ANYTHING, False, "memberUid"),
     LdapPropTemplate(properties, "authentication.ldap.dnAttribute", "Distinguished name attribute* {0}: ", REGEX_ANYTHING, False, "dn"),
     LdapPropTemplate(properties, "authentication.ldap.baseDn", "Base DN* {0}: ", REGEX_ANYTHING, False),
+    LdapPropTemplate(properties, "authentication.ldap.referral", "Referral method [follow/ignore] {0}: ", REGEX_REFERRAL, True),
     LdapPropTemplate(properties, "authentication.ldap.bindAnonymously", "Bind anonymously* [true/false] {0}: ", REGEX_TRUE_FALSE, False, "false")
   ]
   return ldap_properties

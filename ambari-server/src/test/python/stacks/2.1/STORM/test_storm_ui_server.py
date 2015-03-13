@@ -46,11 +46,11 @@ class TestStormUiServer(TestStormBase):
 
     self.assert_configure_default()
 
-    self.assertResourceCalled('Execute', 'env JAVA_HOME=/usr/jdk64/jdk1.7.0_45 PATH=$PATH:/usr/jdk64/jdk1.7.0_45/bin storm ui > /var/log/storm/ui.out 2>&1',
-      wait_for_finish = False,
-      not_if = 'ls /var/run/storm/ui.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/ui.pid` >/dev/null 2>&1',
-      path = ['/usr/bin'],
-      user = 'storm',
+    self.assertResourceCalled('Execute', 'source /etc/storm/conf/storm-env.sh ; export PATH=$PATH:$JAVA_HOME/bin ; storm ui > /var/log/storm/ui.out 2>&1',
+        wait_for_finish = False,
+        path = ['/usr/bin'],
+        user = 'storm',
+        not_if = 'ls /var/run/storm/ui.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/ui.pid` >/dev/null 2>&1',
     )
     self.assertResourceCalled('Execute', "/usr/jdk64/jdk1.7.0_45/bin/jps -l  | grep backtype.storm.ui.core$ && /usr/jdk64/jdk1.7.0_45/bin/jps -l  | grep backtype.storm.ui.core$ | awk {'print $1'} > /var/run/storm/ui.pid",
         logoutput = True,
@@ -69,10 +69,10 @@ class TestStormUiServer(TestStormBase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-    self.assertResourceCalled('Execute', 'sudo kill `cat /var/run/storm/ui.pid`',
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh kill `cat /var/run/storm/ui.pid`',
         not_if = '! (ls /var/run/storm/ui.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/ui.pid` >/dev/null 2>&1)',
     )
-    self.assertResourceCalled('Execute', 'sudo kill -9 `cat /var/run/storm/ui.pid`',
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh kill -9 `cat /var/run/storm/ui.pid`',
         not_if = 'sleep 2; ! (ls /var/run/storm/ui.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/ui.pid` >/dev/null 2>&1) || sleep 20; ! (ls /var/run/storm/ui.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/ui.pid` >/dev/null 2>&1)',
         ignore_failures = True,
     )
@@ -103,13 +103,12 @@ class TestStormUiServer(TestStormBase):
 
     self.assert_configure_secured()
 
-    self.assertResourceCalled('Execute', 'env JAVA_HOME=/usr/jdk64/jdk1.7.0_45 PATH=$PATH:/usr/jdk64/jdk1.7.0_45/bin storm ui > /var/log/storm/ui.out 2>&1',
-      wait_for_finish = False,
-      not_if = 'ls /var/run/storm/ui.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/ui.pid` >/dev/null 2>&1',
-      path = ['/usr/bin'],
-      user = 'storm',
+    self.assertResourceCalled('Execute', 'source /etc/storm/conf/storm-env.sh ; export PATH=$PATH:$JAVA_HOME/bin ; storm ui > /var/log/storm/ui.out 2>&1',
+        wait_for_finish = False,
+        path = ['/usr/bin'],
+        user = 'storm',
+        not_if = 'ls /var/run/storm/ui.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/ui.pid` >/dev/null 2>&1',
     )
-
     self.assertResourceCalled('Execute', "/usr/jdk64/jdk1.7.0_45/bin/jps -l  | grep backtype.storm.ui.core$ && /usr/jdk64/jdk1.7.0_45/bin/jps -l  | grep backtype.storm.ui.core$ | awk {'print $1'} > /var/run/storm/ui.pid",
         logoutput = True,
         path = ['/usr/bin'],
@@ -127,10 +126,10 @@ class TestStormUiServer(TestStormBase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-    self.assertResourceCalled('Execute', 'sudo kill `cat /var/run/storm/ui.pid`',
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh kill `cat /var/run/storm/ui.pid`',
         not_if = '! (ls /var/run/storm/ui.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/ui.pid` >/dev/null 2>&1)',
     )
-    self.assertResourceCalled('Execute', 'sudo kill -9 `cat /var/run/storm/ui.pid`',
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh kill -9 `cat /var/run/storm/ui.pid`',
         not_if = 'sleep 2; ! (ls /var/run/storm/ui.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/ui.pid` >/dev/null 2>&1) || sleep 20; ! (ls /var/run/storm/ui.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/ui.pid` >/dev/null 2>&1)',
         ignore_failures = True,
     )
@@ -158,11 +157,12 @@ class TestStormUiServer(TestStormBase):
     # Test that function works when is called with correct parameters
     result_issues = []
 
-    security_params = {}
-    security_params['storm_ui'] = {}
-    security_params['storm_ui']['storm_ui_principal_name'] = 'HTTP/_HOST'
-    security_params['storm_ui']['storm_ui_keytab'] = '/etc/security/keytabs/spnego.service.keytab'
-
+    security_params = {
+      'storm_ui': {
+        'storm_ui_principal_name': 'HTTP/_HOST',
+        'storm_ui_keytab': '/etc/security/keytabs/spnego.service.keytab'
+      }
+    }
     props_value_check = None
     props_empty_check = ['storm_ui_principal_name', 'storm_ui_keytab']
     props_read_check = ['storm_ui_keytab']
@@ -177,19 +177,16 @@ class TestStormUiServer(TestStormBase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
-    import status_params
-
     build_exp_mock.assert_called_with('storm_ui', props_value_check, props_empty_check, props_read_check)
     put_structured_out_mock.assert_called_with({"securityState": "SECURED_KERBEROS"})
     self.assertTrue(cached_kinit_executor_mock.call_count, 2)
 
-    cached_kinit_executor_mock.assert_called_with(status_params.kinit_path_local,
-                                status_params.storm_user,
-                                security_params['storm_ui']['storm_ui_keytab'],
-                                security_params['storm_ui']['storm_ui_principal_name'],
-                                status_params.hostname,
-                                status_params.tmp_dir,
-                                30)
+    cached_kinit_executor_mock.assert_called_with('/usr/bin/kinit',
+                                                  self.config_dict['configurations']['storm-env']['storm_user'],
+                                                  security_params['storm_ui']['storm_ui_keytab'],
+                                                  security_params['storm_ui']['storm_ui_principal_name'],
+                                                  self.config_dict['hostname'],
+                                                  '/tmp')
 
     # Testing that the exception throw by cached_executor is caught
     cached_kinit_executor_mock.reset_mock()

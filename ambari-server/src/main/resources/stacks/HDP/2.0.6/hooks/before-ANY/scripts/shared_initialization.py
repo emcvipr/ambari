@@ -18,6 +18,8 @@ limitations under the License.
 """
 
 import os
+import re
+from copy import copy
 
 from resource_management import *
 
@@ -29,20 +31,13 @@ def setup_jce():
   if not params.jdk_name:
     return
   
-  environment = {
-    "no_proxy": format("{ambari_server_hostname}")
-  }
-  
   if params.jce_policy_zip is not None:
     jce_curl_target = format("{artifact_dir}/{jce_policy_zip}")
-    download_jce = format("mkdir -p {artifact_dir}; \
-    curl -kf -x \"\" --retry 10 \
-    {jce_location}/{jce_policy_zip} -o {jce_curl_target}")
-    Execute( download_jce,
-             path = ["/bin","/usr/bin/"],
-             not_if =format("test -e {jce_curl_target}"),
-             ignore_failures = True,
-             environment = environment
+    Directory(params.artifact_dir,
+         recursive = True,
+    )
+    File(jce_curl_target,
+         content = DownloadSource(format("{jce_location}/{jce_policy_zip}")),
     )
   elif params.security_enabled:
     # Something weird is happening
@@ -90,6 +85,40 @@ def setup_users():
                cd_access="a",
     )
     set_uid(params.hbase_user, params.hbase_user_dirs)
+
+  if params.has_namenode:
+    create_dfs_cluster_admins()
+
+def create_dfs_cluster_admins():
+  """
+  dfs.cluster.administrators support format <comma-delimited list of usernames><space><comma-delimited list of group names>
+  """
+  import params
+
+  parts = re.split('\s', params.dfs_cluster_administrators_group)
+  if len(parts) == 1:
+    parts.append("")
+
+  users_list = parts[0].split(",") if parts[0] else []
+  groups_list = parts[1].split(",") if parts[1] else []
+
+  if users_list:
+    User(users_list,
+         ignore_failures = params.ignore_groupsusers_create
+    )
+
+  if groups_list:
+    Group(copy(groups_list),
+         ignore_failures = params.ignore_groupsusers_create
+    )
+
+  User(params.hdfs_user,
+    groups = params.user_to_groups_dict[params.hdfs_user] + groups_list,
+    ignore_failures = params.ignore_groupsusers_create
+  )
+
+
+
     
 def set_uid(user, user_dirs):
   """
@@ -100,8 +129,9 @@ def set_uid(user, user_dirs):
   File(format("{tmp_dir}/changeUid.sh"),
        content=StaticFile("changeToSecureUid.sh"),
        mode=0555)
+  ignore_groupsusers_create_str = str(params.ignore_groupsusers_create).lower()
   Execute(format("{tmp_dir}/changeUid.sh {user} {user_dirs}"),
-          not_if = format("test $(id -u {user}) -gt 1000"))
+          not_if = format("(test $(id -u {user}) -gt 1000) || ({ignore_groupsusers_create_str})"))
     
 def setup_hadoop_env():
   import params

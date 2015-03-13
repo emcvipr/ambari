@@ -28,6 +28,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
@@ -47,6 +48,8 @@ import org.apache.ambari.server.state.stack.upgrade.ConfigureTask;
 import org.apache.ambari.server.state.stack.upgrade.Direction;
 import org.apache.ambari.server.state.stack.upgrade.ManualTask;
 import org.apache.ambari.server.state.stack.upgrade.StageWrapper;
+import org.apache.ambari.server.state.stack.upgrade.Task;
+import org.apache.ambari.server.state.stack.upgrade.TaskWrapper;
 import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Before;
@@ -113,6 +116,13 @@ public class UpgradeHelperTest {
     assertTrue(upgrades.isEmpty());
 
     upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
+
+    ServiceInfo si = ambariMetaInfo.getService("HDP", "2.1.1", "ZOOKEEPER");
+    si.setDisplayName("Zk");
+    ComponentInfo ci = si.getComponentByName("ZOOKEEPER_SERVER");
+    ci.setDisplayName("ZooKeeper1 Server2");
+
+
     assertTrue(upgrades.containsKey("upgrade_test"));
     UpgradePack upgrade = upgrades.get("upgrade_test");
     assertNotNull(upgrade);
@@ -141,6 +151,24 @@ public class UpgradeHelperTest {
     }
     assertTrue("Expected to find replaced text for Upgrading", found);
 
+    UpgradeGroupHolder group = groups.get(1);
+    // check that the display name is being used
+    assertTrue(group.items.get(1).getText().contains("ZooKeeper1 Server2"));
+    assertEquals(group.items.get(5).getText(), "Service Check Zk");
+
+    group = groups.get(3);
+    assertEquals(8, group.items.size());
+    StageWrapper sw = group.items.get(3);
+    assertEquals("Validate Partial Upgrade", sw.getText());
+    assertEquals(1, sw.getTasks().size());
+    assertEquals(1, sw.getTasks().get(0).getTasks().size());
+    Task t = sw.getTasks().get(0).getTasks().get(0);
+    assertEquals(ManualTask.class, t.getClass());
+    ManualTask mt = (ManualTask) t;
+    assertTrue(mt.message.contains("DataNode and NodeManager"));
+    assertNotNull(mt.structuredOut);
+    assertTrue(mt.structuredOut.contains("DATANODE"));
+    assertTrue(mt.structuredOut.contains("NODEMANAGER"));
 
     UpgradeGroupHolder postGroup = groups.get(5);
     assertEquals(postGroup.name, "POST_CLUSTER");
@@ -155,6 +183,46 @@ public class UpgradeHelperTest {
     assertEquals(6, groups.get(1).items.size());
     assertEquals(8, groups.get(2).items.size());
     assertEquals(8, groups.get(3).items.size());
+  }
+
+  /**
+   * Verify that a Rolling Upgrades restarts the NameNodes in the following order: standby, active.
+   * @throws Exception
+   */
+  @Test
+  public void testNamenodeOrder() throws Exception {
+    Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
+    assertTrue(upgrades.containsKey("upgrade_test"));
+    UpgradePack upgrade = upgrades.get("upgrade_test");
+    assertNotNull(upgrade);
+
+    makeCluster();
+
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver,
+        UPGRADE_VERSION, Direction.UPGRADE);
+
+    List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
+
+    assertEquals(6, groups.size());
+
+    UpgradeGroupHolder mastersGroup = groups.get(2);
+    assertEquals("CORE_MASTER", mastersGroup.name);
+
+    List<String> orderedNameNodes = new LinkedList<String>();
+    for (StageWrapper sw : mastersGroup.items) {
+      if (sw.getType().equals(StageWrapper.Type.RESTART)) {
+        for (TaskWrapper tw : sw.getTasks()) {
+          for (String hostName : tw.getHosts()) {
+            orderedNameNodes.add(hostName);
+          }
+        }
+      }
+    }
+
+    assertEquals(2, orderedNameNodes.size());
+    // Order is standby, then active.
+    assertEquals("h2", orderedNameNodes.get(0));
+    assertEquals("h1", orderedNameNodes.get(1));
   }
 
   @Test
@@ -362,7 +430,10 @@ public class UpgradeHelperTest {
     UpgradePack upgrade = upgrades.get("upgrade_test_checks");
     assertNotNull(upgrade);
 
-    makeCluster();
+    Cluster c = makeCluster();
+    c.addService("HBASE");
+
+
 
     UpgradeContext context = new UpgradeContext(m_masterHostResolver,
         UPGRADE_VERSION, Direction.UPGRADE);
@@ -370,6 +441,17 @@ public class UpgradeHelperTest {
     List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
 
     assertEquals(7, groups.size());
+
+    UpgradeGroupHolder holder = groups.get(3);
+    assertEquals(holder.name, "SERVICE_CHECK_1");
+    assertEquals(5, holder.items.size());
+    boolean found = false;
+    for (StageWrapper sw : holder.items) {
+      if (sw.getText().contains("HBase")) {
+        found = true;
+      }
+    }
+    assertTrue("Expected string 'HBase' in text", found);
 
     // grab the manual task out of ZK which has placeholder text
     UpgradeGroupHolder zookeeperGroup = groups.get(1);
@@ -505,30 +587,30 @@ public class UpgradeHelperTest {
     }, null);
 
     HostsType type = new HostsType();
-    type.hosts = new HashSet<String>(Arrays.asList("h1", "h2", "h3"));
+    type.hosts.addAll(Arrays.asList("h1", "h2", "h3"));
     expect(m_masterHostResolver.getMasterAndHosts("ZOOKEEPER", "ZOOKEEPER_SERVER")).andReturn(type).anyTimes();
 
     type = new HostsType();
-    type.hosts = new HashSet<String>(Arrays.asList("h1", "h2"));
+    type.hosts.addAll(Arrays.asList("h1", "h2"));
     type.master = "h1";
     type.secondary = "h2";
     expect(m_masterHostResolver.getMasterAndHosts("HDFS", "NAMENODE")).andReturn(type).anyTimes();
 
     type = new HostsType();
     if (clean) {
-      type.hosts = new HashSet<String>(Arrays.asList("h2", "h3", "h4"));
+      type.hosts.addAll(Arrays.asList("h2", "h3", "h4"));
     } else {
       type.unhealthy = Collections.singletonList(sch);
-      type.hosts = new HashSet<String>(Arrays.asList("h2", "h3"));
+      type.hosts.addAll(Arrays.asList("h2", "h3"));
     }
     expect(m_masterHostResolver.getMasterAndHosts("HDFS", "DATANODE")).andReturn(type).anyTimes();
 
     type = new HostsType();
-    type.hosts = new HashSet<String>(Arrays.asList("h2"));
+    type.hosts.addAll(Arrays.asList("h2"));
     expect(m_masterHostResolver.getMasterAndHosts("YARN", "RESOURCEMANAGER")).andReturn(type).anyTimes();
 
     type = new HostsType();
-    type.hosts = new HashSet<String>(Arrays.asList("h1", "h3"));
+    type.hosts.addAll(Arrays.asList("h1", "h3"));
     expect(m_masterHostResolver.getMasterAndHosts("YARN", "NODEMANAGER")).andReturn(type).anyTimes();
 
     expect(m_masterHostResolver.getMasterAndHosts("HIVE", "HIVE_SERVER")).andReturn(

@@ -108,7 +108,7 @@ module.exports = App.WizardRoute.extend({
         var wizardStep2Controller = router.get('wizardStep2Controller');
         wizardStep2Controller.set('wizardController', controller);
         controller.connectOutlet('wizardStep2', controller.get('content'));
-      })
+      });
     },
 
     next: function (router) {
@@ -143,7 +143,7 @@ module.exports = App.WizardRoute.extend({
         var wizardStep3Controller = router.get('wizardStep3Controller');
         wizardStep3Controller.set('wizardController', controller);
         controller.connectOutlet('wizardStep3', controller.get('content'));
-      })
+      });
     },
     back: function(router){
       router.transitionTo('step1');
@@ -243,7 +243,7 @@ module.exports = App.WizardRoute.extend({
         var wizardStep8Controller = router.get('wizardStep8Controller');
         wizardStep8Controller.set('wizardController', controller);
         controller.connectOutlet('wizardStep8', controller.get('content'));
-      })
+      });
     },
     back: function(router){
       if(!router.get('wizardStep8Controller.isBackBtnDisabled')) {
@@ -278,7 +278,7 @@ module.exports = App.WizardRoute.extend({
           controller.setLowerStepsDisable(6);
         }
         controller.connectOutlet('wizardStep9', controller.get('content'));
-      })
+      });
     },
     back: Em.Router.transitionTo('step5'),
     retry: function(router,context) {
@@ -330,7 +330,7 @@ module.exports = App.WizardRoute.extend({
         }
         controller.connectOutlet('wizardStep10', controller.get('content'));
         router.get('updateController').set('isWorking', true);
-      })
+      });
     },
     back: Em.Router.transitionTo('step6'),
     complete: function (router, context) {
@@ -339,7 +339,7 @@ module.exports = App.WizardRoute.extend({
         'Hosts/host_status,Hosts/last_heartbeat_time,Hosts/os_arch,Hosts/os_type,Hosts/ip,host_components,' +
         'metrics/disk,metrics/load/load_one,metrics/cpu/cpu_system,metrics/cpu/cpu_user,metrics/memory/mem_total,metrics/memory/mem_free';
       router.get('clusterController').requestHosts(hostsUrl, function () {
-        console.log('Request for hosts, with immutable parameters')
+        console.log('Request for hosts, with immutable parameters');
       });
       router.get('updateController').updateAll();
       $(context.currentTarget).parents("#modal").find(".close").trigger('click');

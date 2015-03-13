@@ -114,6 +114,14 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, {
     }
   }.observes('currentStep'),
 
+  /**
+   * Enable step link in left nav menu
+   * @param step - step number
+   */
+  enableStep: function (step) {
+    this.get('isStepDisabled').findProperty('step', step).set('value', false);
+  },
+
   setLowerStepsDisable: function (stepNo) {
     for (var i = 1; i < stepNo; i++) {
       var step = this.get('isStepDisabled').findProperty('step', i);
@@ -929,7 +937,6 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, {
           name: configGroup.get('name'),
           description: configGroup.get('description'),
           hosts: hostNames,
-          publicHosts: configGroup.get('hosts').map(function(hostName) {return App.router.get('manageConfigGroupsController').hostsToPublic(hostName); }),
           properties: properties,
           isDefault: configGroup.get('isDefault'),
           isForInstalledService: isForInstalledService,

@@ -120,7 +120,7 @@ App.upgradeWizardView = Em.View.extend({
 
   /**
    * details of currently active task
-   * @type {object|undefined}
+   * @type {object|null}
    */
   taskDetails: function () {
     if (this.get('runningItem')) {
@@ -129,6 +129,8 @@ App.upgradeWizardView = Em.View.extend({
       return this.get('failedItem').get('tasks').find(function (task) {
         return this.get('failedStatuses').contains(task.get('status'));
       }, this);
+    } else {
+      return null;
     }
   }.property('failedItem.tasks.@each.status', 'runningItem.tasks.@each.status'),
 
@@ -149,7 +151,7 @@ App.upgradeWizardView = Em.View.extend({
    * @type {boolean}
    */
   isManualProceedDisabled: function () {
-    return !this.get('isManualDone');
+    return !this.get('isManualDone') || this.get('controller.requestInProgress');
   }.property('isManualDone'),
 
   /**
@@ -215,8 +217,8 @@ App.upgradeWizardView = Em.View.extend({
     if (App.get('clusterName')) {
       this.get('controller').loadUpgradeData().done(function () {
         self.set('isLoaded', true);
+        self.doPolling();
       });
-      this.doPolling();
     }
   }.observes('App.clusterName'),
 
@@ -241,8 +243,9 @@ App.upgradeWizardView = Em.View.extend({
   doPolling: function () {
     var self = this;
     this.set('updateTimer', setTimeout(function () {
-      self.get('controller').loadUpgradeData();
-      self.doPolling();
+      self.get('controller').loadUpgradeData().done(function() {
+        self.doPolling();
+      });
     }, App.bgOperationsUpdateInterval));
   },
 

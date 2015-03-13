@@ -17,25 +17,29 @@
  */
 package org.apache.hadoop.metrics2.sink.timeline;
 
+import java.io.IOException;
+import java.net.ConnectException;
+import java.net.SocketAddress;
+
+import java.io.IOException;
+import java.net.SocketAddress;
+
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.methods.PostMethod;
 import org.apache.commons.httpclient.methods.StringRequestEntity;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 import org.codehaus.jackson.map.AnnotationIntrospector;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.map.annotate.JsonSerialize;
 import org.codehaus.jackson.xc.JaxbAnnotationIntrospector;
-
-import java.io.IOException;
-import java.net.SocketAddress;
 
 public abstract class AbstractTimelineMetricsSink {
   public static final String TAGS_FOR_PREFIX_PROPERTY_PREFIX = "tagsForPrefix.";
   public static final String MAX_METRIC_ROW_CACHE_SIZE = "maxRowCacheSize";
   public static final String METRICS_SEND_INTERVAL = "sendInterval";
   public static final String COLLECTOR_HOST_PROPERTY = "collector";
+  public static final String COLLECTOR_PORT_PROPERTY = "port";
 
   protected final Log LOG;
   private HttpClient httpClient = new HttpClient();
@@ -55,21 +59,26 @@ public abstract class AbstractTimelineMetricsSink {
   }
 
   protected void emitMetrics(TimelineMetrics metrics) throws IOException {
-    String jsonData = mapper.writeValueAsString(metrics);
+    String connectUrl = getCollectorUri();
+    try {
+      String jsonData = mapper.writeValueAsString(metrics);
 
-    SocketAddress socketAddress = getServerSocketAddress();
+      SocketAddress socketAddress = getServerSocketAddress();
 
-    if (socketAddress != null) {
-      StringRequestEntity requestEntity = new StringRequestEntity(jsonData, "application/json", "UTF-8");
-
-      PostMethod postMethod = new PostMethod(getCollectorUri());
-      postMethod.setRequestEntity(requestEntity);
-      int statusCode = httpClient.executeMethod(postMethod);
-      if (statusCode != 200) {
-        LOG.info("Unable to POST metrics to collector, " + getCollectorUri());
-      } else {
-        LOG.debug("Metrics posted to Collector " + getCollectorUri());
+      if (socketAddress != null) {
+        StringRequestEntity requestEntity = new StringRequestEntity(jsonData, "application/json", "UTF-8");
+        
+        PostMethod postMethod = new PostMethod(connectUrl);
+        postMethod.setRequestEntity(requestEntity);
+        int statusCode = httpClient.executeMethod(postMethod);
+        if (statusCode != 200) {
+          LOG.info("Unable to POST metrics to collector, " + connectUrl);
+        } else {
+          LOG.debug("Metrics posted to Collector " + connectUrl);
+        }
       }
+    } catch (ConnectException e) {
+      throw new UnableToConnectException(e).setConnectUrl(connectUrl);
     }
   }
 

@@ -19,8 +19,10 @@ package org.apache.ambari.server.state.stack.upgrade;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -35,6 +37,10 @@ import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 
 /**
  * Used for co-located services grouped together.
@@ -64,13 +70,15 @@ public class ColocatedGrouping extends Grouping {
 
 
     private MultiHomedBuilder(Batch batch, boolean serviceCheck) {
-      this.m_batch = batch;
+      m_batch = batch;
       m_serviceCheck = serviceCheck;
     }
 
     @Override
-    public void add(HostsType hostsType, String service,
-        boolean forUpgrade, boolean clientOnly, ProcessingComponent pc) {
+    public void add(UpgradeContext ctx, HostsType hostsType, String service,
+        boolean clientOnly, ProcessingComponent pc) {
+
+      boolean forUpgrade = ctx.getDirection().isUpgrade();
 
       int count = Double.valueOf(Math.ceil(
           (double) m_batch.percent / 100 * hostsType.hosts.size())).intValue();
@@ -79,7 +87,7 @@ public class ColocatedGrouping extends Grouping {
       for (String host : hostsType.hosts) {
         // This class required inserting a single host into the collection
         HostsType singleHostsType = new HostsType();
-        singleHostsType.hosts = Collections.singleton(host);
+        singleHostsType.hosts.add(host);
 
         Map<String, List<TaskProxy>> targetMap = ((i++) < count) ? initialBatch : finalBatches;
         List<TaskProxy> targetList = targetMap.get(host);
@@ -95,7 +103,8 @@ public class ColocatedGrouping extends Grouping {
         if (null != tasks && tasks.size() > 0) {
           proxy = new TaskProxy();
           proxy.clientOnly = clientOnly;
-          proxy.message = getStageText("Preparing", pc.name, Collections.singleton(host));
+          proxy.message = getStageText("Preparing",
+              ctx.getComponentDisplay(service, pc.name), Collections.singleton(host));
           proxy.tasks.addAll(TaskWrapperBuilder.getTaskList(service, pc.name, singleHostsType, tasks));
           proxy.service = service;
           proxy.component = pc.name;
@@ -112,8 +121,8 @@ public class ColocatedGrouping extends Grouping {
             proxy.restart = true;
             proxy.service = service;
             proxy.component = pc.name;
-            proxy.message = getStageText("Restarting ", pc.name, Collections.singleton(host));
-
+            proxy.message = getStageText("Restarting",
+                ctx.getComponentDisplay(service, pc.name), Collections.singleton(host));
             targetList.add(proxy);
           }
         }
@@ -126,7 +135,8 @@ public class ColocatedGrouping extends Grouping {
           proxy.component = pc.name;
           proxy.service = service;
           proxy.tasks.addAll(TaskWrapperBuilder.getTaskList(service, pc.name, singleHostsType, tasks));
-          proxy.message = getStageText("Completing", pc.name, Collections.singleton(host));
+          proxy.message = getStageText("Completing",
+              ctx.getComponentDisplay(service, pc.name), Collections.singleton(host));
           targetList.add(proxy);
         }
       }
@@ -142,18 +152,22 @@ public class ColocatedGrouping extends Grouping {
         LOG.debug("RU final: {}", finalBatches);
       }
 
-      results.addAll(fromProxies(ctx.getDirection(), initialBatch));
+      List<StageWrapper> befores = fromProxies(ctx.getDirection(), initialBatch);
+      results.addAll(befores);
 
-      // !!! TODO when manual tasks are ready
-      ManualTask task = new ManualTask();
-      task.summary = m_batch.summary;
-      task.message = m_batch.message;
+      if (!befores.isEmpty()) {
 
-      StageWrapper wrapper = new StageWrapper(
-          StageWrapper.Type.SERVER_SIDE_ACTION,
-          "Validate Partial " + ctx.getDirection().getText(true),
-          new TaskWrapper(null, null, Collections.<String>emptySet(), task));
-      results.add(wrapper);
+        ManualTask task = new ManualTask();
+        task.summary = m_batch.summary;
+        task.message = m_batch.message;
+        formatFirstBatch(ctx, task, befores);
+
+        StageWrapper wrapper = new StageWrapper(
+            StageWrapper.Type.SERVER_SIDE_ACTION,
+            "Validate Partial " + ctx.getDirection().getText(true),
+            new TaskWrapper(null, null, Collections.<String>emptySet(), task));
+        results.add(wrapper);
+      }
 
       results.addAll(fromProxies(ctx.getDirection(), finalBatches));
 
@@ -196,17 +210,18 @@ public class ColocatedGrouping extends Grouping {
 
       }
 
-      if (Direction.UPGRADE == direction && m_serviceCheck &&
-          serviceChecks.size() > 0) {
+      if (direction.isUpgrade() && m_serviceCheck && serviceChecks.size() > 0) {
         // !!! add the service check task
         List<TaskWrapper> tasks = new ArrayList<TaskWrapper>();
+        Set<String> displays = new HashSet<String>();
         for (String service : serviceChecks) {
           tasks.add(new TaskWrapper(service, "", Collections.<String>emptySet(), new ServiceCheckTask()));
+          displays.add(service);
         }
 
         StageWrapper wrapper = new StageWrapper(
             StageWrapper.Type.SERVICE_CHECK,
-            "Service Check " + StringUtils.join(serviceChecks, ", "),
+            "Service Check " + StringUtils.join(displays, ", "),
             tasks.toArray(new TaskWrapper[tasks.size()]));
 
         results.add(wrapper);
@@ -215,6 +230,71 @@ public class ColocatedGrouping extends Grouping {
       return results;
     }
 
+    /**
+     * Formats the first batch's text and adds json for use if needed.
+     * @param ctx       the upgrade context to load component display names
+     * @param task      the manual task representing the verification message
+     * @param wrappers  the list of stage wrappers
+     */
+    private void formatFirstBatch(UpgradeContext ctx, ManualTask task, List<StageWrapper> wrappers) {
+      Set<String> names = new LinkedHashSet<String>();
+      Map<String, Set<String>> compLocations = new HashMap<String, Set<String>>();
+
+      for (StageWrapper sw : wrappers) {
+        for (TaskWrapper tw : sw.getTasks()) {
+          if (StringUtils.isNotEmpty(tw.getService()) &&
+              StringUtils.isNotBlank(tw.getComponent())) {
+
+            for (String host : tw.getHosts()) {
+              if (!compLocations.containsKey(host)) {
+                compLocations.put(host, new HashSet<String>());
+              }
+              compLocations.get(host).add(tw.getComponent());
+            }
+
+            names.add(ctx.getComponentDisplay(
+                tw.getService(), tw.getComponent()));
+          }
+        }
+      }
+
+      // !!! add the display names to the message, if needed
+      if (task.message.contains("{{components}}")) {
+        StringBuilder sb = new StringBuilder();
+
+        List<String> compNames = new ArrayList<String>(names);
+
+        if (compNames.size() == 1) {
+          sb.append(compNames.get(0));
+        } else if (names.size() > 1) {
+          String last = compNames.remove(compNames.size() - 1);
+          sb.append(StringUtils.join(compNames, ", "));
+          sb.append(" and ").append(last);
+        }
+
+        task.message = task.message.replace("{{components}}", sb.toString());
+      }
+
+      // !!! build the structured out to attach to the manual task
+      JsonArray arr = new JsonArray();
+      for (Entry<String, Set<String>> entry : compLocations.entrySet()) {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("host_name", entry.getKey());
+
+        JsonArray comps = new JsonArray();
+        for (String comp : entry.getValue()) {
+          comps.add(new JsonPrimitive(comp));
+        }
+        obj.add("components", comps);
+
+        arr.add(obj);
+      }
+
+      JsonObject master = new JsonObject();
+      master.add("topology", arr);
+
+      task.structuredOut = master.toString();
+    }
   }
 
   /**

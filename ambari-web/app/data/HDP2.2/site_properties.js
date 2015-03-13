@@ -128,27 +128,39 @@ hdp22properties.push(
   {
     "id": "site property",
     "name": "ranger-hdfs-plugin-enabled",
-    "defaultValue": "no",
+    "displayType": "checkbox",
     "displayName": "Enable Ranger for HDFS",
+    "isOverridable": false,
+    "filename": "ranger-hdfs-plugin-properties.xml",
+    "category": "Advanced ranger-hdfs-plugin-properties",
+    "serviceName": "HDFS",
+    "index": 1
+  },
+  {
+    "id": "site property",
+    "name": "policy_user",
+    "value": "ambari-qa",
+    "defaultValue": "ambari-qa",
+    "displayName": "policy User for HDFS",
     "filename": "ranger-hdfs-plugin-properties.xml",
     "category": "Advanced ranger-hdfs-plugin-properties",
     "serviceName": "HDFS"
   },
   {
-    "id": "puppet var",
-    "name": "RANGER_HOST",
-    "displayName": "Policy Admin URL",
-    "value": "",
-    "defaultValue": "",
-    "description": "The host that has been assigned to run Ranger Server",
-    "displayType": "masterHost",
-    "isOverridable": false,
-    "isVisible": true,
-    "isRequiredByAgent": false,
-    "isRequired": false,
-    "serviceName": "HDFS",
+    "id": "site property",
+    "name": "REPOSITORY_CONFIG_PASSWORD",
+    "displayName": "Ranger repository config password",
     "filename": "ranger-hdfs-plugin-properties.xml",
-    "category": "Advanced ranger-hdfs-plugin-properties"
+    "category": "Advanced ranger-hdfs-plugin-properties",
+    "serviceName": "HDFS"
+  },
+  {
+    "id": "site property",
+    "name": "REPOSITORY_CONFIG_USERNAME",
+    "displayName": "Ranger repository config user",
+    "filename": "ranger-hdfs-plugin-properties.xml",
+    "category": "Advanced ranger-hdfs-plugin-properties",
+    "serviceName": "HDFS"
   },
   /*********RANGER FOR HIVE************/
   {
@@ -173,8 +185,36 @@ hdp22properties.push(
   {
     "id": "site property",
     "name": "ranger-hive-plugin-enabled",
-    "defaultValue": "no",
+    "displayType": "checkbox",
     "displayName": "Enable Ranger for HIVE",
+    "isOverridable": false,
+    "filename": "ranger-hive-plugin-properties.xml",
+    "category": "Advanced ranger-hive-plugin-properties",
+    "serviceName": "HIVE",
+    "index": 1
+  },
+  {
+    "id": "site property",
+    "name": "policy_user",
+    "value": "ambari-qa",
+    "defaultValue": "ambari-qa",
+    "displayName": "policy User for HIVE",
+    "filename": "ranger-hive-plugin-properties.xml",
+    "category": "Advanced ranger-hive-plugin-properties",
+    "serviceName": "HIVE"
+  },
+  {
+    "id": "site property",
+    "name": "REPOSITORY_CONFIG_PASSWORD",
+    "displayName": "Ranger repository config password",
+    "filename": "ranger-hive-plugin-properties.xml",
+    "category": "Advanced ranger-hive-plugin-properties",
+    "serviceName": "HIVE"
+  },
+  {
+    "id": "site property",
+    "name": "REPOSITORY_CONFIG_USERNAME",
+    "displayName": "Ranger repository config user",
     "filename": "ranger-hive-plugin-properties.xml",
     "category": "Advanced ranger-hive-plugin-properties",
     "serviceName": "HIVE"
@@ -183,27 +223,11 @@ hdp22properties.push(
     "id": "site property",
     "name": "UPDATE_XAPOLICIES_ON_GRANT_REVOKE",
     "defaultValue": true,
-    "displayName": "Should Hive GRANT/REVOKE update XA policies?",
     "displayType": "checkbox",
+    "displayName": "Should Hive GRANT/REVOKE update XA policies?",
     "filename": "ranger-hive-plugin-properties.xml",
     "category": "Advanced ranger-hive-plugin-properties",
     "serviceName": "HIVE"
-  },
-  {
-    "id": "puppet var",
-    "name": "RANGER_HOST",
-    "displayName": "Policy Admin URL",
-    "value": "",
-    "defaultValue": "",
-    "description": "The host that has been assigned to run Ranger Server",
-    "displayType": "masterHost",
-    "isOverridable": false,
-    "isVisible": true,
-    "isRequiredByAgent": false,
-    "isRequired": false,
-    "serviceName": "HIVE",
-    "filename": "ranger-hive-plugin-properties.xml",
-    "category": "Advanced ranger-hive-plugin-properties"
   },
   /*********RANGER FOR HBASE************/
   {
@@ -228,8 +252,36 @@ hdp22properties.push(
   {
     "id": "site property",
     "name": "ranger-hbase-plugin-enabled",
-    "defaultValue": "no",
+    "displayType": "checkbox",
     "displayName": "Enable Ranger for HBASE",
+    "isOverridable": false,
+    "filename": "ranger-hbase-plugin-properties.xml",
+    "category": "Advanced ranger-hbase-plugin-properties",
+    "serviceName": "HBASE",
+    "index": 1
+  },
+  {
+    "id": "site property",
+    "name": "policy_user",
+    "value": "ambari-qa",
+    "defaultValue": "ambari-qa",
+    "displayName": "policy User for HBASE",
+    "filename": "ranger-hbase-plugin-properties.xml",
+    "category": "Advanced ranger-hbase-plugin-properties",
+    "serviceName": "HBASE"
+  },
+  {
+    "id": "site property",
+    "name": "REPOSITORY_CONFIG_PASSWORD",
+    "displayName": "Ranger repository config password",
+    "filename": "ranger-hbase-plugin-properties.xml",
+    "category": "Advanced ranger-hbase-plugin-properties",
+    "serviceName": "HBASE"
+  },
+  {
+    "id": "site property",
+    "name": "REPOSITORY_CONFIG_USERNAME",
+    "displayName": "Ranger repository config user",
     "filename": "ranger-hbase-plugin-properties.xml",
     "category": "Advanced ranger-hbase-plugin-properties",
     "serviceName": "HBASE"
@@ -243,22 +295,6 @@ hdp22properties.push(
     "filename": "ranger-hbase-plugin-properties.xml",
     "category": "Advanced ranger-hbase-plugin-properties",
     "serviceName": "HBASE"
-  },
-  {
-    "id": "puppet var",
-    "name": "RANGER_HOST",
-    "displayName": "Policy Admin URL",
-    "value": "",
-    "defaultValue": "",
-    "description": "The host that has been assigned to run Ranger Server",
-    "displayType": "masterHost",
-    "isOverridable": false,
-    "isVisible": true,
-    "isRequiredByAgent": false,
-    "isRequired": false,
-    "serviceName": "HBASE",
-    "filename": "ranger-hbase-plugin-properties.xml",
-    "category": "Advanced ranger-hbase-plugin-properties"
   },
   /*********RANGER FOR STORM************/
   {
@@ -277,33 +313,45 @@ hdp22properties.push(
     "displayName": "Audit to DB",
     "displayType": "checkbox",
     "filename": "ranger-storm-plugin-properties.xml",
-    "category": "Advanced storm-hbase-plugin-properties",
+    "category": "Advanced ranger-storm-plugin-properties",
     "serviceName": "STORM"
   },
   {
     "id": "site property",
     "name": "ranger-storm-plugin-enabled",
-    "defaultValue": "no",
+    "displayType": "checkbox",
     "displayName": "Enable Ranger for STORM",
+    "isOverridable": false,
+    "filename": "ranger-storm-plugin-properties.xml",
+    "category": "Advanced ranger-storm-plugin-properties",
+    "serviceName": "STORM",
+    "index": 1
+  },
+  {
+    "id": "site property",
+    "name": "policy_user",
+    "value": "ambari-qa",
+    "defaultValue": "ambari-qa",
+    "displayName": "policy User for STORM",
     "filename": "ranger-storm-plugin-properties.xml",
     "category": "Advanced ranger-storm-plugin-properties",
     "serviceName": "STORM"
   },
   {
-    "id": "puppet var",
-    "name": "RANGER_HOST",
-    "displayName": "Policy Admin URL",
-    "value": "",
-    "defaultValue": "",
-    "description": "The host that has been assigned to run Ranger Server",
-    "displayType": "masterHost",
-    "isOverridable": false,
-    "isVisible": true,
-    "isRequiredByAgent": false,
-    "isRequired": false,
-    "serviceName": "STORM",
+    "id": "site property",
+    "name": "REPOSITORY_CONFIG_PASSWORD",
+    "displayName": "Ranger repository config password",
     "filename": "ranger-storm-plugin-properties.xml",
-    "category": "Advanced ranger-strom-plugin-properties"
+    "category": "Advanced ranger-storm-plugin-properties",
+    "serviceName": "STORM"
+  },
+  {
+    "id": "site property",
+    "name": "REPOSITORY_CONFIG_USERNAME",
+    "displayName": "Ranger repository config user",
+    "filename": "ranger-storm-plugin-properties.xml",
+    "category": "Advanced ranger-storm-plugin-properties",
+    "serviceName": "STORM"
   },
   /*********RANGER FOR KNOX************/
   {
@@ -328,48 +376,65 @@ hdp22properties.push(
   {
     "id": "site property",
     "name": "ranger-knox-plugin-enabled",
-    "defaultValue": "no",
+    "displayType": "checkbox",
     "displayName": "Enable Ranger for KNOX",
+    "isOverridable": false,
+    "filename": "ranger-knox-plugin-properties.xml",
+    "category": "Advanced ranger-knox-plugin-properties",
+    "serviceName": "KNOX",
+    "index": 1
+  },
+  {
+    "id": "site property",
+    "name": "policy_user",
+    "value": "ambari-qa",
+    "defaultValue": "ambari-qa",
+    "displayName": "policy User for KNOX",
     "filename": "ranger-knox-plugin-properties.xml",
     "category": "Advanced ranger-knox-plugin-properties",
     "serviceName": "KNOX"
   },
   {
-    "id": "puppet var",
-    "name": "RANGER_HOST",
-    "displayName": "Policy Admin URL",
-    "value": "",
-    "defaultValue": "",
-    "description": "The host that has been assigned to run Ranger Server",
-    "displayType": "masterHost",
-    "isOverridable": false,
-    "isVisible": true,
-    "isRequiredByAgent": false,
-    "isRequired": false,
-    "serviceName": "KNOX",
+    "id": "site property",
+    "name": "REPOSITORY_CONFIG_PASSWORD",
+    "displayName": "Ranger repository config password",
     "filename": "ranger-knox-plugin-properties.xml",
-    "category": "Advanced ranger-knox-plugin-properties"
-  },
-  /**********************************************RANGER***************************************/
-  {
-    "id": "puppet var",
-    "name": "RANGER_HOST",
-    "displayName": "Policy Admin URL",
-    "value": "",
-    "defaultValue": "",
-    "description": "The host that has been assigned to run Ranger Server",
-    "displayType": "masterHost",
-    "isOverridable": false,
-    "isVisible": true,
-    "isRequiredByAgent": false,
-    "isRequired": false,
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "Advanced admin-properties"
+    "category": "Advanced ranger-knox-plugin-properties",
+    "serviceName": "KNOX"
   },
   {
     "id": "site property",
-    "name": "ambari_user_password",
+    "name": "REPOSITORY_CONFIG_USERNAME",
+    "displayName": "Ranger repository config user",
+    "filename": "ranger-knox-plugin-properties.xml",
+    "category": "Advanced ranger-knox-plugin-properties",
+    "serviceName": "KNOX"
+  },
+  /**********************************************SPARK***************************************/
+  {
+    "id": "site property",
+    "name": "spark.driver.extraJavaOptions",
+    "displayName": "spark.driver.extraJavaOptions",
+    "defaultValue": "",
+    "isRequired": false,
+    "category": "Advanced spark-defaults",
+    "serviceName": "SPARK",
+    "filename": "spark-defaults.xml"
+  },
+  {
+    "id": "site property",
+    "name": "spark.yarn.am.extraJavaOptions",
+    "displayName": "spark.yarn.am.extraJavaOptions",
+    "defaultValue": "",
+    "isRequired": false,
+    "category": "Advanced spark-defaults",
+    "serviceName": "SPARK",
+    "filename": "spark-defaults.xml"
+  },
+  /**********************************************RANGER***************************************/
+  {
+    "id": "site property",
+    "name": "ranger_admin_password",
     "displayName": "Ranger Admin user's password for Ambari",
     "defaultValue": "ambari",
     "isReconfigurable": true,
@@ -377,7 +442,7 @@ hdp22properties.push(
     "isOverridable": false,
     "isVisible": true,
     "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
+    "filename": "ranger-env.xml",
     "category": "AdminSettings"
   },
   {
@@ -558,7 +623,7 @@ hdp22properties.push(
     "isVisible": true,
     "serviceName": "RANGER",
     "filename": "admin-properties.xml",
-    "category": "Advanced admin-properties"
+    "category": "RangerSettings"
   },
   {
     "id": "puppet var",
@@ -571,11 +636,11 @@ hdp22properties.push(
     "isVisible": true,
     "serviceName": "RANGER",
     "filename": "admin-properties.xml",
-    "category": "Advanced admin-properties"
+    "category": "RangerSettings"
   },
   {
     "id": "puppet var",
-    "name": "unix_user",
+    "name": "ranger_user",
     "displayName": "Used to create user and assign permission",
     "defaultValue": "ranger",
     "isReconfigurable": true,
@@ -583,12 +648,12 @@ hdp22properties.push(
     "isOverridable": false,
     "isVisible": true,
     "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "Advanced admin-properties"
+    "filename": "ranger-env.xml",
+    "category": "RangerSettings"
   },
   {
     "id": "puppet var",
-    "name": "unix_group",
+    "name": "ranger_group",
     "displayName": "Used to create group and assign permission",
     "defaultValue": "ranger",
     "isReconfigurable": true,
@@ -596,8 +661,8 @@ hdp22properties.push(
     "isOverridable": false,
     "isVisible": true,
     "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "Advanced admin-properties"
+    "filename": "ranger-env.xml",
+    "category": "RangerSettings"
   },
   {
     "id": "site property",
@@ -615,7 +680,7 @@ hdp22properties.push(
       },
       {
         displayName: 'UNIX',
-        foreignKeys: ['remoteLoginEnabled', 'authServiceHostName','authServicePort']
+        foreignKeys: ['remoteLoginEnabled', 'authServiceHostName', 'authServicePort']
       },
       {
         displayName: 'NONE'
@@ -628,10 +693,10 @@ hdp22properties.push(
     "isVisible": true,
     "serviceName": "RANGER",
     "filename": "admin-properties.xml",
-    "category": "Advanced admin-properties"
+    "category": "RangerSettings"
   },
   {
-    "id": "puppet var",
+    "id": "site property",
     "name": "remoteLoginEnabled",
     "displayName": "Allow remote Login",
     "defaultValue": true,
@@ -641,13 +706,93 @@ hdp22properties.push(
     "isVisible": true,
     "serviceName": "RANGER",
     "filename": "admin-properties.xml",
-    "category": "Advanced admin-properties"
+    "category": "UnixAuthenticationSettings"
+  },
+  {
+    "id": "site property",
+    "name": "authServiceHostName",
+    "displayName": "authServiceHostName",
+    "defaultValue": 'localhost',
+    "isReconfigurable": true,
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "RANGER",
+    "filename": "admin-properties.xml",
+    "category": "UnixAuthenticationSettings"
+  },
+  {
+    "id": "site property",
+    "name": "authServicePort",
+    "displayName": "authServicePort",
+    "defaultValue": '5151',
+    "isReconfigurable": true,
+    "displayType": "int",
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "RANGER",
+    "filename": "admin-properties.xml",
+    "category": "UnixAuthenticationSettings"
+  },
+  {
+    "id": "site property",
+    "name": "xa_ldap_url",
+    "displayName": "xa_ldap_url",
+    "isReconfigurable": true,
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "RANGER",
+    "filename": "admin-properties.xml",
+    "category": "LDAPSettings"
+  },
+  {
+    "id": "site property",
+    "name": "xa_ldap_userDNpattern",
+    "displayName": "xa_ldap_userDNpattern",
+    "isReconfigurable": true,
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "RANGER",
+    "filename": "admin-properties.xml",
+    "category": "LDAPSettings"
+  },
+  {
+    "id": "site property",
+    "name": "xa_ldap_groupRoleAttribute",
+    "displayName": "xa_ldap_groupRoleAttribute",
+    "isReconfigurable": true,
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "RANGER",
+    "filename": "admin-properties.xml",
+    "category": "LDAPSettings"
+  },
+  {
+    "id": "site property",
+    "name": "xa_ldap_ad_domain",
+    "displayName": "xa_ldap_ad_domain",
+    "isReconfigurable": true,
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "RANGER",
+    "filename": "admin-properties.xml",
+    "category": "ADSettings"
+  },
+  {
+    "id": "site property",
+    "name": "xa_ldap_ad_url",
+    "displayName": "xa_ldap_ad_url",
+    "isReconfigurable": true,
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "RANGER",
+    "filename": "admin-properties.xml",
+    "category": "ADSettings"
   }
 );
 
 var additionalProperties = [];
 
-hdp22SepcificProperties.forEach(function(config) {
+hdp22SepcificProperties.forEach(function (config) {
   if (!hdp22properties.findProperty('name', config.name)) additionalProperties.push(config);
   else {
     hdp22properties.findProperty('name', config.name).category = config.category;

@@ -39,7 +39,7 @@ else:
   hadoop_bin_dir = "/usr/bin"
 hadoop_conf_dir = "/etc/hadoop/conf"
 
-kinit_path_local = functions.get_kinit_path(["/usr/bin", "/usr/kerberos/bin", "/usr/sbin"])
+kinit_path_local = functions.get_kinit_path()
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name']
@@ -61,7 +61,7 @@ import functools
 HdfsDirectory = functools.partial(
   HdfsDirectory,
   conf_dir=hadoop_conf_dir,
-  hdfs_user=hdfs_principal_name if security_enabled else hdfs_user,
+  hdfs_user=hdfs_user,
   security_enabled=security_enabled,
   keytab=hdfs_user_keytab,
   kinit_path_local=kinit_path_local,

@@ -25,6 +25,7 @@ from resource_management.libraries.resources.execute_hadoop import ExecuteHadoop
 from resource_management.core.providers import Provider
 from resource_management.libraries.functions.format import format
 from resource_management.core.shell import as_user
+from resource_management.core.resources.system import Execute
 
 class CopyFromLocalProvider(Provider):
   def action_run(self):
@@ -33,6 +34,7 @@ class CopyFromLocalProvider(Provider):
     dest_dir = self.resource.dest_dir
     dest_file = self.resource.dest_file
     kinnit_if_needed = self.resource.kinnit_if_needed
+    user = self.resource.user   # user to perform commands as. If not provided, default to the owner
     owner = self.resource.owner
     group = self.resource.group
     mode = self.resource.mode
@@ -52,14 +54,14 @@ class CopyFromLocalProvider(Provider):
     
     if kinnit_if_needed:
       Execute(kinnit_if_needed, 
-              user=owner,
+              user=user if user else owner,
       )
     
-    unless_cmd = as_user(format("PATH=$PATH:{bin_dir} hadoop fs -ls {dest_path}"), owner)
+    unless_cmd = as_user(format("PATH=$PATH:{bin_dir} hadoop fs -ls {dest_path}"), user if user else owner)
 
     ExecuteHadoop(copy_cmd,
                   not_if=unless_cmd,
-                  user=owner,
+                  user=user if user else owner,
                   bin_dir=bin_dir,
                   conf_dir=hadoop_conf_path
                   )

@@ -28,13 +28,17 @@ class KerberosClient(KerberosScript):
   def configure(self, env):
     import params
     env.set_params(params)
-    self.write_krb5_conf()
+    if params.manage_krb5_conf:
+      self.write_krb5_conf()
 
   def status(self, env):
     raise ClientComponentHasNoStatus()
 
   def set_keytab(self, env):
     KerberosScript.write_keytab_file()
+
+  def remove_keytab(self, env):
+    self.delete_keytab_file()
 
 if __name__ == "__main__":
   KerberosClient().execute()

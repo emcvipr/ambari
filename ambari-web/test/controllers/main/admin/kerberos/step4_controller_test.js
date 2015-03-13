@@ -50,7 +50,7 @@ describe('App.KerberosWizardStep4Controller', function() {
   });
 
   describe('#prepareConfigProperties', function() {
-    
+
     before(function() {
       var controller = App.KerberosWizardStep4Controller.create({
         wizardController: {
@@ -64,11 +64,18 @@ describe('App.KerberosWizardStep4Controller', function() {
       sinon.stub(App.Service, 'find').returns(Em.A([
         { serviceName: 'HDFS' }
       ]));
+      sinon.stub(App.config, 'get').withArgs('preDefinedSiteProperties').returns([
+        {
+          name: 'hadoop.security.auth_to_local',
+          displayType: 'multiLine'
+        }
+      ]);
       this.result = controller.prepareConfigProperties(properties);
     });
 
     after(function() {
       App.Service.find.restore();
+      App.config.get.restore();
     });
 
     var properties = Em.A([
@@ -77,7 +84,8 @@ describe('App.KerberosWizardStep4Controller', function() {
       Em.Object.create({ name: 'hdfs_keytab', value: '', serviceName: 'HDFS', identityType: 'user', observesValueFrom: 'spnego_keytab' }),
       Em.Object.create({ name: 'falcon_keytab', value: 'falcon_keytab_value', serviceName: 'FALCON' }),
       Em.Object.create({ name: 'mapreduce_keytab', value: 'mapreduce_keytab_value', serviceName: 'MAPREDUCE2' }),
-      Em.Object.create({ name: 'hdfs_principal', value: 'hdfs_principal_value', identityType: 'user', serviceName: 'HDFS' })
+      Em.Object.create({ name: 'hdfs_principal', value: 'hdfs_principal_value', identityType: 'user', serviceName: 'HDFS' }),
+      Em.Object.create({ name: 'hadoop.security.auth_to_local', serviceName: 'HDFS' })
     ]);
     
     var propertyValidationCases = [
@@ -98,9 +106,15 @@ describe('App.KerberosWizardStep4Controller', function() {
       {
         property: 'hdfs_keytab',
         e: [
-          {key: 'category', value: 'Ambari Principals'},
+          { key: 'category', value: 'Ambari Principals' },
           { key: 'value', value: 'spnego_keytab_value' },
           { key: 'observesValueFrom', value: 'spnego_keytab' }
+        ]
+      },
+      {
+        property: 'hadoop.security.auth_to_local',
+        e: [
+          { key: 'displayType', value: 'multiLine' }
         ]
       }
     ];
@@ -219,6 +233,12 @@ describe('App.KerberosWizardStep4Controller', function() {
       }
     });
     beforeEach(function() {
+      sinon.stub(App.Service, 'find').returns([
+        Em.Object.create({
+          serviceName: 'HDFS',
+          displayName: 'HDFS'
+        })
+      ]);
       sinon.stub(App.StackService, 'find').returns([
         Em.Object.create({
           serviceName: 'HDFS',
@@ -235,6 +255,7 @@ describe('App.KerberosWizardStep4Controller', function() {
     });
 
     afterEach(function() {
+      App.Service.find.restore();
       App.StackService.find.restore();
     });
 
@@ -247,6 +268,55 @@ describe('App.KerberosWizardStep4Controller', function() {
       controller.set('wizardController.name', 'KerberosWizard');
       expect(controller.createCategoryForServices()).to.eql([App.ServiceConfigCategory.create({ name: 'HDFS', displayName: 'HDFS', collapsedByDefault: true})]);
     });
-  })
+  });
+
+  describe('#loadStep', function() {
+
+    describe('skip "Configure Identities" step', function() {
+      beforeEach(function() {
+        this.controller = App.KerberosWizardStep4Controller.create({});
+        this.wizardController = App.AddServiceController.create({});
+        this.controller.set('wizardController', this.wizardController);
+        sinon.stub(this.controller, 'clearStep').returns(true);
+        sinon.stub(this.controller, 'getDescriptorConfigs').returns((new $.Deferred()).resolve(true).promise());
+        sinon.stub(this.controller, 'setStepConfigs').returns(true);
+        sinon.stub(App.router, 'send').withArgs('next');
+      });
+
+      afterEach(function() {
+        this.controller.clearStep.restore();
+        this.controller.getDescriptorConfigs.restore();
+        this.controller.setStepConfigs.restore();
+        App.router.send.restore();
+      });
+
+      var tests = [
+        {
+          securityEnabled: true,
+          stepSkipped: false,
+        },
+        {
+          securityEnabled: false,
+          stepSkipped: true
+        }
+      ];
+
+      tests.forEach(function(test) {
+        it('security {0} configure identities step should be {1}'.format(!!test.securityEnabled ? 'enabled' : 'disabled', !!test.stepSkipped ? 'skipped' : 'not skipped'), function() {
+          sinon.stub(App.router, 'get').withArgs('mainAdminKerberosController.securityEnabled').returns(test.securityEnabled);
+          this.wizardController.checkSecurityStatus();
+          App.router.get.restore();
+          this.controller.loadStep();
+          expect(App.router.send.calledWith('next')).to.be.eql(test.stepSkipped);
+        });
+      }, this);
+
+      it('step should not be disabled for Add Kerberos wizard', function() {
+        this.controller.set('wizardController', App.KerberosWizardController.create({}));
+        this.controller.loadStep();
+        expect(App.router.send.calledWith('next')).to.be.false;
+      });
+    });
+  });
 
 });

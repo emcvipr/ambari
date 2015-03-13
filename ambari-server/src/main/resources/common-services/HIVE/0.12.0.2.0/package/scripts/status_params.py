@@ -30,6 +30,7 @@ hive_metastore_pid = 'hive.pid'
 hcat_pid_dir = config['configurations']['hive-env']['hcat_pid_dir'] #hcat_pid_dir
 webhcat_pid_file = format('{hcat_pid_dir}/webhcat.pid')
 
+process_name = 'mysqld'
 if System.get_instance().os_family == "suse" or System.get_instance().os_family == "ubuntu":
   daemon_name = 'mysql'
 else:
@@ -40,7 +41,7 @@ else:
 hostname = config['hostname']
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 hadoop_conf_dir = "/etc/hadoop/conf"
-kinit_path_local = functions.get_kinit_path(["/usr/bin", "/usr/kerberos/bin", "/usr/sbin"])
+kinit_path_local = functions.get_kinit_path()
 tmp_dir = Script.get_tmp_dir()
 hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 hive_user = config['configurations']['hive-env']['hive_user']

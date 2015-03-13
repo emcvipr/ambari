@@ -43,6 +43,10 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
 
   startIndex: 1,
 
+  expandedComponentsSections: [],
+
+  expandedVersionsSections: [],
+
   /**
    * Components which will be shown in component filter
    * @returns {Array}
@@ -289,12 +293,13 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
         sender: this,
         data: {},
         success: 'updateStatusCountersSuccessCallback',
-        error: 'updateStatusCountersErrorCallback'
+        error: 'updateStatusCountersErrorCallback',
+        callback: function() {
+          setTimeout(function () {
+            self.updateStatusCounters();
+          }, App.get('hostStatusCountersUpdateInterval'));
+        }
       });
-
-      setTimeout(function () {
-        self.updateStatusCounters();
-      }, App.get('hostStatusCountersUpdateInterval'));
     }
   },
 
@@ -470,11 +475,11 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
 
   /**
    * Filter hosts by stack version and state
-   * @param {String} version
+   * @param {String} displayName
    * @param {String} state
    */
-  filterByStack: function (version, state) {
-    if (!version || !state)
+  filterByStack: function (displayName, state) {
+    if (!displayName || !state)
       return;
     var column = 11;
 
@@ -482,8 +487,8 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
       iColumn: column,
       value: [
         {
-          property: 'repository_versions/RepositoryVersions/repository_version',
-          value: version
+          property: 'repository_versions/RepositoryVersions/display_name',
+          value: displayName
         },
         {
           property: 'HostStackVersions/state',
@@ -584,6 +589,8 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
     var query = [];
     var hostNames = [];
     var hostsMap = {};
+    var context = this,
+        shouldRun = false;
 
     data.items.forEach(function (host) {
       host.host_components.forEach(function (hostComponent) {
@@ -595,19 +602,28 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
           }
         }
       });
+      hostsMap[host.Hosts.host_name].healthStatus = context.dataSource.filterProperty('hostName', host.Hosts.host_name)[0].get('healthStatus');
     });
 
     for (var hostName in hostsMap) {
       var subQuery = '(HostRoles/component_name.in(%@)&HostRoles/host_name=' + hostName + ')';
       var components = hostsMap[hostName];
+      var action = operationData.get('action'),
+          healthStatus = hostsMap[hostName].healthStatus;
+
       if (components.length) {
         query.push(subQuery.fmt(components.join(',')));
       }
       hostNames.push(hostName);
-    }
 
+      if ((action === App.HostComponentStatus.started && healthStatus !== 'HEALTHY') || // start all and already started
+          (action === App.HostComponentStatus.stopped && healthStatus !== 'UNHEALTHY')) { // stop all and already stopped
+        shouldRun = true;
+      }
+    }
     hostNames = hostNames.join(",");
-    if (query.length) {
+
+    if (query.length && shouldRun) {
       query = query.join('|');
       App.ajax.send({
         name: 'common.host_components.update',

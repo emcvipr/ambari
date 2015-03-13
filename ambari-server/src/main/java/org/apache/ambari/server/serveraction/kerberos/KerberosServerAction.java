@@ -46,6 +46,12 @@ import java.util.Map;
  */
 public abstract class KerberosServerAction extends AbstractServerAction {
   /**
+   * A (command parameter) property name used to hold the authenticated user's name for use in
+   * operations that record the acting user.
+   */
+  public static final String AUTHENTICATED_USER_NAME = "authenticated_user_name";
+
+  /**
    * A (command parameter) property name used to hold the absolute path to the directory that is to
    * be used to store transient data while the request is being processed.  This is expected to be
    * a temporary directory.
@@ -88,6 +94,12 @@ public abstract class KerberosServerAction extends AbstractServerAction {
   * Key used in kerberosCommandParams in ExecutionCommand for base64 encoded keytab content
   */
   public static final String KEYTAB_CONTENT_BASE64 = "keytab_content_base64";
+
+  /*
+  * Key used in kerberosCommandParams in ExecutionCommand to indicate whether to generate key keytabs
+  * for all principals ("true") or only those that are missing ("false")
+  */
+  public static final String REGENERATE_ALL = "regenerate_all";
 
   private static final Logger LOG = LoggerFactory.getLogger(KerberosServerAction.class);
 

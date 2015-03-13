@@ -64,6 +64,14 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
   isCurrentSelected: function () {
     return App.ServiceConfigVersion.find(this.get('content.serviceName') + "_" + this.get('selectedVersion')).get('isCurrent');
   }.property('selectedVersion', 'content.serviceName', 'dataIsLoaded'),
+
+  /**
+   * @type {boolean}
+   */
+  canEdit: function () {
+    return this.get('isCurrentSelected') && !this.get('isCompareMode');
+  }.property('isCurrentSelected', 'isCompareMode'),
+
   serviceConfigs: function () {
     return App.config.get('preDefinedServiceConfigs');
   }.property('App.config.preDefinedServiceConfigs'),
@@ -902,6 +910,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
 
     serviceConfig = App.config.createServiceConfig(this.get('content.serviceName'));
     this.loadConfigs(this.get('allConfigs'), serviceConfig);
+    this.setVisibilityForRangerProperties(serviceConfig);
     this.checkOverrideProperty(serviceConfig);
     this.checkDatabaseProperties(serviceConfig);
     this.get('stepConfigs').pushObject(serviceConfig);
@@ -998,13 +1007,34 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
 
     var serviceConfigProperty = App.ServiceConfigProperty.create(_serviceConfigProperty);
 
-    this.setValueForCheckBox(serviceConfigProperty);
     this.setSupportsFinal(serviceConfigProperty);
     this.setValuesForOverrides(overrides, _serviceConfigProperty, serviceConfigProperty, defaultGroupSelected);
     this.setEditability(serviceConfigProperty, defaultGroupSelected);
 
     return serviceConfigProperty;
   },
+
+  /**
+   * hide properties from Advanced ranger category that match pattern
+   * if property with dependentConfigPattern is false otherwise don't hide
+   * @param serviceConfig
+   * @method setVisibilityForRangerProperties
+   */
+  setVisibilityForRangerProperties: function(serviceConfig) {
+    var category = "Advanced ranger-{0}-plugin-properties".format(this.get('content.serviceName').toLowerCase());
+    if (serviceConfig.configCategories.findProperty('name', category)) {
+      var patternConfig = serviceConfig.configs.findProperty('dependentConfigPattern');
+      if (patternConfig) {
+        var value = patternConfig.get('value') === true || ["yes", "true"].contains(patternConfig.get('value').toLowerCase());
+
+        serviceConfig.configs.filter(function(c) {
+          if (c.get('category') === category && c.get('name').match(patternConfig.get('dependentConfigPattern')) && c.get('name') != patternConfig.get('name'))
+            c.set('isVisible', value);
+        });
+      }
+    }
+  },
+  /**
 
   /**
    * trigger addOverrideProperty
@@ -1098,25 +1128,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
       newSCP.set('isEditable', false);
     }
     return newSCP;
-  },
-
-  /**
-   * convert string values to boolean for checkboxes
-   * @param {Ember.Object} serviceConfigProperty
-   */
-  setValueForCheckBox: function (serviceConfigProperty) {
-    if (serviceConfigProperty.get("displayType") == 'checkbox') {
-      switch (serviceConfigProperty.get("value")) {
-        case 'true':
-          serviceConfigProperty.set("value", true);
-          serviceConfigProperty.set("defaultValue", true);
-          break;
-        case 'false':
-          serviceConfigProperty.set("value", false);
-          serviceConfigProperty.set("defaultValue", false);
-          break;
-      }
-    }
   },
 
   /**
@@ -1620,7 +1631,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
     if (configs.someProperty('name', 'oozie_database')) {
       var oozieDb = configs.findProperty('name', 'oozie_database');
       if (oozieDb.value === 'New Derby Database') {
-        configs = configs.without(configs.findProperty('name', 'oozie_ambari_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_ambari_database'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_mysql_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_mysql_database'));
@@ -1654,7 +1664,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
         if (existingMySqlHost) {
           dbHostPropertyName = 'oozie_existing_mysql_host';
         }
-        configs = configs.without(configs.findProperty('name', 'oozie_ambari_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_ambari_database'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_oracle_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_oracle_database'));
@@ -1672,7 +1681,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
         if (existingPostgreSqlHost) {
           dbHostPropertyName = 'oozie_existing_postgresql_host';
         }
-        configs = configs.without(configs.findProperty('name', 'oozie_ambari_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_ambari_database'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_mysql_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_mysql_database'));
@@ -1688,7 +1696,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
         if (existingOracleHost) {
           dbHostPropertyName = 'oozie_existing_oracle_host';
         }
-        configs = configs.without(configs.findProperty('name', 'oozie_ambari_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_ambari_database'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_mysql_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_mysql_database'));
@@ -1702,7 +1709,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
         if (existingMySqlServerHost) {
           dbHostPropertyName = 'oozie_existing_mssql_server_host';
         }
-        configs = configs.without(configs.findProperty('name', 'oozie_ambari_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_ambari_database'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_oracle_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_oracle_database'));
@@ -1718,7 +1724,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
         if (existingMySql2ServerHost) {
           dbHostPropertyName = 'oozie_existing_mssql_server_2_host';
         }
-        configs = configs.without(configs.findProperty('name', 'oozie_ambari_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_ambari_database'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_oracle_host'));
         configs = configs.without(configs.findProperty('name', 'oozie_existing_oracle_database'));
@@ -1933,7 +1938,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
       var oldAttributes = oldConfig["properties_attributes"] || {};
       var newProperties = configSite.properties || {};
       var newAttributes = configSite["properties_attributes"] || {};
-      if (this.isAttributesChanged(oldAttributes, newAttributes) || this.isConfigChanged(oldProperties, newProperties)) {
+      if (this.isAttributesChanged(oldAttributes, newAttributes) || this.isConfigChanged(oldProperties, newProperties) || this.get('modifiedFileNames').contains(App.config.getOriginalFileName(configSite.type))) {
         changedConfigs.push(configSite);
       }
     }, this);
@@ -2218,7 +2223,20 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
       m: true
     },
     {
+      hostProperty: 'hive_ambari_host',
+      componentName: 'HIVE_SERVER',
+      serviceName: 'HIVE',
+      serviceUseThis: []
+    },
+    {
       hostProperty: 'oozieserver_host',
+      componentName: 'OOZIE_SERVER',
+      serviceName: 'OOZIE',
+      serviceUseThis: [],
+      m: true
+    },
+    {
+      hostProperty: 'oozie_ambari_host',
       componentName: 'OOZIE_SERVER',
       serviceName: 'OOZIE',
       serviceUseThis: []
@@ -2400,9 +2418,11 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
 
   /**
    * trigger showItemsShouldBeRestarted popup with hosts that requires resetart
+   * @param event
    * @method showHostsShouldBeRestarted
    */
-  showHostsShouldBeRestarted: function (restartRequiredHostsAndComponents) {
+  showHostsShouldBeRestarted: function (event) {
+    var restartRequiredHostsAndComponents = event.context;
     var hosts = [];
     for (var hostName in restartRequiredHostsAndComponents) {
       hosts.push(hostName);
@@ -2414,9 +2434,11 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ServerValidatorM
 
   /**
    * trigger showItemsShouldBeRestarted popup with components that requires resetart
+   * @param event
    * @method showComponentsShouldBeRestarted
    */
-  showComponentsShouldBeRestarted: function (restartRequiredHostsAndComponents) {
+  showComponentsShouldBeRestarted: function (event) {
+    var restartRequiredHostsAndComponents = event.context;
     var hostsComponets = [];
     var componentsObject = {};
     for (var hostName in restartRequiredHostsAndComponents) {

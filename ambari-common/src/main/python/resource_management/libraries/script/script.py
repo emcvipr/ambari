@@ -37,7 +37,9 @@ from resource_management.core.exceptions import Fail, ClientComponentHasNoStatus
 from resource_management.core.resources.packaging import Package
 from resource_management.libraries.functions.version_select_util import get_component_version
 from resource_management.libraries.functions.version import compare_versions
+from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.script.config_dictionary import ConfigDictionary, UnknownConfiguration
+from resource_management.core.resources.system import Execute
 
 if OSCheck.is_windows_family():
   from resource_management.libraries.functions.install_hdp_msi import install_windows_msi
@@ -59,7 +61,7 @@ USAGE = """Usage: {0} <COMMAND> <JSON_CONFIG> <BASEDIR> <STROUTPUT> <LOGGING_LEV
 
 _PASSWORD_MAP = {"/configurations/cluster-env/hadoop.user.name":"/configurations/cluster-env/hadoop.user.password"}
 
-def get_path_form_configuration(name, configuration):
+def get_path_from_configuration(name, configuration):
   subdicts = filter(None, name.split('/'))
 
   for x in subdicts:
@@ -105,7 +107,16 @@ class Script(object):
     if os.path.exists(self.stroutfile):
       with open(self.stroutfile, 'r') as fp:
         Script.structuredOut = json.load(fp)
-  
+
+    # version is only set in a specific way and should not be carried 
+    if "version" in Script.structuredOut:
+      del Script.structuredOut["version"]
+    # reset security issues and errors found on previous runs
+    if "securityIssuesFound" in Script.structuredOut:
+      del Script.structuredOut["securityIssuesFound"]
+    if "securityStateErrorInfo" in Script.structuredOut:
+      del Script.structuredOut["securityStateErrorInfo"]
+
   def put_structured_out(self, sout):
     curr_content = Script.structuredOut.copy()
     Script.structuredOut.update(sout)
@@ -115,22 +126,40 @@ class Script(object):
     except IOError, err:
       Script.structuredOut.update({"errMsg" : "Unable to write to " + self.stroutfile})
 
-  def save_component_version_to_structured_out(self, stack_name):
+  def save_component_version_to_structured_out(self):
     """
     :param stack_name: One of HDP, HDPWIN, PHD, BIGTOP.
     :return: Append the version number to the structured out.
     """
-    import params
-    component_version = None
-
+    from resource_management.libraries.functions.default import default
+    stack_name = default("/hostLevelParams/stack_name", None)
     stack_to_component = self.get_stack_to_component()
-    if stack_to_component:
-      if stack_name == "HDP" and params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.2') >= 0:
-        component_name = stack_to_component[stack_name] if stack_name in stack_to_component else None
-        component_version = get_component_version(stack_name, component_name)
+    if stack_to_component and stack_name:
+      component_name = stack_to_component[stack_name] if stack_name in stack_to_component else None
+      component_version = get_component_version(stack_name, component_name)
 
       if component_version:
         self.put_structured_out({"version": component_version})
+
+  def should_expose_component_version(self, command_name):
+    """
+    Analyzes config and given command to determine if stack version should be written
+    to structured out. Currently only HDP stack versions >= 2.2 are supported.
+    :param command_name: command name
+    :return: True or False
+    """
+    from resource_management.libraries.functions.default import default
+    stack_version_unformatted = str(default("/hostLevelParams/stack_version", ""))
+    hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+    if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
+      if command_name.lower() == "status":
+        request_version = default("/commandParams/request_version", None)
+        if request_version is not None:
+          return True
+      else:
+        # Populate version only on base commands
+        return command_name.lower() == "start" or command_name.lower() == "install" or command_name.lower() == "restart"
+    return False
 
   def execute(self):
     """
@@ -164,14 +193,14 @@ class Script(object):
       reload_windows_env()
 
     try:
-      with open(self.command_data_file, "r") as f:
+      with open(self.command_data_file) as f:
         pass
         Script.config = ConfigDictionary(json.load(f))
-        #load passwords here(used on windows to impersonate different users)
+        # load passwords here(used on windows to impersonate different users)
         Script.passwords = {}
         for k, v in _PASSWORD_MAP.iteritems():
-          if get_path_form_configuration(k,Script.config) and get_path_form_configuration(v, Script.config):
-            Script.passwords[get_path_form_configuration(k,Script.config)] = get_path_form_configuration(v, Script.config)
+          if get_path_from_configuration(k, Script.config) and get_path_from_configuration(v, Script.config):
+            Script.passwords[get_path_from_configuration(k, Script.config)] = get_path_from_configuration(v, Script.config)
 
     except IOError:
       logger.exception("Can not read json file with command parameters: ")
@@ -180,18 +209,11 @@ class Script(object):
     # Run class method depending on a command type
     try:
       method = self.choose_method_to_execute(command_name)
-      with Environment(self.basedir) as env:
+      with Environment(self.basedir, tmp_dir=Script.tmp_dir) as env:
+        env.config.download_path = Script.tmp_dir
         method(env)
-
-        # For start actions, try to advertise the component's version
-        if command_name.lower() == "start" or command_name.lower() == "install":
-          try:
-            import params
-            # This is to support older stacks
-            if hasattr(params, "stack_name"):
-              self.save_component_version_to_structured_out(params.stack_name)
-          except ImportError:
-            logger.error("Executing command %s could not import params" % str(command_name))
+        if command_name == "install":
+          self.set_version()
     except ClientComponentHasNoStatus or ComponentIsNotRunning:
       # Support of component status checks.
       # Non-zero exit code is interpreted as an INSTALLED status of a component
@@ -199,7 +221,9 @@ class Script(object):
     except Fail:
       logger.exception("Error while executing command '{0}':".format(command_name))
       sys.exit(1)
-
+    finally:
+      if self.should_expose_component_version(command_name):
+        self.save_component_version_to_structured_out()
 
   def choose_method_to_execute(self, command_name):
     """
@@ -272,10 +296,10 @@ class Script(object):
                           config["hostLevelParams"]["agentCacheDir"], "hdp.msi", self.get_password("hadoop"),
                           str(config['hostLevelParams']['stack_version']))
       reload_windows_env()
-    # RepoInstaller.remove_repos(config)
     pass
 
-  def fail_with_error(self, message):
+  @staticmethod
+  def fail_with_error(message):
     """
     Prints error message and exits with non-zero exit code
     """
@@ -310,7 +334,7 @@ class Script(object):
     """
     config = self.get_config()
     componentCategory = None
-    try :
+    try:
       componentCategory = config['roleParams']['component_category']
     except KeyError:
       pass
@@ -349,13 +373,8 @@ class Script(object):
       if rolling_restart:
         self.post_rolling_restart(env)
 
-    try:
-      import params
-      if hasattr(params, "stack_name"):
-        self.save_component_version_to_structured_out(params.stack_name)
-    except ImportError:
-      logger.error("Restart command could not import params")
-
+    if self.should_expose_component_version("restart"):
+      self.save_component_version_to_structured_out()
 
   def post_rolling_restart(self, env):
     """
@@ -446,3 +465,18 @@ class Script(object):
       archive_dir(output_filename, conf_tmp_dir)
     finally:
       Directory(conf_tmp_dir, action="delete")
+
+  def set_version(self):
+    from resource_management.libraries.functions.default import default
+    stack_name = default("/hostLevelParams/stack_name", None)
+    version = default("/commandParams/version", None)
+    stack_version_unformatted = str(default("/hostLevelParams/stack_version", ""))
+    hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+    stack_to_component = self.get_stack_to_component()
+    if stack_to_component:
+      component_name = stack_to_component[stack_name] if stack_name in stack_to_component else None
+      if component_name and stack_name and version and \
+              compare_versions(format_hdp_stack_version(hdp_stack_version), '2.2.0.0') >= 0:
+        Execute("/usr/bin/hdp-select set {component_name} {version}".format(
+            component_name=component_name, version=version))
+

@@ -437,19 +437,7 @@ describe('App.MainHostDetailsController', function () {
         componentName: 'ZOOKEEPER_SERVER'
       }))).to.be.true;
     });
-    it('add slave component, securityEnabled = true', function () {
-      var event = {context: Em.Object.create({
-        componentName: 'HIVE_CLIENT'
-      })};
-      controller.set('securityEnabled', true);
-      var popup = controller.addComponent(event);
-      expect(App.showConfirmationPopup.calledOnce).to.be.true;
-      popup.onPrimary();
-      expect(controller.primary.calledWith(Em.Object.create({
-        componentName: 'HIVE_CLIENT'
-      }))).to.be.true;
-    });
-    it('add slave component, securityEnabled = false', function () {
+    it('add slave component', function () {
       var event = {context: Em.Object.create({
         componentName: 'HIVE_CLIENT'
       })};
@@ -515,32 +503,12 @@ describe('App.MainHostDetailsController', function () {
       controller.primary.restore();
     });
 
-    it('not CLIENT component', function () {
+    it('any CLIENT component', function () {
       var component = Em.Object.create({'componentName': 'Comp1'});
       var popup = controller.addClientComponent(component);
       expect(App.ModalPopup.show.calledOnce).to.be.true;
       popup.onPrimary();
       expect(controller.primary.calledWith(Em.Object.create({'componentName': 'Comp1'}))).to.be.true;
-    });
-    it('CLIENT components, with empty subComponentNames', function () {
-      var component = Em.Object.create({
-        componentName: 'CLIENTS',
-        subComponentNames: []
-      });
-      var popup = controller.addClientComponent(component);
-      expect(App.ModalPopup.show.calledOnce).to.be.true;
-      popup.onPrimary();
-      expect(controller.primary.calledOnce).to.be.false;
-    });
-    it('CLIENT components, with two sub-component', function () {
-      var component = Em.Object.create({
-        componentName: 'CLIENTS',
-        subComponentNames: ['DATANODE', 'TASKTRACKER']
-      });
-      var popup = controller.addClientComponent(component);
-      expect(App.ModalPopup.show.calledOnce).to.be.true;
-      popup.onPrimary();
-      expect(controller.primary.calledTwice).to.be.true;
     });
   });
 
@@ -714,6 +682,61 @@ describe('App.MainHostDetailsController', function () {
 
   describe('#saveZkConfigs()', function () {
 
+    var yarnCases = [
+        {
+          isYARNInstalled: true,
+          isHadoop22Stack: true,
+          isRMHaEnabled: true,
+          shouldYarnSiteBeModified: true,
+          title: 'HDP 2.2, YARN installed, RM HA enabled'
+        },
+        {
+          isYARNInstalled: true,
+          isHadoop22Stack: false,
+          isRMHaEnabled: true,
+          shouldYarnSiteBeModified: true,
+          title: 'HDP < 2.2, YARN installed, RM HA enabled'
+        },
+        {
+          isYARNInstalled: true,
+          isHadoop22Stack: true,
+          isRMHaEnabled: false,
+          shouldYarnSiteBeModified: true,
+          title: 'HDP 2.2, YARN installed, RM HA disabled'
+        },
+        {
+          isYARNInstalled: false,
+          isHadoop22Stack: true,
+          isRMHaEnabled: false,
+          shouldYarnSiteBeModified: false,
+          title: 'HDP 2.2, YARN not installed'
+        },
+        {
+          isYARNInstalled: true,
+          isHadoop22Stack: false,
+          isRMHaEnabled: false,
+          shouldYarnSiteBeModified: false,
+          title: 'HDP < 2.2, YARN installed, RM HA disabled'
+        },
+        {
+          isYARNInstalled: false,
+          isHadoop22Stack: false,
+          isRMHaEnabled: false,
+          shouldYarnSiteBeModified: false,
+          title: 'HDP < 2.2, YARN not installed'
+        }
+      ],
+      yarnData = {
+        items: [
+          {
+            type: 'yarn-site',
+            properties: {
+              p: 'v'
+            }
+          }
+        ]
+      };
+
     beforeEach(function () {
       sinon.stub(controller, "getZkServerHosts", Em.K);
       sinon.stub(controller, "concatZkNames", Em.K);
@@ -732,6 +755,25 @@ describe('App.MainHostDetailsController', function () {
       controller.saveZkConfigs(data);
       expect(controller.saveConfigsBatch.calledOnce).to.be.true;
     });
+
+    yarnCases.forEach(function (item) {
+      it(item.title, function () {
+        var servicesMock = item.isYARNInstalled ? [
+          {
+            serviceName: 'YARN'
+          }
+        ] : [];
+        sinon.stub(App, 'get').withArgs('isHadoop22Stack').returns(item.isHadoop22Stack).
+          withArgs('isRMHaEnabled').returns(item.isRMHaEnabled);
+        sinon.stub(App.Service, 'find').returns(servicesMock);
+        controller.saveZkConfigs(yarnData);
+        expect(controller.saveConfigsBatch.firstCall.args[0].someProperty('properties.yarn-site')).to.equal(item.shouldYarnSiteBeModified);
+        expect(controller.saveConfigsBatch.firstCall.args[0].someProperty('properties_attributes.yarn-site')).to.equal(item.shouldYarnSiteBeModified);
+        App.get.restore();
+        App.Service.find.restore();
+      });
+    });
+
   });
 
   describe("#saveConfigsBatch()", function() {

@@ -30,11 +30,11 @@ class TestHookBeforeInstall(RMFTestCase):
                        command="hook",
                        config_file="default.json"
     )
-    self.assertResourceCalled('Execute', 'mkdir -p /tmp/AMBARI-artifacts/;     curl -kf -x "" --retry 10     http://c6401.ambari.apache.org:8080/resources//UnlimitedJCEPolicyJDK7.zip -o /tmp/AMBARI-artifacts//UnlimitedJCEPolicyJDK7.zip',
-        environment = {'no_proxy': 'c6401.ambari.apache.org'},
-        not_if = 'test -e /tmp/AMBARI-artifacts//UnlimitedJCEPolicyJDK7.zip',
-        ignore_failures = True,
-        path = ['/bin', '/usr/bin/'],
+    self.assertResourceCalled('Directory', '/tmp/AMBARI-artifacts/',
+        recursive = True,
+    )
+    self.assertResourceCalled('File', '/tmp/AMBARI-artifacts//UnlimitedJCEPolicyJDK7.zip',
+        content = DownloadSource('http://c6401.ambari.apache.org:8080/resources//UnlimitedJCEPolicyJDK7.zip'),
     )
     self.assertResourceCalled('Group', 'hadoop',
         ignore_failures = False,
@@ -71,9 +71,9 @@ class TestHookBeforeInstall(RMFTestCase):
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'hdfs',
-        gid = 'hadoop',
         ignore_failures = False,
-        groups = [u' hdfs'],
+        gid = 'hadoop',
+        groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'storm',
         gid = 'hadoop',
@@ -125,7 +125,7 @@ class TestHookBeforeInstall(RMFTestCase):
         mode = 0555,
     )
     self.assertResourceCalled('Execute', '/tmp/changeUid.sh ambari-qa /tmp/hadoop-ambari-qa,/tmp/hsperfdata_ambari-qa,/home/ambari-qa,/tmp/ambari-qa,/tmp/sqoop-ambari-qa',
-        not_if = 'test $(id -u ambari-qa) -gt 1000',
+        not_if = '(test $(id -u ambari-qa) -gt 1000) || (false)',
     )
     self.assertResourceCalled('Directory', '/hadoop/hbase',
         owner = 'hbase',
@@ -138,7 +138,23 @@ class TestHookBeforeInstall(RMFTestCase):
         mode = 0555,
     )
     self.assertResourceCalled('Execute', '/tmp/changeUid.sh hbase /home/hbase,/tmp/hbase,/usr/bin/hbase,/var/log/hbase,/hadoop/hbase',
-        not_if = 'test $(id -u hbase) -gt 1000',
+        not_if = '(test $(id -u hbase) -gt 1000) || (false)',
+    )
+    self.assertResourceCalled('User', 'test_user1',
+        ignore_failures = False
+    )
+    self.assertResourceCalled('User', 'test_user2',
+        ignore_failures = False
+    )
+    self.assertResourceCalled('Group', 'hdfs',
+        ignore_failures = False,
+    )
+    self.assertResourceCalled('Group', 'test_group',
+        ignore_failures = False,
+    )
+    self.assertResourceCalled('User', 'hdfs',
+        groups = [u'hadoop', u'hdfs', u'test_group'],
+        ignore_failures = False
     )
     self.assertResourceCalled('Directory', '/etc/hadoop',
         mode = 0755

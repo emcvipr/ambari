@@ -156,6 +156,11 @@ SSL_TRUSTSTORE_PATH_PROPERTY = "ssl.trustStore.path"
 SSL_TRUSTSTORE_PASSWORD_PROPERTY = "ssl.trustStore.password"
 SSL_TRUSTSTORE_TYPE_PROPERTY = "ssl.trustStore.type"
 
+# SSL common
+SSL_API = 'api.ssl'
+SSL_API_PORT = 'client.api.ssl.port'
+DEFAULT_SSL_API_PORT = 8443
+
 # JDK
 JDK_RELEASES="java.releases"
 
@@ -311,7 +316,7 @@ class ServerConfigDefaultsLinux(ServerConfigDefaults):
       ("/etc/ambari-server/conf", "644", "{0}", True),
       ("/etc/ambari-server/conf", "755", "{0}", False),
       ("/etc/ambari-server/conf/password.dat", "640", "{0}", False),
-      ("/var/lib/ambari-server/keys/pass.txt", "640", "{0}", False),
+      ("/var/lib/ambari-server/keys/pass.txt", "600", "{0}", False),
       ("/etc/ambari-server/conf/ldap-password.dat", "640", "{0}", False),
       ("/var/run/ambari-server/stack-recommendations/", "644", "{0}", True),
       ("/var/run/ambari-server/stack-recommendations/", "755", "{0}", False),
@@ -349,17 +354,17 @@ SECURITY_MASTER_KEY_FILENAME = "master"
 SECURITY_IS_ENCRYPTION_ENABLED = "security.passwords.encryption.enabled"
 SECURITY_KERBEROS_JASS_FILENAME = "krb5JAASLogin.conf"
 
-SECURITY_PROVIDER_GET_CMD = "{0} -cp {1}" + \
+SECURITY_PROVIDER_GET_CMD = "{0} -cp {1} " + \
                             "org.apache.ambari.server.security.encryption" + \
                             ".CredentialProvider GET {2} {3} {4} " + \
                             "> " + configDefaults.SERVER_OUT_FILE + " 2>&1"
 
-SECURITY_PROVIDER_PUT_CMD = "{0} -cp {1}" + \
+SECURITY_PROVIDER_PUT_CMD = "{0} -cp {1} " + \
                             "org.apache.ambari.server.security.encryption" + \
                             ".CredentialProvider PUT {2} {3} {4} " + \
                             "> " + configDefaults.SERVER_OUT_FILE + " 2>&1"
 
-SECURITY_PROVIDER_KEY_CMD = "{0} -cp {1}" + \
+SECURITY_PROVIDER_KEY_CMD = "{0} -cp {1} " + \
                             "org.apache.ambari.server.security.encryption" + \
                             ".MasterKeyServiceImpl {2} {3} {4} " + \
                             "> " + configDefaults.SERVER_OUT_FILE + " 2>&1"
@@ -418,6 +423,14 @@ def get_value_from_properties(properties, key, default=""):
   except:
     return default
   return value
+
+def get_admin_views_dir(properties):
+  views_dir = properties.get_property(VIEWS_DIR_PROPERTY)
+  if views_dir is None or views_dir == "":
+    views_dirs = glob.glob("/var/lib/ambari-server/resources/views/work/ADMIN_VIEW*")
+  else:
+    views_dirs = glob.glob(views_dir + "/work/ADMIN_VIEW*")
+  return views_dirs
 
 def get_is_secure(properties):
   isSecure = properties.get_property(SECURITY_IS_ENCRYPTION_ENABLED)

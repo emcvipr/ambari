@@ -22,18 +22,22 @@ import junit.framework.Assert;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.directory.server.kerberos.shared.keytab.Keytab;
 import org.apache.directory.server.kerberos.shared.keytab.KeytabEntry;
+import org.apache.directory.shared.kerberos.codec.types.EncryptionType;
+import org.easymock.EasyMockSupport;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import javax.naming.InvalidNameException;
 import java.io.File;
 import java.io.FileInputStream;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public abstract class KerberosOperationHandlerTest {
+public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
 
   @Rule
   public TemporaryFolder folder = new TemporaryFolder();
@@ -199,6 +203,119 @@ public abstract class KerberosOperationHandlerTest {
         f.deleteOnExit();
       }
     }
+  }
+
+  @Test
+  public void testTranslateEncryptionTypes() throws Exception {
+    KerberosOperationHandler handler = createHandler();
+
+    Assert.assertEquals(
+        new HashSet<EncryptionType>() {{
+          add(EncryptionType.AES256_CTS_HMAC_SHA1_96);
+          add(EncryptionType.AES128_CTS_HMAC_SHA1_96);
+          add(EncryptionType.DES3_CBC_SHA1_KD);
+          add(EncryptionType.DES_CBC_MD5);
+          add(EncryptionType.DES_CBC_MD4);
+          add(EncryptionType.DES_CBC_CRC);
+          add(EncryptionType.UNKNOWN);
+        }},
+        handler.translateEncryptionTypes("aes256-cts-hmac-sha1-96\n aes128-cts-hmac-sha1-96\tdes3-cbc-sha1 arcfour-hmac-md5 " +
+            "camellia256-cts-cmac camellia128-cts-cmac des-cbc-crc des-cbc-md5 des-cbc-md4", "\\s+")
+    );
+
+    Assert.assertEquals(
+        new HashSet<EncryptionType>() {{
+          add(EncryptionType.AES256_CTS_HMAC_SHA1_96);
+          add(EncryptionType.AES128_CTS_HMAC_SHA1_96);
+        }},
+        handler.translateEncryptionTypes("aes", " ")
+    );
+
+    Assert.assertEquals(
+        new HashSet<EncryptionType>() {{
+          add(EncryptionType.AES256_CTS_HMAC_SHA1_96);
+        }},
+        handler.translateEncryptionTypes("aes-256", " ")
+    );
+
+    Assert.assertEquals(
+        new HashSet<EncryptionType>() {{
+          add(EncryptionType.DES3_CBC_SHA1_KD);
+        }},
+        handler.translateEncryptionTypes("des3", " ")
+    );
+  }
+
+  @Test
+  public void testEscapeCharacters() throws KerberosOperationException {
+    KerberosOperationHandler handler = createHandler();
+
+    HashSet<Character> specialCharacters = new HashSet<Character>() {
+      {
+        add('/');
+        add(',');
+        add('\\');
+        add('#');
+        add('+');
+        add('<');
+        add('>');
+        add(';');
+        add('"');
+        add('=');
+        add(' ');
+      }
+    };
+
+    Assert.assertEquals("\\/\\,\\\\\\#\\+\\<\\>\\;\\\"\\=\\ ", handler.escapeCharacters("/,\\#+<>;\"= ", specialCharacters, '\\'));
+    Assert.assertNull(handler.escapeCharacters(null, specialCharacters, '\\'));
+    Assert.assertEquals("", handler.escapeCharacters("", specialCharacters, '\\'));
+    Assert.assertEquals("nothing_special_here", handler.escapeCharacters("nothing_special_here", specialCharacters, '\\'));
+    Assert.assertEquals("\\/\\,\\\\\\#\\+\\<\\>\\;\\\"\\=\\ ", handler.escapeCharacters("/,\\#+<>;\"= ", specialCharacters, '\\'));
+
+    Assert.assertEquals("nothing<>special#here!", handler.escapeCharacters("nothing<>special#here!", null, '\\'));
+    Assert.assertEquals("nothing<>special#here!", handler.escapeCharacters("nothing<>special#here!", Collections.<Character>emptySet(), '\\'));
+    Assert.assertEquals("nothing<>special#here!", handler.escapeCharacters("nothing<>special#here!", Collections.singleton('?'), '\\'));
+    Assert.assertEquals("\\A's are special!", handler.escapeCharacters("A's are special!", Collections.singleton('A'), '\\'));
+  }
+
+  @Test(expected = KerberosAdminAuthenticationException.class)
+  public void testAdminCredentialsNullPrincipal() throws KerberosOperationException {
+    KerberosOperationHandler handler = createHandler();
+
+    KerberosCredential credentials = new KerberosCredential(null, "password", null);
+    handler.setAdministratorCredentials(credentials);
+  }
+
+  @Test(expected = KerberosAdminAuthenticationException.class)
+  public void testAdminCredentialsEmptyPrincipal() throws KerberosOperationException {
+    KerberosOperationHandler handler = createHandler();
+
+    KerberosCredential credentials = new KerberosCredential("", "password", null);
+    handler.setAdministratorCredentials(credentials);
+  }
+
+  @Test(expected = KerberosAdminAuthenticationException.class)
+  public void testAdminCredentialsNullCredential() throws KerberosOperationException {
+    KerberosOperationHandler handler = createHandler();
+
+    KerberosCredential credentials = new KerberosCredential("principal", null, null);
+    handler.setAdministratorCredentials(credentials);
+  }
+
+  @Test(expected = KerberosAdminAuthenticationException.class)
+  public void testAdminCredentialsEmptyCredential1() throws KerberosOperationException {
+    KerberosOperationHandler handler = createHandler();
+
+    KerberosCredential credentials = new KerberosCredential("principal", "", null);
+    handler.setAdministratorCredentials(credentials);
+  }
+
+  @Test(expected = KerberosAdminAuthenticationException.class)
+  public void testAdminCredentialsEmptyCredential2() throws KerberosOperationException {
+    KerberosOperationHandler handler = createHandler();
+
+    KerberosCredential credentials = new KerberosCredential("principal", null, "");
+    handler.setAdministratorCredentials(credentials);
   }
 
   private KerberosOperationHandler createHandler() throws KerberosOperationException {

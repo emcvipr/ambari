@@ -274,7 +274,7 @@ App.Router = Em.Router.extend({
   },
 
   loginGetClustersSuccessCallback: function (clustersData, opt, params) {
-    var adminViewUrl = '/views/ADMIN_VIEW/1.0.0/INSTANCE/#/';
+    var adminViewUrl = '/views/ADMIN_VIEW/2.0.0/INSTANCE/#/';
     //TODO: Replace hard coded value with query. Same in templates/application.hbs
     var loginController = this.get('loginController');
     var loginData = params.loginData;
@@ -347,7 +347,7 @@ App.Router = Em.Router.extend({
             route = 'main.admin.adminSecurity';
           } else if (clusterStatusOnServer && (clusterStatusOnServer.wizardControllerName === App.router.get('kerberosWizardController.name'))) {
             // if wizardControllerName == "adminKerberosController", then it means someone closed the browser or the browser was crashed when we were last in Add Kerberos wizard
-            route = 'main.admin.adminKerberos';
+            route = 'main.admin.adminKerberos.adminAddKerberos';
           } else if (clusterStatusOnServer && clusterStatusOnServer.wizardControllerName === App.router.get('addServiceController.name')) {
             // if wizardControllerName == "addHostController", then it means someone closed the browser or the browser was crashed when we were last in Add Hosts wizard
             route = 'main.serviceAdd';
@@ -457,6 +457,10 @@ App.Router = Em.Router.extend({
        */
       enter: function (router, context) {
         router.getAuthenticated().done(function (loggedIn) {
+          var location = router.location.location.hash;
+          //key to parse URI for prefered path to route
+          var key = '?targetURI=';
+
           if (loggedIn) {
             Ember.run.next(function () {
               console.log(router.getLoginName() + ' already authenticated.  Redirecting...');
@@ -464,6 +468,10 @@ App.Router = Em.Router.extend({
                 router.transitionTo(route, context);
               });
             });
+          } else {
+            if (location.contains(key)) {
+              router.set('preferedPath', location.slice(location.indexOf(key) + key.length));
+            }
           }
         });
       },
@@ -489,7 +497,7 @@ App.Router = Em.Router.extend({
             router.transitionTo('login');
           });
         } else {
-            window.location.replace('/views/ADMIN_VIEW/1.0.0/INSTANCE/#/');
+            window.location.replace('/views/ADMIN_VIEW/2.0.0/INSTANCE/#/');
         }
       }
     }),

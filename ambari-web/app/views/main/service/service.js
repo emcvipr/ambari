@@ -19,8 +19,6 @@
 var App = require('app');
 var uiEffects = require('utils/ui_effects');
 
-require('models/alert');
-
 App.MainDashboardServiceHealthView = Em.View.extend({
   classNameBindings: ["healthStatus", "healthStatusClass"],
   //template: Em.Handlebars.compile(""),
@@ -86,24 +84,23 @@ App.MainDashboardServiceHealthView = Em.View.extend({
   }.property('service.healthStatus','service.passiveState','service.serviceName'),
 
   healthStatusClass: function () {
-    switch (this.get('healthStatus')) {
-      case 'health-status-LIVE':
+    if (this.get('service.passiveState') != 'OFF' || App.get('services.clientOnly').contains(this.get('service.serviceName')))
+      return '';
+    switch (this.get('service.healthStatus')) {
+      case 'green':
+      case 'green-blinking':
         return App.healthIconClassGreen;
         break;
-      case 'health-status-DEAD-RED':
+      case 'red':
+      case 'red-blinking':
         return App.healthIconClassRed;
         break;
-      case 'health-status-DEAD-YELLOW':
+      case 'yellow':
         return App.healthIconClassYellow;
-        break;
-      case 'health-status-DEAD-ORANGE':
-        return App.healthIconClassOrange;
-        break;
       default:
-        return "";
-        break;
+        return '';
     }
-  }.property('healthStatus'),
+  }.property('service.healthStatus','service.passiveState','service.serviceName'),
 
   didInsertElement: function () {
     this.updateToolTip();

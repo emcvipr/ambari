@@ -28,6 +28,7 @@ import org.junit.Test;
 
 import javax.naming.AuthenticationException;
 import javax.naming.CommunicationException;
+import javax.naming.InvalidNameException;
 import javax.naming.Name;
 import javax.naming.NamingEnumeration;
 import javax.naming.directory.Attributes;
@@ -45,7 +46,7 @@ import java.util.Properties;
 
 import static org.easymock.EasyMock.*;
 
-public class ADKerberosOperationHandlerTest extends EasyMockSupport {
+public class ADKerberosOperationHandlerTest extends KerberosOperationHandlerTest {
   private static final String DEFAULT_ADMIN_PRINCIPAL = "cluser_admin@HDP01.LOCAL";
   private static final String DEFAULT_ADMIN_PASSWORD = "Hadoop12345";
   private static final String DEFAULT_LDAP_URL = "ldaps://10.0.100.4";
@@ -441,6 +442,21 @@ public class ADKerberosOperationHandlerTest extends EasyMockSupport {
 
   }
 
+  @Test
+  public void testEscapeDistinguishedName() throws NoSuchMethodException, InvalidNameException {
+    ADKerberosOperationHandler handler = new ADKerberosOperationHandler();
+
+    try {
+      handler.escapeDNCharacters("nn/c6501.ambari.apache.org");
+      Assert.fail("Expected InvalidNameException");
+    } catch (InvalidNameException e) {
+      // This is expected
+    }
+
+    Assert.assertEquals("CN=nn\\/c6501.ambari.apache.org,OU=HDP,DC=HDP01,DC=LOCAL",
+        handler.escapeDNCharacters("CN=nn/c6501.ambari.apache.org,OU=HDP,DC=HDP01,DC=LOCAL"));
+  }
+
   /**
    * Implementation to illustrate the use of operations on this class
    *
@@ -490,6 +506,24 @@ public class ADKerberosOperationHandlerTest extends EasyMockSupport {
 
     handler.close();
 
+    handler.open(credentials, realm, kerberosEnvMap);
+
+    String evaluatedPrincipal;
+
+    evaluatedPrincipal = "nn/c6501.ambari.apache.org@" + DEFAULT_REALM;
+    if (handler.principalExists(evaluatedPrincipal)) {
+      handler.setPrincipalPassword(evaluatedPrincipal, handler.createSecurePassword());
+    } else {
+      handler.createPrincipal(evaluatedPrincipal, handler.createSecurePassword(), true);
+    }
+
+    evaluatedPrincipal = "hdfs@" + DEFAULT_REALM;
+    if (handler.principalExists(evaluatedPrincipal)) {
+      handler.setPrincipalPassword(evaluatedPrincipal, handler.createSecurePassword());
+    } else {
+      handler.createPrincipal(evaluatedPrincipal, handler.createSecurePassword(), true);
+    }
+
     kerberosEnvMap.put(ADKerberosOperationHandler.KERBEROS_ENV_CREATE_ATTRIBUTES_TEMPLATE,
         "#set( $user = \"${principal_primary}-${principal_digest}\" )" +
             "{" +
@@ -510,6 +544,8 @@ public class ADKerberosOperationHandlerTest extends EasyMockSupport {
             "  \"userAccountControl\": \"66048\"" +
             "}"
     );
+
+    handler.close();
 
     handler.open(credentials, realm, kerberosEnvMap);
 

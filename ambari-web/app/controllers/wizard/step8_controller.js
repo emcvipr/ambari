@@ -215,16 +215,6 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     if (this.get('content.serviceConfigProperties')) {
       this.formatProperties();
       this.loadConfigs();
-      if (this.get('content.controllerName') != 'installerController' && this.get('securityEnabled')) {
-        this.prepareSecureConfigs();
-        this.get('content.services').filterProperty('isSelected', true)
-          .mapProperty('serviceName').forEach(function (serviceName) {
-            var config = this.get('secureConfigs').findProperty('serviceName', serviceName);
-            if (config) {
-              this.setPrincipalValue(serviceName, config.name);
-            }
-          }, this);
-      }
     }
     this.loadClusterInfo();
     this.loadServices();
@@ -312,7 +302,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
   removeOozieConfigs: function (configs) {
     var oozieDb = configs.findProperty('name', 'oozie_database');
     if (oozieDb) {
-      var oozie_properties = Em.A(['oozie_ambari_host', 'oozie_ambari_database']);
+      var oozie_properties = Em.A(['oozie_ambari_database']);
 
       switch (oozieDb.value) {
         case 'New Derby Database':
@@ -847,30 +837,17 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
   },
 
   /**
-   * Set displayed Nagion Admin value
-   * @method loadNagiosAdminValue
-   */
-  loadNagiosAdminValue: function () {
-    var config = this.get('content.serviceConfigProperties');
-    var adminLoginName = config.findProperty('name', 'nagios_web_login');
-    var adminEmail = config.findProperty('name', 'nagios_contact');
-    return adminLoginName.value + ' / (' + adminEmail.value + ')';
-  },
-
-  /**
    * Onclick handler for <code>next</code> button
    * @method submit
-   * @return {App.ModalPopup|null}
+   * @return {void}
    */
   submit: function () {
-    if (this.get('isSubmitDisabled')) return null;
-    if ((this.get('content.controllerName') == 'addHostController') && this.get('securityEnabled')) {
-      var self = this;
-      return App.showConfirmationPopup(function () {
-        self.submitProceed();
-      }, Em.I18n.t('installer.step8.securityConfirmationPopupBody'));
-    } else {
-      return this.submitProceed();
+    if (!this.get('isSubmitDisabled')) {
+      if (this.get('content.controllerName') != 'installerController' && this.get('securityEnabled')) {
+        App.get('router.mainAdminKerberosController').getKDCSessionState(this.submitProceed.bind(this));
+      } else {
+        this.submitProceed();
+      }
     }
   },
   /**
@@ -1876,6 +1853,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     this.addRequestToAjaxQueue({
       name: 'alerts.create_alert_notification',
       data: {
+        urlParams: 'overwrite_existing=true',
         data: apiObject
       }
     });

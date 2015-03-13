@@ -55,7 +55,6 @@ import org.apache.ambari.server.state.State;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.InetAddress;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -85,17 +84,19 @@ public abstract class AbstractProviderModule implements ProviderModule,
   private static final String HOST_COMPONENT_HOST_NAME_PROPERTY_ID      = PropertyHelper.getPropertyId("HostRoles", "host_name");
   private static final String HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID = PropertyHelper.getPropertyId("HostRoles", "component_name");
   private static final String GANGLIA_SERVER                            = "GANGLIA_SERVER";
-  private static final String METRIC_SERVER                             = "METRIC_COLLECTOR";
+  private static final String METRIC_SERVER                             = "METRICS_COLLECTOR";
   private static final String PROPERTIES_CATEGORY = "properties";
   private static final Map<Service.Type, String> serviceConfigVersions = new ConcurrentHashMap<Service.Type, String>();
   private static final Map<Service.Type, String> serviceConfigTypes = new EnumMap<Service.Type, String>(Service.Type.class);
   private static final Map<Service.Type, Map<String, String[]>> serviceDesiredProperties = new EnumMap<Service.Type, Map<String, String[]>>(Service.Type.class);
   private static final Map<String, Service.Type> componentServiceMap = new HashMap<String, Service.Type>();
 
+  private static final String PROPERTY_HDFS_HTTP_POLICY_VALUE_HTTPS_ONLY = "HTTPS_ONLY";
+
   private static final String COLLECTOR_DEFAULT_PORT = "6188";
 
   private static final Map<String, Map<String, String[]>> jmxDesiredProperties = new HashMap<String, Map<String, String[]>>();
-  private volatile Map<String, String> clusterCoreSiteConfigVersionMap = new HashMap<String, String>();
+  private volatile Map<String, String> clusterHdfsSiteConfigVersionMap = new HashMap<String, String>();
   private volatile Map<String, String> clusterJmxProtocolMap = new HashMap<String, String>();
   private volatile String clusterMetricServerPort = null;
 
@@ -105,7 +106,7 @@ public abstract class AbstractProviderModule implements ProviderModule,
     serviceConfigTypes.put(Service.Type.HBASE, "hbase-site");
     serviceConfigTypes.put(Service.Type.YARN, "yarn-site");
     serviceConfigTypes.put(Service.Type.MAPREDUCE2, "mapred-site");
-    serviceConfigTypes.put(Service.Type.AMS, "ams-site");
+    serviceConfigTypes.put(Service.Type.AMBARI_METRICS, "ams-site");
 
     componentServiceMap.put("NAMENODE", Service.Type.HDFS);
     componentServiceMap.put("DATANODE", Service.Type.HDFS);
@@ -119,6 +120,7 @@ public abstract class AbstractProviderModule implements ProviderModule,
     Map<String, String[]> initPropMap = new HashMap<String, String[]>();
     initPropMap.put("NAMENODE", new String[]{"dfs.http.address", "dfs.namenode.http-address"});
     initPropMap.put("DATANODE", new String[]{"dfs.datanode.http.address"});
+    initPropMap.put("NAMENODE-HTTPS", new String[]{"dfs.namenode.https-address", "dfs.https.port"});
     serviceDesiredProperties.put(Service.Type.HDFS, initPropMap);
 
     initPropMap = new HashMap<String, String[]>();
@@ -132,6 +134,7 @@ public abstract class AbstractProviderModule implements ProviderModule,
 
     initPropMap = new HashMap<String, String[]>();
     initPropMap.put("RESOURCEMANAGER", new String[]{"yarn.resourcemanager.webapp.address"});
+    initPropMap.put("RESOURCEMANAGER-HTTPS", new String[]{"yarn.resourcemanager.webapp.https.address"});
     initPropMap.put("NODEMANAGER", new String[]{"yarn.nodemanager.webapp.address"});
     serviceDesiredProperties.put(Service.Type.YARN, initPropMap);
 
@@ -140,8 +143,12 @@ public abstract class AbstractProviderModule implements ProviderModule,
     serviceDesiredProperties.put(Service.Type.MAPREDUCE2, initPropMap);
 
     initPropMap = new HashMap<String, String[]>();
-    initPropMap.put("NAMENODE", new String[]{"hadoop.ssl.enabled"});
+    initPropMap.put("NAMENODE", new String[]{"dfs.http.policy"});
     jmxDesiredProperties.put("NAMENODE", initPropMap);
+
+    initPropMap = new HashMap<String, String[]>();
+    initPropMap.put("RESOURCEMANAGER", new String[]{"yarn.http.policy"});
+    jmxDesiredProperties.put("RESOURCEMANAGER", initPropMap);
   }
 
   /**
@@ -241,9 +248,6 @@ public abstract class AbstractProviderModule implements ProviderModule,
     } catch (SystemException e) {
       LOG.error("Exception during checkInit.", e);
     }
-    if (clusterGangliaCollectorMap.isEmpty() && clusterMetricCollectorMap.isEmpty()) {
-      resetMetricProviderMap();
-    }
 
     if (!clusterMetricCollectorMap.isEmpty()) {
       return TIMELINE_METRICS;
@@ -251,68 +255,6 @@ public abstract class AbstractProviderModule implements ProviderModule,
       return GANGLIA;
     }
     return null;
-  }
-
-  private void resetMetricProviderMap() {
-    LOG.info("Resetting metric property provider.");
-    ResourceProvider provider = getResourceProvider(Resource.Type.Cluster);
-
-    Set<String> propertyIds = new HashSet<String>();
-    propertyIds.add(ClusterResourceProvider.CLUSTER_NAME_PROPERTY_ID);
-
-    Map<String, String> requestInfoProperties = new HashMap<String, String>();
-    requestInfoProperties.put(ClusterResourceProvider.GET_IGNORE_PERMISSIONS_PROPERTY_ID, "true");
-
-    Request request = PropertyHelper.getReadRequest(propertyIds,
-      requestInfoProperties, null, null, null);
-
-    try {
-      Set<Resource> clusters = provider.getResources(request, null);
-
-      if (clusters != null && !clusters.isEmpty()) {
-        for (Resource cluster : clusters) {
-          String clusterName = (String) cluster.getPropertyValue(CLUSTER_NAME_PROPERTY_ID);
-
-          request = PropertyHelper.getReadRequest(HOST_COMPONENT_HOST_NAME_PROPERTY_ID,
-            HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID);
-
-          Predicate predicate =
-            new PredicateBuilder().property(HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID)
-              .equals(clusterName).and().property(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID)
-              .equals(GANGLIA_SERVER).toPredicate();
-
-          provider = getResourceProvider(Resource.Type.HostComponent);
-          Set<Resource> hostComponents = provider.getResources(request, predicate);
-
-          if (hostComponents != null && !hostComponents.isEmpty()) {
-            Resource hostComponent = hostComponents.iterator().next();
-            String hostName = (String) hostComponent.getPropertyValue(HOST_COMPONENT_HOST_NAME_PROPERTY_ID);
-            clusterGangliaCollectorMap.put(clusterName, hostName);
-          }
-
-          predicate = new PredicateBuilder().property(HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID)
-            .equals(clusterName).and().property(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID)
-            .equals(METRIC_SERVER).toPredicate();
-
-          hostComponents = provider.getResources(request, predicate);
-          if (hostComponents != null && !hostComponents.isEmpty()) {
-            Resource hostComponent = hostComponents.iterator().next();
-            String hostName = (String) hostComponent.getPropertyValue(HOST_COMPONENT_HOST_NAME_PROPERTY_ID);
-            clusterMetricCollectorMap.put(clusterName, hostName);
-          }
-        }
-      }
-
-    } catch (SystemException e) {
-      LOG.warn("Error finding metrics provider.", e);
-    } catch (UnsupportedPropertyException e) {
-      LOG.warn("Error finding metrics provider.", e);
-    } catch (NoSuchResourceException e) {
-      LOG.warn("Error finding metrics provider.", e);
-    } catch (NoSuchParentResourceException e) {
-      LOG.warn("Error finding metrics provider.", e);
-    }
-
   }
 
   // ----- MetricsHostProvider ------------------------------------------------
@@ -335,20 +277,20 @@ public abstract class AbstractProviderModule implements ProviderModule,
       return "80"; // Not called by the provider
     } else if (service.equals(TIMELINE_METRICS)) {
       try {
-        String configType = serviceConfigTypes.get(Service.Type.AMS);
+        String configType = serviceConfigTypes.get(Service.Type.AMBARI_METRICS);
         String currentConfigVersion = getDesiredConfigVersion(clusterName, configType);
-        String oldConfigVersion = serviceConfigVersions.get(Service.Type.AMS);
+        String oldConfigVersion = serviceConfigVersions.get(Service.Type.AMBARI_METRICS);
 
         if (!currentConfigVersion.equals(oldConfigVersion)) {
-          serviceConfigVersions.put(Service.Type.AMS, currentConfigVersion);
+          serviceConfigVersions.put(Service.Type.AMBARI_METRICS, currentConfigVersion);
 
           Map<String, String> configProperties = getDesiredConfigMap
             (clusterName, currentConfigVersion, configType,
-              Collections.singletonMap("METRIC_COLLECTOR",
+              Collections.singletonMap("METRICS_COLLECTOR",
                 new String[] { "timeline.metrics.service.webapp.address" }));
 
           if (!configProperties.isEmpty()) {
-            clusterMetricServerPort = getPortString(configProperties.get("METRIC_COLLECTOR"));
+            clusterMetricServerPort = getPortString(configProperties.get("METRICS_COLLECTOR"));
           } else {
             clusterMetricServerPort = COLLECTOR_DEFAULT_PORT;
           }
@@ -399,8 +341,8 @@ public abstract class AbstractProviderModule implements ProviderModule,
       return isHostComponentLive(clusterName, collectorHostName, "GANGLIA",
         Role.GANGLIA_SERVER.name());
     } else if (service.equals(TIMELINE_METRICS)) {
-      return isHostComponentLive(clusterName, collectorHostName, "AMS",
-        Role.METRIC_COLLECTOR.name());
+      return isHostComponentLive(clusterName, collectorHostName, "AMBARI_METRICS",
+        Role.METRICS_COLLECTOR.name());
     }
     return false;
   }
@@ -457,6 +399,11 @@ public abstract class AbstractProviderModule implements ProviderModule,
 
   @Override
   public String getPort(String clusterName, String componentName) throws SystemException {
+    return getPort(clusterName, componentName, false);
+  }
+
+  @Override
+  public String getPort(String clusterName, String componentName, boolean httpsEnabled) throws SystemException {
     // Parent map need not be synchronized
     Map<String, String> clusterJmxPorts = jmxPortMap.get(clusterName);
     if (clusterJmxPorts == null) {
@@ -484,9 +431,19 @@ public abstract class AbstractProviderModule implements ProviderModule,
 
           serviceConfigVersions.put(service, currVersion);
 
+          Map<String, String[]> componentPorts = new HashMap<String, String[]>();
+          String[] componentsHttpsPorts;
+
+          if (httpsEnabled) {
+            componentsHttpsPorts = serviceDesiredProperties.get(service).get(componentName + "-HTTPS");
+          } else {
+            componentsHttpsPorts = serviceDesiredProperties.get(service).get(componentName);
+          }
+          componentPorts.put(componentName, componentsHttpsPorts);
+
           Map<String, String> portMap = getDesiredConfigMap(clusterName,
               currVersion, serviceConfigTypes.get(service),
-              serviceDesiredProperties.get(service));
+              componentPorts);
 
           for (Entry<String, String> entry : portMap.entrySet()) {
             // portString will be null if the property defined for the component doesn't exist
@@ -977,21 +934,24 @@ public abstract class AbstractProviderModule implements ProviderModule,
   @Override
   public String getJMXProtocol(String clusterName, String componentName) {
     String jmxProtocolString = clusterJmxProtocolMap.get(clusterName);
+
     try {
-      String newCoreSiteConfigVersion = getDesiredConfigVersion(clusterName, "core-site");
-      String cachedCoreSiteConfigVersion = clusterCoreSiteConfigVersionMap.get(clusterName);
-      if (!newCoreSiteConfigVersion.equals(cachedCoreSiteConfigVersion)) {
-        clusterCoreSiteConfigVersionMap.put(clusterName, newCoreSiteConfigVersion);
-
-        // Getting protocolMap for NAMENODE as it is the same property hadoop.ssl.enabled for all components
-        Map<String, String> protocolMap = getDesiredConfigMap(
-            clusterName,
-            newCoreSiteConfigVersion, "core-site",
-            jmxDesiredProperties.get("NAMENODE"));
-        jmxProtocolString = getJMXProtocolString(protocolMap.get("NAMENODE"));
-        clusterJmxProtocolMap.put(clusterName, jmxProtocolString);
+      if (componentName.equals("NAMENODE") || componentName.equals("RESOURCEMANAGER")) {
+        Service.Type service = componentServiceMap.get(componentName);
+        String config = serviceConfigTypes.get(service);
+        String newSiteConfigVersion = getDesiredConfigVersion(clusterName, config);
+        String cachedSiteConfigVersion = clusterHdfsSiteConfigVersionMap.get(clusterName);
+        if (!newSiteConfigVersion.equals(cachedSiteConfigVersion)) {
+          Map<String, String> protocolMap = getDesiredConfigMap(
+              clusterName,
+              newSiteConfigVersion, config,
+              jmxDesiredProperties.get(componentName));
+          jmxProtocolString = getJMXProtocolString(protocolMap.get(componentName));
+          clusterJmxProtocolMap.put(clusterName, jmxProtocolString);
+        }
+      } else {
+        jmxProtocolString = "http";
       }
-
     } catch (Exception e) {
       LOG.info("Exception while detecting JMX protocol for clusterName = " + clusterName +
           ", componentName = " + componentName, e);
@@ -1016,7 +976,10 @@ public abstract class AbstractProviderModule implements ProviderModule,
   }
 
   private String getJMXProtocolString(String value) {
-    return Boolean.valueOf(value) ? "https" : "http";
+    if (value.equals(PROPERTY_HDFS_HTTP_POLICY_VALUE_HTTPS_ONLY))
+      return "https";
+    else
+      return "http";
   }
 
 }

@@ -172,13 +172,6 @@ App.QuickLinks.FIXTURES = [
 
   },
   {
-    id:21,
-    label:'Nagios Web UI',
-    url:'%@://%@/nagios',
-    service_id: 'NAGIOS',
-    template:'%@://%@/nagios'
-  },
-  {
     id:23,
     label:'ResourceManager UI',
     url:'%@://%@:%@',
@@ -300,5 +293,23 @@ App.QuickLinks.FIXTURES = [
     site: 'falcon-env',
     regex: '^(\\d+)$',
     default_http_port: 15000
+  },
+  {
+    id: 33,
+    label:'Ranger Admin UI',
+    url:'%@://%@:6080/',
+    service_id: 'RANGER',
+    template:'%@://%@:6080/'
+  },
+  {
+    id: 34,
+    label:'Spark History Server UI',
+    url:'%@://%@:%@/',
+    service_id: 'SPARK',
+    template:'%@://%@:%@/',
+    http_config: 'spark.history.ui.port',
+    site: 'spark-defaults',
+    regex: '^(\\d+)$',
+    default_http_port: 18080
   }
 ];

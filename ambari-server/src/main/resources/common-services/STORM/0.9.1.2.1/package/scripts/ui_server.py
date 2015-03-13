@@ -58,7 +58,7 @@ class UiServer(Script):
     import params
     env.set_params(params)
     self.configure(env)
-    setup_ranger_storm(env)    
+    setup_ranger_storm()    
     service("ui", action="start")
 
   def stop(self, env, rolling_restart=False):
@@ -111,8 +111,7 @@ class UiServer(Script):
                                 security_params['storm_ui']['storm_ui_keytab'],
                                 security_params['storm_ui']['storm_ui_principal_name'],
                                 status_params.hostname,
-                                status_params.tmp_dir,
-                                30)
+                                status_params.tmp_dir)
           self.put_structured_out({"securityState": "SECURED_KERBEROS"})
         else:
           issues = []

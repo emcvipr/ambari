@@ -17,31 +17,42 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 """
-
-import sys
-from resource_management import *
+from resource_management.libraries.script import Script
+from resource_management.core.resources.system import Execute
 from resource_management.core.exceptions import ComponentIsNotRunning
+from resource_management.libraries.functions.format import format
 from resource_management.core.logger import Logger
 from resource_management.core import shell
 from setup_ranger import setup_ranger
-
+from ranger_service import ranger_service
+import upgrade
 
 class RangerAdmin(Script):
+
+  def get_stack_to_component(self):
+    return {"HDP": "ranger-admin"}
+
   def install(self, env):
     self.install_packages(env)
-    setup_ranger(env)
+    self.configure(env)
 
-  def stop(self, env):
+  def stop(self, env, rolling_restart=False):
     import params
 
     env.set_params(params)
-    Execute(format('{params.ranger_stop}'))
+    Execute(format('{params.ranger_stop}'), user=params.unix_user)
 
-  def start(self, env):
+  def pre_rolling_restart(self, env):
     import params
+    env.set_params(params)
+    upgrade.prestart(env, "ranger-admin")
 
-    setup_ranger(env)
-    Execute(format('{params.ranger_start}'))
+  def start(self, env, rolling_restart=False):
+    import params
+    env.set_params(params)
+    self.configure(env)
+    ranger_service('ranger_admin')
+
 
   def status(self, env):
     cmd = 'ps -ef | grep proc_rangeradmin | grep -v grep'
@@ -54,8 +65,9 @@ class RangerAdmin(Script):
 
   def configure(self, env):
     import params
-
     env.set_params(params)
+    
+    setup_ranger()
 
 
 if __name__ == "__main__":

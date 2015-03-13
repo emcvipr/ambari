@@ -58,8 +58,8 @@ class TestOozieServer(RMFTestCase):
         user = 'oozie',
         )
     self.assertResourceCalled('Execute', ' hadoop --config /etc/hadoop/conf dfs -put /usr/lib/oozie/share /user/oozie ; hadoop --config /etc/hadoop/conf dfs -chmod -R 755 /user/oozie/share',
-        not_if = " hadoop --config /etc/hadoop/conf dfs -ls /user/oozie/share | awk 'BEGIN {count=0;} /share/ {count++} END {if (count > 0) {exit 0} else {exit 1}}'",
-        user = 'oozie',
+        not_if = shell.as_user(" hadoop --config /etc/hadoop/conf dfs -ls /user/oozie/share | awk 'BEGIN {count=0;} /share/ {count++} END {if (count > 0) {exit 0} else {exit 1}}'", "oozie"),
+        user = u'oozie',
         path = ['/usr/bin:/usr/bin'],
         )
     self.assertResourceCalled('Execute', 'cd /var/tmp/oozie && /usr/lib/oozie/bin/oozie-start.sh',
@@ -115,7 +115,7 @@ class TestOozieServer(RMFTestCase):
                               user = 'oozie',
                               )
     self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/oozie.service.keytab oozie/c6402.ambari.apache.org@EXAMPLE.COM; hadoop --config /etc/hadoop/conf dfs -put /usr/lib/oozie/share /user/oozie ; hadoop --config /etc/hadoop/conf dfs -chmod -R 755 /user/oozie/share',
-                              not_if = "/usr/bin/kinit -kt /etc/security/keytabs/oozie.service.keytab oozie/c6402.ambari.apache.org@EXAMPLE.COM; hadoop --config /etc/hadoop/conf dfs -ls /user/oozie/share | awk 'BEGIN {count=0;} /share/ {count++} END {if (count > 0) {exit 0} else {exit 1}}'",
+                              not_if = shell.as_user("/usr/bin/kinit -kt /etc/security/keytabs/oozie.service.keytab oozie/c6402.ambari.apache.org@EXAMPLE.COM; hadoop --config /etc/hadoop/conf dfs -ls /user/oozie/share | awk 'BEGIN {count=0;} /share/ {count++} END {if (count > 0) {exit 0} else {exit 1}}'", "oozie"),
                               user = 'oozie',
                               path = ['/usr/bin:/usr/bin'],
                               )
@@ -237,7 +237,7 @@ class TestOozieServer(RMFTestCase):
                               mode = 0755,
                               cd_access='a'
                               )
-    self.assertResourceCalled('Directory', '/var/lib/oozie/',
+    self.assertResourceCalled('Directory', '/var/lib/oozie',
                               owner = 'oozie',
                               group = 'hadoop',
                               recursive = True,
@@ -284,10 +284,10 @@ class TestOozieServer(RMFTestCase):
         not_if = 'ls /var/run/oozie/oozie.pid >/dev/null 2>&1 && ps -p `cat /var/run/oozie/oozie.pid` >/dev/null 2>&1',
         sudo = True,
     )
-    self.assertResourceCalled('Execute', 'sudo cp /usr/lib/falcon/oozie/ext/falcon-oozie-el-extension-*.jar /usr/lib/oozie/libext',
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh cp /usr/lib/falcon/oozie/ext/falcon-oozie-el-extension-*.jar /usr/lib/oozie/libext',
         not_if = 'ls /var/run/oozie/oozie.pid >/dev/null 2>&1 && ps -p `cat /var/run/oozie/oozie.pid` >/dev/null 2>&1',
     )
-    self.assertResourceCalled('Execute', 'sudo chown oozie:hadoop /usr/lib/oozie/libext/falcon-oozie-el-extension-*.jar',
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh chown oozie:hadoop /usr/lib/oozie/libext/falcon-oozie-el-extension-*.jar',
         not_if = 'ls /var/run/oozie/oozie.pid >/dev/null 2>&1 && ps -p `cat /var/run/oozie/oozie.pid` >/dev/null 2>&1',
     )
     self.assertResourceCalled('Execute', 'cd /var/tmp/oozie && /usr/lib/oozie/bin/oozie-setup.sh prepare-war',
@@ -390,7 +390,7 @@ class TestOozieServer(RMFTestCase):
                               mode = 0755,
                               cd_access='a'
                               )
-    self.assertResourceCalled('Directory', '/var/lib/oozie/',
+    self.assertResourceCalled('Directory', '/var/lib/oozie',
                               owner = 'oozie',
                               group = 'hadoop',
                               recursive = True,
@@ -437,10 +437,10 @@ class TestOozieServer(RMFTestCase):
         not_if = 'ls /var/run/oozie/oozie.pid >/dev/null 2>&1 && ps -p `cat /var/run/oozie/oozie.pid` >/dev/null 2>&1',
         sudo = True,
     )
-    self.assertResourceCalled('Execute', 'sudo cp /usr/lib/falcon/oozie/ext/falcon-oozie-el-extension-*.jar /usr/lib/oozie/libext',
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh cp /usr/lib/falcon/oozie/ext/falcon-oozie-el-extension-*.jar /usr/lib/oozie/libext',
         not_if = 'ls /var/run/oozie/oozie.pid >/dev/null 2>&1 && ps -p `cat /var/run/oozie/oozie.pid` >/dev/null 2>&1',
     )
-    self.assertResourceCalled('Execute', 'sudo chown oozie:hadoop /usr/lib/oozie/libext/falcon-oozie-el-extension-*.jar',
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh chown oozie:hadoop /usr/lib/oozie/libext/falcon-oozie-el-extension-*.jar',
         not_if = 'ls /var/run/oozie/oozie.pid >/dev/null 2>&1 && ps -p `cat /var/run/oozie/oozie.pid` >/dev/null 2>&1',
     )
     self.assertResourceCalled('Execute', 'cd /var/tmp/oozie && /usr/lib/oozie/bin/oozie-setup.sh prepare-war',
@@ -527,18 +527,16 @@ class TestOozieServer(RMFTestCase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
-    import status_params
-
-    get_params_mock.assert_called_with(status_params.conf_dir, {'oozie-site.xml': 'XML'})
+    get_params_mock.assert_called_with("/etc/oozie/conf", {'oozie-site.xml': 'XML'})
     build_exp_mock.assert_called_with('oozie-site', props_value_check, props_empty_check, props_read_check)
     put_structured_out_mock.assert_called_with({"securityState": "SECURED_KERBEROS"})
     self.assertTrue(cached_kinit_executor_mock.call_count, 2)
-    cached_kinit_executor_mock.assert_called_with(status_params.kinit_path_local,
-                                                  status_params.oozie_user,
+    cached_kinit_executor_mock.assert_called_with('/usr/bin/kinit',
+                                                  self.config_dict['configurations']['oozie-env']['oozie_user'],
                                                   security_params['oozie-site']['oozie.service.HadoopAccessorService.keytab.file'],
                                                   security_params['oozie-site']['oozie.service.HadoopAccessorService.kerberos.principal'],
-                                                  status_params.hostname,
-                                                  status_params.tmp_dir)
+                                                  self.config_dict['hostname'],
+                                                  '/tmp')
 
     # Testing that the exception throw by cached_executor is caught
     cached_kinit_executor_mock.reset_mock()
@@ -572,8 +570,9 @@ class TestOozieServer(RMFTestCase):
     put_structured_out_mock.assert_called_with({"securityIssuesFound": "Keytab file or principal are not set property."})
 
     # Testing with not empty result_issues
-    result_issues_with_params = {}
-    result_issues_with_params['oozie-site']="Something bad happened"
+    result_issues_with_params = {
+      'oozie-site': "Something bad happened"
+    }
 
     validate_security_config_mock.reset_mock()
     get_params_mock.reset_mock()
@@ -637,12 +636,8 @@ class TestOozieServer(RMFTestCase):
     chmod_mock.assert_called_once_with('/usr/hdp/current/oozie-server/libext-customer', 511)
 
     self.assertTrue(isfile_mock.called)
-    self.assertEqual(isfile_mock.call_count,4)
+    self.assertEqual(isfile_mock.call_count,3)
     isfile_mock.assert_called_with('/usr/share/HDP-oozie/ext-2.2.zip')
-
-    self.assertTrue(remove_mock.called)
-    self.assertEqual(remove_mock.call_count,1)
-    remove_mock.assert_called_with('/usr/bin/oozie')
 
     self.assertTrue(glob_mock.called)
     self.assertEqual(glob_mock.call_count,1)
@@ -692,12 +687,8 @@ class TestOozieServer(RMFTestCase):
     chmod_mock.assert_called_once_with('/usr/hdp/current/oozie-server/libext-customer', 511)
 
     self.assertTrue(isfile_mock.called)
-    self.assertEqual(isfile_mock.call_count,3)
+    self.assertEqual(isfile_mock.call_count,2)
     isfile_mock.assert_called_with('/usr/share/HDP-oozie/ext-2.2.zip')
-
-    self.assertTrue(remove_mock.called)
-    self.assertEqual(remove_mock.call_count,1)
-    remove_mock.assert_called_with('/usr/bin/oozie')
 
     self.assertResourceCalled('Execute', 'hdp-select set oozie-server 2.2.0.0-0000')
     self.assertResourceCalled('Execute', 'hdfs dfs -chown oozie:hadoop /user/oozie/share', user='oozie')

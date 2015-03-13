@@ -137,7 +137,7 @@ public class AMSPropertyProviderTest {
     uriBuilder.addParameter("appId", "HOST");
     Assert.assertEquals(uriBuilder.toString(), streamProvider.getLastSpec());
     Double val = (Double) res.getPropertyValue(PROPERTY_ID1);
-    Assert.assertEquals(40.45, val, 0.001);
+    Assert.assertEquals(41.088, val, 0.001);
   }
 
   @Test
@@ -180,7 +180,7 @@ public class AMSPropertyProviderTest {
     Assert.assertTrue(uriBuilder.toString().equals(streamProvider.getLastSpec())
         || uriBuilder2.toString().equals(streamProvider.getLastSpec()));
     Double val1 = (Double) res.getPropertyValue(PROPERTY_ID1);
-    Assert.assertEquals(40.45, val1, 0.001);
+    Assert.assertEquals(41.088, val1, 0.001);
     Double val2 = (Double)res.getPropertyValue(PROPERTY_ID2);
     Assert.assertEquals(2.47025664E8, val2, 0.1);
   }
@@ -348,7 +348,7 @@ public class AMSPropertyProviderTest {
     String propertyId = PropertyHelper.getPropertyId("metrics/hbase/regionserver", "requests");
     Resource resource = new ResourceImpl(Resource.Type.Component);
     resource.setProperty(HOST_NAME_PROPERTY_ID, "h1");
-    resource.setProperty(COMPONENT_NAME_PROPERTY_ID, "METRIC_COLLECTOR");
+    resource.setProperty(COMPONENT_NAME_PROPERTY_ID, "METRICS_COLLECTOR");
     Map<String, TemporalInfo> temporalInfoMap = new HashMap<String, TemporalInfo>();
     temporalInfoMap.put(propertyId, new TemporalInfoImpl(1421694000L, 1421697600L, 1L));
     Request request = PropertyHelper.getReadRequest(

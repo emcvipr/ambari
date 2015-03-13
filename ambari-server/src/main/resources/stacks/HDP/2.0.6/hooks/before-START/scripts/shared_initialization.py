@@ -41,17 +41,19 @@ def setup_hadoop():
               recursive=True,
               owner='root',
               group=params.user_group,
-              mode=0775
+              mode=0775,
+              cd_access='a',
     )
     Directory(params.hadoop_pid_dir_prefix,
               recursive=True,
               owner='root',
-              group='root'
+              group='root',
+              cd_access='a',
     )
-  #this doesn't needed with stack 1
     Directory(params.hadoop_tmp_dir,
               recursive=True,
               owner=params.hdfs_user,
+              cd_access='a',
               )
   #files
     if params.security_enabled:
@@ -95,23 +97,16 @@ def setup_database():
   Load DB
   """
   import params
-  db_driver_dload_cmd = ""
-  environment = {
-    "no_proxy": format("{ambari_server_hostname}")
-  }
+  db_driver_download_url = None
+  
   if params.server_db_name == 'oracle' and params.oracle_driver_url != "":
-    db_driver_dload_cmd = format(
-      "curl -kf -x \"\" \
-      --retry 5 {oracle_driver_symlink_url} -o {hadoop_lib_home}/{db_driver_filename}",)
+    db_driver_download_url = params.oracle_driver_symlink_url
   elif params.server_db_name == 'mysql' and params.mysql_driver_url != "":
-    db_driver_dload_cmd = format(
-      "curl -kf -x \"\" \
-      --retry 5 {mysql_driver_symlink_url} -o {hadoop_lib_home}/{db_driver_filename}")
+    db_driver_download_url = params.mysql_driver_symlink_url
 
-  if db_driver_dload_cmd:
-    Execute(db_driver_dload_cmd,
-            not_if =format("test -e {hadoop_lib_home}/{db_driver_filename}"),
-            environment = environment
+  if db_driver_download_url:
+    File(format("{hadoop_lib_home}/{db_driver_filename}"),
+         content = DownloadSource(db_driver_download_url),
     )
 
 

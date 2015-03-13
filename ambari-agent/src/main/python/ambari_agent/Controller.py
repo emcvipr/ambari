@@ -35,14 +35,16 @@ import hostname
 import security
 import ssl
 import AmbariConfig
-from Heartbeat import Heartbeat
-from Register import Register
-from ActionQueue import ActionQueue
-from FileCache import FileCache
-from NetUtil import NetUtil
-from LiveStatus import LiveStatus
-from AlertSchedulerHandler import AlertSchedulerHandler
-from HeartbeatHandlers import HeartbeatStopHandlers, bind_signal_handlers
+
+from ambari_agent.Heartbeat import Heartbeat
+from ambari_agent.Register import Register
+from ambari_agent.ActionQueue import ActionQueue
+from ambari_agent.FileCache import FileCache
+from ambari_agent.NetUtil import NetUtil
+from ambari_agent.LiveStatus import LiveStatus
+from ambari_agent.AlertSchedulerHandler import AlertSchedulerHandler
+from ambari_agent.ClusterConfiguration import  ClusterConfiguration
+from ambari_agent.HeartbeatHandlers import HeartbeatStopHandlers, bind_signal_handlers
 
 logger = logging.getLogger()
 
@@ -89,9 +91,13 @@ class Controller(threading.Thread):
     common_services_cache_dir = os.path.join(cache_dir, FileCache.COMMON_SERVICES_DIRECTORY)
     host_scripts_cache_dir = os.path.join(cache_dir, FileCache.HOST_SCRIPTS_CACHE_DIRECTORY)
     alerts_cache_dir = os.path.join(cache_dir, 'alerts')
-    
+    cluster_config_cache_dir = os.path.join(cache_dir, 'cluster_configuration')
+
+    self.cluster_configuration = ClusterConfiguration(cluster_config_cache_dir)
+
     self.alert_scheduler_handler = AlertSchedulerHandler(alerts_cache_dir, 
-        stacks_cache_dir, common_services_cache_dir, host_scripts_cache_dir)
+      stacks_cache_dir, common_services_cache_dir, host_scripts_cache_dir,
+      self.cluster_configuration, config)
 
 
   def __del__(self):
@@ -149,12 +155,11 @@ class Controller(threading.Thread):
         else:
           self.hasMappedComponents = False
 
-        if 'alertDefinitionCommands' in ret.keys():
-          logger.info("Got alert definition update on registration " + pprint.pformat(ret['alertDefinitionCommands']))
-          self.alert_scheduler_handler.update_definitions(ret['alertDefinitionCommands'])
-          pass
+        # always update cached cluster configurations on registration
+        self.cluster_configuration.update_configurations_from_heartbeat(ret)
 
-        pass
+        # always update alert definitions on registration
+        self.alert_scheduler_handler.update_definitions(ret)
       except ssl.SSLError:
         self.repeatRegistration = False
         self.isRegistered = False
@@ -258,33 +263,32 @@ class Controller(threading.Thread):
         else:
           self.responseId = serverId
 
-        if 'cancelCommands' in response.keys():
+        # if the response contains configurations, update the in-memory and
+        # disk-based configuration cache (execution and alert commands have this)
+        self.cluster_configuration.update_configurations_from_heartbeat(response)
+
+        response_keys = response.keys()
+        if 'cancelCommands' in response_keys:
           self.cancelCommandInQueue(response['cancelCommands'])
-          pass
 
-        if 'executionCommands' in response.keys():
-          self.addToQueue(response['executionCommands'])
-          self.alert_scheduler_handler.update_configurations(response['executionCommands'])
-          pass
+        if 'executionCommands' in response_keys:
+          execution_commands = response['executionCommands']
+          self.addToQueue(execution_commands)
 
-        if 'statusCommands' in response.keys():
+        if 'statusCommands' in response_keys:
           self.addToStatusQueue(response['statusCommands'])
-          pass
 
-        if 'alertDefinitionCommands' in response.keys():
-          self.alert_scheduler_handler.update_definitions(response['alertDefinitionCommands'], True)
-          pass
-        
-        if 'alertExecutionCommands' in response.keys():
+        if 'alertDefinitionCommands' in response_keys:
+          self.alert_scheduler_handler.update_definitions(response)
+
+        if 'alertExecutionCommands' in response_keys:
           self.alert_scheduler_handler.execute_alert(response['alertExecutionCommands'])
-          pass
 
         if "true" == response['restartAgent']:
           logger.error("Received the restartAgent command")
           self.restartAgent()
         else:
           logger.info("No commands sent from %s", self.serverHostname)
-          pass
 
         if retry:
           logger.info("Reconnected to %s", self.heartbeatUrl)

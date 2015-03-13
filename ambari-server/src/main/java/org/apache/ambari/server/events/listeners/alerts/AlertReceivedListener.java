@@ -26,6 +26,7 @@ import org.apache.ambari.server.controller.RootServiceResponseFactory.Services;
 import org.apache.ambari.server.events.AlertEvent;
 import org.apache.ambari.server.events.AlertReceivedEvent;
 import org.apache.ambari.server.events.AlertStateChangeEvent;
+import org.apache.ambari.server.events.InitialAlertEvent;
 import org.apache.ambari.server.events.publishers.AlertEventPublisher;
 import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
 import org.apache.ambari.server.orm.dao.AlertsDAO;
@@ -150,20 +151,25 @@ public class AlertReceivedListener {
       current.setAlertHistory(history);
       current.setLatestTimestamp(alert.getTimestamp());
       current.setOriginalTimestamp(Long.valueOf(alert.getTimestamp()));
-
       m_alertsDao.create(current);
 
+      // broadcast the initial alert being received
+      InitialAlertEvent initialAlertEvent = new InitialAlertEvent(
+          event.getClusterId(), event.getAlert(), current);
+
+      m_alertEventPublisher.publish(initialAlertEvent);
     } else if (alert.getState() == current.getAlertHistory().getAlertState()) {
       current.setLatestTimestamp(alert.getTimestamp());
       current.setLatestText(alert.getText());
-
       current = m_alertsDao.merge(current);
     } else {
-      LOG.debug(
-          "Alert State Changed: CurrentId {}, CurrentTimestamp {}, HistoryId {}, HistoryState {}",
-          current.getAlertId(), current.getLatestTimestamp(),
-          current.getAlertHistory().getAlertId(),
-          current.getAlertHistory().getAlertState());
+      if (LOG.isDebugEnabled()) {
+        LOG.debug(
+            "Alert State Changed: CurrentId {}, CurrentTimestamp {}, HistoryId {}, HistoryState {}",
+            current.getAlertId(), current.getLatestTimestamp(),
+            current.getAlertHistory().getAlertId(),
+            current.getAlertHistory().getAlertState());
+      }
 
       AlertHistoryEntity oldHistory = current.getAlertHistory();
       AlertState oldState = oldHistory.getAlertState();
@@ -179,14 +185,17 @@ public class AlertReceivedListener {
       current.setAlertHistory(history);
       current.setLatestTimestamp(Long.valueOf(alert.getTimestamp()));
       current.setOriginalTimestamp(Long.valueOf(alert.getTimestamp()));
+      current.setLatestText(alert.getText());
 
       current = m_alertsDao.merge(current);
 
-      LOG.debug(
-          "Alert State Merged: CurrentId {}, CurrentTimestamp {}, HistoryId {}, HistoryState {}",
-          current.getAlertId(), current.getLatestTimestamp(),
-          current.getAlertHistory().getAlertId(),
-          current.getAlertHistory().getAlertState());
+      if (LOG.isDebugEnabled()) {
+        LOG.debug(
+            "Alert State Merged: CurrentId {}, CurrentTimestamp {}, HistoryId {}, HistoryState {}",
+            current.getAlertId(), current.getLatestTimestamp(),
+            current.getAlertHistory().getAlertId(),
+            current.getAlertHistory().getAlertState());
+      }
 
       // broadcast the alert changed event for other subscribers
       AlertStateChangeEvent alertChangedEvent = new AlertStateChangeEvent(
@@ -316,8 +325,8 @@ public class AlertReceivedListener {
       AlertDefinitionEntity definition, Alert alert) {
     AlertHistoryEntity history = new AlertHistoryEntity();
     history.setAlertDefinition(definition);
+    history.setAlertLabel(definition.getLabel());
     history.setAlertInstance(alert.getInstance());
-    history.setAlertLabel(alert.getLabel());
     history.setAlertState(alert.getState());
     history.setAlertText(alert.getText());
     history.setAlertTimestamp(Long.valueOf(alert.getTimestamp()));

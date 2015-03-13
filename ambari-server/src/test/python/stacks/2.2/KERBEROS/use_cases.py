@@ -23,7 +23,7 @@ krb5_conf_template = \
   '[libdefaults]\n' \
   '  renew_lifetime = {{libdefaults_renew_lifetime}}\n' \
   '  forwardable = {{libdefaults_forwardable}}\n' \
-  '  default_realm = {{realm|upper()}}\n' \
+  '  realm = {{realm|upper()}}\n' \
   '  ticket_lifetime = {{libdefaults_ticket_lifetime}}\n' \
   '  dns_lookup_realm = {{libdefaults_dns_lookup_realm}}\n' \
   '  dns_lookup_kdc = {{libdefaults_dns_lookup_kdc}}\n' \
@@ -60,7 +60,7 @@ kdc_conf_template = \
   '    acl_file = {{kadm5_acl_path}}\n' \
   '    dict_file = /usr/share/dict/words\n' \
   '    admin_keytab = {{kadm5_acl_dir}}/kadm5.keytab\n' \
-  '    supported_enctypes = {{libdefaults_default_tgs_enctypes}}\n' \
+  '    supported_enctypes = {{encryption_types}}\n' \
   '}\n' \
   '\n' \
   '{# Append additional realm declarations should be placed below #}\n'
@@ -74,15 +74,16 @@ def get_manged_kdc_use_case():
     json_data = json.load(f)
 
   json_data['clusterHostInfo']['kdc_server_hosts'] = ['c6401.ambari.apache.org']
+  json_data['configurations']['kerberos-env'] = {
+    'kdc_type': 'mit-kdc'
+  }
   json_data['configurations']['krb5-conf'] = {
-    'libdefaults_default_tgs_enctypes': 'aes256-cts-hmac-sha1-96',
-    'libdefaults_default_tkt_enctypes': 'aes256-cts-hmac-sha1-96',
     'realm': 'MANAGED_REALM.COM',
-    'kdc_type': 'mit-kdc',
     'kdc_host': 'c6401.ambari.apache.org',
     'admin_principal': "admin/admin",
     'admin_password': "hadoop"
   }
+  json_data['configurations']['kerberos-env'] = { 'encryption_types' : 'aes256-cts-hmac-sha1-96'}
 
   return json_data
 
@@ -92,14 +93,14 @@ def get_unmanged_kdc_use_case():
   with open(config_file, "r") as f:
     json_data = json.load(f)
 
+  json_data['configurations']['kerberos-env'] = {
+    'kdc_type': 'mit-kdc'
+  }
   json_data['configurations']['krb5-conf'] = {
-    'libdefaults_default_tgs_enctypes': 'aes256-cts-hmac-sha1-96',
-    'libdefaults_default_tkt_enctypes': 'aes256-cts-hmac-sha1-96',
     'conf_dir': '/tmp',
     'conf_file': 'krb5_unmanaged.conf',
     'content': krb5_conf_template,
     'realm': 'OSCORPINDUSTRIES.COM',
-    'kdc_type': 'mit-kdc',
     'kdc_host': 'ad.oscorp_industries.com',
     'admin_principal': "admin/admin",
     'admin_password': "hadoop"
@@ -110,6 +111,26 @@ def get_unmanged_kdc_use_case():
   json_data['configurations']['kadm5-acl'] = {
     'content': kadm5_acl_template
   }
+  json_data['configurations']['kerberos-env'] = { 'encryption_types' : 'aes256-cts-hmac-sha1-96'}
+
+
+  return json_data
+
+def get_unmanged_krb5conf_use_case():
+  config_file = "stacks/2.2/configs/default.json"
+  with open(config_file, "r") as f:
+    json_data = json.load(f)
+
+  json_data['clusterHostInfo']['kdc_server_hosts'] = ['c6401.ambari.apache.org']
+  json_data['configurations']['krb5-conf'] = {
+    'realm': 'MANAGED_REALM.COM',
+    'kdc_type': 'mit-kdc',
+    'kdc_host': 'c6401.ambari.apache.org',
+    'admin_principal': "admin/admin",
+    'admin_password': "hadoop",
+    'manage_krb5_conf': "false"
+  }
+  json_data['configurations']['kerberos-env'] = { 'encryption_types' : 'aes256-cts-hmac-sha1-96'}
 
   return json_data
 
@@ -118,14 +139,14 @@ def get_unmanged_ad_use_case():
   with open(config_file, "r") as f:
     json_data = json.load(f)
 
+  json_data['configurations']['kerberos-env'] = {
+    'kdc_type': 'active-directory',
+  }
   json_data['configurations']['krb5-conf'] = {
-    'libdefaults_default_tgs_enctypes': 'aes256-cts-hmac-sha1-96',
-    'libdefaults_default_tkt_enctypes': 'aes256-cts-hmac-sha1-96',
     'conf_dir': '/tmp',
     'conf_file': 'krb5_ad.conf',
     'content': krb5_conf_template,
     'realm': 'OSCORPINDUSTRIES.COM',
-    'kdc_type': 'active-directory',
     'kdc_host': 'ad.oscorp_industries.com',
     'admin_principal': "admin/admin",
     'admin_password': "hadoop"
@@ -136,7 +157,7 @@ def get_unmanged_ad_use_case():
   json_data['configurations']['kadm5-acl'] = {
     'content': kadm5_acl_template
   }
-
+  json_data['configurations']['kerberos-env'] = { 'encryption_types' : 'aes256-cts-hmac-sha1-96'}
   return json_data
 
 def get_cross_realm_use_case():
@@ -151,12 +172,12 @@ def get_cross_realm_use_case():
                         '}\n'
 
   json_data['clusterHostInfo']['kdc_server_hosts'] = ['c6401.ambari.apache.org']
+  json_data['configurations']['kerberos-env'] = {
+    'kdc_type': 'mit-kdc'
+  }
   json_data['configurations']['krb5-conf'] = {
-    'libdefaults_default_tgs_enctypes': 'aes256-cts-hmac-sha1-96',
-    'libdefaults_default_tkt_enctypes': 'aes256-cts-hmac-sha1-96',
     'content': _krb5_conf_template,
     'realm': 'MANAGED_REALM.COM',
-    'kdc_type': 'mit-kdc',
     'kdc_host': 'c6401.ambari.apache.org',
     'admin_principal': "admin/admin",
     'admin_password': "hadoop"
@@ -167,7 +188,7 @@ def get_cross_realm_use_case():
   json_data['configurations']['kadm5-acl'] = {
     'content': kadm5_acl_template
   }
-
+  json_data['configurations']['kerberos-env'] = { 'encryption_types' : 'aes256-cts-hmac-sha1-96'}
   return json_data
 
 def get_value(dictionary, path, nullValue=None):

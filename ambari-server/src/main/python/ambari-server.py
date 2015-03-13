@@ -35,7 +35,7 @@ from ambari_server.serverConfiguration import configDefaults, get_ambari_propert
 from ambari_server.serverUtils import is_server_runing, refresh_stack_hash
 from ambari_server.serverSetup import reset, setup, setup_jce_policy
 from ambari_server.serverUpgrade import upgrade, upgrade_stack
-from ambari_server.setupHttps import setup_https, setup_ganglia_https
+from ambari_server.setupHttps import setup_https
 
 from ambari_server.setupActions import BACKUP_ACTION, LDAP_SETUP_ACTION, LDAP_SYNC_ACTION, PSTART_ACTION, \
   REFRESH_STACK_HASH_ACTION, RESET_ACTION, RESTORE_ACTION, SETUP_ACTION, SETUP_SECURITY_ACTION, START_ACTION, \
@@ -204,7 +204,6 @@ def create_setup_security_actions(args):
 def create_setup_security_actions(args):
   action_list = [
       ['Enable HTTPS for Ambari server.', UserActionRestart(setup_https, args)],
-      ['Enable HTTPS for Ganglia service.', UserAction(setup_ganglia_https)],
       ['Encrypt passwords stored in ambari.properties file.', UserAction(setup_master_key)],
       ['Setup Ambari kerberos JAAS configuration.', UserAction(setup_ambari_krb5_jaas)],
     ]
@@ -336,13 +335,13 @@ def init_parser_options(parser):
                     help="Start ambari-server in debug mode")
   parser.add_option('-y', '--suspend-start', action="store_true", dest='suspend_start', default=False,
                     help="Freeze ambari-server Java process at startup in debug mode")
-  parser.add_option('--all', action="store_true", default=False, help="LDAP sync all Ambari users and groups",
+  parser.add_option('--all', action="store_true", default=False, help="LDAP sync all option.  Synchronize all LDAP users and groups.",
                     dest="ldap_sync_all")
   parser.add_option('--existing', action="store_true", default=False,
-                    help="LDAP sync existing Ambari users and groups only", dest="ldap_sync_existing")
-  parser.add_option('--users', default=None, help="Specifies the path to the LDAP sync users CSV file.",
+                    help="LDAP sync existing option.  Synchronize existing Ambari users and groups only.", dest="ldap_sync_existing")
+  parser.add_option('--users', default=None, help="LDAP sync users option. Specifies the path to a CSV file of user names to be synchronized.",
                     dest="ldap_sync_users")
-  parser.add_option('--groups', default=None, help="Specifies the path to the LDAP sync groups CSV file.",
+  parser.add_option('--groups', default=None, help="LDAP sync groups option.  Specifies the path to a CSV file of group names to be synchronized.",
                     dest="ldap_sync_groups")
   parser.add_option('--database', default=None, help="Database to use embedded|oracle|mysql|postgres", dest="dbms")
   parser.add_option('--databasehost', default=None, help="Hostname of database server", dest="database_host")
@@ -510,14 +509,7 @@ def create_user_action_map(args, options):
 #
 # Main.
 #
-def main():
-  parser = optparse.OptionParser(usage="usage: %prog [options] action [stack_id os]",)
-  init_parser_options(parser)
-  (options, args) = parser.parse_args()
-
-  # set verbose
-  set_verbose(options.verbose)
-
+def main(options, args, parser):
   # set silent
   set_silent(options.silent)
 
@@ -590,10 +582,27 @@ def main():
   if options.exit_message is not None:
     print options.exit_message
 
+def mainBody():
+  parser = optparse.OptionParser(usage="usage: %prog [options] action [stack_id os]",)
+  init_parser_options(parser)
+  (options, args) = parser.parse_args()
+
+  # set verbose
+  set_verbose(options.verbose)
+  if options.verbose:
+    main(options, args, parser)
+  else:
+    try:
+      main(options, args, parser)
+    except Exception as e:
+      print_error_msg("Unexpected {0}: {1}".format((e).__class__.__name__, str(e)) +\
+      "\nFor more info run ambari-server with -v or --verbose option")
+      sys.exit(1)     
+      
 
 if __name__ == "__main__":
   try:
-    main()
+    mainBody()
   except (KeyboardInterrupt, EOFError):
     print("\nAborting ... Keyboard Interrupt.")
     sys.exit(1)

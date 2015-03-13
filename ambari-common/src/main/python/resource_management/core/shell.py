@@ -19,10 +19,12 @@ limitations under the License.
 Ambari Agent
 
 """
-import os
 
 __all__ = ["non_blocking_call", "checked_call", "call", "quote_bash_args", "as_user", "as_sudo"]
 
+import os
+import pty
+import select
 import sys
 import logging
 import string
@@ -33,6 +35,7 @@ import traceback
 from exceptions import Fail
 from exceptions import ExecuteTimeoutException
 from resource_management.core.logger import Logger
+from ambari_commons.constants import AMBARI_SUDO_BINARY
 
 # use quiet=True calls from this folder (logs get too messy duplicating the resources with its commands)
 RMF_FOLDER = 'resource_management/'
@@ -134,9 +137,11 @@ def _call(command, logoutput=None, throw_on_failure=True,
   for placeholder, replacement in PLACEHOLDERS_TO_STR.iteritems():
     command = command.replace(placeholder, replacement.format(env_str=env_str))
 
+  master_fd, slave_fd = pty.openpty()
+
   # --noprofile is used to preserve PATH set for ambari-agent
   subprocess_command = ["/bin/bash","--login","--noprofile","-c", command]
-  proc = subprocess.Popen(subprocess_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+  proc = subprocess.Popen(subprocess_command, bufsize=1, stdout=slave_fd, stderr=subprocess.STDOUT,
                           cwd=cwd, env=env, shell=False,
                           preexec_fn=preexec_fn)
   
@@ -151,23 +156,32 @@ def _call(command, logoutput=None, throw_on_failure=True,
   # in case logoutput==False, never log.    
   logoutput = logoutput==True and Logger.logger.isEnabledFor(logging.INFO) or logoutput==None and Logger.logger.isEnabledFor(logging.DEBUG)
   out = ""
-  
+  read_timeout = .04 # seconds
+
   try:
-    for line in iter(proc.stdout.readline, b''):
-      out += line
-      
-      try:
-        if on_new_line:
-          on_new_line(line)
-      except Exception, err:
-        err_msg = "Caused by on_new_line function failed with exception for input argument '{0}':\n{1}".format(line, traceback.format_exc())
-        raise Fail(err_msg)
-        
-      if logoutput:
-        _print(line)
+    while True:
+      ready, _, _ = select.select([master_fd], [], [], read_timeout)
+      if ready:
+        line = os.read(master_fd, 512)
+        if not line:
+            break
+          
+        out += line
+        try:
+          if on_new_line:
+            on_new_line(line)
+        except Exception, err:
+          err_msg = "Caused by on_new_line function failed with exception for input argument '{0}':\n{1}".format(line, traceback.format_exc())
+          raise Fail(err_msg)
+          
+        if logoutput:
+          _print(line)    
+      elif proc.poll() is not None:
+        break # proc exited
   finally:
-    proc.stdout.close()
-    
+    os.close(slave_fd)
+    os.close(master_fd)
+
   proc.wait()  
   out = out.strip('\n')
   
@@ -186,14 +200,14 @@ def _call(command, logoutput=None, throw_on_failure=True,
   
   return code, out
 
-def as_sudo(command, env=None):
+def as_sudo(command, env=None, auto_escape=True):
   """
   command - list or tuple of arguments.
   env - when run as part of Execute resource, this SHOULD NOT be used.
   It automatically gets replaced later by call, checked_call. This should be used in not_if, only_if
   """
   if isinstance(command, (list, tuple)):
-    command = string_cmd_from_args_list(command)
+    command = string_cmd_from_args_list(command, auto_escape=auto_escape)
   else:
     # Since ambari user sudoer privileges may be restricted,
     # without having /bin/bash permission, and /bin/su permission.
@@ -205,14 +219,14 @@ def as_sudo(command, env=None):
     raise Fail(err_msg)
 
   env = _get_environment_str(_add_current_path_to_env(env)) if env else ENV_PLACEHOLDER
-  return "/usr/bin/sudo {0} -H -E {1}".format(env, command)
+  return "{0} {1} -H -E {2}".format(_get_sudo_binary(), env, command)
 
-def as_user(command, user, env=None):
+def as_user(command, user, env=None, auto_escape=True):
   if isinstance(command, (list, tuple)):
-    command = string_cmd_from_args_list(command)
+    command = string_cmd_from_args_list(command, auto_escape=auto_escape)
 
   export_env = "export {0} ; ".format(_get_environment_str(_add_current_path_to_env(env))) if env else EXPORT_PLACEHOLDER
-  return "/usr/bin/sudo su {0} -l -s /bin/bash -c {1}".format(user, quote_bash_args(export_env + command))
+  return "{0} su {1} -l -s /bin/bash -c {2}".format(_get_sudo_binary(), user, quote_bash_args(export_env + command))
 
 def quote_bash_args(command):
   if not command:
@@ -234,12 +248,16 @@ def _add_current_path_to_env(env):
     result['PATH'] = os.pathsep.join([os.environ['PATH'], result['PATH']])
   
   return result
+
+def _get_sudo_binary():
+  return AMBARI_SUDO_BINARY
   
 def _get_environment_str(env):
   return reduce(lambda str,x: '{0} {1}={2}'.format(str,x,quote_bash_args(env[x])), env, '')
 
-def string_cmd_from_args_list(command):
-  return ' '.join(quote_bash_args(x) for x in command)
+def string_cmd_from_args_list(command, auto_escape=True):
+  escape_func = lambda x:quote_bash_args(x) if auto_escape else lambda x:x
+  return ' '.join(escape_func(x) for x in command)
 
 def _on_timeout(proc, timeout_event):
   timeout_event.set()

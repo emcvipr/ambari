@@ -213,7 +213,6 @@ App.config = Em.Object.create({
    */
   identifyCategory: function (config) {
     var category = null,
-      categoryName = "",
       serviceConfigMetaData = this.get('preDefinedServiceConfigs').findProperty('serviceName', config.serviceName),
       configCategories = (serviceConfigMetaData && serviceConfigMetaData.get('configCategories')) || [];
 
@@ -246,9 +245,6 @@ App.config = Em.Object.create({
     if (config.displayType === 'int' && /\d+m$/.test(config.value)) {
       config.value = config.value.slice(0, config.value.length - 1);
       config.defaultValue = config.value;
-    }
-    if (config.displayType === 'checkbox') {
-      config.value = (config.value === 'true') ? config.defaultValue = true : config.defaultValue = false;
     }
   },
   /**
@@ -428,6 +424,7 @@ App.config = Em.Object.create({
     serviceConfigObj.belongsToService = configsPropertyDef.belongsToService;
     serviceConfigObj.category = configsPropertyDef.category;
     serviceConfigObj.showLabel = configsPropertyDef.showLabel !== false;
+    serviceConfigObj.dependentConfigPattern = configsPropertyDef.dependentConfigPattern
   },
 
   /**
@@ -522,11 +519,6 @@ App.config = Em.Object.create({
           }
         }
 
-        if (configData.displayType === 'checkbox') {
-          configData.value = configData.value === 'true'; // convert {String} value to {Boolean}
-          configData.defaultValue = configData.value;
-        }
-
         mergedConfigs.push(configData);
       } else {
         preDefinedCfgs.forEach(function (cfg) {
@@ -563,9 +555,7 @@ App.config = Em.Object.create({
     // Password fields should be made blank by default in installer wizard
     // irrespective of whatever value is sent from stack definition.
     // This forces the user to fill the password field.
-    if (configData.displayType == 'checkbox') {
-      configData.value = advanced ? advanced.value === 'true' : configData.value === 'true';
-    } else if (configData.displayType == 'password') {
+    if (configData.displayType == 'password') {
       configData.value = '';
     } else {
       configData.value = advanced ? advanced.value : configData.value;
@@ -739,7 +729,7 @@ App.config = Em.Object.create({
    some of the config defaults to previously user-entered data.
    **/
   tweakDynamicDefaults: function (localDB, serviceConfigProperty, config) {
-    var firstHost = null;
+    var firstHost;
     for (var host in localDB.hosts) {
       firstHost = host;
       break;
@@ -752,6 +742,25 @@ App.config = Em.Object.create({
     } catch (err) {
       // Nothing to worry about here, most likely trying indexOf on a non-string
     }
+  },
+
+  /**
+   * Mark descriptor properties in configuration object.
+   *
+   * @param {Object[]} configs - config properties to change
+   * @param {App.ServiceConfigProperty[]} descriptor - parsed kerberos descriptor
+   */
+  addKerberosDescriptorConfigs: function(configs, descriptor) {
+    descriptor.forEach(function(item) {
+      var property = configs.findProperty('name', item.get('name'));
+      if (property) {
+        Em.set(property, 'isSecureConfig', true);
+        Em.set(property, 'displayName', Em.get(item, 'name'));
+        Em.set(property, 'isUserProperty', false);
+        Em.set(property, 'isOverridable', false);
+        Em.set(property, 'category', 'Advanced ' + Em.get(item, 'filename'));
+      }
+    });
   },
   /**
    * create new child configs from overrides, attach them to parent config
@@ -980,7 +989,8 @@ App.config = Em.Object.create({
       'smokeuser': 'Smoke Test User',
       'user_group': 'Hadoop Group',
       'mapred_user': 'MapReduce User',
-      'zk_user': 'ZooKeeper User'
+      'zk_user': 'ZooKeeper User',
+      'ignore_groupsusers_create': 'Skip group modifications during install'
     };
     if (config.property_type.contains('USER') || config.property_type.contains('GROUP')) {
       propertyData.id = "puppet var";
@@ -990,7 +1000,7 @@ App.config = Em.Object.create({
       propertyData.isOverridable = false;
       propertyData.isReconfigurable = false;
       propertyData.displayName = nameToDisplayNameMap[config.property_name] || App.format.normalizeName(config.property_name);
-      propertyData.displayType = 'user';
+      propertyData.displayType = config.property_name == 'ignore_groupsusers_create' ? 'checkbox' : 'user';
       if (config.service_name) {
         var propertyIndex = config.service_name == 'MISC' ? 30 : App.StackService.find().mapProperty('serviceName').indexOf(config.service_name);
         propertyData.belongsToService = [config.service_name];
@@ -1137,13 +1147,6 @@ App.config = Em.Object.create({
       if (/\d+m$/.test(hostOverrideValue)) {
         return hostOverrideValue.slice(0, hostOverrideValue.length - 1);
       }
-    } else if (serviceConfig && serviceConfig.displayType === 'checkbox') {
-      switch (hostOverrideValue) {
-        case 'true':
-          return true;
-        case 'false':
-          return false;
-      }
     }
     return hostOverrideValue;
   },
@@ -1231,27 +1234,30 @@ App.config = Em.Object.create({
    * @return {Object}
    */
   addUserProperty: function (stored, isAdvanced, advancedConfigs) {
-    var configData = {
-      id: stored.id,
-      name: stored.name,
-      displayName: App.format.normalizeName(stored.name),
-      serviceName: stored.serviceName,
-      value: stored.value,
-      defaultValue: stored.defaultValue,
-      displayType: stringUtils.isSingleLine(stored.value) ? 'advanced' : 'multiLine',
-      filename: stored.filename,
-      isUserProperty: stored.isUserProperty === true,
-      hasInitialValue: !!stored.hasInitialValue,
-      isOverridable: true,
-      overrides: stored.overrides,
-      isRequired: false,
-      isVisible: stored.isVisible,
-      isFinal: stored.isFinal,
-      defaultIsFinal: stored.defaultIsFinal,
-      supportsFinal: stored.supportsFinal,
-      showLabel: stored.showLabel !== false,
-      category: stored.category
-    };
+    var
+      skipChangeOfDisplayType = ['ignore_groupsusers_create'],
+      originalDispType = advancedConfigs.findProperty('name', stored.name) ? advancedConfigs.findProperty('name', stored.name).displayType : stored.displayType;
+      configData = {
+        id: stored.id,
+        name: stored.name,
+        displayName: App.format.normalizeName(stored.name),
+        serviceName: stored.serviceName,
+        value: stored.value,
+        defaultValue: stored.defaultValue,
+        displayType: skipChangeOfDisplayType.contains(stored.name) ? originalDispType : (stringUtils.isSingleLine(stored.value) ? 'advanced' : 'multiLine'),
+        filename: stored.filename,
+        isUserProperty: stored.isUserProperty === true,
+        hasInitialValue: !!stored.hasInitialValue,
+        isOverridable: true,
+        overrides: stored.overrides,
+        isRequired: false,
+        isVisible: stored.isVisible,
+        isFinal: stored.isFinal,
+        defaultIsFinal: stored.defaultIsFinal,
+        supportsFinal: stored.supportsFinal,
+        showLabel: stored.showLabel !== false,
+        category: stored.category
+      };
 
     App.get('config').calculateConfigProperties(configData, isAdvanced, advancedConfigs);
     return configData;

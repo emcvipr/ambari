@@ -20,6 +20,7 @@ limitations under the License.
 
 from resource_management import *
 import sys
+import os
 from ambari_commons import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 
@@ -55,7 +56,6 @@ class KnoxServiceCheck(Script):
           content=StaticFile(validateKnoxFileName),
           mode=0755
           )
-
         Execute(smoke_cmd,
           tries=3,
           try_sleep=5,

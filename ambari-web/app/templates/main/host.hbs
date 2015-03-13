@@ -68,7 +68,7 @@
         {{view view.parentView.memorySort}}
         {{view view.parentView.diskUsageSort}}
         {{view view.parentView.loadAvgSort}}
-        <th {{bindAttr class="App.supports.stackUpgrade::hidden :sort-view-11"}}>
+        <th {{bindAttr class="App.supports.stackUpgrade::hidden App.stackVersionsAvailable::hidden :sort-view-11"}}>
           {{t hosts.host.menu.stackVersions}}
         </th>
         <th class="sort-view-6">{{t common.components}}</th>
@@ -84,7 +84,7 @@
         <th>{{view view.ramFilterView}}</th>
         <th> </th>
         <th>{{view view.loadAvgFilterView}}</th>
-        <th {{bindAttr class="App.supports.stackUpgrade::hidden"}}>
+        <th {{bindAttr class="App.supports.stackUpgrade::hidden App.stackVersionsAvailable::hidden"}}>
           {{view view.versionsFilterView}}
         </th>
         <th>{{view view.componentsFilterView}}</th>
@@ -132,21 +132,21 @@
           </td>
 
           <td class="load-avg">{{host.loadAvg}}</td>
-          <td {{bindAttr class="App.supports.stackUpgrade::hidden view.hasSingleVersion:not-active-link :host-table-versions"}}>
+          <td {{bindAttr class="App.supports.stackUpgrade::hidden App.stackVersionsAvailable::hidden view.hasSingleVersion:not-active-link :host-table-versions"}}>
             <a href="#" class="expander black" {{action toggleVersions target="view"}}>
               {{#unless view.hasSingleVersion}}
                 <span {{bindAttr class="view.isVersionsCollapsed:icon-caret-right:icon-caret-down"}}></span>
               {{/unless}}
               {{view.currentVersion}}
             </a>
-            <div class="stack-versions collapsed-list">
+            <div {{bindAttr class="view.isVersionsCollapsed:noDisplay:display :stack-versions :collapsed-list"}}>
               {{{view.versionlabels}}}
             </div>
           </td>
           <td class="host-table-components">
             <a href="#" class="expander" {{action toggleComponents target="view"}}> <span {{bindAttr class="view.isComponentsCollapsed:icon-caret-right:icon-caret-down"}}></span>
               {{view.content.hostComponents.length}} {{pluralize view.content.hostComponents.length singular="t:common.component" plural="t:common.components"}}</a>
-            <div class="host-components collapsed-list">
+            <div {{bindAttr class="view.isComponentsCollapsed:noDisplay:display :host-components :collapsed-list"}}>
               {{{view.labels}}}
             </div>
           </td>
@@ -169,7 +169,9 @@
 
   <div class="page-bar">
     <div class="filtered-info span4">
-      <label>{{view.filteredContentInfo}} - <a {{action clearFilters target="view"}} id="hosts-page-clear-filters" href="#">{{t tableView.filters.clearAllFilters}}</a></label>
+      {{#if view.showFilteredContent}}
+        <label>{{view.filteredContentInfo}} - <a {{action clearFilters target="view"}} id="hosts-page-clear-filters" href="#">{{t tableView.filters.clearAllFilters}}</a></label>
+      {{/if}}
     </div>
     <div class="selected-hosts-info span4">
       {{#if view.showSelectedFilter}}

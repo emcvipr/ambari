@@ -65,7 +65,7 @@ zk_pid_dir = status_params.zk_pid_dir
 zk_pid_file = status_params.zk_pid_file
 zk_server_heapsize = "-Xmx1024m"
 
-clientPort = config['configurations']['zoo.cfg']['clientPort']
+client_port = default('/configurations/zoo.cfg/clientPort', None)
 
 if 'zoo.cfg' in config['configurations']:
   zoo_cfg_properties_map = config['configurations']['zoo.cfg']
@@ -89,7 +89,7 @@ security_enabled = config['configurations']['cluster-env']['security_enabled']
 smoke_user_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
 smokeuser = config['configurations']['cluster-env']['smokeuser']
 smokeuser_principal = config['configurations']['cluster-env']['smokeuser_principal_name']
-kinit_path_local = functions.get_kinit_path(["/usr/bin", "/usr/kerberos/bin", "/usr/sbin"])
+kinit_path_local = functions.get_kinit_path()
 
 #log4j.properties
 if (('zookeeper-log4j' in config['configurations']) and ('content' in config['configurations']['zookeeper-log4j'])):

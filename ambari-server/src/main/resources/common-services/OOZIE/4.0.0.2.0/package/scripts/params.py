@@ -18,6 +18,7 @@ limitations under the License.
 
 """
 
+from ambari_commons.constants import AMBARI_SUDO_BINARY
 from resource_management.core import System
 from resource_management.libraries import Script
 from resource_management.libraries.functions import default
@@ -35,6 +36,9 @@ import os
 # server configurations
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
+sudo = AMBARI_SUDO_BINARY
+
+hostname = config["hostname"]
 
 # New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade
 version = default("/commandParams/version", None)
@@ -62,7 +66,7 @@ if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
   oozie_root = server_role_dir_mapping[command_role]
 
   # using the correct oozie root dir, format the correct location
-  oozie_lib_dir = format("/usr/hdp/current/{oozie_root}/")
+  oozie_lib_dir = format("/usr/hdp/current/{oozie_root}")
   oozie_setup_sh = format("/usr/hdp/current/{oozie_root}/bin/oozie-setup.sh")
   oozie_webapps_dir = format("/usr/hdp/current/{oozie_root}/oozie-server/webapps")
   oozie_webapps_conf_dir = format("/usr/hdp/current/{oozie_root}/oozie-server/conf")
@@ -76,7 +80,7 @@ if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
 else:
   hadoop_bin_dir = "/usr/bin"
   hadoop_lib_home = "/usr/lib/hadoop/lib"
-  oozie_lib_dir = "/var/lib/oozie/"
+  oozie_lib_dir = "/var/lib/oozie"
   oozie_setup_sh = "/usr/lib/oozie/bin/oozie-setup.sh"
   oozie_webapps_dir = "/var/lib/oozie/oozie-server/webapps/"
   oozie_webapps_conf_dir = "/var/lib/oozie/oozie-server/conf"
@@ -112,9 +116,19 @@ security_enabled = config['configurations']['cluster-env']['security_enabled']
 oozie_heapsize = config['configurations']['oozie-env']['oozie_heapsize']
 oozie_permsize = config['configurations']['oozie-env']['oozie_permsize']
 
-kinit_path_local = get_kinit_path(["/usr/bin", "/usr/kerberos/bin", "/usr/sbin"])
+kinit_path_local = get_kinit_path()
 oozie_service_keytab = config['configurations']['oozie-site']['oozie.service.HadoopAccessorService.keytab.file']
 oozie_principal = config['configurations']['oozie-site']['oozie.service.HadoopAccessorService.kerberos.principal']
+http_principal = config['configurations']['oozie-site']['oozie.authentication.kerberos.principal']
+oozie_site = config['configurations']['oozie-site']
+if security_enabled:
+  #older versions of oozie have problems when using _HOST in principal
+  oozie_site = dict(config['configurations']['oozie-site'])
+  oozie_site['oozie.service.HadoopAccessorService.kerberos.principal'] = \
+    oozie_principal.replace('_HOST', hostname)
+  oozie_site['oozie.authentication.kerberos.principal'] = \
+    http_principal.replace('_HOST', hostname)
+
 smokeuser_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
 oozie_keytab = default("/configurations/oozie-env/oozie_keytab", oozie_service_keytab)
 oozie_env_sh_template = config['configurations']['oozie-env']['content']
@@ -163,7 +177,7 @@ if jdbc_driver_name == "org.postgresql.Driver":
 else:
   target = format("{oozie_libext_dir}/{jdbc_driver_jar}")
 
-hostname = config["hostname"]
+
 ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 falcon_host = default("/clusterHostInfo/falcon_server_hosts", [])
 has_falcon_host = not len(falcon_host)  == 0

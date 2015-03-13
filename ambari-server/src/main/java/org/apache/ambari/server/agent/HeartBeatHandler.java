@@ -24,7 +24,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -32,8 +31,10 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
+import com.google.common.reflect.TypeToken;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.HostNotFoundException;
+import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
 import org.apache.ambari.server.ServiceComponentHostNotFoundException;
 import org.apache.ambari.server.ServiceComponentNotFoundException;
@@ -51,6 +52,7 @@ import org.apache.ambari.server.events.HostComponentVersionEvent;
 import org.apache.ambari.server.events.publishers.AlertEventPublisher;
 import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.metadata.ActionMetadata;
+import org.apache.ambari.server.orm.dao.KerberosPrincipalHostDAO;
 import org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile;
 import org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFileReader;
 import org.apache.ambari.server.serveraction.kerberos.KerberosServerAction;
@@ -65,7 +67,6 @@ import org.apache.ambari.server.state.HostHealthStatus;
 import org.apache.ambari.server.state.HostHealthStatus.HealthStatus;
 import org.apache.ambari.server.state.HostState;
 import org.apache.ambari.server.state.MaintenanceState;
-import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.SecurityState;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponent;
@@ -82,6 +83,7 @@ import org.apache.ambari.server.state.host.HostHealthyHeartbeatEvent;
 import org.apache.ambari.server.state.host.HostRegistrationRequestEvent;
 import org.apache.ambari.server.state.host.HostStatusUpdatesReceivedEvent;
 import org.apache.ambari.server.state.host.HostUnhealthyHeartbeatEvent;
+import org.apache.ambari.server.state.scheduler.RequestExecution;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostOpFailedEvent;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostOpInProgressEvent;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostOpSucceededEvent;
@@ -91,7 +93,6 @@ import org.apache.ambari.server.utils.StageUtils;
 import org.apache.ambari.server.utils.VersionUtils;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.csv.CSVParser;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
@@ -151,6 +152,12 @@ public class HeartBeatHandler {
 
   @Inject
   private AmbariEventPublisher ambariEventPublisher;
+
+  /**
+   * KerberosPrincipalHostDAO used to set and get Kerberos principal details
+   */
+  @Inject
+  private KerberosPrincipalHostDAO kerberosPrincipalHostDAO;
 
   private Map<String, Long> hostResponseIds = new ConcurrentHashMap<String, Long>();
 
@@ -444,6 +451,44 @@ public class HeartBeatHandler {
               report.getStatus().equals("IN_PROGRESS")) {
         hostRoleCommand.setStartTime(now);
       }
+
+      // If the report indicates the keytab file was successfully transferred to a host or removed
+      // from a host, record this for future reference
+      if (Service.Type.KERBEROS.name().equalsIgnoreCase(report.getServiceName()) &&
+          Role.KERBEROS_CLIENT.name().equalsIgnoreCase(report.getRole()) &&
+          RoleCommand.CUSTOM_COMMAND.name().equalsIgnoreCase(report.getRoleCommand()) &&
+          RequestExecution.Status.COMPLETED.name().equalsIgnoreCase(report.getStatus())) {
+
+        String customCommand = report.getCustomCommand();
+
+        boolean adding = "SET_KEYTAB".equalsIgnoreCase(customCommand);
+        if (adding || "REMOVE_KEYTAB".equalsIgnoreCase(customCommand)) {
+          WriteKeytabsStructuredOut writeKeytabsStructuredOut;
+          try {
+            writeKeytabsStructuredOut = gson.fromJson(report.getStructuredOut(), WriteKeytabsStructuredOut.class);
+          } catch (JsonSyntaxException ex) {
+            //Json structure was incorrect do nothing, pass this data further for processing
+            writeKeytabsStructuredOut = null;
+          }
+
+          if (writeKeytabsStructuredOut != null) {
+            Map<String, String> keytabs = writeKeytabsStructuredOut.getKeytabs();
+            if (keytabs != null) {
+              for (Map.Entry<String, String> entry : keytabs.entrySet()) {
+                String principal = entry.getKey();
+                if (!kerberosPrincipalHostDAO.exists(principal, hostname)) {
+                  if (adding) {
+                    kerberosPrincipalHostDAO.create(principal, hostname);
+                  } else if ("_REMOVED_".equalsIgnoreCase(entry.getValue())) {
+                    kerberosPrincipalHostDAO.remove(principal, hostname);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
       //pass custom STAR, STOP and RESTART
       if (RoleCommand.ACTIONEXECUTE.toString().equals(report.getRoleCommand()) ||
          (RoleCommand.CUSTOM_COMMAND.toString().equals(report.getRoleCommand()) &&
@@ -479,16 +524,11 @@ public class HeartBeatHandler {
                 //do nothing, pass this data further for processing
               }
               if (structuredOutput != null && StringUtils.isNotBlank(structuredOutput.getVersion())) {
-                final String previousVersion = scHost.getVersion();
-                if (!StringUtils.equals(previousVersion, structuredOutput.getVersion())) {
-                  scHost.setVersion(structuredOutput.getVersion());
-                  if (previousVersion != null && !previousVersion.equalsIgnoreCase(State.UNKNOWN.toString())) {
-                    scHost.setUpgradeState(UpgradeState.COMPLETE);
-                  }
-                }
+                handleComponentVersionReceived(scHost, structuredOutput.getVersion());
               }
               // Safer to recalculate the version even if we don't detect a difference in the value.
               // This is useful in case that a manual database edit is done while ambari-server is stopped.
+              // TODO should be included into handleComponentVersionReceived() after RU becomes stable
               HostComponentVersionEvent event = new HostComponentVersionEvent(cl, scHost);
               ambariEventPublisher.publish(event);
             }
@@ -635,6 +675,14 @@ public class HeartBeatHandler {
                     List<Map<String, String>> list = (List<Map<String, String>>) extra.get("processes");
                     scHost.setProcesses(list);
                   }
+                  if (extra.containsKey("version")) {
+                    boolean versionWasUpdated = handleComponentVersionReceived(scHost, extra.get("version").toString());
+                    if (versionWasUpdated) {
+                      // TODO should be included into handleComponentVersionReceived() after RU becomes stable
+                      HostComponentVersionEvent event = new HostComponentVersionEvent(cl, scHost);
+                      ambariEventPublisher.publish(event);
+                    }
+                  }
 
                 } catch (Exception e) {
                   LOG.error("Could not access extra JSON for " +
@@ -686,6 +734,26 @@ public class HeartBeatHandler {
   }
 
   /**
+   * Updates version of service component and sets upgrade state if needed.
+   *
+   * @param scHost service component host
+   * @param newVersion new version of service component
+   *
+   * @return true if component version was updated to new one
+   */
+  private boolean handleComponentVersionReceived(ServiceComponentHost scHost, String newVersion) {
+    final String previousVersion = scHost.getVersion();
+    if (!StringUtils.equals(previousVersion, newVersion)) {
+      scHost.setVersion(newVersion);
+      if (previousVersion != null && !previousVersion.equalsIgnoreCase(State.UNKNOWN.toString())) {
+        scHost.setUpgradeState(UpgradeState.COMPLETE);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Adds commands from action queue to a heartbeat responce
    */
   protected void sendCommands(String hostname, HeartBeatResponse response)
@@ -705,12 +773,15 @@ public class HeartBeatHandler {
           case EXECUTION_COMMAND: {
             ExecutionCommand ec = (ExecutionCommand)ac;
             Map<String, String> hlp = ec.getHostLevelParams();
-            if ((hlp != null) && "SET_KEYTAB".equals(hlp.get("custom_command")))   {
-              LOG.info("SET_KEYTAB called") ;
-              try {
-                injectKeytab(ec, hostname);
-              } catch (IOException e) {
-                throw new AmbariException("Could not inject keytab into command", e);
+            if (hlp != null) {
+              String customCommand = hlp.get("custom_command");
+              if ("SET_KEYTAB".equalsIgnoreCase(customCommand) || "REMOVE_KEYTAB".equalsIgnoreCase(customCommand)) {
+                LOG.info(String.format("%s called", customCommand));
+                try {
+                  injectKeytab(ec, customCommand, hostname);
+                } catch (IOException e) {
+                  throw new AmbariException("Could not inject keytab into command", e);
+                }
               }
             }
             response.addExecutionCommand((ExecutionCommand) ac);
@@ -822,6 +893,11 @@ public class HeartBeatHandler {
 
     // Get status of service components
     List<StatusCommand> cmds = heartbeatMonitor.generateStatusCommands(hostname);
+
+    // Add request for component version
+    for (StatusCommand command: cmds) {
+      command.getCommandParams().put("request_version", String.valueOf(true));
+    }
 
     // Save the prefix of the log file paths
     hostObject.setPrefix(register.getPrefix());
@@ -951,54 +1027,81 @@ public class HeartBeatHandler {
     return commands;
   }
 
-  static void injectKeytab(ExecutionCommand ec, String targetHost) throws AmbariException {
-    Map<String, String> hlp = ec.getHostLevelParams();
-    if ((hlp == null) || !"SET_KEYTAB".equals(hlp.get("custom_command"))) {
-      return;
-    }
+  /**
+   * Insert Kerberos keytab details into the ExecutionCommand for the SET_KEYTAB custom command if
+   * any keytab details and associated data exists for the target host.
+   *
+   * @param ec the ExecutionCommand to update
+   * @param command a name of the relevant keytab command
+   * @param targetHost a name of the host the relevant command is destined for
+   * @throws AmbariException
+   */
+  void injectKeytab(ExecutionCommand ec, String command, String targetHost) throws AmbariException {
     List<Map<String, String>> kcp = ec.getKerberosCommandParams();
     String dataDir = ec.getCommandParams().get(KerberosServerAction.DATA_DIRECTORY);
-    File file = new File(dataDir + File.separator + "index.dat");
-    CSVParser csvParser = null;
+    KerberosActionDataFileReader reader = null;
+
     try {
-      KerberosActionDataFileReader reader = new KerberosActionDataFileReader(file);
-      Iterator<Map<String, String>> iterator = reader.iterator();
-      while (iterator.hasNext())    {
-        Map<String, String> record = iterator.next();
+      reader = new KerberosActionDataFileReader(new File(dataDir, KerberosActionDataFile.DATA_FILE_NAME));
+
+      for (Map<String, String> record : reader) {
         String hostName = record.get(KerberosActionDataFile.HOSTNAME);
-        if (!targetHost.equalsIgnoreCase(hostName))    {
-          continue;
+
+        if (targetHost.equalsIgnoreCase(hostName)) {
+
+          if ("SET_KEYTAB".equalsIgnoreCase(command)) {
+            String keytabFilePath = record.get(KerberosActionDataFile.KEYTAB_FILE_PATH);
+
+            if (keytabFilePath != null) {
+
+              String sha1Keytab = DigestUtils.sha1Hex(keytabFilePath);
+              File keytabFile = new File(dataDir + File.separator + hostName + File.separator + sha1Keytab);
+
+              if (keytabFile.canRead()) {
+                Map<String, String> keytabMap = new HashMap<String, String>();
+                String principal = record.get(KerberosActionDataFile.PRINCIPAL);
+                String isService = record.get(KerberosActionDataFile.SERVICE);
+
+                keytabMap.put(KerberosActionDataFile.HOSTNAME, hostName);
+                keytabMap.put(KerberosActionDataFile.SERVICE, isService);
+                keytabMap.put(KerberosActionDataFile.COMPONENT, record.get(KerberosActionDataFile.COMPONENT));
+                keytabMap.put(KerberosActionDataFile.PRINCIPAL, principal);
+                keytabMap.put(KerberosActionDataFile.PRINCIPAL_CONFIGURATION, record.get(KerberosActionDataFile.PRINCIPAL_CONFIGURATION));
+                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_PATH, keytabFilePath);
+                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_OWNER_NAME, record.get(KerberosActionDataFile.KEYTAB_FILE_OWNER_NAME));
+                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_OWNER_ACCESS, record.get(KerberosActionDataFile.KEYTAB_FILE_OWNER_ACCESS));
+                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_GROUP_NAME, record.get(KerberosActionDataFile.KEYTAB_FILE_GROUP_NAME));
+                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_GROUP_ACCESS, record.get(KerberosActionDataFile.KEYTAB_FILE_GROUP_ACCESS));
+                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION, record.get(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION));
+
+                BufferedInputStream bufferedIn = new BufferedInputStream(new FileInputStream(keytabFile));
+                byte[] keytabContent = IOUtils.toByteArray(bufferedIn);
+                String keytabContentBase64 = Base64.encodeBase64String(keytabContent);
+                keytabMap.put(KerberosServerAction.KEYTAB_CONTENT_BASE64, keytabContentBase64);
+
+                kcp.add(keytabMap);
+              }
+            }
+          } else if ("REMOVE_KEYTAB".equalsIgnoreCase(command)) {
+            Map<String, String> keytabMap = new HashMap<String, String>();
+
+            keytabMap.put(KerberosActionDataFile.HOSTNAME, hostName);
+            keytabMap.put(KerberosActionDataFile.SERVICE, record.get(KerberosActionDataFile.SERVICE));
+            keytabMap.put(KerberosActionDataFile.COMPONENT, record.get(KerberosActionDataFile.COMPONENT));
+            keytabMap.put(KerberosActionDataFile.PRINCIPAL, record.get(KerberosActionDataFile.PRINCIPAL));
+            keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_PATH, record.get(KerberosActionDataFile.KEYTAB_FILE_PATH));
+
+            kcp.add(keytabMap);
+          }
         }
-        Map<String, String> keytabMap = new HashMap<String, String>();
-        keytabMap.put(KerberosActionDataFile.HOSTNAME, hostName);
-        keytabMap.put(KerberosActionDataFile.SERVICE, record.get(KerberosActionDataFile.SERVICE));
-        keytabMap.put(KerberosActionDataFile.COMPONENT, record.get(KerberosActionDataFile.COMPONENT));
-        keytabMap.put(KerberosActionDataFile.PRINCIPAL, record.get(KerberosActionDataFile.PRINCIPAL));
-        keytabMap.put(KerberosActionDataFile.PRINCIPAL_CONFIGURATION, record.get(KerberosActionDataFile.PRINCIPAL_CONFIGURATION));
-        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_PATH, record.get(KerberosActionDataFile.KEYTAB_FILE_PATH));
-        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_OWNER_NAME, record.get(KerberosActionDataFile.KEYTAB_FILE_OWNER_NAME));
-        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_OWNER_ACCESS, record.get(KerberosActionDataFile.KEYTAB_FILE_OWNER_ACCESS));
-        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_GROUP_NAME, record.get(KerberosActionDataFile.KEYTAB_FILE_GROUP_NAME));
-        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_GROUP_ACCESS, record.get(KerberosActionDataFile.KEYTAB_FILE_GROUP_ACCESS));
-        keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION, record.get(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION));
-
-        String sha1Keytab =  DigestUtils.sha1Hex(record.get(KerberosActionDataFile.KEYTAB_FILE_PATH));
-
-        BufferedInputStream bufferedIn = new BufferedInputStream(
-          new FileInputStream(dataDir + File.separator +
-            hostName + File.separator + sha1Keytab));
-        byte[] keytabContent = IOUtils.toByteArray(bufferedIn);
-        String keytabContentBase64 = Base64.encodeBase64String(keytabContent);
-        keytabMap.put(KerberosServerAction.KEYTAB_CONTENT_BASE64, keytabContentBase64);
-        kcp.add(keytabMap);
       }
     } catch (IOException e) {
       throw new AmbariException("Could not inject keytabs to enable kerberos");
     }  finally {
-      if (csvParser != null && !csvParser.isClosed())  {
+      if (reader != null) {
         try {
-          csvParser.close();
-        }  catch (Throwable t)  {
+          reader.close();
+        } catch (Throwable t) {
           // ignored
         }
       }
@@ -1020,6 +1123,22 @@ public class HeartBeatHandler {
 
     public void setVersion(String version) {
       this.version = version;
+    }
+  }
+
+  /**
+   * This class is used for mapping json of structured output for keytab distribution actions.
+   */
+  private static class WriteKeytabsStructuredOut {
+    @SerializedName("keytabs")
+    private Map<String,String> keytabs;
+
+    public Map<String, String> getKeytabs() {
+      return keytabs;
+    }
+
+    public void setKeytabs(Map<String, String> keytabs) {
+      this.keytabs = keytabs;
     }
   }
 
