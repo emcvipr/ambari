@@ -641,6 +641,18 @@ public class BlueprintConfigurationProcessor {
                                          String origValue,
                                          Map<String, Map<String, String>> properties,
                                          Stack stackDefinition)  {
+      System.out.println("###########################################################");
+      System.out.println("HOSTGROUPS:: " + hostGroups);
+      System.out.println("ORIGVALUE:: " + origValue);
+      System.out.println("PROPERTIES:: " + properties);
+      System.out.println("STACKDEFINITION:: " + stackDefinition);
+      System.out.println("COMPONENT:: " + component);
+
+      if(origValue != null && origValue.startsWith("viprfs")) {
+         System.out.println("VIPRFS controller properties. returning original value:: " + origValue);
+         return origValue;
+      }
+      System.out.println("###########################################################");
 
       Matcher m = HOSTGROUP_REGEX.matcher(origValue);
       if (m.find()) {
