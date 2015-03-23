@@ -645,14 +645,14 @@ public class BlueprintConfigurationProcessor {
       System.out.println("HOSTGROUPS:: " + hostGroups);
       System.out.println("ORIGVALUE:: " + origValue);
       //System.out.println("PROPERTIES:: " + properties);
-      System.out.println("STACKDEFINITION:: " + stackDefinition.getName());
+      System.out.println("STACKDEFINITION:: " + stackDefinition.getName() + ":" + stackDefinition.getVersion());
       System.out.println("COMPONENT:: " + component);
 
       //TODO vijay - namenode componentis is getting added when the stack is created using blueprint route
       // This is a temporary fix to resolve the issue
 
       if( (origValue != null && origValue.startsWith("viprfs")) ||  
-              (stackDefinition.getName()=="2.2.VIPRFS" && component.equals("NAMENODE")) ) {
+              (stackDefinition.getVersion()=="2.2.VIPRFS" && component.equals("NAMENODE")) ) {
          System.out.println("VIPRFS controller properties. returning original value:: " + origValue);
          return origValue;
       }
