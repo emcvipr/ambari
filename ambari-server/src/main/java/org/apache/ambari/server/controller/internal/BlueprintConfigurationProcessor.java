@@ -652,7 +652,10 @@ public class BlueprintConfigurationProcessor {
       // This is a temporary fix to resolve the issue
 
       if( (origValue != null && origValue.startsWith("viprfs")) ||  
-              (stackDefinition.getVersion().equals("2.2.VIPRFS") && component.equals("NAMENODE")) ) {
+              (stackDefinition.getVersion().equals("2.2.VIPRFS") && component.equals("NAMENODE")) || 
+              (stackDefinition.getVersion().equals("2.2.VIPRFS") && component.equals("SECONDARY_NAMENODE")) || 
+              (stackDefinition.getVersion().equals("2.2.VIPRFS") && component.equals("DATANODE"))  
+         ) {
          System.out.println("VIPRFS controller properties. returning original value:: " + origValue);
          return origValue;
       }
