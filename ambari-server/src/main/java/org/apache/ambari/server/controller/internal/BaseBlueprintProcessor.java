@@ -70,8 +70,8 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
   protected BaseBlueprintProcessor(Set<String> propertyIds,
                                    Map<Resource.Type, String> keyPropertyIds,
                                    AmbariManagementController managementController) {
-
     super(propertyIds, keyPropertyIds, managementController);
+    System.out.println("1. propertyIds=[" + propertyIds + "] keyPropertyIds [" + keyPropertyIds + "]");
   }
 
   /**
@@ -84,8 +84,10 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
    */
   protected Collection<HostGroupImpl> getHostGroupsForComponent(String component, Collection<HostGroupImpl> hostGroups) {
     Collection<HostGroupImpl> resultGroups = new HashSet<HostGroupImpl>();
+    System.out.println("2. component=[" + component + "] hostGroups [" + hostGroups + "]");
     for (HostGroupImpl group : hostGroups ) {
       if (group.getComponents().contains(component)) {
+    	  System.out.println("3. group =[" + group + "] services [" + group.getServices() + "]");
         resultGroups.add(group);
       }
     }
@@ -104,6 +106,7 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
     Map<String, HostGroupImpl> mapHostGroups = new HashMap<String, HostGroupImpl>();
 
     for (HostGroupEntity hostGroup : blueprint.getHostGroups()) {
+    	System.out.println("4. group =[" + hostGroup + "] name [" + hostGroup.getName() + "]");
       mapHostGroups.put(hostGroup.getName(), new HostGroupImpl(hostGroup, stack, this));
     }
     return mapHostGroups;
@@ -148,23 +151,29 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
   protected BlueprintEntity validateTopology(BlueprintEntity blueprint) throws AmbariException {
     Stack stack = new Stack(blueprint.getStackName(), blueprint.getStackVersion(), getManagementController());
     Map<String, HostGroupImpl> hostGroupMap = parseBlueprintHostGroups(blueprint, stack);
+    System.out.println("5. hostGroupMap =[" + hostGroupMap + "]");
     Collection<HostGroupImpl> hostGroups = hostGroupMap.values();
     Map<String, Map<String, String>> clusterConfig = processBlueprintConfigurations(blueprint, null);
+    System.out.println("6. clusterConfig =[" + clusterConfig + "]");
     Map<String, Map<String, Collection<DependencyInfo>>> missingDependencies =
         new HashMap<String, Map<String, Collection<DependencyInfo>>>();
 
     Collection<String> services = getTopologyServices(hostGroups);
+    System.out.println("7. services =[" + services + "]");
     for (HostGroupImpl group : hostGroups) {
       Map<String, Collection<DependencyInfo>> missingGroupDependencies =
           group.validateTopology(hostGroups, services, clusterConfig);
       if (! missingGroupDependencies.isEmpty()) {
+    	  System.out.println("8. group.getEntity().getName() =[" + group.getEntity().getName() + "]");
         missingDependencies.put(group.getEntity().getName(), missingGroupDependencies);
       }
     }
 
     Collection<String> cardinalityFailures = new HashSet<String>();
     for (String service : services) {
+    	System.out.println("9. Service =[" + service + "]");
       for (String component : stack.getComponents(service)) {
+    	  System.out.println("10. component =[" + component + "]");
         Cardinality cardinality = stack.getCardinality(component);
         AutoDeployInfo autoDeploy = stack.getAutoDeployInfo(component);
         if (cardinality.isAll()) {
@@ -272,6 +281,7 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
    * @param component  name of component which is being added
    */
   protected void addComponentToBlueprint(BlueprintEntity blueprint, String hostGroup, String component) {
+	  System.out.println("11. component =[" + component + "]");
     HostGroupComponentEntity componentEntity = new HostGroupComponentEntity();
     componentEntity.setBlueprintName(blueprint.getBlueprintName());
     componentEntity.setName(component);
@@ -314,6 +324,7 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
     for (HostGroupImpl group : hostGroups) {
       services.addAll(group.getServices());
     }
+    System.out.println("12. services =[" + services + "]");
     return services;
   }
 
@@ -329,6 +340,7 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
    */
   protected boolean isDependencyManaged(Stack stack, String component, Map<String, Map<String, String>> clusterConfig) {
     boolean isManaged = true;
+    System.out.println("13. component =[" + component + "]");
     String externalComponentConfig = stack.getExternalComponentConfig(component);
     if (externalComponentConfig != null) {
       String[] toks = externalComponentConfig.split("/");
@@ -414,12 +426,14 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
                                                             String component,
                                                             AutoDeployInfo autoDeploy) {
 
+	  System.out.println("14. component =[" + component + "]");
     Collection<String> cardinalityFailures = new HashSet<String>();
     int actualCount = getHostGroupsForComponent(component, hostGroups).size();
     if (actualCount != hostGroups.size()) {
       if (autoDeploy != null && autoDeploy.isEnabled()) {
         for (HostGroupImpl group : hostGroups) {
           if (group.addComponent(component)) {
+        	  System.out.println("15. adding component =[" + component + "]");
             addComponentToBlueprint(blueprint, group.getEntity().getName(), component);
           }
         }
@@ -629,12 +643,15 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
      * @return true if component was added; false if component already existed
      */
     public boolean addComponent(String component) {
+    	System.out.println("16. component =[" + component + "]");
       boolean added = components.add(component);
       if (added) {
         String service = stack.getServiceForComponent(component);
+        System.out.println("17. service =[" + service + "]");
         if (service != null) {
           // an example of a component without a service in the stack is AMBARI_SERVER
           Set<String> serviceComponents = componentsForService.get(service);
+          System.out.println("18. service components =[" + serviceComponents + "]");
           if (serviceComponents == null) {
             serviceComponents = new HashSet<String>();
             componentsForService.put(service, serviceComponents);
@@ -687,13 +704,17 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
                                                                     Collection<String> services,
                                                                     Map<String, Map<String, String>> clusterConfig) {
 
+    	System.out.println("19. services =[" + services + "]");
+    	
       Map<String, Collection<DependencyInfo>> missingDependencies =
           new HashMap<String, Collection<DependencyInfo>>();
 
       for (String component : new HashSet<String>(components)) {
+    	  System.out.println("20. component =[" + component + "]");
         Collection<DependencyInfo> dependenciesForComponent = stack.getDependenciesForComponent(component);
         for (DependencyInfo dependency : dependenciesForComponent) {
           String conditionalService = stack.getConditionalServiceForDependency(dependency);
+          System.out.println("21. conditionalService =[" + conditionalService + "]");
           if (conditionalService != null && ! services.contains(conditionalService)) {
             continue;
           }
@@ -712,12 +733,14 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
             if (components.contains(component) || (autoDeployInfo != null && autoDeployInfo.isEnabled())) {
               resolved = true;
               if (addComponent(componentName)) {
+            	  System.out.println("22. componentName =[" + componentName + "]");
                 blueprintProcessor.addComponentToBlueprint(hostGroup.getBlueprintEntity(), getEntity().getName(), componentName);
               }
             }
           }
 
           if (! resolved) {
+        	  System.out.println("23. component =[" + component + "]");
             Collection<DependencyInfo> missingCompDependencies = missingDependencies.get(component);
             if (missingCompDependencies == null) {
               missingCompDependencies = new HashSet<DependencyInfo>();
@@ -762,3 +785,4 @@ public abstract class BaseBlueprintProcessor extends AbstractControllerResourceP
   }
 
 }
+

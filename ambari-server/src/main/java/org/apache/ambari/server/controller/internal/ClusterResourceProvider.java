@@ -212,6 +212,8 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
       resource.setProperty(CLUSTER_VERSION_PROPERTY_ID,
           response.getDesiredStackVersion());
 
+      System.out.println("1~ ClusterResponse=[" + response.toString() + "]");
+      
       if (LOG.isDebugEnabled()) {
         LOG.debug("Adding ClusterResponse to resource"
             + ", clusterResponse=" + response.toString());
@@ -425,6 +427,8 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
     for (Map.Entry<String, Object> entry : properties.entrySet()) {
       String absCategory = PropertyHelper.getPropertyCategory(entry.getKey());
       String propName = PropertyHelper.getPropertyName(entry.getKey());
+      
+      System.out.println("2~ absCategory=[" + absCategory + "] propName [" + propName + "]");
 
       if (absCategory.startsWith(parentCategory + "/desired_service_config_version")) {
         serviceConfigVersionRequest =
@@ -502,6 +506,8 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
     setConfigurationsOnCluster(clusterName, stack, blueprintHostGroups);
 
     Set<String> services = getServicesToDeploy(stack, blueprintHostGroups);
+    
+    System.out.println("3~ services [" + services + "]");
 
     createServiceAndComponentResources(blueprintHostGroups, clusterName, services);
     createHostAndComponentResources(blueprintHostGroups, clusterName);
@@ -635,6 +641,7 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
                                                          ResourceAlreadyExistsException,
                                                          NoSuchParentResourceException {
 
+	  System.out.println("4~ services [" + services + "]");
     Set<Map<String, Object>> setServiceRequestProps = new HashSet<Map<String, Object>>();
     for (String service : services) {
       Map<String, Object> serviceProperties = new HashMap<String, Object>();
@@ -680,6 +687,7 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
                                                UnsupportedPropertyException,
                                                ResourceAlreadyExistsException,
                                                NoSuchParentResourceException {
+	  System.out.println("5~ services [" + services + "]");
     for (String service : services) {
       Set<String> components = new HashSet<String>();
       for (HostGroupImpl hostGroup : blueprintHostGroups.values()) {
@@ -720,6 +728,7 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
     // to properly support the new service configuration versioning mechanism
     // in Ambari
     for (String service : getServicesToDeploy(stack, blueprintHostGroups)) {
+    	System.out.println("6~ service [" + service + "]");
       BlueprintServiceConfigRequest blueprintConfigRequest =
         new BlueprintServiceConfigRequest(service);
 
@@ -1111,6 +1120,7 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
    *         false if the named service it not included in the blueprint
    */
   protected boolean isServiceIncluded(String serviceName, Map<String, HostGroupImpl> blueprintHostGroups) {
+	  System.out.println("7~ serviceName [" + serviceName + "]");
     for (String hostGroupName : blueprintHostGroups.keySet()) {
       HostGroupImpl hostGroup = blueprintHostGroups.get(hostGroupName);
       if (hostGroup.getServices().contains(serviceName)) {
@@ -1130,6 +1140,7 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
    * @param defaultValue  default value
    */
   private void ensureProperty(String type, String property, String defaultValue) {
+	  System.out.println("8~ type [" + type + "] property [" + property + "] defaultValue [" + defaultValue + "]");
     Map<String, String> properties = mapClusterConfigurations.get(type);
     if (properties == null) {
       properties = new HashMap<String, String>();
@@ -1156,6 +1167,7 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
         services.addAll(stack.getServicesForComponents(group.getComponents()));
       }
     }
+    System.out.println("9~ servicea [" + services + "]");
     //remove entry associated with Ambari Server since this isn't recognized by Ambari
     services.remove(null);
 
@@ -1318,4 +1330,5 @@ public class ClusterResourceProvider extends BaseBlueprintProcessor {
   }
 
 }
+
 
