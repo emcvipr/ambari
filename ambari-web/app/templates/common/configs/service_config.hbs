@@ -83,15 +83,71 @@
 {{/if}}
 
 {{#if versionLoaded}}
-  {{#each category in selectedService.configCategories}}
-    <div class="accordion">
-      {{#if category.isCustomView}}
-        {{view category.customView categoryBinding="category" serviceBinding="selectedService" canEditBinding="view.canEdit" serviceConfigsBinding="selectedService.configs"}}
-      {{else}}
-        {{view App.ServiceConfigsByCategoryView categoryBinding="category" canEditBinding="view.canEdit" serviceBinding="selectedService" serviceConfigsBinding="selectedService.configs" supportsHostOverridesBinding="view.supportsHostOverrides"}}
-      {{/if}}
+  {{#unless hideDependenciesInfoBar}}
+    <div {{bindAttr class="hasChangedDependencies:show:hide :dependencies-info"}}>
+      <div class="dependencies-info-bar-wrapper">
+        <div class="alert alert-warning">
+          <span>{{dependenciesMessage}}</span> <a
+            href="#" {{action "showChangedDependentConfigs" target="controller"}}>{{t common.showDetails}}</a>
+        </div>
+      </div>
     </div>
-  {{/each}}
+  {{/unless}}
+  {{#if view.supportsConfigLayout}}
+    <ul class="nav nav-tabs mbm config-tabs">
+      {{#each tab in view.tabs}}
+        <li rel='tooltip' {{bindAttr class="tab.isActive:active tab.isHiddenByFilter:disabled" data-original-title="tab.tooltipMsg"}}>
+          <a href="#" {{action "setActiveTab" tab target="view"}} {{bindAttr data-target="tab.headingClass"}} data-toggle="tab">
+            {{tab.displayName}}
+              {{#if tab.isAdvanced}}
+                {{#if controller.errorsCount}}
+                <span class="badge badge-important">{{controller.errorsCount}}</span>
+              {{/if}}
+            {{else}}
+              {{#if tab.errorsCount}}
+                <span class="badge badge-important">{{tab.errorsCount}}</span>
+              {{/if}}
+            {{/if}}
+          </a>
+        </li>
+      {{/each}}
+    </ul>
+    <div class="tab-content service-config-tab-content">
+      {{#each tab in view.tabs}}
+        <div {{bindAttr class=":tab-pane tab.isActive:active tab.id"}}>
+          {{#if tab.isAdvanced}}
+            {{#each category in selectedService.configCategories}}
+              <div class="accordion">
+                {{#if category.isCustomView}}
+                  {{view category.customView categoryBinding="category" serviceBinding="selectedService" canEditBinding="view.canEdit" serviceConfigsBinding="selectedService.configs"}}
+                {{else}}
+                  {{view App.ServiceConfigsByCategoryView categoryBinding="category" canEditBinding="view.canEdit" serviceBinding="selectedService" serviceConfigsBinding="selectedService.configs" supportsHostOverridesBinding="view.supportsHostOverrides"}}
+                {{/if}}
+              </div>
+            {{/each}}
+          {{else}}
+              {{! Render Enhanced Config Section }}
+              {{view App.ServiceConfigLayoutTabView contentBinding="tab" canEditBinding="view.canEdit" }}
+          {{/if}}
+        </div>
+      {{/each}}
+    </div>
+  {{else}}
+    {{#each category in selectedService.configCategories}}
+      <div class="accordion">
+        {{#if category.isCustomView}}
+          {{view category.customView categoryBinding="category" serviceBinding="selectedService" canEditBinding="view.canEdit" serviceConfigsBinding="selectedService.configs"}}
+        {{else}}
+          {{view App.ServiceConfigsByCategoryView categoryBinding="category" canEditBinding="view.canEdit" serviceBinding="selectedService" serviceConfigsBinding="selectedService.configs" supportsHostOverridesBinding="view.supportsHostOverrides"}}
+        {{/if}}
+      </div>
+    {{/each}}
+  {{/if}}
+  {{#if view.isAllConfigsHidden}}
+    <div class="alert alert-info col-sm-12">
+      {{t services.service.config.nothing.to.display}}
+    </div>
+  {{/if}}
 {{else}}
   <div class="spinner"></div>
 {{/if}}

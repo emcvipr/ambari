@@ -21,11 +21,31 @@ limitations under the License.
 from resource_management import *
 import socket
 import sys
-
 from hcat_service_check import hcat_service_check
 from webhcat_service_check import webhcat_service_check
+from ambari_commons import OSConst
+from ambari_commons.os_family_impl import OsFamilyImpl
+
 
 class HiveServiceCheck(Script):
+  pass
+
+
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class HiveServiceCheckWindows(HiveServiceCheck):
+  def service_check(self, env):
+    import params
+    env.set_params(params)
+    smoke_cmd = os.path.join(params.hdp_root,"Run-SmokeTests.cmd")
+    service = "HIVE"
+    Execute(format("cmd /C {smoke_cmd} {service}"), user=params.hive_user, logoutput=True)
+
+    hcat_service_check()
+    webhcat_service_check()
+
+
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class HiveServiceCheckDefault(HiveServiceCheck):
   def service_check(self, env):
     import params
     env.set_params(params)
@@ -43,7 +63,9 @@ class HiveServiceCheck(Script):
       try:
         check_thrift_port_sasl(address, port, params.hive_server2_authentication,
                                params.hive_server_principal, kinitcmd, params.smokeuser,
-                               transport_mode=params.hive_transport_mode)
+                               transport_mode=params.hive_transport_mode, http_endpoint=params.hive_http_endpoint,
+                               ssl=params.hive_ssl, ssl_keystore=params.hive_ssl_keystore_path,
+                               ssl_password=params.hive_ssl_keystore_password)
         print "Successfully connected to %s on port %s" % (address, port)
         workable_server_available = True
       except:

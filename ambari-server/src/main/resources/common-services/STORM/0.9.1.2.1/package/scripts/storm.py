@@ -18,23 +18,44 @@ limitations under the License.
 
 """
 
-from resource_management.core.resources import File
-from resource_management.core.resources import Execute
-from resource_management.core.resources import Directory
+from resource_management.core.exceptions import Fail
+from resource_management.core.resources.service import ServiceConfig
+from resource_management.core.resources.system import Directory, Execute, File
 from resource_management.core.source import InlineTemplate
 from resource_management.libraries.resources.template_config import TemplateConfig
 from resource_management.libraries.functions.format import format
+from resource_management.libraries.script.script import Script
 from resource_management.core.source import Template
 from resource_management.libraries.functions import compare_versions
-from yaml_utils import escape_yaml_propetry
+from yaml_utils import yaml_config_template, yaml_config
+from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
+from ambari_commons import OSConst
 
-def storm():
+@OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
+def storm(name=None):
+  import params
+  yaml_config("storm.yaml",
+              conf_dir=params.conf_dir,
+              configurations=params.config['configurations']['storm-site'],
+              owner=params.storm_user
+  )
+
+  if params.service_map.has_key(name):
+    service_name = params.service_map[name]
+    ServiceConfig(service_name,
+                  action="change_user",
+                  username = params.storm_user,
+                  password = Script.get_password(params.storm_user))
+
+
+@OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
+def storm(name=None):
   import params
 
   Directory(params.log_dir,
             owner=params.storm_user,
             group=params.user_group,
-            mode=0775,
+            mode=0777,
             recursive=True
   )
 
@@ -58,12 +79,9 @@ def storm():
   )
 
   configurations = params.config['configurations']['storm-site']
-  
+
   File(format("{conf_dir}/storm.yaml"),
-       content=Template(
-                        "storm.yaml.j2", 
-                         extra_imports=[escape_yaml_propetry], 
-                        configurations = configurations),
+       content=yaml_config_template(configurations),
        owner=params.storm_user,
        group=params.user_group
   )

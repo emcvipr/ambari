@@ -21,9 +21,11 @@ var App = require('app');
 
 App.KerberosWizardController = App.WizardController.extend({
 
+  exceptionsOnSkipClient: [{'KDC': 'realm'}, {'KDC': 'kdc_type'}, {'Advanced kerberos-env': 'executable_search_paths'}],
+
   name: 'kerberosWizardController',
 
-  totalSteps: 7,
+  totalSteps: 8,
 
   isKerberosWizard: true,
 
@@ -31,6 +33,8 @@ App.KerberosWizardController = App.WizardController.extend({
    * Used for hiding back button in wizard
    */
   hideBackButton: true,
+
+  skipClientInstall: false,
 
   kerberosDescriptorConfigs: null,
 
@@ -130,12 +134,6 @@ App.KerberosWizardController = App.WizardController.extend({
     this.save('cluster');
   },
 
-
-  saveTasksStatuses: function (statuses) {
-    this.setDBProperty('tasksStatuses',statuses);
-    this.set('content.tasksStatuses', statuses);
-  },
-
   saveConfigTag: function (tag) {
     App.db.setKerberosWizardConfigTag(tag);
     this.set('content.' + [tag.name], tag.value);
@@ -144,11 +142,6 @@ App.KerberosWizardController = App.WizardController.extend({
   saveKerberosOption: function (stepController) {
     this.setDBProperty('kerberosOption', stepController.get('selectedItem'));
     this.set('content.kerberosOption', stepController.get('selectedItem'));
-  },
-
-  loadTasksStatuses: function () {
-    var statuses = this.getDBProperty('tasksStatuses');
-    this.set('content.tasksStatuses', statuses);
   },
 
   /**
@@ -177,37 +170,34 @@ App.KerberosWizardController = App.WizardController.extend({
 
   loadKerberosDescriptorConfigs: function () {
     var kerberosDescriptorConfigs = this.getDBProperty('kerberosDescriptorConfigs');
-    this.kerberosDescriptorConfigs =  kerberosDescriptorConfigs;
+    this.set('kerberosDescriptorConfigs', kerberosDescriptorConfigs);
   },
 
+  /**
+   * Overide the visibility of a list of form items with a new value
+   *
+   * @param {Array} itemsArray
+   * @param newValue
+   */
+  overrideVisibility: function (itemsArray, newValue) {
+    var self = this;
+    newValue = newValue || false;
 
-  saveRequestIds: function (requestIds) {
-    this.setDBProperty('requestIds',requestIds);
-    this.set('content.requestIds', requestIds);
+    for (var i=0; i < itemsArray.length; i += 1) {
+      var isException = self.get('exceptionsOnSkipClient').filterProperty(itemsArray[i].get('category'), itemsArray[i].get('name'));
+      if (!isException.length) {
+        itemsArray[i].set('isVisible', newValue);
+      }
+    }
   },
 
   loadKerberosOption: function () {
     this.set('content.kerberosOption', this.getDBProperty('kerberosOption'));
   },
 
-  loadRequestIds: function () {
-    var requestIds = this.getDBProperty('requestIds');
-    this.set('content.requestIds', requestIds);
-  },
-
-  saveTasksRequestIds: function (requestIds) {
-    this.setDBProperty('tasksRequestIds',requestIds);
-    this.set('content.tasksRequestIds', requestIds);
-  },
-
-  loadTasksRequestIds: function () {
-    var requestIds = this.getDBProperty('tasksRequestIds');
-    this.set('content.tasksRequestIds', requestIds);
-  },
-
   saveKerberosDescriptorConfigs: function (kerberosDescriptorConfigs) {
     this.setDBProperty('kerberosDescriptorConfigs',kerberosDescriptorConfigs);
-    this.kerberosDescriptorConfigs =  kerberosDescriptorConfigs;
+    this.set('kerberosDescriptorConfigs', kerberosDescriptorConfigs);
   },
 
 
@@ -248,7 +238,7 @@ App.KerberosWizardController = App.WizardController.extend({
         }
       }
     ],
-    '5': [
+    '6': [
       {
         type: 'sync',
         callback: function () {

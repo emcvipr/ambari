@@ -18,33 +18,74 @@ limitations under the License.
 
 """
 
-from resource_management import *
+from ambari_commons import OSCheck
+
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import format
+from resource_management.libraries.functions.default import default
+from resource_management.libraries.functions import get_kinit_path
+from resource_management.libraries.script.script import Script
+
+# a map of the Ambari role to the component name
+# for use with /usr/hdp/current/<component>
+SERVER_ROLE_DIRECTORY_MAP = {
+  'HIVE_METASTORE' : 'hive-metastore',
+  'HIVE_SERVER' : 'hive-server2',
+  'WEBHCAT_SERVER' : 'hive-webhcat',
+  'HIVE_CLIENT' : 'hive-client',
+  'HCAT' : 'hive-client'
+}
+
+component_directory = Script.get_component_from_role(SERVER_ROLE_DIRECTORY_MAP, "HIVE_CLIENT")
 
 config = Script.get_config()
 
-hive_pid_dir = config['configurations']['hive-env']['hive_pid_dir']
-hive_pid = 'hive-server.pid'
-
-hive_metastore_pid = 'hive.pid'
-
-hcat_pid_dir = config['configurations']['hive-env']['hcat_pid_dir'] #hcat_pid_dir
-webhcat_pid_file = format('{hcat_pid_dir}/webhcat.pid')
-
-process_name = 'mysqld'
-if System.get_instance().os_family == "suse" or System.get_instance().os_family == "ubuntu":
-  daemon_name = 'mysql'
+if OSCheck.is_windows_family():
+  hive_metastore_win_service_name = "metastore"
+  hive_client_win_service_name = "hwi"
+  hive_server_win_service_name = "hiveserver2"
+  webhcat_server_win_service_name = "templeton"
 else:
-  daemon_name = 'mysqld'
+  hive_pid_dir = config['configurations']['hive-env']['hive_pid_dir']
+  hive_pid = 'hive-server.pid'
+
+  hive_metastore_pid = 'hive.pid'
+
+  hcat_pid_dir = config['configurations']['hive-env']['hcat_pid_dir'] #hcat_pid_dir
+  webhcat_pid_file = format('{hcat_pid_dir}/webhcat.pid')
+
+  process_name = 'mysqld'
+  if OSCheck.is_suse_family() or OSCheck.is_ubuntu_family():
+    daemon_name = 'mysql'
+  else:
+    daemon_name = 'mysqld'
+
+  # Security related/required params
+  hostname = config['hostname']
+  security_enabled = config['configurations']['cluster-env']['security_enabled']
+  kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
+  tmp_dir = Script.get_tmp_dir()
+  hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
+  hive_user = config['configurations']['hive-env']['hive_user']
+  webhcat_user = config['configurations']['hive-env']['webhcat_user']
+
+  # default configuration directories
+  hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
+  hadoop_bin_dir = conf_select.get_hadoop_dir("bin")
+  webhcat_conf_dir = '/etc/hive-webhcat/conf'
+  hive_etc_dir_prefix = "/etc/hive"
+  hive_conf_dir = "/etc/hive/conf"
+  hive_client_conf_dir = "/etc/hive/conf"
+  hive_server_conf_dir = "/etc/hive/conf.server"
+
+  # HDP 2.2+
+  if Script.is_hdp_stack_greater_or_equal("2.2"):
+    webhcat_conf_dir = '/usr/hdp/current/hive-webhcat/conf'
+    hive_conf_dir = format("/usr/hdp/current/{component_directory}/conf")
+    hive_client_conf_dir = format("/usr/hdp/current/{component_directory}/conf")
+    hive_server_conf_dir = format("/usr/hdp/current/{component_directory}/conf/conf.server")
 
 
-# Security related/required params
-hostname = config['hostname']
-security_enabled = config['configurations']['cluster-env']['security_enabled']
-hadoop_conf_dir = "/etc/hadoop/conf"
-kinit_path_local = functions.get_kinit_path()
-tmp_dir = Script.get_tmp_dir()
-hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
-hive_user = config['configurations']['hive-env']['hive_user']
-hive_conf_dir = "/etc/hive/conf"
-webhcat_user = config['configurations']['hive-env']['webhcat_user']
-webhcat_conf_dir = '/etc/hive-webhcat/conf'
+  hive_config_dir = hive_client_conf_dir
+  if 'role' in config and config['role'] in ["HIVE_SERVER", "HIVE_METASTORE"]:
+    hive_config_dir = hive_server_conf_dir

@@ -43,6 +43,14 @@ public class MockDispatcher implements NotificationDispatcher {
    * {@inheritDoc}
    */
   @Override
+  public boolean isNotificationContentGenerationRequired() {
+    return true;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
   public boolean isDigestSupported() {
     return true;
   }
@@ -55,7 +63,7 @@ public class MockDispatcher implements NotificationDispatcher {
   }
 
   @Override
-  public ConfigValidationResult validateTargetConfig(Map<String, Object> properties) {
+  public TargetConfigurationResult validateTargetConfig(Map<String, Object> properties) {
     return null;
   }
 }

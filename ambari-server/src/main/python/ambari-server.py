@@ -34,12 +34,12 @@ from ambari_server.dbConfiguration import DATABASE_NAMES
 from ambari_server.serverConfiguration import configDefaults, get_ambari_properties, PID_NAME
 from ambari_server.serverUtils import is_server_runing, refresh_stack_hash
 from ambari_server.serverSetup import reset, setup, setup_jce_policy
-from ambari_server.serverUpgrade import upgrade, upgrade_stack
+from ambari_server.serverUpgrade import upgrade, upgrade_stack, set_current
 from ambari_server.setupHttps import setup_https
 
 from ambari_server.setupActions import BACKUP_ACTION, LDAP_SETUP_ACTION, LDAP_SYNC_ACTION, PSTART_ACTION, \
   REFRESH_STACK_HASH_ACTION, RESET_ACTION, RESTORE_ACTION, SETUP_ACTION, SETUP_SECURITY_ACTION, START_ACTION, \
-  STATUS_ACTION, STOP_ACTION, UPGRADE_ACTION, UPGRADE_STACK_ACTION, SETUP_JCE_ACTION
+  STATUS_ACTION, STOP_ACTION, UPGRADE_ACTION, UPGRADE_STACK_ACTION, SETUP_JCE_ACTION, SET_CURRENT_ACTION
 from ambari_server.setupSecurity import setup_ldap, sync_ldap, setup_master_key, setup_ambari_krb5_jaas
 from ambari_server.userInput import get_validated_string_input
 
@@ -68,12 +68,6 @@ class UserActionRestart(UserAction):
   def execute(self):
     self.need_restart = self.fn(*self.args, **self.kwargs)
 
-
-def winsetup(options):
-  from ambari_windows_service import svcsetup
-
-  setup(options)
-  svcsetup()
 
 #
 # Starts the Ambari Server as a standalone process.
@@ -269,6 +263,13 @@ def restore(args):
 
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def init_parser_options(parser):
+  parser.add_option('-k', '--service-user-name', dest="svc_user",
+                    default=None,
+                    help="User account under which the Ambari Server service will run")
+  parser.add_option('-x', '--service-user-password', dest="svc_password",
+                    default=None,
+                    help="Password for the Ambari Server service user account")
+
   parser.add_option('-f', '--init-script-file', dest="init_db_script_file",
                     default="resources" + os.sep + "Ambari-DDL-SQLServer-CREATE.sql",
                     help="File with database setup script")
@@ -302,12 +303,12 @@ def init_parser_options(parser):
                     help="Database user password")
   parser.add_option('--jdbc-driver', default=None, dest="jdbc_driver",
                     help="Specifies the path to the JDBC driver JAR file")
-  # -b, -i, -k and -x the remaining available short options
+  # -b and -i the remaining available short options
   # -h reserved for help
 
 @OsFamilyFuncImpl(OsFamilyImpl.DEFAULT)
 def init_parser_options(parser):
-  optparse.Option('-f', '--init-script-file',
+  parser.add_option('-f', '--init-script-file',
                     default='/var/lib/ambari-server/'
                             'resources/Ambari-DDL-Postgres-EMBEDDED-CREATE.sql',
                     help="File with setup script")
@@ -343,7 +344,7 @@ def init_parser_options(parser):
                     dest="ldap_sync_users")
   parser.add_option('--groups', default=None, help="LDAP sync groups option.  Specifies the path to a CSV file of group names to be synchronized.",
                     dest="ldap_sync_groups")
-  parser.add_option('--database', default=None, help="Database to use embedded|oracle|mysql|postgres", dest="dbms")
+  parser.add_option('--database', default=None, help="Database to use embedded|oracle|mysql|mssql|postgres", dest="dbms")
   parser.add_option('--databasehost', default=None, help="Hostname of database server", dest="database_host")
   parser.add_option('--databaseport', default=None, help="Database port", dest="database_port")
   parser.add_option('--databasename', default=None, help="Database/Service name or ServiceID",
@@ -357,9 +358,11 @@ def init_parser_options(parser):
   parser.add_option('--jdbc-driver', default=None, help="Specifies the path to the JDBC driver JAR file for the " \
                                                         "database type specified with the --jdbc-db option. Used only with --jdbc-db option.",
                     dest="jdbc_driver")
-  parser.add_option('--jdbc-db', default=None, help="Specifies the database type [postgres|mysql|oracle] for the " \
+  parser.add_option('--jdbc-db', default=None, help="Specifies the database type [postgres|mysql|mssql|oracle|hsqldb] for the " \
                                                     "JDBC driver specified with the --jdbc-driver option. Used only with --jdbc-driver option.",
                     dest="jdbc_db")
+  parser.add_option('--cluster-name', default=None, help="Cluster name", dest="cluster_name")
+  parser.add_option('--version-display-name', default=None, help="Display name of desired repo version", dest="desired_repo_version")
 
 
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
@@ -473,7 +476,7 @@ def fix_database_options(options, parser):
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def create_user_action_map(args, options):
   action_map = {
-    SETUP_ACTION: UserAction(winsetup, options),
+    SETUP_ACTION: UserAction(setup, options),
     START_ACTION: UserAction(svcstart),
     PSTART_ACTION: UserAction(start, options),
     STOP_ACTION: UserAction(stop),
@@ -482,6 +485,7 @@ def create_user_action_map(args, options):
     UPGRADE_ACTION: UserAction(upgrade, options),
     LDAP_SETUP_ACTION: UserAction(setup_ldap),
     SETUP_SECURITY_ACTION: UserActionRestart(setup_security, options),
+    REFRESH_STACK_HASH_ACTION: UserAction(refresh_stack_hash_action),
   }
   return action_map
 
@@ -498,6 +502,7 @@ def create_user_action_map(args, options):
         UPGRADE_STACK_ACTION: UserActionPossibleArgs(upgrade_stack, [2, 4], args),
         LDAP_SETUP_ACTION: UserAction(setup_ldap),
         LDAP_SYNC_ACTION: UserAction(sync_ldap, options),
+        SET_CURRENT_ACTION: UserAction(set_current, options),
         SETUP_SECURITY_ACTION: UserActionRestart(setup_security, options),
         REFRESH_STACK_HASH_ACTION: UserAction(refresh_stack_hash_action),
         BACKUP_ACTION: UserActionPossibleArgs(backup, [1, 2], args),
@@ -586,6 +591,16 @@ def mainBody():
   parser = optparse.OptionParser(usage="usage: %prog [options] action [stack_id os]",)
   init_parser_options(parser)
   (options, args) = parser.parse_args()
+
+  # check if only silent key set
+  default_options = parser.get_default_values()
+  silent_options = default_options
+  silent_options.silent = True
+
+  if options == silent_options:
+    options.only_silent = True
+  else:
+    options.only_silent = False
 
   # set verbose
   set_verbose(options.verbose)

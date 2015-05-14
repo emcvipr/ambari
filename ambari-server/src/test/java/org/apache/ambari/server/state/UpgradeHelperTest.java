@@ -25,12 +25,16 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
@@ -40,6 +44,7 @@ import org.apache.ambari.server.controller.ConfigurationRequest;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.OrmTestHelper;
+import org.apache.ambari.server.orm.dao.HostDAO;
 import org.apache.ambari.server.stack.HostsType;
 import org.apache.ambari.server.stack.MasterHostResolver;
 import org.apache.ambari.server.state.UpgradeHelper.UpgradeGroupHolder;
@@ -67,6 +72,8 @@ import com.google.inject.util.Modules;
  */
 public class UpgradeHelperTest {
 
+  private static final StackId HDP_21 = new StackId("HPD-2.1.1");
+  private static final StackId HDP_22 = new StackId("HPD-2.2.0");
   private static final String UPGRADE_VERSION = "2.2.1.0-1234";
   private static final String DOWNGRADE_VERSION = "2.2.0.0-1234";
 
@@ -76,7 +83,8 @@ public class UpgradeHelperTest {
   private MasterHostResolver m_masterHostResolver;
   private UpgradeHelper m_upgradeHelper;
   private ConfigHelper m_configHelper;
-  AmbariManagementController m_managementController;
+  private AmbariManagementController m_managementController;
+  private HostDAO m_hostDAO;
 
   @Before
   public void before() throws Exception {
@@ -98,11 +106,11 @@ public class UpgradeHelperTest {
 
     helper = injector.getInstance(OrmTestHelper.class);
     ambariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
-    ambariMetaInfo.init();
 
     m_upgradeHelper = injector.getInstance(UpgradeHelper.class);
     m_masterHostResolver = EasyMock.createMock(MasterHostResolver.class);
     m_managementController = injector.getInstance(AmbariManagementController.class);
+    m_hostDAO = injector.getInstance(HostDAO.class);
   }
 
   @After
@@ -129,8 +137,8 @@ public class UpgradeHelperTest {
 
     makeCluster();
 
-    UpgradeContext context = new UpgradeContext(m_masterHostResolver,
-        UPGRADE_VERSION, Direction.UPGRADE);
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_21, UPGRADE_VERSION, Direction.UPGRADE);
 
     List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
 
@@ -198,8 +206,8 @@ public class UpgradeHelperTest {
 
     makeCluster();
 
-    UpgradeContext context = new UpgradeContext(m_masterHostResolver,
-        UPGRADE_VERSION, Direction.UPGRADE);
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_21, UPGRADE_VERSION, Direction.UPGRADE);
 
     List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
 
@@ -247,8 +255,8 @@ public class UpgradeHelperTest {
     assertEquals(1, schs.size());
     assertEquals(HostState.HEARTBEAT_LOST, schs.get(0).getHostState());
 
-    UpgradeContext context = new UpgradeContext(m_masterHostResolver,
-        UPGRADE_VERSION, Direction.UPGRADE);
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_21, UPGRADE_VERSION, Direction.UPGRADE);
 
     List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
 
@@ -283,8 +291,8 @@ public class UpgradeHelperTest {
 
     makeCluster();
 
-    UpgradeContext context = new UpgradeContext(m_masterHostResolver,
-        DOWNGRADE_VERSION, Direction.DOWNGRADE);
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_21, DOWNGRADE_VERSION, Direction.DOWNGRADE);
 
     List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
 
@@ -323,8 +331,8 @@ public class UpgradeHelperTest {
 
     makeCluster();
 
-    UpgradeContext context = new UpgradeContext(m_masterHostResolver,
-        UPGRADE_VERSION, Direction.UPGRADE);
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_21, UPGRADE_VERSION, Direction.UPGRADE);
 
     List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
 
@@ -343,8 +351,8 @@ public class UpgradeHelperTest {
 
     makeCluster();
 
-    UpgradeContext context = new UpgradeContext(m_masterHostResolver,
-        UPGRADE_VERSION, Direction.UPGRADE);
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_21, UPGRADE_VERSION, Direction.UPGRADE);
 
     List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
 
@@ -372,8 +380,8 @@ public class UpgradeHelperTest {
 
     Cluster cluster = makeCluster();
 
-    UpgradeContext context = new UpgradeContext(m_masterHostResolver,
-        UPGRADE_VERSION, Direction.UPGRADE);
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_21, UPGRADE_VERSION, Direction.UPGRADE);
 
     List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade,
         context);
@@ -424,19 +432,39 @@ public class UpgradeHelperTest {
 
   @Test
   public void testServiceCheckUpgradeStages() throws Exception {
-
-    Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
+    Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.2.0");
     assertTrue(upgrades.containsKey("upgrade_test_checks"));
     UpgradePack upgrade = upgrades.get("upgrade_test_checks");
     assertNotNull(upgrade);
 
     Cluster c = makeCluster();
-    c.addService("HBASE");
+    // HBASE and PIG have service checks, but not TEZ.
+    Set<String> additionalServices = new HashSet<String>() {{ add("HBASE"); add("PIG"); add("TEZ"); add("AMBARI_METRICS"); }};
+    for(String service : additionalServices) {
+      c.addService(service);
+    }
 
+    int numServiceChecksExpected = 0;
+    Collection<Service> services = c.getServices().values();
+    for(Service service : services) {
+      ServiceInfo si = ambariMetaInfo.getService(c.getCurrentStackVersion().getStackName(),
+          c.getCurrentStackVersion().getStackVersion(), service.getName());
+      if (null == si.getCommandScript()) {
+        continue;
+      }
+      if (service.getName().equalsIgnoreCase("TEZ")) {
+        assertTrue("Expect Tez to not have any service checks", false);
+      }
 
+      // Expect AMS to not run any service checks because it is excluded
+      if (service.getName().equalsIgnoreCase("AMBARI_METRICS")) {
+        continue;
+      }
+      numServiceChecksExpected++;
+    }
 
-    UpgradeContext context = new UpgradeContext(m_masterHostResolver,
-        UPGRADE_VERSION, Direction.UPGRADE);
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_22, UPGRADE_VERSION, Direction.UPGRADE);
 
     List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
 
@@ -444,14 +472,20 @@ public class UpgradeHelperTest {
 
     UpgradeGroupHolder holder = groups.get(3);
     assertEquals(holder.name, "SERVICE_CHECK_1");
-    assertEquals(5, holder.items.size());
-    boolean found = false;
+    assertEquals(6, holder.items.size());
+    int numServiceChecksActual = 0;
     for (StageWrapper sw : holder.items) {
-      if (sw.getText().contains("HBase")) {
-        found = true;
+      for(Service service : services) {
+        Pattern p = Pattern.compile(".*" + service.getName(), Pattern.CASE_INSENSITIVE);
+        Matcher matcher = p.matcher(sw.getText());
+        if (matcher.matches()) {
+          numServiceChecksActual++;
+          continue;
+        }
       }
     }
-    assertTrue("Expected string 'HBase' in text", found);
+
+    assertEquals(numServiceChecksActual, numServiceChecksExpected);
 
     // grab the manual task out of ZK which has placeholder text
     UpgradeGroupHolder zookeeperGroup = groups.get(1);
@@ -473,8 +507,8 @@ public class UpgradeHelperTest {
 
     makeCluster();
 
-    UpgradeContext context = new UpgradeContext(m_masterHostResolver,
-        DOWNGRADE_VERSION, Direction.DOWNGRADE);
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_21, DOWNGRADE_VERSION, Direction.DOWNGRADE);
 
     List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
 
@@ -507,16 +541,17 @@ public class UpgradeHelperTest {
 
     String clusterName = "c1";
 
-    clusters.addCluster(clusterName);
-
+    StackId stackId = new StackId("HDP-2.1.1");
+    clusters.addCluster(clusterName, stackId);
     Cluster c = clusters.getCluster(clusterName);
-    c.setDesiredStackVersion(new StackId("HDP-2.1.1"));
 
-    helper.getOrCreateRepositoryVersion(c.getDesiredStackVersion().getStackName(),
+    helper.getOrCreateRepositoryVersion(stackId,
         c.getDesiredStackVersion().getStackVersion());
 
-    c.createClusterVersion(c.getDesiredStackVersion().getStackName(),
-        c.getDesiredStackVersion().getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
+    c.createClusterVersion(stackId,
+        c.getDesiredStackVersion().getStackVersion(), "admin",
+        RepositoryVersionState.UPGRADING);
+
     for (int i = 0; i < 4; i++) {
       String hostName = "h" + (i+1);
       clusters.addHost(hostName);

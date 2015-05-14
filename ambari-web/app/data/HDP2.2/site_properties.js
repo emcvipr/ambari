@@ -150,6 +150,7 @@ hdp22properties.push(
     "id": "site property",
     "name": "REPOSITORY_CONFIG_PASSWORD",
     "displayName": "Ranger repository config password",
+    "displayType": "password",
     "filename": "ranger-hdfs-plugin-properties.xml",
     "category": "Advanced ranger-hdfs-plugin-properties",
     "serviceName": "HDFS"
@@ -207,6 +208,7 @@ hdp22properties.push(
     "id": "site property",
     "name": "REPOSITORY_CONFIG_PASSWORD",
     "displayName": "Ranger repository config password",
+    "displayType": "password",
     "filename": "ranger-hive-plugin-properties.xml",
     "category": "Advanced ranger-hive-plugin-properties",
     "serviceName": "HIVE"
@@ -274,6 +276,7 @@ hdp22properties.push(
     "id": "site property",
     "name": "REPOSITORY_CONFIG_PASSWORD",
     "displayName": "Ranger repository config password",
+    "displayType": "password",
     "filename": "ranger-hbase-plugin-properties.xml",
     "category": "Advanced ranger-hbase-plugin-properties",
     "serviceName": "HBASE"
@@ -341,6 +344,7 @@ hdp22properties.push(
     "id": "site property",
     "name": "REPOSITORY_CONFIG_PASSWORD",
     "displayName": "Ranger repository config password",
+    "displayType": "password",
     "filename": "ranger-storm-plugin-properties.xml",
     "category": "Advanced ranger-storm-plugin-properties",
     "serviceName": "STORM"
@@ -398,6 +402,7 @@ hdp22properties.push(
     "id": "site property",
     "name": "REPOSITORY_CONFIG_PASSWORD",
     "displayName": "Ranger repository config password",
+    "displayType": "password",
     "filename": "ranger-knox-plugin-properties.xml",
     "category": "Advanced ranger-knox-plugin-properties",
     "serviceName": "KNOX"
@@ -787,6 +792,53 @@ hdp22properties.push(
     "serviceName": "RANGER",
     "filename": "admin-properties.xml",
     "category": "ADSettings"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.bucketcache.ioengine",
+    "displayName": "hbase.bucketcache.ioengine",
+    "isRequired": false,
+    "serviceName": "HBASE",
+    "filename": "hbase-site.xml",
+    "category": "Advanced hbase-site"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.bucketcache.size",
+    "displayName": "hbase.bucketcache.size",
+    "displayType": "int",
+    "isRequired": false,
+    "serviceName": "HBASE",
+    "filename": "hbase-site.xml",
+    "category": "Advanced hbase-site"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.bucketcache.percentage.in.combinedcache",
+    "displayName": "hbase.bucketcache.percentage.in.combinedcache",
+    "displayType": "float",
+    "isRequired": false,
+    "serviceName": "HBASE",
+    "filename": "hbase-site.xml",
+    "category": "Advanced hbase-site"
+  },
+  {
+    "id": "site property",
+    "name": "hbase_max_direct_memory_size",
+    "displayName": "HBase off-heap MaxDirectMemorySize",
+    "displayType": "int",
+    "isRequired": false,
+    "serviceName": "HBASE",
+    "filename": "hbase-env.xml",
+    "category": "Advanced hbase-env"
+  },
+  {
+    "id": "site property",
+    "name": "hbase.regionserver.global.memstore.size",
+    "displayName": "hbase.regionserver.global.memstore.size",
+    "category": "Advanced hbase-site",
+    "serviceName": "HBASE",
+    "filename": "hbase-site.xml"
   }
 );
 

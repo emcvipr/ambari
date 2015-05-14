@@ -40,6 +40,7 @@
 @space-l: 20px;
 @green: #69BE28;
 @blue: #0572ff;
+@gray-blue: #80A0B9;
 
 (~".@{health-status-red-icon}") {
   color: @health-status-red;
@@ -304,3 +305,28 @@
   opacity: 0;
 }
 
+.table-overlay {
+  position: absolute;
+  opacity: 0.9;
+  background-color: #fefefe;
+  .spinner {
+    display: none;
+  }
+}
+
+.host-elements {
+  border: 1px solid #ddd;
+  height: 120px;
+  overflow: auto;
+  padding: 5px;
+  ul {
+    margin-bottom: 0;
+  }
+  table {
+    width: 100%;
+    td {
+      width: 50%;
+      padding: 0;
+    }
+  }
+}

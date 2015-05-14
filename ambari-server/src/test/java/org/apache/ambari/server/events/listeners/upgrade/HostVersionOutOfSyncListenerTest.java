@@ -19,10 +19,6 @@
 package org.apache.ambari.server.events.listeners.upgrade;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static org.mockito.Mockito.mock;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -34,16 +30,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import javax.persistence.RollbackException;
-
-import com.google.inject.AbstractModule;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
-import com.google.inject.util.Modules;
-
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
-import org.apache.ambari.server.events.HostAddedEvent;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.OrmTestHelper;
@@ -52,12 +40,10 @@ import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
 import org.apache.ambari.server.orm.entities.HostVersionEntity;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.state.Cluster;
-import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.state.HostState;
-import org.apache.ambari.server.state.Service;
-import org.apache.ambari.server.state.ServiceComponent;
+import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.ServiceComponentHostFactory;
 import org.apache.ambari.server.state.StackId;
 import org.junit.After;
@@ -92,16 +78,15 @@ public class HostVersionOutOfSyncListenerTest {
     helper = injector.getInstance(OrmTestHelper.class);
     hostVersionDAO = injector.getInstance(HostVersionDAO.class);
     serviceComponentHostFactory = injector.getInstance(ServiceComponentHostFactory.class);
-    metaInfo.init();
-    clusters.addCluster("c1");
+
+    StackId stackId = new StackId(this.stackId);
+    clusters.addCluster("c1", stackId);
     c1 = clusters.getCluster("c1");
     addHost("h1");
 
-    StackId stackId = new StackId(this.stackId);
-    c1.setDesiredStackVersion(stackId);
-    helper.getOrCreateRepositoryVersion(stackId.getStackName(), stackId.getStackVersion());
-    c1.createClusterVersion(stackId.getStackName(), stackId.getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
-    c1.transitionClusterVersion(stackId.getStackName(), stackId.getStackVersion(), RepositoryVersionState.CURRENT);
+    helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
+    c1.createClusterVersion(stackId, stackId.getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
+    c1.transitionClusterVersion(stackId, stackId.getStackVersion(), RepositoryVersionState.CURRENT);
     clusters.mapHostToCluster("h1", "c1");
   }
 
@@ -131,9 +116,9 @@ public class HostVersionOutOfSyncListenerTest {
 
 
     StackId stackId = new StackId(this.stackId);
-    RepositoryVersionEntity repositoryVersionEntity = helper.getOrCreateRepositoryVersion(stackId.getStackId(),
+    RepositoryVersionEntity repositoryVersionEntity = helper.getOrCreateRepositoryVersion(stackId,
             INSTALLED_VERSION);
-    c1.createClusterVersion(stackId.getStackId(), INSTALLED_VERSION, "admin", RepositoryVersionState.INSTALLING);
+    c1.createClusterVersion(stackId, INSTALLED_VERSION, "admin", RepositoryVersionState.INSTALLING);
     c1.setCurrentStackVersion(stackId);
     c1.recalculateAllClusterVersionStates();
     checkStackVersionState(stackId.getStackId(), INSTALLED_VERSION, RepositoryVersionState.INSTALLING);
@@ -197,9 +182,8 @@ public class HostVersionOutOfSyncListenerTest {
     h1.setState(HostState.HEALTHY);
 
     StackId stackId = new StackId(this.stackId);
-    RepositoryVersionEntity repositoryVersionEntity = helper.getOrCreateRepositoryVersion(stackId.getStackId(),
-            "1.0-1000");
-    c1.createClusterVersion(stackId.getStackId(), "1.0-1000", "admin", RepositoryVersionState.INSTALLING);
+    RepositoryVersionEntity repositoryVersionEntity = helper.getOrCreateRepositoryVersion(stackId,"1.0-1000");
+    c1.createClusterVersion(stackId, "1.0-1000", "admin", RepositoryVersionState.INSTALLING);
     c1.setCurrentStackVersion(stackId);
     c1.recalculateAllClusterVersionStates();
     checkStackVersionState(stackId.getStackId(), "1.0-1000", RepositoryVersionState.INSTALLING);

@@ -31,6 +31,7 @@ import java.util.Map;
  * <li>owner {name, access}</li>
  * <li>group {name, access}</li>
  * <li>configuration</li>
+ * <li>cachable</li>
  * </ul>
  * <p/>
  * The following JSON Schema will yield a valid KerberosPrincipalDescriptor
@@ -80,6 +81,11 @@ import java.util.Map;
  *                          updated with the generated absolute path to the keytab file
  *                          - format: config-type/property.name",
  *          "type": "string"
+ *        }
+ *        "cachable" : {
+ *          "description": "Indicates whether the generated keytab is allowed to be cached by the
+ *                          Ambari server (true) or not (false)",
+ *          "type": "boolean"
  *        }
  *      }
  *   }
@@ -143,6 +149,33 @@ public class KerberosKeytabDescriptor extends AbstractKerberosDescriptor {
 
 
   /**
+   * A boolean value indicating whether the generated keytab is allowed to be cached by the Ambari
+   * server or not.
+   */
+  private boolean cachable = true;
+
+  /**
+   * Creates a new KerberosKeytabDescriptor
+   *
+   * @param file the path to the keytab file
+   * @param ownerName the local username of the file owner
+   * @param ownerAccess the file access privileges for the file owner ("r", "rw", "")
+   * @param groupName the local group name with privileges to access the file
+   * @param groupAccess the file access privileges for the group ("r", "rw", "")
+   * @param configuration the configuration used to store the principal name
+   * @param cachable true if the keytab may be cached by Ambari; otherwise false
+   */
+  public KerberosKeytabDescriptor(String file, String ownerName, String ownerAccess, String groupName,
+                                  String groupAccess, String configuration, boolean cachable) {
+    setName(file);
+    setOwnerName(ownerName);
+    setOwnerAccess(ownerAccess);
+    setGroupName(groupName);
+    setGroupAccess(groupAccess);
+    setConfiguration(configuration);
+    setCachable(cachable);
+  }
+  /**
    * Creates a new KerberosKeytabDescriptor
    * <p/>
    * See {@link org.apache.ambari.server.state.kerberos.KerberosKeytabDescriptor} for the JSON
@@ -174,6 +207,9 @@ public class KerberosKeytabDescriptor extends AbstractKerberosDescriptor {
       }
 
       setConfiguration(getStringValue(data, "configuration"));
+
+      // If the "cachable" value is anything but false, set it to true
+      setCachable(!"false".equalsIgnoreCase(getStringValue(data, "cachable")));
     }
   }
 
@@ -307,6 +343,24 @@ public class KerberosKeytabDescriptor extends AbstractKerberosDescriptor {
    */
   public void setConfiguration(String configuration) {
     this.configuration = configuration;
+  }
+
+  /**
+   * Indicates whether the generated keytab is allowed to be cached by the Ambari server or not
+   *
+   * @return true if allowed to be cached; false otherwise
+   */
+  public boolean isCachable() {
+    return cachable;
+  }
+
+  /**
+   * Sets whether the generated keytab is allowed to be cached by the Ambari server or not
+   *
+   * @param cachable true if allowed to be cached; false otherwise
+   */
+  public void setCachable(boolean cachable) {
+    this.cachable = cachable;
   }
 
   /**

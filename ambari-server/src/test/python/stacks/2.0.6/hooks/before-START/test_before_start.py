@@ -23,6 +23,7 @@ from mock.mock import MagicMock, call, patch
 from resource_management import Hook
 import json
 
+@patch("platform.linux_distribution", new = MagicMock(return_value="Linux"))
 @patch("os.path.exists", new = MagicMock(return_value=True))
 @patch.object(Hook, "run_custom_hook", new = MagicMock())
 class TestHookBeforeStart(RMFTestCase):
@@ -34,6 +35,7 @@ class TestHookBeforeStart(RMFTestCase):
     )
     self.assertResourceCalled('Execute', ('setenforce', '0'),
                               only_if = 'test -f /selinux/enforce',
+                              not_if = "(! which getenforce ) || (which getenforce && getenforce | grep -q Disabled)",
                               sudo=True,
                               )
     self.assertResourceCalled('Directory', '/var/log/hadoop',
@@ -59,7 +61,7 @@ class TestHookBeforeStart(RMFTestCase):
                               owner = 'hdfs',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/health_check',
-                              content = Template('health_check-v2.j2'),
+                              content = Template('health_check.j2'),
                               owner = 'hdfs',
                               )
     self.assertResourceCalled('File',
@@ -85,6 +87,15 @@ class TestHookBeforeStart(RMFTestCase):
       owner = 'hdfs',
       group = 'hadoop',
     )
+    self.assertResourceCalled('File', '/etc/hadoop/conf/topology_mappings.data',
+      owner = 'hdfs',
+      content = Template('topology_mappings.data.j2'),
+      group = 'hadoop',
+    )
+    self.assertResourceCalled('File', '/etc/hadoop/conf/topology_script.py',
+      content = StaticFile('topology_script.py'),
+      mode = 0755,
+    )
     self.assertNoMoreResources()
 
   def test_hook_secured(self):
@@ -95,6 +106,7 @@ class TestHookBeforeStart(RMFTestCase):
     )
     self.assertResourceCalled('Execute', ('setenforce', '0'),
                               only_if = 'test -f /selinux/enforce',
+                              not_if = "(! which getenforce ) || (which getenforce && getenforce | grep -q Disabled)",
                               sudo=True,
                               )
     self.assertResourceCalled('Directory', '/var/log/hadoop',
@@ -120,7 +132,7 @@ class TestHookBeforeStart(RMFTestCase):
                               owner = 'root',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/health_check',
-                              content = Template('health_check-v2.j2'),
+                              content = Template('health_check.j2'),
                               owner = 'root',
                               )
     self.assertResourceCalled('File',
@@ -161,6 +173,7 @@ class TestHookBeforeStart(RMFTestCase):
     )
     self.assertResourceCalled('Execute', ('setenforce', '0'),
                               only_if = 'test -f /selinux/enforce',
+                              not_if = "(! which getenforce ) || (which getenforce && getenforce | grep -q Disabled)",
                               sudo=True,
                               )
     self.assertResourceCalled('Directory', '/usr/lib/hadoop/lib/native/Linux-i386-32',
@@ -198,7 +211,7 @@ class TestHookBeforeStart(RMFTestCase):
                               owner = 'hdfs',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/health_check',
-                              content = Template('health_check-v2.j2'),
+                              content = Template('health_check.j2'),
                               owner = 'hdfs',
                               )
     self.assertResourceCalled('File',
@@ -223,6 +236,15 @@ class TestHookBeforeStart(RMFTestCase):
     self.assertResourceCalled('File', '/etc/hadoop/conf/masters',
                               owner = 'hdfs',
                               group = 'hadoop',
+                              )
+    self.assertResourceCalled('File', '/etc/hadoop/conf/topology_mappings.data',
+                              owner = 'hdfs',
+                              content = Template('topology_mappings.data.j2'),
+                              group = 'hadoop',
+                              )
+    self.assertResourceCalled('File', '/etc/hadoop/conf/topology_script.py',
+                              content = StaticFile('topology_script.py'),
+                              mode = 0755,
                               )
     self.assertNoMoreResources()
 

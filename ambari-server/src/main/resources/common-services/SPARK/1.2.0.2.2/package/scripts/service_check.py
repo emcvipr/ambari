@@ -27,40 +27,16 @@ from resource_management.core.logger import Logger
 class SparkServiceCheck(Script):
   def service_check(self, env):
     import params
-
     env.set_params(params)
 
     if params.security_enabled:
       spark_kinit_cmd = format("{kinit_path_local} -kt {spark_kerberos_keytab} {spark_principal}; ")
       Execute(spark_kinit_cmd, user=params.spark_user)
 
-    command = "curl"
-    httpGssnegotiate = "--negotiate"
-    userpswd = "-u:"
-    insecure = "-k"
-    silent = "-s"
-    out = "-o /dev/null"
-    head = "-w'%{http_code}'"
-    url = 'http://' + params.spark_history_server_host + ':' + str(params.spark_history_ui_port)
-
-    command_with_flags = [command, silent, out, head, httpGssnegotiate, userpswd, insecure, url]
-
-    is_running = False
-    for i in range(1,11):
-      proc = subprocess.Popen(command_with_flags, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-      Logger.info("Try %d, command: %s" % (i, " ".join(command_with_flags)))
-      (stdout, stderr) = proc.communicate()
-      response = stdout
-      if '200' in response:
-        is_running = True
-        Logger.info('Spark Job History Server up and running')
-        break
-      Logger.info("Response: %s" % str(response))
-      time.sleep(5)
-
-    if is_running == False :
-      Logger.info('Spark Job History Server not running.')
-      raise ComponentIsNotRunning()
+    Execute(format("curl -s -o /dev/null -w'%{{http_code}}' --negotiate -u: -k http://{spark_history_server_host}:{spark_history_ui_port} | grep 200"),
+      tries = 10,
+      try_sleep=3,
+    )
 
 if __name__ == "__main__":
   SparkServiceCheck().execute()

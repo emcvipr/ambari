@@ -20,15 +20,52 @@ limitations under the License.
 
 import sys
 import os
-from resource_management import *
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
+from resource_management.libraries.functions.format import format
+from resource_management.libraries.functions.check_process_status import check_process_status
+from resource_management.core.resources import Execute
 from resource_management.core.exceptions import ComponentIsNotRunning
 from resource_management.core.logger import Logger
 from resource_management.core import shell
 from setup_spark import *
+from spark_service import spark_service
 
 
 class JobHistoryServer(Script):
+
+  def install(self, env):
+    import params
+    env.set_params(params)
+    
+    self.install_packages(env)
+    
+  def configure(self, env):
+    import params
+    env.set_params(params)
+    
+    setup_spark(env, 'server', action = 'config')
+    
+  def start(self, env, rolling_restart=False):
+    import params
+    env.set_params(params)
+    
+    self.configure(env)
+    spark_service(action='start')
+
+  def stop(self, env, rolling_restart=False):
+    import params
+    env.set_params(params)
+    
+    spark_service(action='stop')
+
+  def status(self, env):
+    import status_params
+    env.set_params(status_params)
+
+    check_process_status(status_params.spark_history_server_pid_file)
+    
 
   def get_stack_to_component(self):
      return {"HDP": "spark-historyserver"}
@@ -38,59 +75,17 @@ class JobHistoryServer(Script):
 
     env.set_params(params)
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
-      Execute(format("hdp-select set spark-historyserver {version}"))
+      conf_select.select(params.stack_name, "spark", params.version)
+      hdp_select.select("spark-historyserver", params.version)
 
-  def install(self, env):
-    self.install_packages(env)
-    import params
-    env.set_params(params)
-
-  def stop(self, env, rolling_restart=False):
-    import params
-
-    env.set_params(params)
-    daemon_cmd = format('{spark_history_server_stop}')
-    Execute(daemon_cmd,
-            user=params.spark_user,
-            environment={'JAVA_HOME': params.java_home}
-    )
-    if os.path.isfile(params.spark_history_server_pid_file):
-      os.remove(params.spark_history_server_pid_file)
-
-
-  def start(self, env, rolling_restart=False):
-    import params
-
-    env.set_params(params)
-    setup_spark(env, 'server', action = 'start')
-
-    if params.security_enabled:
-      spark_kinit_cmd = format("{kinit_path_local} -kt {spark_kerberos_keytab} {spark_principal}; ")
-      Execute(spark_kinit_cmd, user=params.spark_user)
-
-    daemon_cmd = format('{spark_history_server_start}')
-    no_op_test = format(
-      'ls {spark_history_server_pid_file} >/dev/null 2>&1 && ps -p `cat {spark_history_server_pid_file}` >/dev/null 2>&1')
-    Execute(daemon_cmd,
-            user=params.spark_user,
-            environment={'JAVA_HOME': params.java_home},
-            not_if=no_op_test
-    )
-
-  def status(self, env):
-    import status_params
-
-    env.set_params(status_params)
-    pid_file = format("{spark_history_server_pid_file}")
-    # Recursively check all existing gmetad pid files
-    check_process_status(pid_file)
-
-  # Note: This function is not called from start()/install()
-  def configure(self, env):
-    import params
-
-    env.set_params(params)
-    setup_spark(env, 'server', action = 'config')
+      params.HdfsResource(InlineTemplate(params.tez_tar_destination).get_content(),
+                          type="file",
+                          action="create_on_execute",
+                          source=params.tez_tar_source,
+                          group=params.user_group,
+                          owner=params.hdfs_user
+      )
+      params.HdfsResource(None, action="execute")
 
 if __name__ == "__main__":
   JobHistoryServer().execute()

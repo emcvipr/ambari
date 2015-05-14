@@ -30,6 +30,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import junit.framework.Assert;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
@@ -39,6 +41,7 @@ import org.apache.ambari.server.controller.HostsMap;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostStartEvent;
 import org.apache.ambari.server.utils.StageUtils;
 import org.junit.After;
@@ -51,8 +54,6 @@ import com.google.inject.Injector;
 import com.google.inject.persist.PersistService;
 import com.google.inject.persist.UnitOfWork;
 
-import junit.framework.Assert;
-
 public class TestActionManager {
 
   private long requestId = 23;
@@ -63,15 +64,19 @@ public class TestActionManager {
 
   private Clusters clusters;
   private UnitOfWork unitOfWork;
+  private StageFactory stageFactory;
 
   @Before
   public void setup() throws AmbariException {
     injector = Guice.createInjector(new InMemoryDefaultTestModule());
     injector.getInstance(GuiceJpaInitializer.class);
     clusters = injector.getInstance(Clusters.class);
+    stageFactory = injector.getInstance(StageFactory.class);
+
     clusters.addHost(hostname);
     clusters.getHost(hostname).persist();
-    clusters.addCluster(clusterName);
+    StackId stackId = new StackId("HDP-0.1");
+    clusters.addCluster(clusterName, stackId);
     unitOfWork = injector.getInstance(UnitOfWork.class);
   }
 
@@ -122,7 +127,7 @@ public class TestActionManager {
 
     assertFalse(db.getRequest(requestId).getEndTime() == -1);
   }
-  
+
   @Test
   public void testLargeLogs() throws AmbariException {
     ActionDBAccessor db = injector.getInstance(ActionDBAccessorImpl.class);
@@ -167,7 +172,7 @@ public class TestActionManager {
   }
 
   private void populateActionDB(ActionDBAccessor db, String hostname) throws AmbariException {
-    Stage s = new Stage(requestId, "/a/b", "cluster1", 1L, "action manager test", "clusterHostInfo", "commandParamsStage", "hostParamsStage");
+    Stage s = stageFactory.createNew(requestId, "/a/b", "cluster1", 1L, "action manager test", "clusterHostInfo", "commandParamsStage", "hostParamsStage");
     s.setStageId(stageId);
     s.addHostRoleExecutionCommand(hostname, Role.HBASE_MASTER,
         RoleCommand.START,

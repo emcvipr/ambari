@@ -23,7 +23,8 @@ from StringIO import StringIO as BytesIO
 import json
 from resource_management.core.logger import Logger
 import urllib2, base64, httplib
-
+from resource_management.core.exceptions import Fail
+from resource_management.libraries.functions.format import format
 
 class Rangeradmin:
   sInstance = None
@@ -73,7 +74,31 @@ class Rangeradmin:
     except httplib.BadStatusLine:
       Logger.error("Ranger Admin service is not reachable, please restart the service and then try again")
       return None
-
+    
+    
+    
+  def create_ranger_repository(self, component, repo_name, repo_properties, 
+                               ambari_ranger_admin, ambari_ranger_password,
+                               admin_uname, admin_password, policy_user):
+    response_code, response_recieved = self.check_ranger_login_urllib2(self.urlLogin, 'test:test')
+    repo_data = json.dumps(repo_properties)
+    
+    if response_code is not None and response_code == 200:
+      ambari_ranger_admin, ambari_ranger_password = self.create_ambari_admin_user(ambari_ranger_admin, ambari_ranger_password, format("{admin_uname}:{admin_password}"))
+      ambari_username_password_for_ranger = ambari_ranger_admin + ':' + ambari_ranger_password
+      if ambari_ranger_admin != '' and ambari_ranger_password != '':
+        repo = self.get_repository_by_name_urllib2(repo_name, component, 'true', ambari_username_password_for_ranger)
+        if repo and repo['name'] == repo_name:
+          Logger.info('{0} Repository exist'.format(component.title()))
+        else:
+          response = self.create_repository_urllib2(repo_data, ambari_username_password_for_ranger, policy_user)
+          if response is not None:
+            Logger.info('{0} Repository created in Ranger admin'.format(component.title()))
+          else:
+            raise Fail('{0} Repository creation failed in Ranger admin'.format(component.title()))
+      else:
+        raise Fail('Ambari admin username and password are blank ')
+          
   def create_repository_urllib2(self, data, usernamepassword, policy_user):
     try:
       searchRepoURL = self.urlReposPub
@@ -96,7 +121,7 @@ class Rangeradmin:
         ##Get Policies by repo name
         policyList = self.get_policy_by_repo_name(name=repoName, component=typeOfPolicy, status="true",
                                                   usernamepassword=usernamepassword)
-        if (len(policyList)) > 0:
+        if policyList is not None and (len(policyList)) > 0:
           policiesUpdateCount = 0
           for policy in policyList:
             updatedPolicyObj = self.get_policy_params(typeOfPolicy, policy, policy_user)
@@ -122,7 +147,7 @@ class Rangeradmin:
     except urllib2.URLError, e:
       if isinstance(e, urllib2.HTTPError):
         Logger.error("HTTP Code: {0}".format(e.code))
-        Logger.error("HTTP Data: {0}".foramt(e.read()))
+        Logger.error("HTTP Data: {0}".format(e.read()))
       else:
         Logger.error("Error: {0}".format(e.reason))
       return None
@@ -242,7 +267,7 @@ class Rangeradmin:
       result = urllib2.urlopen(request)
       response_code =  result.getcode()
       response = json.loads(result.read())
-      if response_code == 200 and len(response['vXUsers']) > 0:
+      if response_code == 200 and len(response['vXUsers']) >= 0:
         ambari_admin_username = ambari_admin_username
         flag_ambari_admin_present = False
         for vxuser in response['vXUsers']:

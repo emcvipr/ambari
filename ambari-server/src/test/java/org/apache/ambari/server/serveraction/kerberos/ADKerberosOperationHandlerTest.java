@@ -21,7 +21,6 @@ package org.apache.ambari.server.serveraction.kerberos;
 import junit.framework.Assert;
 import org.easymock.Capture;
 import org.easymock.CaptureType;
-import org.easymock.EasyMockSupport;
 import org.easymock.IAnswer;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -512,16 +511,16 @@ public class ADKerberosOperationHandlerTest extends KerberosOperationHandlerTest
 
     evaluatedPrincipal = "nn/c6501.ambari.apache.org@" + DEFAULT_REALM;
     if (handler.principalExists(evaluatedPrincipal)) {
-      handler.setPrincipalPassword(evaluatedPrincipal, handler.createSecurePassword());
+      handler.setPrincipalPassword(evaluatedPrincipal, "some password");
     } else {
-      handler.createPrincipal(evaluatedPrincipal, handler.createSecurePassword(), true);
+      handler.createPrincipal(evaluatedPrincipal, "some password", true);
     }
 
     evaluatedPrincipal = "hdfs@" + DEFAULT_REALM;
     if (handler.principalExists(evaluatedPrincipal)) {
-      handler.setPrincipalPassword(evaluatedPrincipal, handler.createSecurePassword());
+      handler.setPrincipalPassword(evaluatedPrincipal, "some password");
     } else {
-      handler.createPrincipal(evaluatedPrincipal, handler.createSecurePassword(), true);
+      handler.createPrincipal(evaluatedPrincipal, "some password", true);
     }
 
     kerberosEnvMap.put(ADKerberosOperationHandler.KERBEROS_ENV_CREATE_ATTRIBUTES_TEMPLATE,
@@ -553,11 +552,11 @@ public class ADKerberosOperationHandlerTest extends KerberosOperationHandlerTest
     handler.removePrincipal("abcdefg");
     handler.removePrincipal("abcdefg/c1509.ambari.apache.org@" + DEFAULT_REALM);
 
-    handler.createPrincipal("abcdefg/c1509.ambari.apache.org@" + DEFAULT_REALM, handler.createSecurePassword(), true);
-    handler.createPrincipal("abcdefg@" + DEFAULT_REALM, handler.createSecurePassword(), false);
+    handler.createPrincipal("abcdefg/c1509.ambari.apache.org@" + DEFAULT_REALM, "some password", true);
+    handler.createPrincipal("abcdefg@" + DEFAULT_REALM, "some password", false);
 
     //update the password
-    handler.setPrincipalPassword("abcdefg/c1509.ambari.apache.org@" + DEFAULT_REALM, handler.createSecurePassword());
+    handler.setPrincipalPassword("abcdefg/c1509.ambari.apache.org@" + DEFAULT_REALM, "some password");
 
     handler.close();
   }

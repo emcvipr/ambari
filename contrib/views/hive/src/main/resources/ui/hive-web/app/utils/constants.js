@@ -17,6 +17,7 @@
  */
 
 import Ember from 'ember';
+import helpers from 'hive/utils/functions';
 
 export default Ember.Object.create({
   appTitle: 'Hive',
@@ -54,6 +55,7 @@ export default Ember.Object.create({
     udfInsertPrefix: 'create temporary function ',
     fileInsertPrefix: 'add jar ',
     explainPrefix: 'EXPLAIN ',
+    explainFormattedPrefix: 'EXPLAIN FORMATTED ',
     insertUdfs: 'insert-udfs',
     job: 'job',
     jobs: 'jobs',
@@ -62,6 +64,8 @@ export default Ember.Object.create({
     database: 'database',
     databases: 'databases',
     openQueries: 'open-queries',
+    visualExplain: 'visual-explain',
+    tezUI: 'tez-ui',
     file: 'file',
     fileResource: 'file-resource',
     fileResources: 'file-resources',
@@ -76,18 +80,87 @@ export default Ember.Object.create({
     databaseSearch: 'databases-search-results',
     tables: 'tables',
     columns: 'columns',
-    settings: 'settings'
+    settings: 'settings',
+    jobProgress: 'job-progress',
+    queryTabs: 'query-tabs'
   },
 
+  hiveParameters: [
+    {
+      name: 'hive.tez.container.size',
+      validate: helpers.regexes.digits
+    },
+    {
+      name: 'hive.prewarm.enabled',
+      values: helpers.validationValues.bool
+    },
+    {
+      name: 'hive.prewarm.numcontainers',
+      validate: helpers.regexes.digits
+    },
+    {
+      name: 'hive.tez.auto.reducer.parallelism',
+      values: helpers.validationValues.bool
+    },
+    {
+      name: 'hive.execution.engine',
+      values: helpers.validationValues.execEngine
+    },
+    {
+      name: 'hive.vectorized.execution.enabled',
+      values: helpers.validationValues.bool
+    },
+    {
+      name: 'tez.am.resource.memory.mb',
+      validate: helpers.regexes.digits
+    },
+    {
+      name: 'tez.am.container.idle.release-timeout-min.millis',
+      validate: helpers.regexes.digits
+    },
+    {
+      name: 'tez.am.container.idle.release-timeout-max.millis',
+      validate: helpers.regexes.digits
+    },
+    {
+      name: 'tez.queue.name',
+      validate: helpers.regexes.name
+    },
+    {
+      name: 'tez.runtime.io.sort.mb',
+      validate: helpers.regexes.digits
+    },
+    {
+      name: 'tez.runtime.sort.threads',
+      validate: helpers.regexes.digits
+    },
+    {
+      name: 'tez.runtime.compress.codec',
+      validate: helpers.regexes.dotPath
+    },
+    {
+      name: 'tez.grouping.min-size',
+      validate: helpers.regexes.digits
+    },
+    {
+      name: 'tez.grouping.max-size',
+      validate: helpers.regexes.digits
+    },
+    {
+      name: 'tez.generate.debug.artifacts',
+      values: helpers.validationValues.bool
+    }
+  ],
+
   statuses: {
-    unknown: "Unknown",
-    initialized: "Initialized",
-    running: "Running",
-    finished: "Finished",
-    canceled: "Canceled",
-    closed: "Closed",
-    error: "Error",
-    pending: "Pending"
+    unknown: "UNKNOWN",
+    initialized: "INITIALIZED",
+    running: "RUNNING",
+    succeeded: "SUCCEEDED",
+    canceled: "CANCELED",
+    closed: "CLOSED",
+    error: "ERROR",
+    pending: "PENDING"
   },
 
   alerts: {
@@ -109,7 +182,7 @@ export default Ember.Object.create({
 
   //this can be replaced by a string.format implementation
   adapter: {
-    version: '0.0.1',
+    version: '0.2.0',
     instance: 'Hive',
     apiPrefix: '/api/v1/views/HIVE/versions/',
     instancePrefix: '/instances/',
@@ -118,5 +191,25 @@ export default Ember.Object.create({
 
   settings: {
     executionEngine: 'hive.execution.engine'
+  },
+  sampleDataQuery: 'SELECT * FROM %@ LIMIT 100;',
+
+  notify: {
+    ERROR:  {
+      typeClass : 'alert-danger',
+      typeIcon  : 'fa-exclamation-triangle'
+    },
+    WARN: {
+      typeClass : 'alert-warning',
+      typeIcon  : 'fa-times-circle'
+    },
+    SUCCESS: {
+      typeClass : 'alert-success',
+      typeIcon  : 'fa-check'
+    },
+    INFO: {
+      typeClass : 'alert-info',
+      typeIcon  : 'fa-info'
+    }
   }
 });

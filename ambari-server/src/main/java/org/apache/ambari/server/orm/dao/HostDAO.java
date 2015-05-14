@@ -29,6 +29,7 @@ import org.apache.ambari.server.orm.entities.StageEntity;
 import javax.persistence.EntityManager;
 import javax.persistence.NoResultException;
 import javax.persistence.TypedQuery;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -38,9 +39,26 @@ public class HostDAO {
   @Inject
   Provider<EntityManager> entityManagerProvider;
 
+  /**
+   * Looks for Host by ID
+   * @param hostId ID of Host
+   * @return Found entity or NULL
+   */
+  @RequiresSession
+  public HostEntity findById(long hostId) {
+    return entityManagerProvider.get().find(HostEntity.class, hostId);
+  }
+
   @RequiresSession
   public HostEntity findByName(String hostName) {
-    return entityManagerProvider.get().find(HostEntity.class, hostName);
+    TypedQuery<HostEntity> query = entityManagerProvider.get().createNamedQuery(
+        "HostEntity.findByHostName", HostEntity.class);
+    query.setParameter("hostName", hostName);
+    try {
+      return query.getSingleResult();
+    } catch (NoResultException ignored) {
+      return null;
+    }
   }
 
   @RequiresSession
@@ -100,4 +118,14 @@ public class HostDAO {
     remove(findByName(hostName));
   }
 
+  public List<String> getHostNamesByHostIds(List<Long> hostIds) {
+    List<String> hostNames = new ArrayList<String>();
+    if (hostIds != null) {
+      for (Long hostId : hostIds) {
+        HostEntity hostEntity = findById(hostId);
+        hostNames.add(hostEntity.getHostName());
+      }
+    }
+    return hostNames;
+  }
 }

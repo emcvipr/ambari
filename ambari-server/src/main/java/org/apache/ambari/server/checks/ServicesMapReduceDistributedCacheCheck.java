@@ -31,9 +31,13 @@ import org.apache.ambari.server.state.stack.PrereqCheckStatus;
 import org.apache.ambari.server.state.stack.PrerequisiteCheck;
 import org.apache.commons.lang.StringUtils;
 
+import com.google.inject.Singleton;
+
 /**
  * Checks that MR jobs reference hadoop libraries from the distributed cache.
  */
+@Singleton
+@UpgradeCheck(group = UpgradeCheckGroup.NAMENODE_HA, order = 3.0f)
 public class ServicesMapReduceDistributedCacheCheck extends AbstractCheckDescriptor {
 
   static final String KEY_APP_CLASSPATH = "app_classpath";
@@ -43,6 +47,11 @@ public class ServicesMapReduceDistributedCacheCheck extends AbstractCheckDescrip
   @Override
   public boolean isApplicable(PrereqCheckRequest request)
     throws AmbariException {
+
+    if (!super.isApplicable(request)) {
+      return false;
+    }
+
     final Cluster cluster = clustersProvider.get().getCluster(request.getClusterName());
     try {
       cluster.getService("YARN");

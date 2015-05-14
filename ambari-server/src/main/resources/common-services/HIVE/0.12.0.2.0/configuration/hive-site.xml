@@ -91,6 +91,12 @@ limitations under the License.
   </property>
 
   <property>
+    <name>datanucleus.autoCreateSchema</name>
+    <value>false</value>
+    <description>Creates necessary schema on a startup if one doesn't exist</description>
+  </property>
+
+  <property>
     <name>hive.metastore.pre.event.listeners</name>
     <value>org.apache.hadoop.hive.ql.security.authorization.AuthorizationPreEventListener</value>
     <description>Pre-event listener classes to be loaded on the metastore side to run code
@@ -128,6 +134,10 @@ limitations under the License.
     <name>hive.security.metastore.authorization.manager</name>
     <value>org.apache.hadoop.hive.ql.security.authorization.StorageBasedAuthorizationProvider</value>
     <description>The authorization manager class name to be used in the metastore for authorization. The user-defined authorization class should implement interface org.apache.hadoop.hive.ql.security.authorization.HiveMetastoreAuthorizationProvider.  </description>
+    <display-name>Hive Authorization Manager</display-name>
+    <value-attributes>
+      <type>string</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -242,11 +252,19 @@ limitations under the License.
 
   <property>
     <name>hive.auto.convert.join.noconditionaltask.size</name>
-    <value>1000000000</value>
+    <value>2147483648</value>
     <description>If hive.auto.convert.join.noconditionaltask is off, this parameter does not take affect. However, if it
       is on, and the sum of size for n-1 of the tables/partitions for a n-way join is smaller than this size, the join is directly
       converted to a mapjoin(there is no conditional task). The default is 10MB.
     </description>
+    <display-name>For Map Join, per Map memory threshold</display-name>
+    <value-attributes>
+      <type>int</type>
+      <minimum>1073741824</minimum>
+      <maximum>17179869184</maximum>
+      <unit>B</unit>
+      <increment-step></increment-step>
+    </value-attributes>
   </property>
 
   <property>
@@ -279,7 +297,7 @@ limitations under the License.
 
   <property>
     <name>hive.vectorized.execution.enabled</name>
-    <value>false</value>
+    <value>true</value>
     <description>This flag controls the vectorized mode of query execution as documented in HIVE-4160 (as of Hive 0.13.0)
     </description>
   </property>
@@ -335,4 +353,23 @@ limitations under the License.
     </description>
   </property>
 
+  <property>
+    <name>hive.default.fileformat</name>
+    <value>TextFile</value>
+    <description>Default file format for CREATE TABLE statement.</description>
+    <display-name>Default File Format</display-name>
+    <value-attributes>
+      <type>value-list</type>
+      <entries>
+        <entry>
+          <value>ORC</value>
+          <description>The Optimized Row Columnar (ORC) file format provides a highly efficient way to store Hive data. It was designed to overcome limitations of the other Hive file formats. Using ORC files improves performance when Hive is reading, writing, and processing data.</description>
+        </entry>
+        <entry>
+          <value>TextFile</value>
+          <description>Text file format saves Hive data as normal text.</description>
+        </entry>
+      </entries>
+    </value-attributes>
+  </property>
 </configuration>

@@ -23,6 +23,8 @@ App.InstallerController = App.WizardController.extend({
 
   name: 'installerController',
 
+  isCheckInProgress: false,
+
   totalSteps: 11,
 
   content: Em.Object.create({
@@ -329,8 +331,11 @@ App.InstallerController = App.WizardController.extend({
   },
   getServerVersion: function () {
     return App.ajax.send({
-      name: 'ambari.service.load_server_version',
+      name: 'ambari.service',
       sender: this,
+      data: {
+        fields: '?fields=RootServiceComponents/component_version,RootServiceComponents/properties/server.os_family&minimal_response=true'
+      },
       success: 'getServerVersionSuccessCallback',
       error: 'getServerVersionErrorCallback'
     });
@@ -510,9 +515,12 @@ App.InstallerController = App.WizardController.extend({
       selectedStack.get('operatingSystems').forEach(function (os) {
         if (os.get('isSelected')) {
           os.get('repositories').forEach(function (repo) {
-            repo.set('errorTitle', '');
-            repo.set('errorContent', '');
-            repo.set('validation', App.Repository.validation['INPROGRESS']);
+            repo.setProperties({
+              errorTitle: '',
+              errorContent: '',
+              validation: App.Repository.validation['INPROGRESS']
+            });
+            this.set('content.isCheckInProgress', true);
             App.ajax.send({
               name: 'wizard.advanced_repositories.valid_url',
               sender: this,
@@ -554,6 +562,7 @@ App.InstallerController = App.WizardController.extend({
     }
     this.set('validationCnt', this.get('validationCnt') - 1);
     if (!this.get('validationCnt')) {
+      this.set('content.isCheckInProgress', false);
       data.dfd.resolve();
     }
   },
@@ -568,11 +577,14 @@ App.InstallerController = App.WizardController.extend({
       var os = selectedStack.get('operatingSystems').findProperty('id', params.osId);
       var repo = os.get('repositories').findProperty('repoId', params.repoId);
       if (repo) {
-        repo.set('validation', App.Repository.validation['INVALID']);
-        repo.set('errorTitle', request.status + ":" + request.statusText);
-        repo.set('errorContent', $.parseJSON(request.responseText) ? $.parseJSON(request.responseText).message : "");
+        repo.setProperties({
+          validation: App.Repository.validation['INVALID'],
+          errorTitle: request.status + ":" + request.statusText,
+          errorContent: $.parseJSON(request.responseText) ? $.parseJSON(request.responseText).message : ""
+        });
       }
     }
+    this.set('content.isCheckInProgress', false);
     params.dfd.reject();
   },
 
@@ -637,6 +649,7 @@ App.InstallerController = App.WizardController.extend({
       {
         type: 'sync',
         callback: function () {
+          this.setSkipSlavesStep(App.StackService.find().filterProperty('isSelected'), 6);
           this.loadMasterComponentHosts();
           this.loadConfirmedHosts();
           this.loadRecommendations();
@@ -655,12 +668,13 @@ App.InstallerController = App.WizardController.extend({
     ],
     '7': [
       {
-        type: 'sync',
+        type: 'async',
         callback: function () {
           this.loadServiceConfigGroups();
           this.loadServiceConfigProperties();
           this.loadCurrentHostGroups();
           this.loadRecommendationsConfigs();
+          return this.loadConfigThemes();
         }
       }
     ]
@@ -707,4 +721,3 @@ App.InstallerController = App.WizardController.extend({
     }
   }
 });
-

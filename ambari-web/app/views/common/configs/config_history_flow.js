@@ -163,6 +163,7 @@ App.ConfigHistoryFlowView = Em.View.extend({
     App.tooltip(this.$('[data-toggle=arrow-tooltip]'),{
       placement: 'top'
     });
+    $(".version-info-bar-wrapper").stick_in_parent({parent: '#serviceConfig', offset_top: 10});
   },
 
   serviceVersionBox: Em.View.extend({
@@ -211,7 +212,6 @@ App.ConfigHistoryFlowView = Em.View.extend({
     }
     this.set('startIndex', startIndex);
     this.adjustFlowView();
-    this.keepInfoBarAtTop();
   },
 
   onChangeConfigGroup: function () {
@@ -257,56 +257,7 @@ App.ConfigHistoryFlowView = Em.View.extend({
     }
     this.set('startIndex', startIndex);
     this.adjustFlowView();
-    this.keepInfoBarAtTop();
   }.observes('controller.selectedConfigGroup.name'),
-
-  /**
-   * initialize event to keep info bar position at the top of the page
-   */
-  keepInfoBarAtTop: function () {
-    var defaultTop, defaultLeft;
-    var self = this;
-    //reset defaultTop value in closure
-    $(window).unbind('scroll');
-
-    $(window).on('scroll', function (event) {
-      var infoBar = $('#config_history_flow>.version-info-bar-wrapper');
-      var versionSlider = $('#config_history_flow>.version-slider');
-      var scrollTop = $(window).scrollTop();
-      var scrollLeft = $(window).scrollLeft();
-      if (infoBar.length === 0) {
-        $(window).unbind('scroll');
-        return;
-      }
-      //290 - default "top" property in px
-      defaultTop = defaultTop || (infoBar.get(0).getBoundingClientRect() && infoBar.get(0).getBoundingClientRect().top) || 290;
-      // keep the version info bar always aligned to version slider
-      defaultLeft = (versionSlider.get(0).getBoundingClientRect() && versionSlider.get(0).getBoundingClientRect().left);
-      self.setInfoBarPosition(infoBar, defaultTop, scrollTop, defaultLeft, scrollLeft);
-    })
-  },
-  /**
-   * calculate and reset top position of info bar
-   * @param infoBar
-   * @param defaultTop
-   * @param scrollTop
-   * @param defaultLeft
-   * @param scrollLeft
-   */
-  setInfoBarPosition: function (infoBar, defaultTop, scrollTop, defaultLeft, scrollLeft) {
-    if (scrollTop > defaultTop) {
-      infoBar.css('top', '10px');
-    } else if (scrollTop > 0) {
-      infoBar.css('top', (defaultTop - scrollTop) + 'px');
-    } else {
-      infoBar.css('top', 'auto');
-    }
-    if (scrollLeft > 0) {
-      infoBar.css('left', defaultLeft);
-    } else {
-      infoBar.css('left', 'auto');
-    }
-  },
 
   /**
    *  define the first element in viewport
@@ -488,14 +439,18 @@ App.ConfigHistoryFlowView = Em.View.extend({
       primary: Em.I18n.t('common.save'),
       secondary: Em.I18n.t('common.cancel'),
       onSave: function () {
-        self.get('controller').set('serviceConfigVersionNote', this.get('serviceConfigNote'));
         var newVersionToBeCreated = App.ServiceConfigVersion.find().filterProperty('serviceName', self.get('serviceName')).get('length') + 1;
-        self.get('controller').set('preSelectedConfigVersion', Em.Object.create({
-          version: newVersionToBeCreated,
-          serviceName: self.get('displayedServiceVersion.serviceName'),
-          groupName: self.get('controller.selectedConfigGroup.name')
-        }));
-        self.get('controller').restartServicePopup();
+        self.get('controller').setProperties({
+          saveConfigsFlag: true,
+          serviceConfigVersionNote: this.get('serviceConfigNote'),
+          serviceConfigNote: this.get('serviceConfigNote'),
+          preSelectedConfigVersion: Em.Object.create({
+            version: newVersionToBeCreated,
+            serviceName: self.get('displayedServiceVersion.serviceName'),
+            groupName: self.get('controller.selectedConfigGroup.name')
+          })
+        });
+        self.get('controller').saveStepConfigs();
         this.hide();
       },
       onDiscard: function () {

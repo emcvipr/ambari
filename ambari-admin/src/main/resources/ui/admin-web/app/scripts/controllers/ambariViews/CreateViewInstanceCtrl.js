@@ -18,21 +18,27 @@
 'use strict';
 
 angular.module('ambariAdminConsole')
-.controller('CreateViewInstanceCtrl',['$scope', 'View', 'Alert', '$routeParams', '$location', 'UnsavedDialog', function($scope, View, Alert, $routeParams, $location, UnsavedDialog) {
+.controller('CreateViewInstanceCtrl',['$scope', 'View', 'Alert', 'Cluster', '$routeParams', '$location', 'UnsavedDialog', function($scope, View, Alert, Cluster, $routeParams, $location, UnsavedDialog) {
   $scope.form = {};
   var targetUrl = '';
 
   function loadMeta(){
     View.getMeta($routeParams.viewId, $scope.version).then(function(data) {
-      var viewVersion = data.data;
-      $scope.view = viewVersion;
+      var viewVersion = data.data,
+        parameters;
 
-      var parameters = viewVersion.ViewVersionInfo.parameters;
+      $scope.view = viewVersion;
+      parameters = viewVersion.ViewVersionInfo.parameters;
 
       angular.forEach(parameters, function (item) {
         item.value = item['defaultValue'];
+        item.clusterConfig = !!item.clusterConfig;
         item.displayName = item.name.replace(/\./g, '\.\u200B');
+        item.clusterConfig ? $scope.numberOfClusterConfigs++ : $scope.numberOfSettingConfigs++;
       });
+
+      $scope.clusterConfigurable = viewVersion.ViewVersionInfo.cluster_configurable;
+      $scope.clusterConfigurableErrorMsg = $scope.clusterConfigurable ? "" : "This view cannot use this option";
 
       $scope.instance = {
         view_name: viewVersion.ViewVersionInfo.view_name,
@@ -43,7 +49,8 @@ angular.module('ambariAdminConsole')
         icon_path: '',
         icon64_path: '',
         properties: parameters,
-        description: ''
+        description: '',
+        isLocalCluster: false
       };
     });
   }
@@ -61,6 +68,26 @@ angular.module('ambariAdminConsole')
   $scope.isAdvancedClosed = true;
   $scope.instanceExists = false;
 
+  $scope.clusterConfigurable = false;
+  $scope.clusterConfigurableErrorMsg = "";
+  $scope.clusters = [];
+  $scope.noClusterAvailible = true;
+  $scope.cluster = null;
+  $scope.numberOfClusterConfigs = 0;
+  $scope.numberOfSettingConfigs = 0;
+
+  Cluster.getAllClusters().then(function (clusters) {
+    if(clusters.length >0){
+      clusters.forEach(function(cluster) {
+        $scope.clusters.push(cluster.Clusters.cluster_name)
+      });
+      $scope.noClusterAvailible = false;
+    }else{
+      $scope.clusters.push("No Clusters");
+    }
+    $scope.cluster = $scope.clusters[0];
+  });
+
   $scope.versions = [];
   $scope.version = null;
 
@@ -77,6 +104,7 @@ angular.module('ambariAdminConsole')
     $scope.form.instanceCreateForm.submitted = true;
     if($scope.form.instanceCreateForm.$valid){
       $scope.form.instanceCreateForm.isSaving = true;
+      $scope.instance.clusterName = $scope.cluster;
       View.createInstance($scope.instance)
         .then(function(data) {
           Alert.success('Created View Instance ' + $scope.instance.instance_name);
@@ -90,6 +118,8 @@ angular.module('ambariAdminConsole')
         })
         .catch(function (data) {
           var errorMessage = data.message;
+          var showGeneralError = true;
+
           if (data.status >= 400) {
             try {
               var errorObject = JSON.parse(errorMessage);
@@ -97,9 +127,14 @@ angular.module('ambariAdminConsole')
               angular.forEach(errorObject.propertyResults, function (item, key) {
                 $scope.form.instanceCreateForm[key].validationError = !item.valid;
                 if (!item.valid) {
+                  showGeneralError = false;
                   $scope.form.instanceCreateForm[key].validationMessage = item.detail;
                 }
               });
+
+              if (showGeneralError) {
+                $scope.form.instanceCreateForm.generalValidationError = errorMessage;  
+              }
             } catch (e) {
               console.error('Unable to parse error message:', data.message);
             }

@@ -17,45 +17,49 @@
  */
 package org.apache.ambari.server.orm.dao;
 
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
+import java.util.List;
+
 import junit.framework.Assert;
+
 import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
-import org.apache.ambari.server.orm.cache.ConfigGroupHostMapping;
 import org.apache.ambari.server.orm.entities.ClusterConfigEntity;
 import org.apache.ambari.server.orm.entities.ClusterEntity;
-import org.apache.ambari.server.orm.entities.ConfigGroupConfigMappingEntity;
-import org.apache.ambari.server.orm.entities.ConfigGroupEntity;
-import org.apache.ambari.server.orm.entities.ConfigGroupHostMappingEntity;
-import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.ResourceEntity;
 import org.apache.ambari.server.orm.entities.ResourceTypeEntity;
 import org.apache.ambari.server.orm.entities.ServiceConfigEntity;
+import org.apache.ambari.server.orm.entities.StackEntity;
+import org.apache.ambari.server.state.StackId;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
 
 public class ServiceConfigDAOTest {
+  private static final StackId HDP_01 = new StackId("HDP", "0.1");
+  private static final StackId HDP_02 = new StackId("HDP", "0.2");
+
   private Injector injector;
   private ServiceConfigDAO serviceConfigDAO;
   private ClusterDAO clusterDAO;
   private ResourceTypeDAO resourceTypeDAO;
-
+  private StackDAO stackDAO;
 
   @Before
   public void setup() throws Exception {
     injector = Guice.createInjector(new InMemoryDefaultTestModule());
     injector.getInstance(GuiceJpaInitializer.class);
 
+    // required to load stack information into the DB
+    injector.getInstance(AmbariMetaInfo.class);
+
     clusterDAO = injector.getInstance(ClusterDAO.class);
+    stackDAO = injector.getInstance(StackDAO.class);
     serviceConfigDAO = injector.getInstance(ServiceConfigDAO.class);
     resourceTypeDAO = injector.getInstance(ResourceTypeDAO.class);
   }
@@ -78,14 +82,20 @@ public class ServiceConfigDAOTest {
       resourceTypeEntity.setName(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE_NAME);
       resourceTypeEntity = resourceTypeDAO.merge(resourceTypeEntity);
     }
+
     ResourceEntity resourceEntity = new ResourceEntity();
     resourceEntity.setResourceType(resourceTypeEntity);
 
     ClusterEntity  clusterEntity = clusterDAO.findByName("c1");
     if (clusterEntity == null) {
+      StackEntity stackEntity = stackDAO.find(HDP_01.getStackName(),
+          HDP_01.getStackVersion());
+
       clusterEntity = new ClusterEntity();
       clusterEntity.setClusterName("c1");
       clusterEntity.setResource(resourceEntity);
+      clusterEntity.setDesiredStack(stackEntity);
+
       clusterDAO.create(clusterEntity);
     }
 
@@ -98,6 +108,7 @@ public class ServiceConfigDAOTest {
     serviceConfigEntity.setCreateTimestamp(createTimestamp);
     serviceConfigEntity.setClusterConfigEntities(clusterConfigEntities);
     serviceConfigEntity.setClusterEntity(clusterEntity);
+    serviceConfigEntity.setStack(clusterEntity.getDesiredStack());
 
     serviceConfigDAO.create(serviceConfigEntity);
 
@@ -167,16 +178,14 @@ public class ServiceConfigDAOTest {
     createServiceConfig("HDFS", "admin", 2L, 2L, 2222L, null);
     createServiceConfig("YARN", "admin", 1L, 3L, 3333L, null);
 
+    long hdfsVersion = serviceConfigDAO.findNextServiceConfigVersion(
+        clusterDAO.findByName("c1").getClusterId(), "HDFS");
 
-    Map<String,Long> maxVersions = serviceConfigDAO.findMaxVersions(
-      clusterDAO.findByName("c1").getClusterId());
+    long yarnVersion = serviceConfigDAO.findNextServiceConfigVersion(
+        clusterDAO.findByName("c1").getClusterId(), "YARN");
 
-    Assert.assertNotNull(maxVersions);
-
-    Assert.assertEquals(2, maxVersions.size());
-
-    Assert.assertEquals(Long.valueOf(2), maxVersions.get("HDFS"));
-    Assert.assertEquals(Long.valueOf(1), maxVersions.get("YARN"));
+    Assert.assertEquals(3, hdfsVersion);
+    Assert.assertEquals(2, yarnVersion);
   }
 
   @Test
@@ -279,4 +288,49 @@ public class ServiceConfigDAOTest {
     }
   }
 
+  @Test
+  public void testGetAllServiceConfigs() throws Exception {
+    ServiceConfigEntity serviceConfigEntity = null;
+    serviceConfigEntity = createServiceConfig("HDFS", "admin", 1L, 1L, 10L, null);
+    serviceConfigEntity = createServiceConfig("HDFS", "admin", 2L, 2L, 20L, null);
+    serviceConfigEntity = createServiceConfig("HDFS", "admin", 3L, 3L, 30L, null);
+    serviceConfigEntity = createServiceConfig("YARN", "admin", 1L, 4L, 40L, null);
+
+    long clusterId = serviceConfigEntity.getClusterId();
+
+    List<ServiceConfigEntity> serviceConfigs = serviceConfigDAO.getAllServiceConfigsForClusterAndStack(clusterId, HDP_01);
+    Assert.assertEquals(4, serviceConfigs.size());
+
+    serviceConfigs = serviceConfigDAO.getAllServiceConfigsForClusterAndStack(clusterId, HDP_02);
+    Assert.assertEquals(0, serviceConfigs.size());
+  }
+
+  @Test
+  public void testGetLatestServiceConfigs() throws Exception {
+    ServiceConfigEntity serviceConfigEntity = null;
+    serviceConfigEntity = createServiceConfig("HDFS", "admin", 1L, 1L, 10L, null);
+    serviceConfigEntity = createServiceConfig("HDFS", "admin", 2L, 2L, 20L, null);
+    serviceConfigEntity = createServiceConfig("HDFS", "admin", 3L, 3L, 30L, null);
+    serviceConfigEntity = createServiceConfig("YARN", "admin", 1L, 4L, 40L, null);
+
+    StackEntity stackEntity = stackDAO.find(HDP_02.getStackName(),
+        HDP_02.getStackVersion());
+
+    ClusterEntity clusterEntity = serviceConfigEntity.getClusterEntity();
+    clusterEntity.setDesiredStack(stackEntity);
+    clusterDAO.merge(clusterEntity);
+
+    // create some for HDP 0.2
+    serviceConfigEntity = createServiceConfig("HDFS", "admin", 4L, 5L, 50L, null);
+    serviceConfigEntity = createServiceConfig("HDFS", "admin", 5L, 6L, 60L, null);
+    serviceConfigEntity = createServiceConfig("YARN", "admin", 2L, 7L, 70L, null);
+
+    long clusterId = serviceConfigEntity.getClusterId();
+
+    List<ServiceConfigEntity> serviceConfigs = serviceConfigDAO.getLatestServiceConfigs(clusterId, HDP_01);
+    Assert.assertEquals(2, serviceConfigs.size());
+
+    serviceConfigs = serviceConfigDAO.getLatestServiceConfigs(clusterId, HDP_02);
+    Assert.assertEquals(2, serviceConfigs.size());
+  }
 }

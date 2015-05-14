@@ -20,7 +20,7 @@ var App = require('app');
 var lazyloading = require('utils/lazy_loading');
 var numberUtils = require('utils/number_utils');
 
-App.WizardStep3Controller = Em.Controller.extend({
+App.WizardStep3Controller = Em.Controller.extend(App.ReloadPopupMixin, {
 
   name: 'wizardStep3Controller',
 
@@ -68,7 +68,9 @@ App.WizardStep3Controller = Em.Controller.extend({
    * is Retry button disabled
    * @type {bool}
    */
-  isRetryDisabled: true,
+  isRetryDisabled: function() {
+    return (this.get('isBackDisabled')) ? this.get('isBackDisabled') : !this.get('bootHosts').filterProperty('bootStatus', 'FAILED').length;
+  }.property('bootHosts.@each.bootStatus', 'isBackDisabled'),
 
   /**
    * Is Back button disabled
@@ -216,7 +218,6 @@ App.WizardStep3Controller = Em.Controller.extend({
     this.set('registrationStartedAt', null);
     this.set('isLoaded', false);
     this.set('isSubmitDisabled', true);
-    this.set('isRetryDisabled', true);
     this.set('stopChecking', false);
   },
 
@@ -235,10 +236,10 @@ App.WizardStep3Controller = Em.Controller.extend({
     });
     App.router.get(this.get('content.controllerName')).launchBootstrap(bootStrapData, function (requestId) {
       if (requestId == '0') {
-        var controller = App.router.get(App.clusterStatus.wizardControllerName);
-        controller.registerErrPopup(Em.I18n.t('common.information'), Em.I18n.t('installer.step2.evaluateStep.hostRegInProgress'));
+        self.startBootstrap();
       } else if (requestId) {
         self.set('content.installOptions.bootRequestId', requestId);
+        App.router.get(self.get('content.controllerName')).save('installOptions');
         self.startBootstrap();
       }
     });
@@ -312,6 +313,7 @@ App.WizardStep3Controller = Em.Controller.extend({
     return App.showConfirmationPopup(function () {
       App.router.send('removeHosts', hosts);
       self.hosts.removeObjects(hosts);
+      self.stopRegistration();
       if (!self.hosts.length) {
         self.set('isSubmitDisabled', true);
       }
@@ -324,7 +326,8 @@ App.WizardStep3Controller = Em.Controller.extend({
    * @method removeHost
    */
   removeHost: function (hostInfo) {
-    this.removeHosts([hostInfo]);
+    if (!this.get('isBackDisabled'))
+      this.removeHosts([hostInfo]);
   },
 
   /**
@@ -395,6 +398,7 @@ App.WizardStep3Controller = Em.Controller.extend({
     this.set('registrationStartedAt', null);
     this.set('isHostsWarningsLoaded', false);
     this.set('stopChecking', false);
+    this.set('isSubmitDisabled', true);
     if (this.get('content.installOptions.manualInstall')) {
       this.startRegistration();
     } else {
@@ -411,7 +415,6 @@ App.WizardStep3Controller = Em.Controller.extend({
    */
   retrySelectedHosts: function () {
     if (!this.get('isRetryDisabled')) {
-      this.set('isRetryDisabled', true);
       var selectedHosts = this.get('bootHosts').filterProperty('bootStatus', 'FAILED');
       selectedHosts.forEach(function (_host) {
         _host.set('bootStatus', 'DONE');
@@ -466,9 +469,9 @@ App.WizardStep3Controller = Em.Controller.extend({
     App.router.get('installerController.isStepDisabled').filter(function (step) {
       return step.step >= 0 && step.step <= 2;
     }).setEach('value', this.get('isBackDisabled'));
-    if (this.get('isBackDisabled')) {
-      this.set('isSubmitDisabled', true);
-    }
+    App.router.get('addHostController.isStepDisabled').filter(function (step) {
+      return step.step >= 0 && step.step <= 1;
+    }).setEach('value', this.get('isBackDisabled'));
   }.observes('isBackDisabled'),
 
   /**
@@ -477,6 +480,7 @@ App.WizardStep3Controller = Em.Controller.extend({
    * @return {$.ajax|null}
    */
   doBootstrap: function () {
+    var self = this;
     if (this.get('stopBootstrap')) {
       return null;
     }
@@ -496,12 +500,14 @@ App.WizardStep3Controller = Em.Controller.extend({
         timeout: App.timeout
       }).
       then(
-      null,
-      function () {
-        App.showReloadPopup();
-        console.log('Bootstrap failed');
-      }
-    );
+        function () {
+          self.closeReloadPopup();
+        },
+        function () {
+          self.showReloadPopup();
+          console.log('Bootstrap failed');
+        }
+      );
   },
 
   /**
@@ -529,7 +535,8 @@ App.WizardStep3Controller = Em.Controller.extend({
       // Single host : if the only hostname is invalid (data.status == 'ERROR')
       // Multiple hosts : if one or more hostnames are invalid
       // following check will mark the bootStatus as 'FAILED' for the invalid hostname
-      if (data.status == 'ERROR' || data.hostsStatus.length != this.get('bootHosts').length) {
+      var installedHosts = App.Host.find().mapProperty('hostName');
+      if (data.status == 'ERROR' || data.hostsStatus.mapProperty('hostName').removeObjects(installedHosts).length != this.get('bootHosts').length) {
 
         var hosts = this.get('bootHosts');
 
@@ -578,6 +585,7 @@ App.WizardStep3Controller = Em.Controller.extend({
     if (this.get('stopBootstrap')) {
       return null;
     }
+    var self = this;
     return App.ajax.send({
       name: 'wizard.step3.is_hosts_registered',
       sender: this,
@@ -588,12 +596,14 @@ App.WizardStep3Controller = Em.Controller.extend({
         timeout: App.timeout
       }).
       then(
-      null,
-      function () {
-        App.showReloadPopup();
-        console.log('Error: Getting registered host information from the server');
-      }
-    );
+        function () {
+          self.closeReloadPopup();
+        },
+        function () {
+          self.showReloadPopup();
+          console.log('Error: Getting registered host information from the server');
+        }
+      );
   },
 
   /**
@@ -736,8 +746,11 @@ App.WizardStep3Controller = Em.Controller.extend({
    */
   getJDKName: function () {
     return App.ajax.send({
-      name: 'ambari.service.load_jdk_name',
+      name: 'ambari.service',
       sender: this,
+      data: {
+        fields : '?fields=RootServiceComponents/properties/jdk.name,RootServiceComponents/properties/java.home,RootServiceComponents/properties/jdk_location'
+      },
       success: 'getJDKNameSuccessCallback'
     });
   },
@@ -1005,9 +1018,10 @@ App.WizardStep3Controller = Em.Controller.extend({
       if (data.Requests.inputs.indexOf("last_agent_env_check") != -1) {
         this.set('stopChecking', true);
         this.set('hostsPackagesData', data.tasks.map(function (task) {
+          var installed_packages = Em.get(task, 'Tasks.structured_out.installed_packages');
           return {
             hostName: Em.get(task, 'Tasks.host_name'),
-            installedPackages: Em.get(task, 'Tasks.structured_out.installed_packages')
+            installedPackages: installed_packages ? installed_packages : []
           }
         }));
         this.getHostInfo();
@@ -1097,7 +1111,7 @@ App.WizardStep3Controller = Em.Controller.extend({
           self._setHostDataFromLoadedHostInfo(_host, host);
           var host_name = Em.get(host, 'Hosts.host_name');
 
-          var context = self.checkHostOSType(host.Hosts.os_type, host_name);
+          var context = self.checkHostOSType(host.Hosts.os_family, host_name);
           if (context) {
             hostsContext.push(context);
             hostsRepoNames.push(host_name);
@@ -1185,6 +1199,7 @@ App.WizardStep3Controller = Em.Controller.extend({
       return h.mountpoint != "/boot"
     }));
     host.set('os_type', Em.get(hostInfo, 'Hosts.os_type'));
+    host.set('os_family', Em.get(hostInfo, 'Hosts.os_family'));
     host.set('os_arch', Em.get(hostInfo, 'Hosts.os_arch'));
     host.set('ip', Em.get(hostInfo, 'Hosts.ip'));
     return host;
@@ -1206,7 +1221,6 @@ App.WizardStep3Controller = Em.Controller.extend({
    */
   stopRegistration: function () {
     this.set('isSubmitDisabled', !this.get('bootHosts').someProperty('bootStatus', 'REGISTERED'));
-    this.set('isRetryDisabled', !this.get('bootHosts').someProperty('bootStatus', 'FAILED'));
   },
 
   /**
@@ -1232,16 +1246,15 @@ App.WizardStep3Controller = Em.Controller.extend({
    * @return {string} error-message or empty string
    * @method checkHostOSType
    */
-  checkHostOSType: function (osType, hostName) {
+  checkHostOSType: function (osFamily, hostName) {
     if (this.get('content.stacks')) {
       var selectedStack = this.get('content.stacks').findProperty('isSelected', true);
       var selectedOS = [];
-      var self = this;
       var isValid = false;
       if (selectedStack && selectedStack.get('operatingSystems')) {
         selectedStack.get('operatingSystems').filterProperty('isSelected', true).forEach(function (os) {
           selectedOS.pushObject(os.get('osType'));
-          if (self.repoToAgentOsType(os.get('osType')).indexOf(osType) >= 0) {
+          if (os.get('osType') === osFamily) {
             isValid = true;
           }
         });
@@ -1250,33 +1263,11 @@ App.WizardStep3Controller = Em.Controller.extend({
         return '';
       } else {
         console.log('WARNING: Getting host os type does NOT match the user selected os group in step1. ' +
-          'Host Name: ' + hostName + '. Host os type:' + osType + '. Selected group:' + selectedOS.uniq());
-        return Em.I18n.t('installer.step3.hostWarningsPopup.repositories.context').format(hostName, osType, selectedOS.uniq());
+          'Host Name: ' + hostName + '. Host os type:' + osFamily + '. Selected group:' + selectedOS.uniq());
+        return Em.I18n.t('installer.step3.hostWarningsPopup.repositories.context').format(hostName, osFamily, selectedOS.uniq());
       }
     } else {
       return '';
-    }
-  },
-
-  /**
-   * return the supported agent os types for a repo os type
-   * @param {String} repoType
-   * @return {Array} supported agent os type array
-   * @method repoToAgentOsType
-   */
-  repoToAgentOsType : function (repoType) {
-    /* istanbul ignore next */
-    switch (repoType) {
-      case "redhat6":
-        return ["redhat6", "centos6", "oraclelinux6", "rhel6"];
-      case "redhat5":
-        return ["redhat5", "centos5", "oraclelinux5", "rhel5"];
-      case "suse11":
-        return ["suse11", "sles11", "opensuse11"];
-      case "ubuntu12":
-        return ["debian12", "ubuntu12"];
-      default:
-        return [];
     }
   },
 
@@ -1479,9 +1470,9 @@ App.WizardStep3Controller = Em.Controller.extend({
       }, this);
 
       //parse all package warnings for host
-      var hostPackagesData = hostsPackagesData.findProperty('hostName', _host.Hosts.host_name);
-      if (hostPackagesData) {
-        hostPackagesData.installedPackages.forEach(function (_package) {
+      var _hostPackagesData = hostsPackagesData.findProperty('hostName', _host.Hosts.host_name);
+      if (_hostPackagesData) {
+        _hostPackagesData.installedPackages.forEach(function (_package) {
           warning = warningCategories.packagesWarnings[_package.name];
           if (warning) {
             warning.hosts.push(_host.Hosts.host_name);
@@ -1590,9 +1581,9 @@ App.WizardStep3Controller = Em.Controller.extend({
         host.warnings.push(warning);
       }
 
-      var firewallRunning = _host.Hosts.last_agent_env.iptablesIsRunning;
+      var firewallRunning = _host.Hosts.last_agent_env.firewallRunning;
       if (firewallRunning !== null && firewallRunning) {
-        var name = Em.I18n.t('installer.step3.hostWarningsPopup.firewall.name');
+        var name = _host.Hosts.last_agent_env.firewallName + " Running";
         warning = warnings.filterProperty('category', 'firewall').findProperty('name', name);
         if (warning) {
           warning.hosts.push(_host.Hosts.host_name);

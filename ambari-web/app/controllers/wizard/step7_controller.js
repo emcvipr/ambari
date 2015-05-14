@@ -27,7 +27,7 @@ var App = require('app');
  *
  */
 
-App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
+App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.EnhancedConfigsMixin, {
 
   name: 'wizardStep7Controller',
 
@@ -69,18 +69,12 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
   securityEnabled: function () {
     return App.router.get('mainAdminKerberosController.securityEnabled');
   }.property('App.router.mainAdminKerberosController.securityEnabled'),
+
   /**
    * If configChangeObserver Modal is shown
    * @type {bool}
    */
   miscModalVisible: false,
-
-  gangliaAvailableSpace: null,
-
-  /**
-   * @type {string}
-   */
-  gangliaMoutDir: '/',
 
   overrideToAdd: null,
 
@@ -131,6 +125,16 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
   isConfigsLoaded: function () {
     return (this.get('isAdvancedConfigLoaded') && this.get('isAppliedConfigLoaded'));
   }.property('isAdvancedConfigLoaded', 'isAppliedConfigLoaded'),
+
+  /**
+   * Number of errors in the configs in the selected service
+   * @type {number}
+   */
+  errorsCount: function () {
+    return this.get('selectedService.configs').filter(function (config) {
+      return Em.isNone(config.get('widget'));
+    }).filterProperty('isValid', false).filterProperty('isVisible').length;
+  }.property('selectedService.configs.@each.isValid'),
 
   /**
    * Should Next-button be disabled
@@ -213,16 +217,29 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
       caption: 'common.combobox.dropdown.final'
     },
     {
-      attributeName: 'isValid',
-      attributeValue: false,
-      caption: 'common.combobox.dropdown.issues'
-    },
-    {
-      attributeName: 'warn',
+      attributeName: 'hasIssues',
       attributeValue: true,
-      caption: 'common.combobox.dropdown.warnings'
+      caption: 'common.combobox.dropdown.issues'
     }
   ],
+
+  issuesFilterText: function () {
+    return (this.get('isSubmitDisabled') && !this.get('submitButtonClicked') &&
+      this.get('filterColumns').findProperty('attributeName', 'hasIssues').get('selected')) ?
+        Em.I18n.t('installer.step7.showingPropertiesWithIssues') : '';
+  }.property('isSubmitDisabled', 'submitButtonClicked', 'filterColumns.@each.selected'),
+
+  issuesFilterLinkText: function () {
+    if (this.get('filterColumns').findProperty('attributeName', 'hasIssues').get('selected')) {
+      return Em.I18n.t('installer.step7.showAllProperties');
+    }
+
+    return (this.get('isSubmitDisabled') && !this.get('submitButtonClicked')) ?
+      (
+        this.get('filterColumns').findProperty('attributeName', 'hasIssues').get('selected') ?
+          Em.I18n.t('installer.step7.showAllProperties') : Em.I18n.t('installer.step7.showPropertiesWithIssues')
+      ) : '';
+  }.property('isSubmitDisabled', 'submitButtonClicked', 'filterColumns.@each.selected'),
 
   /**
    * Dropdown menu items in filter combobox
@@ -510,7 +527,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
         break;
       case 'YARN':
         this.resolveYarnConfigs(configs);
-      default:
         break;
     }
   },
@@ -591,8 +607,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
     App.config.setPreDefinedServiceConfigs(this.get('addMiscTabToPage'));
     //STEP 4: Add advanced configs
     App.config.addAdvancedConfigs(configs, advancedConfigs);
-    //STEP 5: Add custom configs
-    App.config.addCustomConfigs(configs);
 
     this.set('groupsToDelete', this.get('wizardController').getDBProperty('groupsToDelete') || []);
 
@@ -622,9 +636,11 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
       self.set('isRecommendedLoaded', true);
       // format descriptor configs
       if (self.get('securityEnabled') && self.get('wizardController.name') == 'addServiceController') {
-        App.config.addKerberosDescriptorConfigs(configs, self.get('wizardController.kerberosDescriptorConfigs') || []);
+        self.addKerberosDescriptorConfigs(configs, self.get('wizardController.kerberosDescriptorConfigs') || []);
       }
       self.setStepConfigs(configs, storedConfigs);
+      self.updateDependentConfigs();
+      self.clearDependentConfigs();
       self.checkHostOverrideInstaller();
       self.activateSpecialConfigs();
       self.selectProperService();
@@ -633,6 +649,29 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
       }
     });
   },
+
+  /**
+   * Mark descriptor properties in configuration object.
+   *
+   * @param {Object[]} configs - config properties to change
+   * @param {App.ServiceConfigProperty[]} descriptor - parsed kerberos descriptor
+   * @method addKerberosDescriptorConfigs
+   */
+  addKerberosDescriptorConfigs: function (configs, descriptor) {
+    descriptor.forEach(function (item) {
+      var property = configs.findProperty('name', item.get('name'));
+      if (property) {
+        Em.setProperties(property, {
+          isSecureConfig: true,
+          displayName: Em.get(item, 'name'),
+          isUserProperty: false,
+          isOverridable: false,
+          category: 'Advanced ' + Em.get(item, 'filename')
+        });
+      }
+    });
+  },
+
   /**
    * Load config groups
    * and (if some services are already installed) load config groups for installed services
@@ -667,7 +706,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
       serviceConfigs.setEach('selected', false);
       this.get('selectedServiceNames').forEach(function (serviceName) {
         if (!serviceConfigs.findProperty('serviceName', serviceName)) return;
-        var selectedService = serviceConfigs.findProperty('serviceName', serviceName).set('selected', true);
+        serviceConfigs.findProperty('serviceName', serviceName).set('selected', true);
       }, this);
       this.get('installedServiceNames').forEach(function (serviceName) {
         var serviceConfigObj = serviceConfigs.findProperty('serviceName', serviceName);
@@ -1047,12 +1086,13 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
     var newSCP = App.ServiceConfigProperty.create(serviceConfigProperty);
     var group = this.get('selectedService.configGroups').findProperty('name', this.get('selectedConfigGroup.name'));
     newSCP.set('group', group);
-    newSCP.set('value', '');
+    newSCP.set('value', serviceConfigProperty.get('widget') ? serviceConfigProperty.get('value') : '');
     newSCP.set('isOriginalSCP', false); // indicated this is overridden value,
     newSCP.set('parentSCP', serviceConfigProperty);
     newSCP.set('isEditable', true);
     group.get('properties').pushObject(newSCP);
     overrides.pushObject(newSCP);
+    newSCP.validate();
     return newSCP;
   },
 
@@ -1060,7 +1100,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
    * @method manageConfigurationGroup
    */
   manageConfigurationGroup: function () {
-    App.router.get('mainServiceInfoConfigsController').manageConfigurationGroups(this);
+    App.router.get('manageConfigGroupsController').manageConfigurationGroups(this);
   },
 
   /**
@@ -1092,7 +1132,10 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
   checkMySQLHost: function () {
     // get ambari database type and hostname
     return App.ajax.send({
-      name: 'config.ambari.database.info',
+      name: 'ambari.service',
+      data: {
+        fields : "?fields=hostComponents/RootServiceHostComponents/properties/server.jdbc.database_name,hostComponents/RootServiceHostComponents/properties/server.jdbc.url"
+      },
       sender: this,
       success: 'getAmbariDatabaseSuccess'
     });
@@ -1212,6 +1255,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
   },
 
   showDatabaseConnectionWarningPopup: function (serviceNames, deferred) {
+    var self = this;
     return App.ModalPopup.show({
       header: Em.I18n.t('installer.step7.popup.database.connection.header'),
       body: Em.I18n.t('installer.step7.popup.database.connection.body').format(serviceNames.join(', ')),
@@ -1222,6 +1266,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
         this._super();
       },
       onSecondary: function () {
+        self.set('submitButtonClicked', false);
         deferred.reject();
         this._super();
       }
@@ -1262,6 +1307,9 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, {
         });
       }
     });
-  }
+  },
 
+  toggleIssuesFilter: function () {
+    this.get('filterColumns').findProperty('attributeName', 'hasIssues').toggleProperty('selected');
+  }
 });

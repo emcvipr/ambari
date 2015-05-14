@@ -68,8 +68,10 @@ public class ActionMetadata {
     serviceClients.put("hcat"       , Role.HCAT.toString());
     serviceClients.put("oozie"      , Role.OOZIE_CLIENT.toString());
     serviceClients.put("pig"        , Role.PIG.toString());
+    serviceClients.put("mahout"     , Role.MAHOUT.toString());
     serviceClients.put("sqoop"      , Role.SQOOP.toString());
     serviceClients.put("yarn"       , Role.YARN_CLIENT.toString());
+    serviceClients.put("kerberos"   , Role.KERBEROS_CLIENT.toString());
   }
 
   public List<String> getActions(String serviceName) {

@@ -53,5 +53,21 @@ App.MainServiceInfoConfigsView = Em.View.extend({
       label = Em.I18n.t('rollingrestart.dialog.title').format(App.format.role(componentName));
     }
     return label;
-  }.property('rollingRestartSlaveComponentName')
+  }.property('rollingRestartSlaveComponentName'),
+
+  /**
+   * @method onHasChangedDependenciesUpdated
+   */
+  onHasChangedDependenciesUpdated: function () {
+    if (this.get('controller.hasChangedDependencies')) {
+      $(".dependencies-info-bar-wrapper").stick_in_parent({parent: '#serviceConfig', offset_top: 60});
+      Em.run.next(function () {
+        $(window).scrollTop(window.scrollY + 1); // '.dependencies-info-bar-wrapper' position should be recalculated
+      });
+    }
+    else {
+      $(".dependencies-info-bar-wrapper").trigger("sticky_kit:detach");
+    }
+  }.observes('controller.hasChangedDependencies')
+
 });

@@ -31,7 +31,9 @@ App.serviceConfigVersionsMapper = App.QuickDataMapper.create({
     author: 'user',
     notes: 'service_config_version_note',
     is_current: 'is_current',
-    index: 'index'
+    index: 'index',
+    stack_version: 'stack_id',
+    is_compatible: 'is_cluster_compatible'
   },
   map: function (json) {
     var result = [];
@@ -63,7 +65,7 @@ App.serviceConfigVersionsMapper = App.QuickDataMapper.create({
         App.router.set('mainConfigHistoryController.filteredCount', itemTotal);
       }
       /**
-       * this code sets hostNames for default confg group
+       * this code sets hostNames for default config group
        * by excluding hostNames that belongs to not default groups
        * from list of all hosts
        */

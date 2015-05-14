@@ -5,9 +5,9 @@
  * licenses this file to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
  * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
@@ -18,18 +18,18 @@
 require('views/common/table_view');
 
 var App = require('app');
-var lazyloading = require('utils/lazy_loading');
+var validator = require('utils/validator');
 
 module.exports = {
 
   /**
-   * Launches a dialog to select hosts from the provided available hosts. 
-   * 
-   * Once the user clicks OK or Cancel, the callback is called with the 
+   * Launches a dialog to select hosts from the provided available hosts.
+   *
+   * Once the user clicks OK or Cancel, the callback is called with the
    * array of hosts (App.Host[]) selected. If the dialog was cancelled
    * or closed, <code>null</code> is provided to the callback. Else
    * an array (maybe empty) will be provided to the callback.
-   * 
+   *
    * @param initialHosts  {App.Host[]} List of hosts to pick from
    * @param selectedHosts {App.Host[]} List of hosts already selected from the available hosts
    * @param selectAtleastOneHost  {boolean} If true atleast one host has to be selected
@@ -178,5 +178,53 @@ module.exports = {
         }
       })
     });
+  },
+
+   /**
+   * Bulk setting of for rack id
+   * @param {Object} operationData - data about bulk operation (action, hostComponents etc)
+   * @param {Ember.Enumerable} hosts - list of affected hosts
+   */
+  setRackInfo: function (operationData, hosts, rackId) {
+    var self = this;
+    var hostNames = hosts.mapProperty('hostName');
+    return App.ModalPopup.show({
+      header: Em.I18n.t('hosts.host.details.setRackId'),
+      disablePrimary: true,
+      rackId: rackId,
+      bodyClass: Em.View.extend({
+        templateName: require('templates/main/host/rack_id_popup'),
+        errorMessage: null,
+        isValid: true,
+        validation: function () {
+          this.set('isValid', validator.isValidRackId(this.get('parentView.rackId')));
+          this.set('errorMessage', this.get('isValid') ? '' : Em.I18n.t('hostPopup.setRackId.invalid'));
+          this.set('parentView.disablePrimary', !this.get('isValid'));
+        }.observes('parentView.rackId')
+      }),
+      onPrimary: function() {
+        var rackId = this.get('rackId');
+        if (hostNames.length) {
+          App.ajax.send({
+            name: 'bulk_request.hosts.update_rack_id',
+            sender: self,
+            data: {
+              hostNames: hostNames.join(','),
+              requestInfo: operationData.message,
+              rackId: rackId
+            },
+            error: 'errorRackId'
+          });
+        }
+        this.hide();
+      }
+    });
+  },
+
+  /**
+   * Warn user that the rack id will not be updated
+   */
+  errorRackId: function () {
+    App.showAlertPopup(Em.I18n.t('common.error'), Em.I18n.t('hostPopup.setRackId.error'));
   }
 };

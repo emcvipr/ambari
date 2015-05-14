@@ -26,26 +26,23 @@ import sys
 
 from ambari_commons.exceptions import FatalException
 from ambari_commons.firewall import Firewall
-from ambari_commons.inet_utils import force_download_file
-from ambari_commons.logging_utils import get_silent, print_info_msg, print_warning_msg, print_error_msg
+from ambari_commons.inet_utils import force_download_file, download_progress
+from ambari_commons.logging_utils import get_silent, print_info_msg, print_warning_msg, print_error_msg, get_verbose
 from ambari_commons.os_check import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from ambari_commons.os_utils import copy_files, run_os_command, is_root
 from ambari_commons.str_utils import compress_backslashes
 from ambari_server.dbConfiguration import DBMSConfigFactory, check_jdbc_drivers
 from ambari_server.serverConfiguration import configDefaults, JDKRelease, \
-  get_ambari_properties, get_full_ambari_classpath, get_java_exe_path, get_JAVA_HOME, get_value_from_properties, \
-  read_ambari_user, update_properties, validate_jdk, write_property, \
+  get_ambari_properties, get_full_ambari_classpath, get_is_secure, get_is_persisted, get_java_exe_path, get_JAVA_HOME, \
+  get_resources_location, get_value_from_properties, read_ambari_user, update_properties, validate_jdk, write_property, \
   JAVA_HOME, JAVA_HOME_PROPERTY, JCE_NAME_PROPERTY, JDBC_RCA_URL_PROPERTY, JDBC_URL_PROPERTY, \
   JDK_NAME_PROPERTY, JDK_RELEASES, NR_USER_PROPERTY, OS_FAMILY, OS_FAMILY_PROPERTY, OS_TYPE, OS_TYPE_PROPERTY, OS_VERSION, \
-  RESOURCES_DIR_PROPERTY, SERVICE_PASSWORD_KEY, SERVICE_USERNAME_KEY, VIEWS_DIR_PROPERTY, get_is_secure, \
-  get_is_persisted
+  VIEWS_DIR_PROPERTY, JDBC_DATABASE_PROPERTY
 from ambari_server.serverUtils import is_server_runing
 from ambari_server.setupSecurity import adjust_directory_permissions
 from ambari_server.userInput import get_YN_input, get_validated_string_input
 from ambari_server.utils import locate_file
-
-
 
 
 # selinux commands
@@ -69,7 +66,6 @@ MAKE_FILE_EXECUTABLE_CMD = "chmod a+x {0}"
 UNTAR_JDK_ARCHIVE = "tar --no-same-owner -xvf {0}"
 
 JDK_PROMPT = "[{0}] {1}\n"
-JDK_CUSTOM_CHOICE_PROMPT = "[{0}] - Custom JDK\n==============================================================================\nEnter choice ({1}): "
 JDK_VALID_CHOICES = "^[{0}{1:d}]$"
 
 def get_supported_jdbc_drivers():
@@ -165,29 +161,34 @@ class AmbariUserChecks(object):
     self.NR_DEFAULT_USER = ""
     self.NR_USER_COMMENT = "Ambari user"
 
+    self.register_service = False
+    self.user = None
+    self.password = None
+
   def do_checks(self):
     try:
       user = read_ambari_user()
-      create_user = False
-      update_user_setting = False
-      if user is not None:
-        create_user = get_YN_input(self.NR_USER_CHANGE_PROMPT.format(user), False)
-        update_user_setting = create_user  # Only if we will create another user
-      else:  # user is not configured yet
-        update_user_setting = True  # Write configuration anyway
-        create_user = get_YN_input(self.NR_USER_CUSTOMIZE_PROMPT, False)
-        if not create_user:
-          user = self.NR_DEFAULT_USER
+      if not user:
+        user = self.NR_DEFAULT_USER
 
-      if create_user:
-        (retcode, user) = self._create_custom_user()
+      if self.user is not None:   #Command-line parameter is the default
+        update_user_setting = True
+        prompt_msg = self.NR_USER_CUSTOMIZE_PROMPT.format('y')
+      else:
+        update_user_setting = False
+        if user != self.NR_DEFAULT_USER:
+          prompt_msg = self.NR_USER_CHANGE_PROMPT.format(user, 'n')
+        else:
+          prompt_msg = self.NR_USER_CUSTOMIZE_PROMPT.format('n')
+        self.user = user if user else self.NR_DEFAULT_USER
+
+      self.register_service = get_YN_input(prompt_msg, update_user_setting)
+      if self.register_service:
+        retcode = self._create_custom_user()
         if retcode != 0:
           return retcode
 
-      if update_user_setting:
-        write_property(NR_USER_PROPERTY, user)
-
-      adjust_directory_permissions(user)
+      adjust_directory_permissions(self.user)
     except OSError as e:
       print_error_msg("Failed: %s" % str(e))
       return 4
@@ -201,60 +202,79 @@ class AmbariUserChecks(object):
 
 @OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
 class AmbariUserChecksWindows(AmbariUserChecks):
-  def __init__(self):
+  def __init__(self, options):
     super(AmbariUserChecksWindows, self).__init__()
 
-    self.NR_USER_CHANGE_PROMPT = "Ambari-server service is configured to run under user '{0}'. Change this setting [y/n] (n)? "
-    self.NR_USER_CUSTOMIZE_PROMPT = "Customize user account for ambari-server service [y/n] (n)? "
-    self.NR_DEFAULT_USER = "NT AUTHORITY\SYSTEM"
+    self.NR_USER_CHANGE_PROMPT = "Ambari-server service is configured to run under user '{0}'. Change this setting [y/n] ({1})? "
+    self.NR_USER_CUSTOMIZE_PROMPT = "Customize user account for ambari-server service [y/n] ({0})? "
+    self.NR_DEFAULT_USER = "NT AUTHORITY\\SYSTEM"
+    self.NR_SYSTEM_USERS = ["NT AUTHORITY\\SYSTEM", "NT AUTHORITY\\NetworkService", "NT AUTHORITY\\LocalService"]
+
+    self.user = options.svc_user
+    self.password = options.svc_password
 
   def _create_custom_user(self):
     user = get_validated_string_input(
-      "Enter user account for ambari-server service ({0}):".format(self.NR_DEFAULT_USER),
-      self.NR_DEFAULT_USER, None,
+      "Enter user account for ambari-server service ({0}):".format(self.user),
+      self.user, None,
       "Invalid username.",
       False
     )
-    if user == self.NR_DEFAULT_USER:
-      return 0, user
-    password = get_validated_string_input("Enter password for user {0}:".format(user), "", None, "Password", True, False)
+    if user in self.NR_SYSTEM_USERS:
+      self.user = user
+      return 0
 
     from ambari_commons.os_windows import UserHelper
 
-    uh = UserHelper()
+    uh = UserHelper(user)
 
-    status, message = uh.create_user(user,password)
-    if status == UserHelper.USER_EXISTS:
-      print_info_msg("User {0} already exists, make sure that you typed correct password for user, "
-                     "skipping user creation".format(user))
+    if not uh.find_user():
+      if get_silent():
+        password = self.password
+      else:
+        password = get_validated_string_input("Enter password for user {0}:".format(user), "", None, "Password", True, False)
 
-    elif status == UserHelper.ACTION_FAILED:  # fail
-      print_warning_msg("Can't create user {0}. Failed with message {1}".format(user, message))
-      return UserHelper.ACTION_FAILED, None
+      status, message = uh.create_user(password)
+      if status == UserHelper.USER_EXISTS:
+        print_info_msg("User {0} already exists, make sure that you typed correct password for user, "
+                       "skipping user creation".format(user))
 
-    # setting SeServiceLogonRight to user
+      elif status == UserHelper.ACTION_FAILED:  # fail
+        print_warning_msg("Can't create user {0}. Failed with message {1}".format(user, message))
+        return UserHelper.ACTION_FAILED
 
-    status, message = uh.add_user_privilege(user, 'SeServiceLogonRight')
+      self.password = password
+
+    # setting SeServiceLogonRight and SeBatchLogonRight to user
+    #This is unconditional
+    status, message = uh.add_user_privilege('SeServiceLogonRight')
     if status == UserHelper.ACTION_FAILED:
       print_warning_msg("Can't add SeServiceLogonRight to user {0}. Failed with message {1}".format(user, message))
-      return UserHelper.ACTION_FAILED, None
+      return UserHelper.ACTION_FAILED
+
+    status, message = uh.add_user_privilege('SeBatchLogonRight')
+    if status == UserHelper.ACTION_FAILED:
+      print_warning_msg("Can't add SeBatchLogonRight to user {0}. Failed with message {1}".format(user, message))
+      return UserHelper.ACTION_FAILED
 
     print_info_msg("User configuration is done.")
-    print_warning_msg("When using non SYSTEM user make sure that your user have read\write access to log directories and "
+    print_warning_msg("When using non SYSTEM user make sure that your user has read\write access to log directories and "
                       "all server directories. In case of integrated authentication for SQL Server make sure that your "
-                      "user properly configured to use ambari and metric database.")
-    #storing username and password in os.environ temporary to pass them to service
-    os.environ[SERVICE_USERNAME_KEY] = user
-    os.environ[SERVICE_PASSWORD_KEY] = password
-    return 0, user
+                      "user is properly configured to access the ambari database.")
+
+    if user.find('\\') == -1:
+      user = '.\\' + user
+
+    self.user = user
+    return 0
 
 @OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
 class AmbariUserChecksLinux(AmbariUserChecks):
-  def __init__(self):
+  def __init__(self, options):
     super(AmbariUserChecksLinux, self).__init__()
 
-    self.NR_USER_CHANGE_PROMPT = "Ambari-server daemon is configured to run under user '{0}'. Change this setting [y/n] (n)? "
-    self.NR_USER_CUSTOMIZE_PROMPT = "Customize user account for ambari-server daemon [y/n] (n)? "
+    self.NR_USER_CHANGE_PROMPT = "Ambari-server daemon is configured to run under user '{0}'. Change this setting [y/n] ({1})? "
+    self.NR_USER_CUSTOMIZE_PROMPT = "Customize user account for ambari-server daemon [y/n] ({0})? "
     self.NR_DEFAULT_USER = "root"
 
     self.NR_USERADD_CMD = 'useradd -M --comment "{1}" ' \
@@ -263,7 +283,7 @@ class AmbariUserChecksLinux(AmbariUserChecks):
   def _create_custom_user(self):
     user = get_validated_string_input(
       "Enter user account for ambari-server daemon (root):",
-      "root",
+      self.user,
       "^[a-z_][a-z0-9_-]{1,31}$",
       "Invalid username.",
       False
@@ -279,13 +299,38 @@ class AmbariUserChecksLinux(AmbariUserChecks):
     elif retcode != 0:  # fail
       print_warning_msg("Can't create user {0}. Command {1} "
                         "finished with {2}: \n{3}".format(user, command, retcode, err))
-      return retcode, None
+      return retcode
 
     print_info_msg("User configuration is done.")
-    return 0, user
 
-def check_ambari_user():
-  return AmbariUserChecks().do_checks()
+    self.user = user
+
+    return 0
+
+def check_ambari_user(options):
+  uc = AmbariUserChecks(options)
+  retcode = uc.do_checks()
+  return retcode, uc.register_service, uc.user, uc.password
+
+
+#
+# Windows service setup
+#
+
+@OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
+def service_setup(register_service, svc_user, svc_password):
+  from ambari_windows_service import svcsetup
+
+  svc_user_setup = svc_user if svc_user.upper() != "NT AUTHORITY\\SYSTEM" else None
+
+  result = svcsetup(register_service, svc_user_setup, svc_password)
+  if result == 0:
+    write_property(NR_USER_PROPERTY, svc_user)
+
+@OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
+def service_setup(register_service, svc_user, svc_password):
+  #Nothing else to do in Linux
+  write_property(NR_USER_PROPERTY, svc_user)
 
 
 #
@@ -294,7 +339,7 @@ def check_ambari_user():
 
 def check_firewall():
   firewall_obj = Firewall().getFirewallObject()
-  firewall_on = firewall_obj.check_iptables()
+  firewall_on = firewall_obj.check_firewall()
   if firewall_obj.stderrdata and len(firewall_obj.stderrdata) > 0:
     print firewall_obj.stderrdata
   if firewall_on:
@@ -315,7 +360,7 @@ class JDKSetup(object):
     self.JDK_DEFAULT_CONFIGS = []
 
     self.JDK_PROMPT = "[{0}] {1}\n"
-    self.JDK_CUSTOM_CHOICE_PROMPT = "[{0}] - Custom JDK\n==============================================================================\nEnter choice ({1}): "
+    self.JDK_CUSTOM_CHOICE_PROMPT = "[{0}] Custom JDK\n==============================================================================\nEnter choice ({1}): "
     self.JDK_VALID_CHOICES = "^[{0}{1:d}]$"
     self.JDK_MIN_FILESIZE = 5000
     self.JAVA_BIN = ""
@@ -350,6 +395,10 @@ class JDKSetup(object):
       return
 
     java_home_var = get_JAVA_HOME()
+    if OS_FAMILY == OSConst.WINSRV_FAMILY:
+      progress_func = None
+    else:
+      progress_func = download_progress
 
     if get_silent():
       if not java_home_var:
@@ -407,11 +456,7 @@ class JDKSetup(object):
 
     jdk_cfg = self.jdks[self.jdk_index]
 
-    try:
-      resources_dir = properties[RESOURCES_DIR_PROPERTY]
-    except (KeyError), e:
-      err = 'Property ' + str(e) + ' is not defined at ' + conf_file
-      raise FatalException(1, err)
+    resources_dir = get_resources_location(properties)
 
     dest_file = os.path.abspath(os.path.join(resources_dir, jdk_cfg.dest_file))
     if os.path.exists(dest_file):
@@ -432,7 +477,7 @@ class JDKSetup(object):
       jdk_url = jdk_cfg.url
 
       print 'Downloading JDK from ' + jdk_url + ' to ' + dest_file
-      self._download_jdk(jdk_url, dest_file)
+      self._download_jdk(jdk_url, dest_file, progress_func)
 
     try:
       (retcode, out, java_home_dir) = self._install_jdk(dest_file, jdk_cfg)
@@ -450,7 +495,7 @@ class JDKSetup(object):
           jdk_url = jdk_cfg.url
 
           print 'Re-downloading JDK from ' + jdk_url + ' to ' + dest_file
-          self._download_jdk(jdk_url, dest_file)
+          self._download_jdk(jdk_url, dest_file, progress_func)
           print 'Successfully re-downloaded JDK distribution to ' + dest_file
 
           try:
@@ -472,16 +517,10 @@ class JDKSetup(object):
     self._ensure_java_home_env_var_is_set(java_home_dir)
 
   def download_and_unpack_jce_policy(self, properties):
-    conf_file = properties.fileName
-
     err_msg_stdout = "JCE Policy files are required for secure HDP setup. Please ensure " \
               " all hosts have the JCE unlimited strength policy 6, files."
 
-    try:
-      resources_dir = properties[RESOURCES_DIR_PROPERTY]
-    except (KeyError), e:
-      err = 'Property ' + str(e) + ' is not defined at ' + conf_file
-      raise FatalException(1, err)
+    resources_dir = get_resources_location(properties)
 
     jdk_cfg = self.jdks[self.jdk_index]
 
@@ -533,15 +572,15 @@ class JDKSetup(object):
     jdk_choice_prompt += self.JDK_CUSTOM_CHOICE_PROMPT.format(n_config, jdk_num)
     jdk_valid_choices = self.JDK_VALID_CHOICES.format(jdk_choices, n_config)
 
-    return (jdks, jdk_choice_prompt, jdk_valid_choices, n_config - 1)
+    return jdks, jdk_choice_prompt, jdk_valid_choices, n_config - 1
 
-  def _download_jdk(self, jdk_url, dest_file):
+  def _download_jdk(self, jdk_url, dest_file, progress_func = None):
     jdk_download_fail_msg = " Failed to download JDK: {0}. Please check that the " \
                             "JDK is available at {1}. Also you may specify JDK file " \
                             "location in local filesystem using --jdk-location command " \
                             "line argument.".format("{0}", jdk_url)
     try:
-      force_download_file(jdk_url, dest_file)
+      force_download_file(jdk_url, dest_file, progress_func = progress_func)
 
       print 'Successfully downloaded JDK distribution to ' + dest_file
     except FatalException:
@@ -654,11 +693,11 @@ class JDKSetupLinux(JDKSetup):
   def __init__(self):
     super(JDKSetupLinux, self).__init__()
     self.JDK_DEFAULT_CONFIGS = [
-      JDKRelease("jdk6.31", "Oracle JDK 1.6",
-                 "http://public-repo-1.hortonworks.com/ARTIFACTS/jdk-6u31-linux-x64.bin", "jdk-6u31-linux-x64.bin",
-                 "http://public-repo-1.hortonworks.com/ARTIFACTS/jce_policy-6.zip", "jce_policy-6.zip",
-                 "/usr/jdk64/jdk1.6.0_31",
-                 "Creating (jdk.*)/jre")
+      JDKRelease("jdk1.8", "Oracle JDK 1.8 + Java Cryptography Extension (JCE) Policy Files 8",
+                 "http://public-repo-1.hortonworks.com/ARTIFACTS/jdk-8u40-linux-x64.tar.gz", "jdk-8u40-linux-x64.tar.gz",
+                 "http://public-repo-1.hortonworks.com/ARTIFACTS/jce_policy-8.zip", "jce_policy-8.zip",
+                 "/usr/jdk64/jdk1.8.0_40",
+                 "(jdk.*)/jre")
     ]
 
     self.jdks = self.JDK_DEFAULT_CONFIGS
@@ -668,7 +707,6 @@ class JDKSetupLinux(JDKSetup):
 
     self.CREATE_JDK_DIR_CMD = "/bin/mkdir -p {0}"
     self.CHMOD_JDK_DIR_CMD = "chmod a+x {0}"
-    self.MAKE_FILE_EXECUTABLE_CMD = "chmod a+x {0}"
 
     # use --no-same-owner when running as root to prevent uucp as the user (AMBARI-6478)
     self.UNTAR_JDK_ARCHIVE = "tar --no-same-owner -xvf {0}"
@@ -683,10 +721,7 @@ class JDKSetupLinux(JDKSetup):
     os.chdir(jdk_inst_dir)
 
     try:
-      if java_inst_file.endswith(".bin"):
-        retcode, out, err = run_os_command(self.MAKE_FILE_EXECUTABLE_CMD.format(java_inst_file))
-        retcode, out, err = run_os_command(java_inst_file + ' -noregister')
-      elif java_inst_file.endswith(".gz"):
+      if java_inst_file.endswith(".gz"):
         retcode, out, err = run_os_command(self.UNTAR_JDK_ARCHIVE.format(java_inst_file))
       else:
         err = "JDK installation failed.Unknown file extension."
@@ -782,13 +817,8 @@ def _cache_jdbc_driver(args):
   if properties == -1:
     err = "Error getting ambari properties"
     raise FatalException(-1, err)
-  conf_file = properties.fileName
 
-  try:
-    resources_dir = properties[RESOURCES_DIR_PROPERTY]
-  except (KeyError), e:
-    err = 'Property ' + str(e) + ' is not defined at ' + conf_file
-    raise FatalException(1, err)
+  resources_dir = get_resources_location(properties)
 
   symlink_name = args.jdbc_db + "-jdbc-driver.jar"
   jdbc_symlink = os.path.join(resources_dir, symlink_name)
@@ -797,13 +827,16 @@ def _cache_jdbc_driver(args):
   if os.path.lexists(jdbc_symlink):
     os.remove(jdbc_symlink)
 
-  if not os.path.isfile(os.path.join(resources_dir, jdbc_name)):
-    try:
-      shutil.copy(args.jdbc_driver, resources_dir)
-    except Exception, e:
-      err = "Can not copy file {0} to {1} due to: {2} . Please check file " \
-            "permissions and free disk space.".format(args.jdbc_driver, resources_dir, str(e))
-      raise FatalException(1, err)
+  if os.path.isfile(os.path.join(resources_dir, jdbc_name)):
+    os.remove(os.path.join(resources_dir, jdbc_name))
+
+  try:
+    shutil.copy(args.jdbc_driver, resources_dir)
+    print "Copying {0} to {1}".format(args.jdbc_driver, resources_dir)
+  except Exception, e:
+    err = "Can not copy file {0} to {1} due to: {2} . Please check file " \
+          "permissions and free disk space.".format(args.jdbc_driver, resources_dir, str(e))
+    raise FatalException(1, err)
 
   os.symlink(os.path.join(resources_dir, jdbc_name), jdbc_symlink)
   print "JDBC driver was successfully initialized."
@@ -950,10 +983,23 @@ def expand_jce_zip_file(jce_zip_path, jdk_security_path):
     shutil.rmtree(dir_to_delete)
 
 
+def check_setup_already_done():
+  properties = get_ambari_properties()
+  if properties == -1:
+    print_error_msg("Error getting ambari properties")
+    return -1
+
+  return properties.get_property(JDK_NAME_PROPERTY) and properties.get_property(JDBC_DATABASE_PROPERTY)
+
 #
 # Setup the Ambari Server.
 #
 def setup(options):
+  if options.only_silent:
+    if check_setup_already_done():
+      print "Nothing was done. Please, use ambari-server setup command without [-s] key, to change configuration."
+      sys.exit(0)
+
   retcode = verify_setup_allowed()
   if not retcode == 0:
     raise FatalException(1, None)
@@ -972,7 +1018,7 @@ def setup(options):
     raise FatalException(retcode, err)
 
   #Create ambari user, if needed
-  retcode = check_ambari_user()
+  (retcode, register_service, svc_user, svc_password) = check_ambari_user(options)
   if not retcode == 0:
     err = 'Failed to create user. Exiting.'
     raise FatalException(retcode, err)
@@ -1013,29 +1059,37 @@ def setup(options):
     raise FatalException(retcode, err)
 
   # we've already done this, but new files were created so run it one time.
-  adjust_directory_permissions(read_ambari_user())
+  adjust_directory_permissions(svc_user)
 
+  service_setup(register_service, svc_user, svc_password)
 
 #
 # Setup the JCE policy for Ambari Server.
 #
 def setup_jce_policy(args):
-  if os.path.exists(args[1]):
-    if not os.path.split(args[1])[0] == configDefaults.SERVER_RESOURCES_DIR:
-      try:
-        shutil.copy(args[1], configDefaults.SERVER_RESOURCES_DIR)
-      except Exception as e:
-        err = "Fail while trying to copy {0} to {1}. {2}".format(args[1], configDefaults.SERVER_RESOURCES_DIR, e)
-        raise FatalException(1, err)
-  else:
+  if not os.path.exists(args[1]):
     err = "Can not run 'setup-jce'. Invalid path {0}.".format(args[1])
     raise FatalException(1, err)
 
   properties = get_ambari_properties()
-  jdk_path = properties.get_property(JAVA_HOME_PROPERTY)
-  resources_dir = properties.get_property(RESOURCES_DIR_PROPERTY)
+  resources_dir = get_resources_location(properties)
 
-  zip_name = os.path.split(args[1])[1]
+  zip_path = os.path.split(args[1])
+  zip_dir = zip_path[0]
+
+  if not zip_dir == resources_dir:
+    try:
+      shutil.copy(args[1], resources_dir)
+    except Exception as e:
+      err = "Fail while trying to copy {0} to {1}. {2}".format(args[1], resources_dir, e)
+      raise FatalException(1, err)
+
+  jdk_path = properties.get_property(JAVA_HOME_PROPERTY)
+  if not jdk_path or not os.path.exists(jdk_path):
+    err = "JDK not installed, you need to run 'ambari-server setup' before attempting to install the JCE policy."
+    raise FatalException(1, err)
+
+  zip_name = zip_path[1]
   properties.process_pair(JCE_NAME_PROPERTY, zip_name)
 
   print 'Installing JCE policy...'

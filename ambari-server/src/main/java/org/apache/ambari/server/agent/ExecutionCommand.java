@@ -264,7 +264,7 @@ public class ExecutionCommand extends AgentCommand {
 
   /**
    * Sets parameters for kerberos commands
-   * @params  parameters for kerberos commands
+   * @param  params for kerberos commands
    */
   public void setKerberosCommandParams(List<Map<String, String>> params) {
     this.kerberosCommandParams =  params;
@@ -286,6 +286,7 @@ public class ExecutionCommand extends AgentCommand {
     String PACKAGE_LIST = "package_list";
     String JDK_LOCATION = "jdk_location";
     String JAVA_HOME = "java_home";
+    String JAVA_VERSION = "java_version";
     String JDK_NAME = "jdk_name";
     String JCE_NAME = "jce_name";
     String MYSQL_JDBC_URL = "mysql_jdbc_url";
@@ -304,8 +305,12 @@ public class ExecutionCommand extends AgentCommand {
     String USER_LIST = "user_list";
     String GROUP_LIST = "group_list";
     String VERSION = "version";
+    String REFRESH_TOPOLOGY = "refresh_topology";
+    String HOST_SYS_PREPPED = "host_sys_prepped";
+    String COMMAND_RETRY_MAX_ATTEMPT_COUNT = "command_retry_max_attempt_count";
+    String COMMAND_RETRY_ENABLED = "command_retry_enabled";
 
-    String SERVICE_CHECK = "SERVICE_CHECK"; // TODO: is it standart command? maybe add it to RoleCommand enum?
+    String SERVICE_CHECK = "SERVICE_CHECK"; // TODO: is it standard command? maybe add it to RoleCommand enum?
     String CUSTOM_COMMAND = "custom_command";
   }
 

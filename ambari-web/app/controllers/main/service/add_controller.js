@@ -21,8 +21,8 @@ var App = require('app');
 App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
 
   name: 'addServiceController',
-  // @TODO: remove after Kerberos Automation supports
-  totalSteps: App.supports.automatedKerberos ? 8 : 7,
+
+  totalSteps: 8,
 
   /**
    * Used for hiding back button in wizard
@@ -30,7 +30,7 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
   hideBackButton: true,
 
   /**
-   * @type {object}
+   * @type {string}
    * @default null
    */
   serviceToInstall: null,
@@ -115,9 +115,19 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
           var self = this;
           var dfd = $.Deferred();
           this.loadKerberosDescriptorConfigs().done(function() {
+            if (App.get('isClusterSupportsEnhancedConfigs')) {
+              var serviceNames = App.StackService.find().filter(function(s) {
+                return s.get('isSelected') || s.get('isInstalled');
+              }).mapProperty('serviceName');
+              self.loadConfigThemes().then(function() {
+                dfd.resolve();
+              });
+            }
+            else {
+              dfd.resolve();
+            }
             self.loadServiceConfigGroups();
             self.loadServiceConfigProperties();
-            dfd.resolve();
           });
           return dfd.promise();
         }
@@ -145,50 +155,6 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
     });
   },
 
-  loadHosts: function () {
-    var dfd;
-    if (this.getDBProperty('hosts')) {
-      dfd = $.Deferred();
-      dfd.resolve();
-    } else {
-      dfd = App.ajax.send({
-        name: 'hosts.confirmed',
-        sender: this,
-        data: {},
-        success: 'loadHostsSuccessCallback',
-        error: 'loadHostsErrorCallback'
-      });
-    }
-    return dfd.promise();
-  },
-
-  loadHostsSuccessCallback: function (response) {
-    var installedHosts = {};
-
-    response.items.forEach(function (item, indx) {
-      installedHosts[item.Hosts.host_name] = {
-        name: item.Hosts.host_name,
-        cpu: item.Hosts.cpu_count,
-        memory: item.Hosts.total_mem,
-        disk_info: item.Hosts.disk_info,
-        osType: item.Hosts.os_type,
-        osArch: item.Hosts.os_arch,
-        ip: item.Hosts.ip,
-        bootStatus: "REGISTERED",
-        isInstalled: true,
-        hostComponents: item.host_components,
-        id: indx++
-      };
-    });
-    this.setDBProperty('hosts', installedHosts);
-    this.set('content.hosts', installedHosts);
-  },
-
-  loadHostsErrorCallback: function (jqXHR, ajaxOptions, error, opt) {
-    App.ajax.defaultErrorHandler(jqXHR, opt.url, opt.method, jqXHR.status);
-    console.log('Loading hosts failed');
-  },
-
   /**
    * Load services data. Will be used at <code>Select services(step4)</code> step
    */
@@ -201,7 +167,7 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
       };
       App.StackService.find().forEach(function (item) {
         var isInstalled = App.Service.find().someProperty('id', item.get('serviceName'));
-        var isSelected = item.get('serviceName') == this.get('serviceToInstall');
+        var isSelected = (item.get('serviceName') == this.get('serviceToInstall')) || item.get('coSelectedServices').contains(this.get('serviceToInstall'));
         item.set('isSelected', isInstalled || isSelected);
         item.set('isInstalled', isInstalled);
         if (isInstalled) {
@@ -219,14 +185,9 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
         item.set('isSelected', isSelected || (this.get("currentStep") == "1" ? isInstalled : isSelected));
         item.set('isInstalled', isInstalled);
       }, this);
-      var isServiceWithSlave = App.StackService.find().filterProperty('isSelected').filterProperty('hasSlave').filterProperty('isInstalled', false).length;
-      var isServiceWithClient = App.StackService.find().filterProperty('isSelected').filterProperty('hasClient').filterProperty('isInstalled', false).length;
-      var isServiceWithCustomAssignedNonMasters = App.StackService.find().filterProperty('isSelected').filterProperty('hasNonMastersWithCustomAssignment').filterProperty('isInstalled', false).length;
-      this.set('content.skipSlavesStep', !isServiceWithSlave && !isServiceWithClient || !isServiceWithCustomAssignedNonMasters);
-      if (this.get('content.skipSlavesStep')) {
-        this.get('isStepDisabled').findProperty('step', 3).set('value', this.get('content.skipSlavesStep'));
-      }
+      this.setSkipSlavesStep(App.StackService.find().filterProperty('isSelected').filterProperty('isInstalled', false), 3);
     }
+    this.set('serviceToInstall', null);
     this.set('content.services', App.StackService.find());
   },
 
@@ -239,8 +200,9 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
       selectedServices: [],
       installedServices: []
     };
-    var selectedServices = stepController.get('content').filterProperty('isSelected', true).filterProperty('isInstalled', false).mapProperty('serviceName');
-    services.selectedServices.pushObjects(selectedServices);
+    var selectedServices = stepController.get('content').filterProperty('isSelected', true).filterProperty('isInstalled', false);
+    var selectedServiceNames = selectedServices.mapProperty('serviceName');
+    services.selectedServices.pushObjects(selectedServiceNames);
     services.installedServices.pushObjects(stepController.get('content').filterProperty('isInstalled', true).mapProperty('serviceName'));
     // save services that already installed but ignored on choose services page
     // these services marked by `isInstallable` flag with value `false`, for example `Kerberos` service
@@ -250,14 +212,9 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
     this.setDBProperty('services', services);
     console.log('AddServiceController.saveServices: saved data', stepController.get('content'));
 
-    this.set('content.selectedServiceNames', selectedServices);
-    this.setDBProperty('selectedServiceNames', selectedServices);
-    var isServiceWithSlave = stepController.get('content').filterProperty('isSelected').filterProperty('hasSlave').filterProperty('isInstalled', false).mapProperty('serviceName').length;
-    var isServiceWithClient = App.StackService.find().filterProperty('isSelected').filterProperty('hasClient').filterProperty('isInstalled', false).mapProperty('serviceName').length;
-    this.set('content.skipSlavesStep', !isServiceWithSlave && !isServiceWithClient);
-    if (this.get('content.skipSlavesStep')) {
-      this.get('isStepDisabled').findProperty('step', 3).set('value', this.get('content.skipSlavesStep'));
-    }
+    this.set('content.selectedServiceNames', selectedServiceNames);
+    this.setDBProperty('selectedServiceNames', selectedServiceNames);
+    this.setSkipSlavesStep(selectedServices, 3);
   },
 
   /**
@@ -628,11 +585,9 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
   },
 
   checkSecurityStatus: function() {
-    if (App.supports.automatedKerberos) {
-      if (!App.router.get('mainAdminKerberosController.securityEnabled')) {
-        this.set('skipConfigureIdentitiesStep', true);
-        this.get('isStepDisabled').findProperty('step', 5).set('value', true);
-      }
+    if (!App.router.get('mainAdminKerberosController.securityEnabled')) {
+      this.set('skipConfigureIdentitiesStep', true);
+      this.get('isStepDisabled').findProperty('step', 5).set('value', true);
     }
   }
 

@@ -122,6 +122,12 @@
     <description></description>
   </property>
   <property>
+    <name>*.hive.shared.libs</name>
+    <value>hive-exec,hive-metastore,hive-common,hive-service,hive-hcatalog-server-extensions,\
+hive-hcatalog-core,hive-jdbc,hive-webhcat-java-client</value>
+    <description></description>
+  </property>
+  <property>
     <name>*.entity.topic</name>
     <value>FALCON.ENTITY.TOPIC</value>
     <description></description>
@@ -182,31 +188,5 @@
     <name>*.falcon.http.authentication.kerberos.name.rules</name>
     <value>DEFAULT</value>
     <description>The kerberos names rules is to resolve kerberos principal names, refer to Hadoop's KerberosName for more details.</description>
-  </property>
-  <!--kerberos params, must be set during security enabling-->
-  <property>
-    <name>*.falcon.service.authentication.kerberos.principal</name>
-    <value>falcon/_HOST@EXAMPLE.COM</value>
-    <description></description>
-  </property>
-  <property>
-    <name>*.falcon.service.authentication.kerberos.keytab</name>
-    <value>/etc/security/keytabs/falcon.service.keytab</value>
-    <description></description>
-  </property>
-  <property>
-    <name>*.dfs.namenode.kerberos.principal</name>
-    <value>nn/_HOST@EXAMPLE.COM</value>
-    <description>name node principal to talk to config store</description>
-  </property>
-  <property>
-    <name>*.falcon.http.authentication.kerberos.principal</name>
-    <value>HTTP/_HOST@EXAMPLE.COM</value>
-    <description>Indicates the Kerberos principal to be used for HTTP endpoint</description>
-  </property>
-  <property>
-    <name>*.falcon.http.authentication.kerberos.keytab</name>
-    <value>/etc/security/keytabs/spnego.service.keytab</value>
-    <description>Location of the keytab file with the credentials for the HTTP principal</description>
   </property>
 </configuration>

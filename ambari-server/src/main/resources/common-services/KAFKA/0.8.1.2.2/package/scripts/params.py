@@ -17,36 +17,45 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 """
+from resource_management.libraries.functions import format
 from resource_management.libraries.script.script import Script
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
 from resource_management.libraries.functions.default import default
-from resource_management.core.logger import Logger
+from utils import get_bare_principal
 
 import status_params
 
+
 # server configurations
 config = Script.get_config()
-
+tmp_dir = Script.get_tmp_dir()
 stack_name = default("/hostLevelParams/stack_name", None)
 
 version = default("/commandParams/version", None)
+host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
-    kafka_home = '/usr/hdp/current/kafka-broker/'
-    kafka_bin = kafka_home+'bin/kafka'
-else:
-    kafka_home = '/usr/lib/kafka/'
-    kafka_bin = kafka_home+'/bin/kafka'
-
-
+# default kafka parameters
+kafka_home = '/usr/lib/kafka/'
+kafka_bin = kafka_home+'/bin/kafka'
 conf_dir = "/etc/kafka/conf"
+
+# parameters for 2.2+
+if Script.is_hdp_stack_greater_or_equal("2.2"):
+  kafka_home = '/usr/hdp/current/kafka-broker/'
+  kafka_bin = kafka_home+'bin/kafka'
+  conf_dir = "/usr/hdp/current/kafka-broker/config"
+
+
 kafka_user = config['configurations']['kafka-env']['kafka_user']
 kafka_log_dir = config['configurations']['kafka-env']['kafka_log_dir']
 kafka_pid_dir = status_params.kafka_pid_dir
 kafka_pid_file = kafka_pid_dir+"/kafka.pid"
+# This is hardcoded on the kafka bash process lifecycle on which we have no control over
+kafka_managed_pid_dir = "/var/run/kafka"
+kafka_managed_log_dir = "/var/log/kafka"
 hostname = config['hostname']
 user_group = config['configurations']['cluster-env']['user_group']
 java64_home = config['hostLevelParams']['java_home']
@@ -94,3 +103,16 @@ if has_metric_collector:
 
 # Security-related params
 security_enabled = config['configurations']['cluster-env']['security_enabled']
+kafka_kerberos_enabled = ('security.inter.broker.protocol' in config['configurations']['kafka-broker'] and
+                          config['configurations']['kafka-broker']['security.inter.broker.protocol'] == "PLAINTEXTSASL")
+
+print kafka_kerberos_enabled
+if security_enabled and hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.3') >= 0:
+    _hostname_lowercase = config['hostname'].lower()
+    _kafka_principal_name = config['configurations']['kafka-env']['kafka_principal_name']
+    kafka_jaas_principal = _kafka_principal_name.replace('_HOST',_hostname_lowercase)
+    kafka_keytab_path = config['configurations']['kafka-env']['kafka_keytab']
+    kafka_bare_jaas_principal = get_bare_principal(_kafka_principal_name)
+    kafka_kerberos_params = "-Djava.security.auth.login.config="+ conf_dir +"/kafka_jaas.conf"
+else:
+    kafka_kerberos_params = ''

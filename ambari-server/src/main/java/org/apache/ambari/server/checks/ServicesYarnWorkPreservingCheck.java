@@ -17,21 +17,21 @@
  */
 package org.apache.ambari.server.checks;
 
-import java.util.Map;
-
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ServiceNotFoundException;
 import org.apache.ambari.server.controller.PrereqCheckRequest;
 import org.apache.ambari.server.state.Cluster;
-import org.apache.ambari.server.state.Config;
-import org.apache.ambari.server.state.DesiredConfig;
 import org.apache.ambari.server.state.stack.PrereqCheckStatus;
 import org.apache.ambari.server.state.stack.PrerequisiteCheck;
 import org.apache.commons.lang.BooleanUtils;
 
+import com.google.inject.Singleton;
+
 /**
  * Checks that YARN has work-preserving restart enabled.
  */
+@Singleton
+@UpgradeCheck(group = UpgradeCheckGroup.DEFAULT, order = 1.0f)
 public class ServicesYarnWorkPreservingCheck extends AbstractCheckDescriptor {
 
   /**
@@ -41,8 +41,15 @@ public class ServicesYarnWorkPreservingCheck extends AbstractCheckDescriptor {
     super(CheckDescription.SERVICES_YARN_WP);
   }
 
+  /**
+   * {@inheritDoc}
+   */
   @Override
   public boolean isApplicable(PrereqCheckRequest request) throws AmbariException {
+    if (!super.isApplicable(request)) {
+      return false;
+    }
+
     final Cluster cluster = clustersProvider.get().getCluster(request.getClusterName());
     try {
       cluster.getService("YARN");
@@ -52,16 +59,15 @@ public class ServicesYarnWorkPreservingCheck extends AbstractCheckDescriptor {
     return true;
   }
 
+  /**
+   * {@inheritDoc}
+   */
   @Override
   public void perform(PrerequisiteCheck prerequisiteCheck, PrereqCheckRequest request) throws AmbariException {
-    final String clusterName = request.getClusterName();
-    final Cluster cluster = clustersProvider.get().getCluster(clusterName);
-    final String configType = "yarn-site";
-    final Map<String, DesiredConfig> desiredConfigs = cluster.getDesiredConfigs();
-    final DesiredConfig desiredConfig = desiredConfigs.get(configType);
-    final Config config = cluster.getConfig(configType, desiredConfig.getTag());
-    if (!config.getProperties().containsKey("yarn.resourcemanager.work-preserving-recovery.enabled") ||
-      !BooleanUtils.toBoolean(config.getProperties().get("yarn.resourcemanager.work-preserving-recovery.enabled"))) {
+    String propertyValue = getProperty(request, "yarn-site",
+        "yarn.resourcemanager.work-preserving-recovery.enabled");
+
+    if (null == propertyValue || !BooleanUtils.toBoolean(propertyValue)) {
       prerequisiteCheck.getFailedOn().add("YARN");
       prerequisiteCheck.setStatus(PrereqCheckStatus.FAIL);
       prerequisiteCheck.setFailReason(getFailReason(prerequisiteCheck, request));

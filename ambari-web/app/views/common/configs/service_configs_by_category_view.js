@@ -22,7 +22,7 @@ var validator = require('utils/validator');
 var stringUtils = require('utils/string_utils');
 require('utils/configs/modification_handlers/modification_handler');
 
-App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
+App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverridable, {
 
   templateName: require('templates/common/configs/service_config_category'),
 
@@ -44,8 +44,13 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
    * @type {Array}
    */
   categoryConfigs: function () {
-    var categoryConfigs = this.get('categoryConfigsAll');
-    return this.orderContentAtLast(this.sortByIndex(categoryConfigs)).filterProperty('isVisible', true);
+    // sort content type configs, sort the rest of configs based on index and then add content array at the end (as intended)
+    var categoryConfigs = this.get('categoryConfigsAll'),
+      contentOrderedArray = this.orderContentAtLast(categoryConfigs.filterProperty('displayType','content')),
+      contentFreeConfigs = categoryConfigs.filter(function(config) {return config.get('displayType')!=='content';}),
+      indexOrdered = this.sortByIndex(contentFreeConfigs);
+
+    return indexOrdered.concat(contentOrderedArray).filterProperty('isVisible', true);
   }.property('categoryConfigsAll.@each.isVisible').cacheable(),
 
   /**
@@ -55,9 +60,14 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
    * MySQL etc. database options don't show up, because
    * they were not visible initially.
    */
-  categoryConfigsAll: function () {
-    return this.get('serviceConfigs').filterProperty('category', this.get('category.name'));
-  }.property('serviceConfigs.@each').cacheable(),
+   categoryConfigsAll: function () {
+     var configs = this.get('serviceConfigs').filterProperty('category', this.get('category.name'));
+
+     if (this.get('service.serviceName') === 'KERBEROS' && App.router.get('kerberosWizardController.skipClientInstall')) {
+       App.router.get('kerberosWizardController').overrideVisibility(configs, false);
+     }
+     return configs;
+   }.property('serviceConfigs.@each').cacheable(),
 
   /**
    * If added/removed a serverConfigObject, this property got updated.
@@ -79,8 +89,11 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
    * @type {boolean}
    */
   isShowBlock: function () {
-    return this.get('category.customCanAddProperty') || this.get('categoryConfigs').filterProperty('isHiddenByFilter', false).length > 0;
-  }.property('category.customCanAddProperty', 'categoryConfigs.@each.isHiddenByFilter'),
+    var isCustomPropertiesCategory = this.get('category.customCanAddProperty');
+    var emptyFiltered = this.get('categoryConfigs').filterProperty('isHiddenByFilter', false).length > 0;
+    var isWidgetsOnlyCategory = this.get('categoryConfigs.length') == this.get('categoryConfigs').filterProperty('widget').length;
+    return isCustomPropertiesCategory && this.get('controller.filter') === '' && !this.get('parentView.columns').someProperty('selected') || (emptyFiltered && !isWidgetsOnlyCategory);
+  }.property('category.customCanAddProperty', 'categoryConfigs.@each.isHiddenByFilter', 'categoryConfigs.@each.widget', 'controller.filter', 'parentView.columns.@each.selected'),
 
   /**
    * Re-order the configs to list content displayType properties at last in the category
@@ -143,7 +156,7 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
       this.affectedProperties = serviceConfigModificationHandler.getDependentConfigChanges(changedProperty, this.get("controller.selectedServiceNames"), stepConfigs, securityEnabled);
     }
     changedProperty.set("editDone", false); // Turn off flag
-    
+
     if (this.affectedProperties.length > 0 && !this.get("controller.miscModalVisible")) {
       this.newAffectedProperties = this.affectedProperties;
       var self = this;
@@ -153,9 +166,20 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
         header: "Warning: you must also change these Service properties",
         onApply: function () {
           self.get("newAffectedProperties").forEach(function(item) {
-            self.get("controller.stepConfigs").findProperty("serviceName", item.serviceName).get("configs").find(function(config) {
-              return item.propertyName == config.get('name') && (item.filename == null || item.filename == config.get('filename'));
-            }).set("value", item.newValue);
+            if (item.isNewProperty) {
+              self.createProperty({
+                name: item.propertyName,
+                displayName: item.propertyDisplayName,
+                value: item.newValue,
+                categoryName: item.categoryName,
+                serviceName: item.serviceName,
+                filename: item.filename
+              });
+            } else {
+              self.get("controller.stepConfigs").findProperty("serviceName", item.serviceName).get("configs").find(function(config) {
+                return item.propertyName == config.get('name') && (item.filename == null || item.filename == config.get('filename'));
+              }).set("value", item.newValue);
+            }
           });
           self.get("controller").set("miscModalVisible", false);
           this.hide();
@@ -165,9 +189,10 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
           this.hide();
         },
         onUndo: function () {
-          var affected = self.get("newAffectedProperties").objectAt(0);
-          self.get("controller.stepConfigs").findProperty("serviceName", affected.sourceServiceName).get("configs")
-          .findProperty("name", affected.changedPropertyName).set("value", $.trim(affected.curValue));
+          var affected = self.get("newAffectedProperties").objectAt(0),
+            changedProperty = self.get("controller.stepConfigs").findProperty("serviceName", affected.sourceServiceName)
+              .get("configs").findProperty("name", affected.changedPropertyName);
+          changedProperty.set('value', changedProperty.get('defaultValue'));
           self.get("controller").set("miscModalVisible", false);
           this.hide();
         },
@@ -232,7 +257,7 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
         }
 
         var searchString = config.get('defaultValue') + config.get('description') +
-          config.get('displayName') + config.get('name') + config.get('value');
+          config.get('displayName') + config.get('name') + config.get('value') + config.getWithDefault('stackConfigProperty.displayName', '');
 
         if (config.get('overrides')) {
           config.get('overrides').forEach(function (overriddenConf) {
@@ -345,6 +370,34 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
     return 'admin-bulk-add-properties-' + App.router.get('loginName');
   },
 
+  isSecureConfig: function (configName, filename) {
+    var secureConfigs = this.get('controller.secureConfigs').filterProperty('filename', filename);
+    return !!secureConfigs.findProperty('name', configName);
+  },
+
+  createProperty: function (propertyObj) {
+    var selectedConfigGroup = this.get('controller.selectedConfigGroup'),
+      isSecureConfig = this.isSecureConfig(propertyObj.name, propertyObj.filename);
+    this.get('serviceConfigs').pushObject(App.ServiceConfigProperty.create({
+      name: propertyObj.name,
+      displayName: propertyObj.displayName || propertyObj.name,
+      value: propertyObj.value,
+      displayType: stringUtils.isSingleLine(propertyObj.value) ? 'advanced' : 'multiLine',
+      isSecureConfig: isSecureConfig,
+      category: propertyObj.categoryName,
+      id: 'site property',
+      serviceName: propertyObj.serviceName,
+      defaultValue: null,
+      supportsFinal: App.config.shouldSupportFinal(propertyObj.serviceName, propertyObj.filename),
+      filename: propertyObj.filename || '',
+      isUserProperty: true,
+      isNotSaved: true,
+      isRequired: false,
+      group: selectedConfigGroup.get('isDefault') ? null : selectedConfigGroup,
+      isOverridable: selectedConfigGroup.get('isDefault')
+    }));
+  },
+
   /**
    * Show popup for adding new config-properties
    * @method showAddPropertyWindow
@@ -366,51 +419,11 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
         var service = this.get('service');
         var serviceName = service.get('serviceName');
 
-        var secureConfigs = this.get('controller.secureConfigs').filterProperty('filename', siteFileName);
-
-        function isSecureConfig(configName) {
-          return !!secureConfigs.findProperty('name', configName);
-        }
-
         var configsOfFile = service.get('configs').filterProperty('filename', siteFileName);
         var siteFileProperties = App.config.get('configMapping').all().filterProperty('filename', siteFileName);
 
-        function shouldSupportFinal(filename) {
-          var stackService = App.StackService.find().findProperty('serviceName', serviceName);
-          var supportsFinal = App.config.getConfigTypesInfoFromService(stackService).supportsFinal;
-          var matchingConfigType = supportsFinal.find(function (configType) {
-            return filename.startsWith(configType);
-          });
-          return !!matchingConfigType;
-        }
-
-        var supportsFinal = (serviceName == 'MISC') ? false: (siteFileName ? shouldSupportFinal(siteFileName) : false);
-
         function isDuplicatedConfigKey(name) {
           return siteFileProperties.findProperty('name', name) || configsOfFile.findProperty('name', name);
-        }
-
-        var serviceConfigs = this.get('serviceConfigs');
-
-        function createProperty(propertyName, propertyValue) {
-          serviceConfigs.pushObject(App.ServiceConfigProperty.create({
-            name: propertyName,
-            displayName: propertyName,
-            value: propertyValue,
-            displayType: stringUtils.isSingleLine(propertyValue) ? 'advanced' : 'multiLine',
-            isSecureConfig: isSecureConfig(propertyName),
-            category: category.get('name'),
-            id: 'site property',
-            serviceName: serviceName,
-            defaultValue: null,
-            supportsFinal: supportsFinal,
-            filename: siteFileName || '',
-            isUserProperty: true,
-            isNotSaved: true,
-            isRequired: false,
-            group: selectedConfigGroup.get('isDefault') ? null : selectedConfigGroup,
-            isOverridable: selectedConfigGroup.get('isDefault')
-          }));
         }
 
         var serviceConfigObj = Ember.Object.create({
@@ -501,6 +514,11 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
           primary: 'Add',
           secondary: 'Cancel',
           onPrimary: function () {
+            var propertyObj = {
+              filename: siteFileName,
+              serviceName: serviceName,
+              categoryName: category.get('name')
+            };
             if (serviceConfigObj.isBulkMode) {
               var popup = this;
               processConfig(serviceConfigObj.bulkConfigValue, function (error, parsedConfig) {
@@ -510,7 +528,9 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
                 } else {
                   for (var key in parsedConfig) {
                     if (parsedConfig.hasOwnProperty(key)) {
-                      createProperty(key, parsedConfig[key]);
+                      propertyObj.name = key;
+                      propertyObj.value = parsedConfig[key];
+                      persistController.createProperty(propertyObj);
                     }
                   }
                   popup.hide();
@@ -523,7 +543,9 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
                * For the first entrance use this if (serviceConfigObj.name.trim() != '')
                */
               if (!serviceConfigObj.isKeyError) {
-                createProperty(serviceConfigObj.get('name'), serviceConfigObj.get('value'));
+                propertyObj.name = serviceConfigObj.get('name');
+                propertyObj.value = serviceConfigObj.get('value');
+                persistController.createProperty(propertyObj);
                 this.hide();
               }
             }
@@ -579,11 +601,32 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
   removeProperty: function (event) {
     var serviceConfigProperty = event.contexts[0];
     this.get('serviceConfigs').removeObject(serviceConfigProperty);
+    if (App.get('isClusterSupportsEnhancedConfigs')) {
+      var deletedConfig = App.ConfigProperty.find().find(function(cp) {
+        return cp.get('name') === serviceConfigProperty.get('name')
+          && cp.get('fileName') === serviceConfigProperty.get('filename')
+          && cp.get('isOriginalSCP');
+      });
+      if (deletedConfig) {
+        deletedConfig.deleteRecord();
+        App.store.commit();
+      }
+    }
     // push config's file name if this config was stored on server
     if (!serviceConfigProperty.get('isNotSaved')) {
       this.get('controller').get('modifiedFileNames').push(serviceConfigProperty.get('filename'));
     }
     Em.$('body>.tooltip').remove(); //some tooltips get frozen when their owner's DOM element is removed
+  },
+
+  /**
+   * Set config's value to recommended
+   * @param event
+   * @method setRecommendedValue
+   */
+  setRecommendedValue: function (event) {
+    var serviceConfigProperty = event.contexts[0];
+    serviceConfigProperty.set('value', serviceConfigProperty.get('recommendedValue'));
   },
 
   /**
@@ -609,42 +652,6 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, {
     }
     this.configChangeObserver(serviceConfigProperty);
     Em.$('body>.tooltip').remove(); //some tooltips get frozen when their owner's DOM element is removed
-  },
-
-  /**
-   *
-   * @method createOverrideProperty
-   */
-  createOverrideProperty: function (event) {
-    var serviceConfigProperty = event.contexts[0];
-    var serviceConfigController = this.get('controller');
-    var selectedConfigGroup = serviceConfigController.get('selectedConfigGroup');
-    var isInstaller = (this.get('controller.name') === 'wizardStep7Controller');
-    var configGroups = (isInstaller) ? serviceConfigController.get('selectedService.configGroups') : serviceConfigController.get('configGroups');
-
-    //user property is added, and it has not been saved, not allow override
-    if (serviceConfigProperty.get('isUserProperty') && serviceConfigProperty.get('isNotSaved') && !isInstaller) {
-      App.ModalPopup.show({
-        header: Em.I18n.t('services.service.config.configOverride.head'),
-        body: Em.I18n.t('services.service.config.configOverride.body'),
-        secondary: false
-      });
-      return;
-    }
-    if (selectedConfigGroup.get('isDefault')) {
-      // Launch dialog to pick/create Config-group
-      App.config.launchConfigGroupSelectionCreationDialog(this.get('service.serviceName'),
-        configGroups, serviceConfigProperty, function (selectedGroupInPopup) {
-          console.log("launchConfigGroupSelectionCreationDialog(): Selected/Created:", selectedGroupInPopup);
-          if (selectedGroupInPopup) {
-            serviceConfigController.set('overrideToAdd', serviceConfigProperty);
-            serviceConfigController.set('selectedConfigGroup', selectedGroupInPopup);
-          }
-        }, isInstaller);
-    }
-    else {
-      serviceConfigController.addOverrideProperty(serviceConfigProperty, selectedConfigGroup);
-    }
   }
 
 });

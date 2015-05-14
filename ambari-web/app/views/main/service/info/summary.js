@@ -17,11 +17,16 @@
 
 var App = require('app');
 var batchUtils = require('utils/batch_scheduled_requests');
+var misc = require('utils/misc');
 require('views/main/service/service');
 require('data/service_graph_config');
 
 App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
   templateName: require('templates/main/service/info/summary'),
+  /**
+   * @property {Number} chunkSize - number of columns in Metrics section
+   */
+  chunkSize: 5,
   attributes:null,
 
   /**
@@ -297,27 +302,31 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
 
    /*
    * Find the graph class associated with the graph name, and split
-   * the array into sections of 2 for displaying on the page
-   * (will only display rows with 2 items)
+   * the array into sections of 5 for displaying on the page
+   * (will only display rows with 5 items)
    */
   constructGraphObjects: function(graphNames) {
-    var result = [], graphObjects = [], chunkSize = 2;
+    var result = [], graphObjects = [], chunkSize = this.get('chunkSize');
     var self = this;
+    var serviceName = this.get('controller.content.serviceName');
+    var stackService = App.StackService.find().findProperty('serviceName', serviceName);
 
-    if (!graphNames) {
+    if (!graphNames && !stackService.get('isServiceWithWidgets')) {
       self.set('serviceMetricGraphs', []);
-      self.set('isServiceMetricLoaded', true);
+      self.set('isServiceMetricLoaded', false);
       return;
     }
+
     // load time range for current service from server
     self.getUserPref(self.get('persistKey')).complete(function () {
       var index = self.get('currentTimeRangeIndex');
-      graphNames.forEach(function(graphName) {
-        graphObjects.push(App["ChartServiceMetrics" + graphName].extend({
-          currentTimeIndex : index
-        }));
-      });
-
+      if (graphNames) {
+        graphNames.forEach(function(graphName) {
+          graphObjects.push(App["ChartServiceMetrics" + graphName].extend({
+            currentTimeIndex : index
+          }));
+        });
+      }
       while(graphObjects.length) {
         result.push(graphObjects.splice(0, chunkSize));
       }
@@ -356,17 +365,88 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
   },
 
   /**
+   * list of static actions of widget
+   * @type {Array}
+   */
+  staticGeneralWidgetActions: [
+    Em.Object.create({
+      label: Em.I18n.t('dashboard.widgets.actions.browse'),
+      class: 'icon-th',
+      action: 'goToWidgetsBrowser',
+      isAction: true
+    })
+  ],
+
+  /**
+   *list of static actions of widget accessible to Admin/Operator privelege
+   * @type {Array}
+   */
+
+  staticAdminPrivelegeWidgetActions: [
+    Em.Object.create({
+      label: Em.I18n.t('dashboard.widgets.create'),
+      class: 'icon-plus',
+      action: 'createWidget',
+      isAction: true
+    })
+  ],
+
+  /**
+   * List of static actions related to widget layout
+   */
+  staticWidgetLayoutActions: [
+    Em.Object.create({
+      label: Em.I18n.t('dashboard.widgets.layout.save'),
+      class: 'icon-download-alt',
+      action: 'saveLayout',
+      isAction: true
+    }),
+    Em.Object.create({
+      label: Em.I18n.t('dashboard.widgets.layout.import'),
+      class: 'icon-file',
+      isAction: true,
+      layouts: App.WidgetLayout.find()
+    })
+  ],
+
+  /**
+   * @type {Array}
+   */
+  widgetActions: function() {
+    var options = [];
+    if (App.isAccessible('MANAGER')) {
+      if (App.supports.customizedWidgetLayout) {
+        options.pushObjects(this.get('staticWidgetLayoutActions'));
+      }
+      options.pushObjects(this.get('staticAdminPrivelegeWidgetActions'));
+    }
+    options.pushObjects(this.get('staticGeneralWidgetActions'));
+    return options;
+  }.property(''),
+
+  /**
+   * call action function defined in controller
+   * @param event
+   */
+  doWidgetAction: function(event) {
+    if($.isFunction(this.get('controller')[event.context])) {
+      this.get('controller')[event.context].apply(this.get('controller'));
+    }
+  },
+
+  /**
    * time range options for service metrics, a dropdown will list all options
+   * value set in hours
    */
   timeRangeOptions: [
-    {index: 0, name: Em.I18n.t('graphs.timeRange.hour'), seconds: 3600},
-    {index: 1, name: Em.I18n.t('graphs.timeRange.twoHours'), seconds: 7200},
-    {index: 2, name: Em.I18n.t('graphs.timeRange.fourHours'), seconds: 14400},
-    {index: 3, name: Em.I18n.t('graphs.timeRange.twelveHours'), seconds: 43200},
-    {index: 4, name: Em.I18n.t('graphs.timeRange.day'), seconds: 86400},
-    {index: 5, name: Em.I18n.t('graphs.timeRange.week'), seconds: 604800},
-    {index: 6, name: Em.I18n.t('graphs.timeRange.month'), seconds: 2592000},
-    {index: 7, name: Em.I18n.t('graphs.timeRange.year'), seconds: 31104000}
+    {index: 0, name: Em.I18n.t('graphs.timeRange.hour'), value: '1'},
+    {index: 1, name: Em.I18n.t('graphs.timeRange.twoHours'), value: '2'},
+    {index: 2, name: Em.I18n.t('graphs.timeRange.fourHours'), value: '4'},
+    {index: 3, name: Em.I18n.t('graphs.timeRange.twelveHours'), value: '12'},
+    {index: 4, name: Em.I18n.t('graphs.timeRange.day'), value: '24'},
+    {index: 5, name: Em.I18n.t('graphs.timeRange.week'), value: '168'},
+    {index: 6, name: Em.I18n.t('graphs.timeRange.month'), value: '720'},
+    {index: 7, name: Em.I18n.t('graphs.timeRange.year'), value: '8760'}
   ],
 
   currentTimeRangeIndex: 0,
@@ -376,27 +456,14 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
 
   /**
    * onclick handler for a time range option
+   * @param {object} event
    */
   setTimeRange: function (event) {
-    var self = this;
-    if (event && event.context) {
-      self.postUserPref(self.get('persistKey'), event.context.index);
-      self.set('currentTimeRangeIndex', event.context.index);
-      var svcName = self.get('service.serviceName');
-      if (svcName) {
-        var result = [], graphObjects = [], chunkSize = 2;
-        App.service_graph_config[svcName.toLowerCase()].forEach(function(graphName) {
-          graphObjects.push(App["ChartServiceMetrics" + graphName].extend({
-            currentTimeIndex : event.context.index
-          }));
-        });
-        while(graphObjects.length) {
-          result.push(graphObjects.splice(0, chunkSize));
-        }
-        self.set('serviceMetricGraphs', result);
-        self.set('isServiceMetricLoaded', true);
-      }
-    }
+    this.set('currentTimeRangeIndex', event.context.index);
+
+    this.get('controller.widgets').filterProperty('widgetType', 'GRAPH').forEach(function (widget) {
+      widget.set('properties.time_range', event.context.value);
+    }, this);
   },
 
   loadServiceSummary: function () {
@@ -454,15 +521,18 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
     return gangliaUrl;
   }.property('App.router.clusterController.gangliaUrl', 'service.serviceName'),
 
-  willInsertElement: function () {
-    App.router.get('updateController').updateServiceMetric(Em.K);
-  },
-
   didInsertElement: function () {
     var svcName = this.get('service.serviceName');
     var isMetricsSupported = svcName != 'STORM' || App.get('isStormMetricsSupported');
+
+    this.get('controller').getActiveWidgetLayout();
+    if (App.get('supports.customizedWidgetLayout')) {
+      this.get('controller').loadWidgetLayouts();
+    }
+
     if (svcName && isMetricsSupported) {
-      this.constructGraphObjects(App.service_graph_config[svcName.toLowerCase()]);
+      var allServices =  require('data/service_graph_config').getServiceGraphConfig();
+      this.constructGraphObjects(allServices[svcName.toLowerCase()]);
     }
     // adjust the summary table height
     var summaryTable = document.getElementById('summary-info');
@@ -477,5 +547,54 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
         }
       }
     }
+    this.makeSortable();
+    Em.run.later(this, function () {
+      App.tooltip($("[rel='add-widget-tooltip']"));
+      // enalble description show up on hover
+      $('.thumbnail').hoverIntent(function() {
+        var self = this;
+        setTimeout(function() {
+          if ($(self).is(':hover')) {
+            $(self).find('.hidden-description').fadeIn(200);
+          }
+        }, 1000);
+      }, function() {
+        $(this).find('.hidden-description').hide();
+      });
+    }, 1000);
+  },
+
+  /**
+   * Define if some widget is currently moving
+   * @type {boolean}
+   */
+  isMoving: false,
+
+  /**
+   * Make widgets' list sortable on New Dashboard style
+   */
+  makeSortable: function () {
+    var self = this;
+    $('html').on('DOMNodeInserted', '#widget_layout', function () {
+      $(this).sortable({
+        items: "> div",
+        cursor: "move",
+        tolerance: "pointer",
+        scroll: false,
+        update: function () {
+          var widgets = misc.sortByOrder($("#widget_layout .widget").map(function () {
+            return this.id;
+          }), self.get('controller.widgets'));
+          self.get('controller').saveWidgetLayout(widgets);
+        },
+        activate: function (event, ui) {
+          self.set('isMoving', true);
+        },
+        deactivate: function (event, ui) {
+          self.set('isMoving', false);
+        }
+      }).disableSelection();
+      $('html').off('DOMNodeInserted', '#widget_layout');
+    });
   }
 });

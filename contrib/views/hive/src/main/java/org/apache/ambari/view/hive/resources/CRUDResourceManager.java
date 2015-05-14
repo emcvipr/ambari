@@ -18,12 +18,11 @@
 
 package org.apache.ambari.view.hive.resources;
 
-import org.apache.ambari.view.ViewContext;
+import org.apache.ambari.view.hive.persistence.IStorageFactory;
 import org.apache.ambari.view.hive.persistence.Storage;
 import org.apache.ambari.view.hive.persistence.utils.FilteringStrategy;
 import org.apache.ambari.view.hive.persistence.utils.Indexed;
 import org.apache.ambari.view.hive.persistence.utils.ItemNotFound;
-import org.apache.ambari.view.hive.persistence.utils.StorageUtil;
 import org.apache.ambari.view.hive.utils.ServiceFormattedException;
 
 import java.util.List;
@@ -32,18 +31,20 @@ import java.util.List;
  * CRUD resource manager
  * @param <T> Data type with ID
  */
-abstract public class CRUDResourceManager<T extends Indexed> {
+abstract public class CRUDResourceManager<T extends Indexed> implements IResourceManager<T> {
   //TODO: refactor: generic parameter gets Fabric for Indexed objects, not objects itself
   private Storage storage = null;
 
   protected final Class<? extends T> resourceClass;
+  protected IStorageFactory storageFactory;
 
   /**
    * Constructor
    * @param resourceClass model class
    */
-  public CRUDResourceManager(Class<? extends T> resourceClass) {
+  public CRUDResourceManager(Class<? extends T> resourceClass, IStorageFactory storageFactory) {
     this.resourceClass = resourceClass;
+    this.storageFactory = storageFactory;
   }
   // CRUD operations
 
@@ -52,7 +53,8 @@ abstract public class CRUDResourceManager<T extends Indexed> {
    * @param object object
    * @return model object
    */
-  protected T create(T object) {
+  @Override
+  public T create(T object) {
     object.setId(null);
     return this.save(object);
   }
@@ -63,9 +65,10 @@ abstract public class CRUDResourceManager<T extends Indexed> {
    * @return model object
    * @throws org.apache.ambari.view.hive.persistence.utils.ItemNotFound
    */
-  protected T read(Integer id) throws ItemNotFound {
+  @Override
+  public T read(Object id) throws ItemNotFound {
     T object = null;
-    object = getStorage().load(this.resourceClass, id);
+    object = storageFactory.getStorage().load(this.resourceClass, id);
     if (!checkPermissions(object))
       throw new ItemNotFound();
     return object;
@@ -76,8 +79,9 @@ abstract public class CRUDResourceManager<T extends Indexed> {
    * @param filteringStrategy filtering strategy
    * @return list of filtered objects
    */
-  protected List<T> readAll(FilteringStrategy filteringStrategy) {
-    return getStorage().loadAll(this.resourceClass, filteringStrategy);
+  @Override
+  public List<T> readAll(FilteringStrategy filteringStrategy) {
+    return storageFactory.getStorage().loadAll(this.resourceClass, filteringStrategy);
   }
 
   /**
@@ -87,7 +91,8 @@ abstract public class CRUDResourceManager<T extends Indexed> {
    * @return model object
    * @throws org.apache.ambari.view.hive.persistence.utils.ItemNotFound
    */
-  protected T update(T newObject, Integer id) throws ItemNotFound {
+  @Override
+  public T update(T newObject, String id) throws ItemNotFound {
     newObject.setId(id);
     this.save(newObject);
     return newObject;
@@ -98,35 +103,28 @@ abstract public class CRUDResourceManager<T extends Indexed> {
    * @param resourceId object identifier
    * @throws org.apache.ambari.view.hive.persistence.utils.ItemNotFound
    */
-  protected void delete(Integer resourceId) throws ItemNotFound {
-    if (!getStorage().exists(this.resourceClass, resourceId)) {
+  @Override
+  public void delete(Object resourceId) throws ItemNotFound {
+    if (!storageFactory.getStorage().exists(this.resourceClass, resourceId)) {
       throw new ItemNotFound();
     }
-    getStorage().delete(this.resourceClass, resourceId);
+    storageFactory.getStorage().delete(this.resourceClass, resourceId);
   }
 
   // UTILS
 
   protected T save(T object) {
-    getStorage().store(resourceClass, object);
+    storageFactory.getStorage().store(resourceClass, object);
     return object;
   }
 
-  protected Storage getStorage() {
-    if (storage == null) {
-      storage = StorageUtil.getInstance(getContext()).getStorage();
-    }
-    return storage;
-  }
-
   protected abstract boolean checkPermissions(T object);
-  protected abstract ViewContext getContext();
 
   protected void cleanupAfterErrorAndThrowAgain(Indexed object, ServiceFormattedException e) {
     try {
       delete(object.getId());
     } catch (ItemNotFound itemNotFound) {
-      throw new ServiceFormattedException("Error in creation, during clean up: " + itemNotFound.toString(), itemNotFound);
+      throw new ServiceFormattedException("E040 Item not found", itemNotFound);
     }
     throw e;
   }

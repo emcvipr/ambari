@@ -34,11 +34,10 @@
         <i {{bindAttr class=":pull-left :accordion-toggle view.isRLCollapsed:icon-caret-right:icon-caret-down"}}></i>
         <a class="accordion-toggle">
           {{t installer.step1.advancedRepo.title}}
-          {{#if view.isSubmitDisabled}}
+          {{#if view.showErrorsWarningCount}}
             <span class="badge badge-important">{{view.totalErrorCnt}}</span>
           {{/if}}
         </a>
-
       </div>
       <div class="accordion-body collapse in">
         <div class="accordion-inner">
@@ -70,7 +69,7 @@
                             {{view view.popoverView repositoryBinding="repository"}}
                           {{/if}}
                         </div>
-                        <div {{bindAttr class=":url-td operatingSystem.osType repository.repoId operatingSystem.isSelected::disabled-textfield repository.emptyError:textfield-error repository.invalidError:textfield-error"}}>
+                        <div {{bindAttr class=":url-td operatingSystem.osType repository.repoId operatingSystem.isSelected::disabled-textfield repository.invalidFormatError:textfield-error repository.invalidError:textfield-error"}}>
                           {{view Ember.TextField valueBinding="repository.baseUrl"}}
                         </div>
                         <div class="clear-td">
@@ -99,7 +98,7 @@
               <i class="icon-question-sign" rel="skip-validation-tooltip"
                  data-toggle="tooltip" {{translateAttr title="installer.step1.advancedRepo.skipValidation.tooltip"}}></i></label>
           </div>
-          {{#if view.emptyRepoExist}}
+          {{#if view.invalidFormatUrlExist}}
             <div class="alert">{{t installer.step1.attentionNeeded}}</div>
           {{/if}}
           {{#if view.invalidUrlExist}}

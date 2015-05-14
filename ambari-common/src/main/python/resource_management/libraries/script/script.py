@@ -257,6 +257,80 @@ class Script(object):
     """
     return Script.tmp_dir
 
+  @staticmethod
+  def get_component_from_role(role_directory_map, default_role):
+    """
+    Gets the /usr/hdp/current/<component> component given an Ambari role,
+    such as DATANODE or HBASE_MASTER.
+    :return:  the component name, such as hbase-master
+    """
+    from resource_management.libraries.functions.default import default
+
+    command_role = default("/role", default_role)
+    if command_role in role_directory_map:
+      return role_directory_map[command_role]
+    else:
+      return role_directory_map[default_role]
+
+  @staticmethod
+  def get_stack_name():
+    """
+    Gets the name of the stack from hostLevelParams/stack_name.
+    :return: a stack name or None
+    """
+    from resource_management.libraries.functions.default import default
+    return default("/hostLevelParams/stack_name", None)
+
+  @staticmethod
+  def get_hdp_stack_version():
+    """
+    Gets the normalized version of the HDP stack in the form #.#.#.# if it is
+    present on the configurations sent.
+    :return: a normalized HDP stack version or None
+    """
+    stack_name = Script.get_stack_name()
+    if stack_name is None or stack_name.upper() != "HDP":
+      return None
+
+    config = Script.get_config()
+    if 'hostLevelParams' not in config or 'stack_version' not in config['hostLevelParams']:
+      return None
+
+    stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
+
+    if stack_version_unformatted is None or stack_version_unformatted == '':
+      return None
+
+    return format_hdp_stack_version(stack_version_unformatted)
+
+  @staticmethod
+  def is_hdp_stack_greater_or_equal(compare_to_version):
+    """
+    Gets whether the hostLevelParams/stack_version, after being normalized,
+    is greater than or equal to the specified stack version
+    :param compare_to_version: the version to compare to
+    :return: True if the command's stack is greater than the specified version
+    """
+    hdp_stack_version = Script.get_hdp_stack_version()
+    if hdp_stack_version is None or hdp_stack_version == "":
+      return False
+
+    return compare_versions(hdp_stack_version, compare_to_version) >= 0
+
+  @staticmethod
+  def is_hdp_stack_less_than(compare_to_version):
+    """
+    Gets whether the hostLevelParams/stack_version, after being normalized,
+    is less than the specified stack version
+    :param compare_to_version: the version to compare to
+    :return: True if the command's stack is less than the specified version
+    """
+    hdp_stack_version = Script.get_hdp_stack_version()
+
+    if hdp_stack_version is None:
+      return False
+
+    return compare_versions(hdp_stack_version, compare_to_version) < 0
 
   def install(self, env):
     """
@@ -274,6 +348,12 @@ class Script(object):
     from this list
     """
     config = self.get_config()
+    if 'host_sys_prepped' in config['hostLevelParams']:
+      # do not install anything on sys-prepped host
+      if config['hostLevelParams']['host_sys_prepped'] == True:
+        Logger.info("Node has all packages pre-installed. Skipping.")
+        return
+      pass
     try:
       package_list_str = config['hostLevelParams']['package_list']
       if isinstance(package_list_str, basestring) and len(package_list_str) > 0:
@@ -281,10 +361,12 @@ class Script(object):
         for package in package_list:
           if not package['name'] in exclude_packages:
             name = package['name']
+            # HACK: On Windows, only install ambari-metrics packages using Choco Package Installer
+            # TODO: Update this once choco packages for hadoop are created. This is because, service metainfo.xml support
+            # <osFamily>any<osFamily> which would cause installation failure on Windows.
             if OSCheck.is_windows_family():
-              if name[-4:] == ".msi":
-                #TODO all msis must be located in resource folder of server, change it to repo later
-                Msi(name, http_source=os.path.join(config['hostLevelParams']['jdk_location']))
+              if "ambari-metrics" in name:
+                Package(name)
             else:
               Package(name)
     except KeyError:
@@ -292,8 +374,9 @@ class Script(object):
 
     if OSCheck.is_windows_family():
       #TODO hacky install of windows msi, remove it or move to old(2.1) stack definition when component based install will be implemented
+      hadoop_user = config["configurations"]["cluster-env"]["hadoop.user.name"]
       install_windows_msi(os.path.join(config['hostLevelParams']['jdk_location'], "hdp.msi"),
-                          config["hostLevelParams"]["agentCacheDir"], "hdp.msi", self.get_password("hadoop"),
+                          config["hostLevelParams"]["agentCacheDir"], "hdp.msi", hadoop_user, self.get_password(hadoop_user),
                           str(config['hostLevelParams']['stack_version']))
       reload_windows_env()
     pass
@@ -382,7 +465,7 @@ class Script(object):
     """
     pass
 
-  def configure(self, env):
+  def configure(self, env, rolling_restart=False):
     """
     To be overridden by subclasses
     """
@@ -477,6 +560,6 @@ class Script(object):
       component_name = stack_to_component[stack_name] if stack_name in stack_to_component else None
       if component_name and stack_name and version and \
               compare_versions(format_hdp_stack_version(hdp_stack_version), '2.2.0.0') >= 0:
-        Execute("/usr/bin/hdp-select set {component_name} {version}".format(
-            component_name=component_name, version=version))
+        Execute(('/usr/bin/hdp-select', 'set', component_name, version),
+                sudo = True)
 

@@ -113,7 +113,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
-        <version>1.2</version>
+        <version>1.2.1</version>
         <executions>
           <execution>
             <configuration>
@@ -341,6 +341,17 @@
               </sources>
             </mapping>
             <mapping>
+              <directory>/var/lib/ambari-agent</directory>
+              <filemode>700</filemode>
+              <username>root</username>
+              <groupname>root</groupname>
+              <sources>
+                <source>
+                  <location>conf/unix/upgrade_agent_configs.py</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
               <directory>${package.pid.dir}</directory>
               <filemode>755</filemode>
               <username>root</username>
@@ -385,6 +396,7 @@
               <directory>${sudoers.d.dir}</directory>
               <username>root</username>
               <groupname>root</groupname>
+              <directoryIncluded>false</directoryIncluded>
               <sources>
                 <source>
                   <location>etc/sudoers.d</location>
@@ -413,6 +425,12 @@
                   <location>${target.cache.dir}</location>
                 </source>
               </sources>
+            </mapping>
+            <mapping>
+              <directory>/var/lib/ambari-agent/lib</directory>
+              <filemode>755</filemode>
+              <username>root</username>
+              <groupname>root</groupname>
             </mapping>
           </mappings>
         </configuration>
@@ -521,6 +539,17 @@
               </mapper>
             </data>
             <data>
+              <src>conf/unix/upgrade_agent_configs.py</src>
+              <type>file</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>/var/lib/ambari-agent</prefix>
+                <user>root</user>
+                <group>root</group>
+                <filemode>700</filemode>
+              </mapper>
+            </data>
+            <data>
               <type>template</type>
               <paths>
                 <path>${package.pid.dir}</path>
@@ -528,6 +557,7 @@
                 <path>/var/lib/${project.artifactId}/data/tmp</path>
                 <path>/var/lib/${project.artifactId}/keys</path>
                 <path>${package.log.dir}</path>
+                <path>/var/lib/${project.artifactId}/lib</path>
               </paths>
               <mapper>
                 <type>perm</type>
@@ -680,7 +710,7 @@
         <artifactId>apache-rat-plugin</artifactId>
         <configuration>
           <excludes>
-          	<exclude>src/test/python/tmp_hostcheck.result</exclude>
+            <exclude>src/test/python/tmp_hostcheck.result</exclude>
             <exclude>src/examples/*</exclude>
             <exclude>src/test/python/dummy*.txt</exclude>
             <exclude>src/test/python/ambari_agent/dummy_files/*</exclude>
@@ -691,7 +721,7 @@
             <exclude>**/*.erb</exclude>
             <exclude>**/*.json</exclude>
             <exclude>**/*.pydevproject</exclude>
-            <exclude>**/*.wxs</exclude>
+            <exclude>src/main/package/choco/ambari-agent.nuspec</exclude>
           </excludes>
         </configuration>
         <executions>
@@ -792,86 +822,48 @@
                   <goal>single</goal>
                 </goals>
               </execution>
+              <execution>
+                <id>build-choco-dir</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+                <configuration>
+                  <attach>false</attach>
+                  <appendAssemblyId>true</appendAssemblyId>
+                  <tarLongFileMode>gnu</tarLongFileMode>
+                  <descriptors>
+                    <descriptor>src/packages/windows-choco.xml</descriptor>
+                  </descriptors>
+                </configuration>
+              </execution>
             </executions>
           </plugin>
-          <!-- msi creation -->
+          <!-- choco package creation -->
           <plugin>
             <groupId>org.codehaus.mojo</groupId>
             <artifactId>exec-maven-plugin</artifactId>
-            <version>1.2</version>
+            <version>1.2.1</version>
             <executions>
               <execution>
-                <id>run-heat</id>
+                <id>build-choco-package</id>
                 <phase>package</phase>
                 <goals>
                   <goal>exec</goal>
                 </goals>
                 <configuration>
-                  <executable>heat.exe</executable>
+                  <executable>choco.exe</executable>
                   <arguments>
-                    <argument>dir</argument>
-                    <argument>"."</argument>
-                    <argument>-dr</argument>
-                    <argument>"AGENT_INSTALL_DIRECTORY"</argument>
-                    <argument>-platform</argument>
-                    <argument>Win64</argument>
-                    <argument>-cg</argument>
-                    <argument>"AmbariAgentGroup"</argument>
-                    <argument>-gg</argument>
-                    <argument>-ke</argument>
-                    <argument>-srd</argument>
-                    <argument>-o</argument>
-                    <argument>".\..\ambari-agent-files.wxs"</argument>
+                    <argument>pack</argument>
+                    <argument>--version=${project.version}</argument>
+                    <argument>${basedir}/target/ambari-agent-${project.version}-choco/ambari-agent.nuspec</argument>
                   </arguments>
-                  <workingDirectory>${basedir}/target/${final.name}-windows-dist</workingDirectory>
+                  <workingDirectory>target/ambari-agent-${project.version}-choco</workingDirectory>
                 </configuration>
               </execution>
             </executions>
           </plugin>
-          <plugin>
-            <groupId>org.apache.npanday.plugins</groupId>
-            <artifactId>wix-maven-plugin</artifactId>
-            <version>1.4.0-incubating</version>
-            <extensions>true</extensions>
-            <configuration>
-              <sourceFiles>
-                <sourceFile>target/ambari-agent.wxs</sourceFile>
-                <sourceFile>target/ambari-agent-files.wxs</sourceFile>
-              </sourceFiles>
-              <outputDirectory>target</outputDirectory>
-              <objectFiles>
-                <objectFile>target/ambari-agent.wixobj</objectFile>
-                <objectFile>target/ambari-agent-files.wixobj</objectFile>
-              </objectFiles>
-              <outputFile>target/ambari-agent-${project.version}.msi</outputFile>
-              <extensions>
-                <extension>WixUIExtension</extension>
-              </extensions>
-            </configuration>
-            <executions>
-              <execution>
-                <id>wix-candle</id>
-                <phase>package</phase>
-                <goals>
-                  <goal>candle</goal>
-                </goals>
-                <configuration>
-                  <arguments>-arch x64</arguments>
-                </configuration>
-              </execution>
-              <execution>
-                <id>wix-light</id>
-                <phase>package</phase>
-                <goals>
-                  <goal>light</goal>
-                </goals>
-                <configuration>
-                  <arguments>-b ${basedir}/target/${final.name}-windows-dist</arguments>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-            <!-- end msi creation -->
+            <!-- end choco package creation -->
         </plugins>
       </build>
     </profile>

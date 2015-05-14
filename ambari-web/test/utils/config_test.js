@@ -34,7 +34,7 @@ describe('App.config', function () {
 
   var loadAllServicesConfigs = function(context, serviceNames) {
     context.configGroups = modelSetup.setupConfigGroupsObject();
-  }
+  };
 
   var loadServiceModelsData = function(serviceNames) {
     serviceNames.forEach(function(serviceName) {
@@ -72,45 +72,6 @@ describe('App.config', function () {
       expect(config.value).to.equal('1024');
       expect(config.defaultValue).to.equal('1024');
     });
-  });
-
-  describe('#capacitySchedulerFilter', function() {
-    var testMessage = 'filter should {0} detect `{1}` property';
-    describe('Stack version >= 2.0', function() {
-      before(function() {
-        setups.setupStackVersion(this, 'HDP-2.1');
-      });
-      var tests = [
-        {
-          config: {
-            name: 'yarn.scheduler.capacity.maximum-am-resource-percent'
-          },
-          e: false
-        },
-        {
-          config: {
-            name: 'yarn.scheduler.capacity.root.capacity'
-          },
-          e: false
-        },
-        {
-          config: {
-            name: 'yarn.scheduler.capacity.root.default.capacity'
-          },
-          e: true
-        }
-      ];
-
-      tests.forEach(function(test){
-        it(testMessage.format( !!test.e ? '' : 'not', test.config.name), function() {
-          expect(App.config.get('capacitySchedulerFilter')(test.config)).to.eql(test.e);
-        });
-      });
-      after(function() {
-        setups.restoreStackVersion(this);
-      })
-    });
-
   });
 
   describe('#fileConfigsIntoTextarea', function () {
@@ -163,7 +124,34 @@ describe('App.config', function () {
       expect(result[0].value).to.equal('');
       expect(result[0].defaultValue).to.equal('');
     });
-
+    it("filename has configs that shouldn't be included in textarea", function () {
+      var configs = [
+        {
+          name: 'config1',
+          value: 'value1',
+          defaultValue: 'value1',
+          filename: filename
+        },
+        {
+          name: 'config2',
+          value: 'value2',
+          defaultValue: 'value2',
+          filename: filename
+        }
+      ];
+      var cfg = {
+        name: 'config3',
+        value: 'value3',
+        defaultValue: 'value3',
+        filename: filename
+      };
+      configs.push(cfg);
+      var result = App.config.fileConfigsIntoTextarea.call(App.config, configs, filename, [cfg]);
+      expect(result.length).to.equal(2);
+      expect(result[1].value).to.equal('config1=value1\nconfig2=value2\n');
+      expect(result[1].defaultValue).to.equal('config1=value1\nconfig2=value2\n');
+      expect(configs.findProperty('name', 'config3')).to.eql(cfg);
+    });
   });
 
   describe('#textareaIntoFileConfigs', function () {
@@ -173,28 +161,32 @@ describe('App.config', function () {
         configs: [Em.Object.create({
           "name": "capacity-scheduler",
           "value": "config1=value1",
-          "filename": "capacity-scheduler.xml"
+          "filename": "capacity-scheduler.xml",
+          "isRequiredByAgent": true
         })]
       },
       {
         configs: [Em.Object.create({
           "name": "capacity-scheduler",
           "value": "config1=value1\nconfig2=value2\n",
-          "filename": "capacity-scheduler.xml"
+          "filename": "capacity-scheduler.xml",
+          "isRequiredByAgent": false
         })]
       },
       {
         configs: [Em.Object.create({
           "name": "capacity-scheduler",
           "value": "config1=value1,value2\n",
-          "filename": "capacity-scheduler.xml"
+          "filename": "capacity-scheduler.xml",
+          "isRequiredByAgent": true
         })]
       },
       {
         configs: [Em.Object.create({
           "name": "capacity-scheduler",
           "value": "config1=value1 config2=value2\n",
-          "filename": "capacity-scheduler.xml"
+          "filename": "capacity-scheduler.xml",
+          "isRequiredByAgent": false
         })]
       }
     ];
@@ -204,6 +196,7 @@ describe('App.config', function () {
       expect(result.length).to.equal(1);
       expect(result[0].value).to.equal('value1');
       expect(result[0].name).to.equal('config1');
+      expect(result[0].isRequiredByAgent).to.be.true;
     });
     it('config1=value1\\nconfig2=value2\\n to two configs', function () {
       var result = App.config.textareaIntoFileConfigs.call(App.config, testData[1].configs, filename);
@@ -212,16 +205,20 @@ describe('App.config', function () {
       expect(result[0].name).to.equal('config1');
       expect(result[1].value).to.equal('value2');
       expect(result[1].name).to.equal('config2');
+      expect(result[0].isRequiredByAgent).to.be.false;
+      expect(result[1].isRequiredByAgent).to.be.false;
     });
     it('config1=value1,value2\n to one config', function () {
       var result = App.config.textareaIntoFileConfigs.call(App.config, testData[2].configs, filename);
       expect(result.length).to.equal(1);
       expect(result[0].value).to.equal('value1,value2');
       expect(result[0].name).to.equal('config1');
+      expect(result[0].isRequiredByAgent).to.be.true;
     });
     it('config1=value1 config2=value2 to two configs', function () {
       var result = App.config.textareaIntoFileConfigs.call(App.config, testData[3].configs, filename);
       expect(result.length).to.equal(1);
+      expect(result[0].isRequiredByAgent).to.be.false;
     });
   });
 
@@ -467,72 +464,6 @@ describe('App.config', function () {
 
   });
 
-  describe('#generateConfigPropertiesByName', function() {
-    var tests = [
-      {
-        names: ['property_1', 'property_2'],
-        properties: undefined,
-        e: {
-          keys: ['name', 'displayName', 'isVisible', 'isReconfigurable']
-        },
-        m: 'Should generate base property object without additional fields'
-      },
-      {
-        names: ['property_1', 'property_2'],
-        properties: { category: 'SomeCat', serviceName: 'SERVICE_NAME' },
-        e: {
-          keys: ['name', 'displayName', 'isVisible', 'isReconfigurable', 'category', 'serviceName']
-        },
-        m: 'Should generate base property object without additional fields'
-      }
-    ];
-
-    tests.forEach(function(test) {
-      it(test.m, function() {
-        expect(App.config.generateConfigPropertiesByName(test.names, test.properties).length).to.eql(test.names.length);
-        expect(App.config.generateConfigPropertiesByName(test.names, test.properties).map(function(property) {
-          return Em.keys(property);
-        }).reduce(function(p, c) {
-          return p.concat(c);
-        }).uniq()).to.eql(test.e.keys);
-      });
-    });
-
-  });
-
-  describe('#generateConfigPropertiesByName', function() {
-    var tests = [
-      {
-        names: ['property_1', 'property_2'],
-        properties: undefined,
-        e: {
-          keys: ['name', 'displayName', 'isVisible', 'isReconfigurable']
-        },
-        m: 'Should generate base property object without additional fields'
-      },
-      {
-        names: ['property_1', 'property_2'],
-        properties: { category: 'SomeCat', serviceName: 'SERVICE_NAME' },
-        e: {
-          keys: ['name', 'displayName', 'isVisible', 'isReconfigurable', 'category', 'serviceName']
-        },
-        m: 'Should generate base property object without additional fields'
-      }
-    ];
-
-    tests.forEach(function(test) {
-      it(test.m, function() {
-        expect(App.config.generateConfigPropertiesByName(test.names, test.properties).length).to.eql(test.names.length);
-        expect(App.config.generateConfigPropertiesByName(test.names, test.properties).map(function(property) {
-          return Em.keys(property);
-        }).reduce(function(p, c) {
-          return p.concat(c);
-        }).uniq()).to.eql(test.e.keys);
-      });
-    });
-
-  });
-
   describe('#setPreDefinedServiceConfigs', function() {
     beforeEach(function() {
       sinon.stub(App.StackService, 'find', function() {
@@ -712,6 +643,10 @@ describe('App.config', function () {
     var result;
 
     before(function() {
+      sinon.stub(App.config, 'parseValue', function(value) {return value});
+      sinon.stub(App.config, 'getConfigTypesInfoFromService').returns({
+        supportsFinal: ['hdfs-site']
+      });
       setups.setupStackVersion(this, 'HDP-2.2');
       loadServiceModelsData(['HDFS', 'STORM']);
       App.config.loadAdvancedConfigSuccess(modelSetup.advancedConfigs, { url: '/serviceName/configurations'}, {
@@ -734,6 +669,8 @@ describe('App.config', function () {
     });
 
     after(function() {
+      App.config.parseValue.restore();
+      App.config.getConfigTypesInfoFromService.restore();
       setups.restoreStackVersion(this);
       removeServiceModelData(['HDFS', 'STORM']);
     });
@@ -798,39 +735,6 @@ describe('App.config', function () {
       });
     });
 
-  });
-
-  describe('#addKerberosDescriptorConfigs', function() {
-    var configs = [
-      { name: 'prop1', displayName: 'Prop1' },
-      { name: 'prop2', displayName: 'Prop2' },
-      { name: 'prop3', displayName: 'Prop3' },
-    ];
-    var descriptor = [
-      Em.Object.create({ name: 'prop4', filename: 'file-1'}),
-      Em.Object.create({ name: 'prop1', filename: 'file-1'}),
-    ];
-    App.config.addKerberosDescriptorConfigs(configs, descriptor);
-    var propertiesAttrTests = [
-      {
-        attr: 'isUserProperty', val: false,
-        m: 'descriptor properties should not be marked as custom'
-      },
-      {
-        attr: 'category', val: 'Advanced file-1',
-        m: 'descriptor properties should be added to Advanced category'
-      },
-      {
-        attr: 'isOverridable', val: false,
-        m: 'descriptor properties should not be overriden'
-      },
-    ];
-
-    propertiesAttrTests.forEach(function(test) {
-      it(test.m, function() {
-        expect(configs.findProperty('name', 'prop1')[test.attr]).to.be.eql(test.val);
-      });
-    });
   });
 
   describe('#advancedConfigIdentityData', function () {
@@ -983,6 +887,401 @@ describe('App.config', function () {
         Em.keys(item.output).forEach(function (key) {
           expect(propertyData[key]).to.eql(item.output[key]);
         });
+      });
+    });
+
+  });
+
+  describe('#addUserProperty', function () {
+
+    var cases = [
+        {
+          stored: {
+            id: 0,
+            name: 'prop_name0',
+            serviceName: 's0',
+            value: 'v0',
+            defaultValue: 'dv0',
+            filename: 'fn0.xml',
+            overrides: null,
+            isVisible: false,
+            isFinal: true,
+            defaultIsFinal: false,
+            supportsFinal: true,
+            category: 'c0'
+          },
+          expected: {
+            id: 0,
+            name: 'prop_name0',
+            displayName: 'Prop Name0',
+            serviceName: 's0',
+            value: 'v0',
+            defaultValue: 'dv0',
+            displayType: 'advanced',
+            filename: 'fn0.xml',
+            isUserProperty: false,
+            hasInitialValue: false,
+            isOverridable: true,
+            overrides: null,
+            isRequired: false,
+            isVisible: false,
+            isFinal: true,
+            defaultIsFinal: false,
+            supportsFinal: true,
+            showLabel: true,
+            category: 'c0'
+          },
+          title: 'default case'
+        },
+        {
+          stored: {
+            name: 'n1',
+            value: 'multi\nline',
+            filename: 'fn1.xml',
+            isUserProperty: true,
+            hasInitialValue: true,
+            showLabel: false
+          },
+          expected: {
+            displayType: 'multiLine',
+            isUserProperty: true,
+            hasInitialValue: true,
+            showLabel: false
+          },
+          title: 'multiline user property with initial value, label not to be shown'
+        },
+        {
+          stored: {
+            name: 'n2',
+            filename: 'fn2.xml'
+          },
+          expected: {
+            isUserProperty: false,
+            showLabel: true
+          },
+          title: 'isUserProperty and showLabel not set'
+        },
+        {
+          stored: {
+            name: 'ignore_groupsusers_create',
+            category: 'Users and Groups',
+            filename: 'fn3.xml'
+          },
+          expected: {
+            displayName: 'dn0',
+            displayType: 'checkbox',
+            index: 0
+          }
+        },
+        {
+          stored: {
+            name: 'smokeuser',
+            category: 'Users and Groups',
+            filename: 'fn4.xml'
+          },
+          expected: {
+            displayName: 'dn1',
+            index: 1
+          }
+        },
+        {
+          stored: {
+            name: 'user_group',
+            category: 'Users and Groups',
+            filename: 'fn5.xml'
+          },
+          expected: {
+            displayName: 'dn1',
+            index: 2
+          }
+        },
+        {
+          stored: {
+            name: 'mapred_user',
+            category: 'Users and Groups',
+            filename: 'fn6.xml'
+          },
+          expected: {
+            displayName: 'dn1',
+            index: 3
+          }
+        },
+        {
+          stored: {
+            name: 'zk_user',
+            category: 'Users and Groups',
+            filename: 'fn7.xml'
+          },
+          expected: {
+            displayName: 'dn1',
+            index: 4
+          }
+        }
+      ],
+      advancedConfigs = [
+        {
+          name: 'ignore_groupsusers_create',
+          displayName: 'dn0',
+          displayType: 'checkbox',
+          index: 0
+        },
+        {
+          name: 'smokeuser',
+          displayName: 'dn1',
+          index: 1
+        },
+        {
+          name: 'user_group',
+          displayName: 'dn1',
+          index: 2
+        },
+        {
+          name: 'mapred_user',
+          displayName: 'dn1',
+          index: 3
+        },
+        {
+          name: 'zk_user',
+          displayName: 'dn1',
+          index: 4
+        }
+      ];
+
+    cases.forEach(function (item) {
+      it(item.title || item.stored.name, function () {
+        var configData = App.config.addUserProperty(item.stored, true, advancedConfigs);
+        Em.keys(item.expected).forEach(function (key) {
+          expect(configData[key]).to.equal(item.expected[key]);
+        });
+      });
+    });
+
+  });
+
+  describe('#getOriginalConfigAttribute', function () {
+
+    var stored = {
+        name: 'p',
+        displayName: 'dn'
+      },
+      cases = [
+        {
+          advancedConfigs: [
+            {
+              name: 'p',
+              displayName: 'dn0'
+            }
+          ],
+          expected: 'dn0',
+          title: 'should take attribute from advancedConfigs'
+        },
+        {
+          advancedConfigs: [],
+          expected: 'dn',
+          title: 'property is absent in advancedConfigs'
+        }
+      ];
+
+    cases.forEach(function (item) {
+      it(item.title, function () {
+        expect(App.config.getOriginalConfigAttribute(stored, 'displayName', item.advancedConfigs)).to.equal(item.expected);
+      });
+    });
+
+  });
+
+  describe('#setConfigValue', function () {
+
+    Em.A([
+        {
+          mappedConfigs: [
+            {
+              name: 'falcon_user',
+              value: 'fu'
+            }
+          ],
+          allConfigs: [],
+          m: 'in mapped, value used',
+          e: {
+            _name: 'hadoop.proxyuser.fu.groups',
+            value: 'fu',
+            noMatchSoSkipThisConfig: false
+          }
+        },
+        {
+          mappedConfigs: [],
+          allConfigs: [
+            {
+              name: 'falcon_user',
+              value: 'fu'
+            }
+          ],
+          m: 'in all, value used',
+          e: {
+            _name: 'hadoop.proxyuser.fu.groups',
+            value: 'fu',
+            noMatchSoSkipThisConfig: false
+          }
+        },
+        {
+          mappedConfigs: [],
+          allConfigs: [
+            {
+              name: 'falcon_user',
+              value: '',
+              defaultValue: 'fu'
+            }
+          ],
+          m: 'in all, default value used',
+          e: {
+            _name: 'hadoop.proxyuser.fu.groups',
+            value: 'fu',
+            noMatchSoSkipThisConfig: false
+          }
+        },
+        {
+          mappedConfigs: [],
+          allConfigs: [],
+          m: 'not found',
+          e: {
+            _name: 'hadoop.proxyuser.<foreignKey[0]>.groups',
+            value: '<foreignKey[0]>',
+            noMatchSoSkipThisConfig: true
+          }
+        }
+      ]).forEach(function (test) {
+        it(test.m, function () {
+          var config = {
+            name: "hadoop.proxyuser.<foreignKey[0]>.groups",
+            templateName: ["proxyuser_group"],
+            foreignKey: ["falcon_user"],
+            noMatchSoSkipThisConfig: false,
+            value: "<foreignKey[0]>"
+          };
+          App.config.setConfigValue(test.mappedConfigs, test.allConfigs, config);
+          expect(config.value).to.equal(test.e.value);
+          if(test.e.noMatchSoSkipThisConfig) {
+            expect(Em.isNone(config._name)).to.be.true;
+          }
+          else {
+            expect(config._name).to.equal(test.e._name);
+          }
+          expect(config.noMatchSoSkipThisConfig).to.equal(test.e.noMatchSoSkipThisConfig);
+        });
+
+        Em.A([
+          {
+            mappedConfigs: [],
+            allConfigs: [
+              {
+                name: 'falcon_user',
+                value: 'fu'
+              },
+              {
+                name: 'proxyuser_group',
+                value: 'pg'
+              }
+            ],
+            m: 'in all, template in all',
+            e: {
+              _name: 'hadoop.proxyuser.fu.groups',
+              value: 'fupg'
+            }
+          },
+            {
+              mappedConfigs: [
+                {
+                  name: 'falcon_user',
+                  value: 'fu'
+                },
+                {
+                  name: 'proxyuser_group',
+                  value: 'pg'
+                }
+              ],
+              allConfigs: [],
+              m: 'in mapped, template in mapped',
+              e: {
+                _name: 'hadoop.proxyuser.fu.groups',
+                value: 'fupg'
+              }
+            },
+            {
+              mappedConfigs: [],
+              allConfigs: [],
+              m: 'not found (template not found too)',
+              e: {
+                _name: 'hadoop.proxyuser.<foreignKey[0]>.groups',
+                value: null
+              }
+            }
+        ]).forEach(function (test) {
+            it(test.m, function () {
+              var config = {
+                name: "hadoop.proxyuser.<foreignKey[0]>.groups",
+                templateName: ["proxyuser_group"],
+                foreignKey: ["falcon_user"],
+                noMatchSoSkipThisConfig: false,
+                value: "<foreignKey[0]><templateName[0]>"
+              };
+              App.config.setConfigValue(test.mappedConfigs, test.allConfigs, config);
+            });
+          });
+
+    });
+
+  });
+
+  describe('#shouldSupportFinal', function () {
+
+    var cases = [
+      {
+        shouldSupportFinal: false,
+        title: 'no service name specified'
+      },
+      {
+        serviceName: 's0',
+        shouldSupportFinal: false,
+        title: 'no filename specified'
+      },
+      {
+        serviceName: 'MISC',
+        shouldSupportFinal: false,
+        title: 'MISC'
+      },
+      {
+        serviceName: 's0',
+        filename: 's0-site',
+        shouldSupportFinal: true,
+        title: 'final attribute supported'
+      },
+      {
+        serviceName: 's0',
+        filename: 's0-env',
+        shouldSupportFinal: false,
+        title: 'final attribute not supported'
+      }
+    ];
+
+    beforeEach(function () {
+      sinon.stub(App.StackService, 'find').returns([
+        {
+          serviceName: 's0'
+        }
+      ]);
+      sinon.stub(App.config, 'getConfigTypesInfoFromService').returns({
+        supportsFinal: ['s0-site']
+      });
+    });
+
+    afterEach(function () {
+      App.StackService.find.restore();
+      App.config.getConfigTypesInfoFromService.restore();
+    });
+
+    cases.forEach(function (item) {
+      it(item.title, function () {
+        expect(App.config.shouldSupportFinal(item.serviceName, item.filename)).to.equal(item.shouldSupportFinal);
       });
     });
 

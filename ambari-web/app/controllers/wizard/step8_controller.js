@@ -18,8 +18,9 @@
 
 var App = require('app');
 var stringUtils = require('utils/string_utils');
+var dataManipulationUtils = require('utils/data_manipulation');
 
-App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wizardDeployProgressControllerMixin, {
+App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wizardDeployProgressControllerMixin, App.ConfigOverridable, {
 
   name: 'wizardStep8Controller',
 
@@ -286,9 +287,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
       }
 
       hive_properties.push('hive_master_hosts');
-      hive_properties.forEach(function (property) {
-        configs = configs.without(configs.findProperty('name', property));
-      });
+      configs = dataManipulationUtils.rejectPropertyValues(configs, 'name', hive_properties);
     }
     return configs;
   },
@@ -336,9 +335,8 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
             'oozie_existing_postgresql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_2_database']);
           break;
       }
-      oozie_properties.forEach(function (property) {
-        configs = configs.without(configs.findProperty('name', property));
-      });
+
+      configs = dataManipulationUtils.rejectPropertyValues(configs, 'name', oozie_properties);
     }
     return configs;
   },
@@ -862,7 +860,8 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     var configs = this.get('configs').slice(0);
     var configsMap = [];
     fileNamesToUpdate.forEach(function (fileName) {
-      if (!fileName || /^(core)/.test(fileName)) return;
+      // TODO - Temporarily commented out before refactoring should clean it more properly
+      // if (!fileName || /^(core)/.test(fileName)) return;
       var tagName = 'version' + (new Date).getTime();
       var configsToSave = configs.filterProperty('filename', fileName);
       configsToSave.forEach(function (item) {
@@ -1255,10 +1254,10 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     }, this);
   },
 
-  getClientsToMasterMap: function () {
+  getClientsMap: function (flag) {
     var clientNames = App.StackServiceComponent.find().filterProperty('isClient').mapProperty('componentName'),
       clientsMap = {},
-      dependedComponents = App.StackServiceComponent.find().filterProperty('isMaster');
+      dependedComponents = flag ? App.StackServiceComponent.find().filterProperty(flag) : App.StackServiceComponent.find();
     clientNames.forEach(function (clientName) {
       clientsMap[clientName] = Em.A([]);
       dependedComponents.forEach(function (component) {
@@ -1290,7 +1289,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
      *  }
      * </code>
      */
-    var clientsToMasterMap = this.getClientsToMasterMap();
+    var clientsToMasterMap = this.getClientsMap('isMaster');
 
     slaveHosts.forEach(function (_slave) {
       if (_slave.componentName !== 'CLIENT') {
@@ -1324,7 +1323,13 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
    */
   createAdditionalClientComponents: function () {
     var masterHosts = this.get('content.masterComponentHosts');
-    var clientsToMasterMap = this.getClientsToMasterMap();
+    var clientHosts = [];
+    if (this.get('content.slaveComponentHosts').someProperty('componentName', 'CLIENT')) {
+      clientHosts = this.get('content.slaveComponentHosts').findProperty('componentName', 'CLIENT').hosts;
+    }
+    var clients = this.get('content.clients').filterProperty('isInstalled', false);
+    var clientsToMasterMap = this.getClientsMap('isMaster');
+    var clientsToClientMap = this.getClientsMap('isClient');
     var installedClients = [];
 
     // Get all the installed Client components
@@ -1337,13 +1342,25 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
 
     // Check if there is a dependency for being co-hosted between existing client and selected new master
     installedClients.forEach(function (_clientName) {
-      if (clientsToMasterMap[_clientName]) {
+      if (clientsToMasterMap[_clientName] || clientsToClientMap[_clientName]) {
         var hostNames = [];
-        clientsToMasterMap[_clientName].forEach(function (componentName) {
-          masterHosts.filterProperty('component', componentName).filterProperty('isInstalled', false).forEach(function (_masterHost) {
-            hostNames.pushObject(_masterHost.hostName);
+        if (clientsToMasterMap[_clientName]) {
+          clientsToMasterMap[_clientName].forEach(function (componentName) {
+            masterHosts.filterProperty('component', componentName).filterProperty('isInstalled', false).forEach(function (_masterHost) {
+              hostNames.pushObject(_masterHost.hostName);
+            }, this);
           }, this);
-        }, this);
+        }
+        if (clientsToClientMap[_clientName]) {
+          clientsToClientMap[_clientName].forEach(function (componentName) {
+            clientHosts.forEach(function (_clientHost) {
+              var host = this.get('content.hosts')[_clientHost.hostName];
+              if (host.isInstalled && !host.hostComponents.someProperty('HostRoles.component_name', componentName)) {
+                hostNames.pushObject(_clientHost.hostName);
+              }
+            }, this);
+          }, this);
+        }
         hostNames = hostNames.uniq();
         if (hostNames.length > 0) {
           this.get('content.additionalClients').pushObject({hostNames: hostNames, componentName: _clientName});
@@ -1603,7 +1620,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
       configGroup.properties.forEach(function (property) {
         groupConfigs.push(Em.Object.create(property));
       });
-      groupData.desired_configs = serviceConfigController.buildGroupDesiredConfigs.call(serviceConfigController, groupConfigs, timeTag);
+      groupData.desired_configs = this.buildGroupDesiredConfigs(groupConfigs, timeTag);
       // check for group from installed service
       if (configGroup.isForInstalledService === true) {
         // if group is a new one, create it
@@ -1626,6 +1643,37 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     if (updateData.length > 0) {
       this.applyInstalledServicesConfigurationGroup(updateData);
     }
+  },
+
+  /**
+   * construct desired_configs for config groups from overriden properties
+   * @param configs
+   * @param timeTag
+   * @return {Array}
+   * @private
+   * @method buildGroupDesiredConfigs
+   */
+  buildGroupDesiredConfigs: function (configs, timeTag) {
+    var sites = [];
+    var time = timeTag || (new Date).getTime();
+    var siteFileNames = configs.mapProperty('filename').uniq();
+    sites = siteFileNames.map(function (filename) {
+      return {
+        type: filename.replace('.xml', ''),
+        tag: 'version' + time,
+        properties: []
+      };
+    });
+
+    configs.forEach(function (config) {
+      var type = config.get('filename').replace('.xml', '');
+      var site = sites.findProperty('type', type);
+      site.properties.push(config);
+    });
+
+    return sites.map(function (site) {
+      return this.createSiteObj(site.type, site.tag, site.properties);
+    }, this);
   },
 
   /**
@@ -1661,8 +1709,9 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
    * @method removeInstalledServicesConfigurationGroups
    */
   removeInstalledServicesConfigurationGroups: function (groupsToDelete) {
+    var self = this;
     groupsToDelete.forEach(function (item) {
-      App.config.deleteConfigGroup(Em.Object.create(item));
+      self.deleteConfigurationGroup(Em.Object.create(item));
     });
   },
 
@@ -1766,7 +1815,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     var configs = this.get('configs').filterProperty('filename', site + '.xml');
     var attributes = App.router.get('mainServiceInfoConfigsController').getConfigAttributes(configs);
     configs.forEach(function (_configProperty) {
-        var heapsizeExceptions = ['hadoop_heapsize', 'yarn_heapsize', 'nodemanager_heapsize', 'resourcemanager_heapsize', 'apptimelineserver_heapsize', 'jobhistory_heapsize'];
+        var heapsizeExceptions = ['hadoop_heapsize', 'yarn_heapsize', 'nodemanager_heapsize', 'resourcemanager_heapsize', 'apptimelineserver_heapsize', 'jobhistory_heapsize', 'nfsgateway_heapsize', 'accumulo_master_heapsize', 'accumulo_tserver_heapsize', 'accumulo_monitor_heapsize', 'accumulo_gc_heapsize', 'accumulo_other_heapsize'];
         // do not pass any globals whose name ends with _host or _hosts
         if (_configProperty.isRequiredByAgent !== false) {
           // append "m" to JVM memory options except for heapsizeExtensions

@@ -20,7 +20,7 @@
 var App = require('app');
 require('models/host');
 
-App.WizardController = Em.Controller.extend(App.LocalStorage, {
+App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingMixin, {
 
   isStepDisabled: null,
 
@@ -307,6 +307,30 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, {
   },
 
   /**
+   * Convert any object or array to pure JS instance without inherit properties
+   * It is used to convert Ember.Object to pure JS Object and Ember.Array to pure JS Array
+   * @param originalInstance
+   * @returns {*}
+   */
+  toJSInstance: function (originalInstance) {
+    var convertedInstance = originalInstance;
+    if (Em.isArray(originalInstance)) {
+      convertedInstance = [];
+      originalInstance.forEach(function (element) {
+        convertedInstance.push(this.toJSInstance(element));
+      }, this)
+    } else if (originalInstance && typeof originalInstance === 'object') {
+      convertedInstance = {};
+      for (var property in originalInstance) {
+        if (originalInstance.hasOwnProperty(property)) {
+          convertedInstance[property] = this.toJSInstance(originalInstance[property]);
+        }
+      }
+    }
+    return convertedInstance
+  },
+
+  /**
    * save status of the cluster. This is called from step8 and step9 to persist install and start requestId
    * @param clusterStatus object with status, isCompleted, requestId, isInstallError and isStartError field.
    */
@@ -344,6 +368,11 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, {
         urlParams: "ServiceInfo/state=INIT"
       }
     }
+
+    var clusterStatus = {
+      status: 'PENDING'
+    };
+    this.saveClusterStatus(clusterStatus);
 
     App.ajax.send({
       name: isRetry ? 'common.host_components.update' : 'common.services.update',
@@ -480,9 +509,9 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, {
   },
 
   save: function (name) {
-    var value = this.toObject(this.get('content.' + name));
-    this.setDBProperty(name, value);
-    console.log(this.get('name') + ": saved " + name, value);
+    var convertedValue = this.toJSInstance(this.get('content.' + name));
+    this.setDBProperty(name, convertedValue);
+    console.log(this.get('name') + ": saved " + name, convertedValue);
   },
 
   clear: function () {
@@ -529,8 +558,8 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, {
 
   installWindowsOptionsTemplate: {
     hostNames: "", //string
-    manualInstall: true, //true, false
-    useSsh: false, //bool
+    manualInstall: false, //true, false
+    useSsh: true, //bool
     javaHome: App.defaultJavaHome, //string
     localRepo: false, //true, false
     sshKey: "", //string
@@ -1132,5 +1161,126 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, {
     if (hosts) {
       this.set('content.hosts', hosts);
     }
+  },
+
+  loadHosts: function () {
+    var dfd;
+    var hostsInDb = this.getDBProperty('hosts');
+    if (hostsInDb) {
+      this.set('content.hosts', hostsInDb);
+      dfd = $.Deferred();
+      dfd.resolve();
+    } else {
+      dfd = App.ajax.send({
+        name: 'hosts.confirmed',
+        sender: this,
+        data: {},
+        success: 'loadHostsSuccessCallback',
+        error: 'loadHostsErrorCallback'
+      });
+    }
+    return dfd.promise();
+  },
+
+  loadHostsSuccessCallback: function (response) {
+    var installedHosts = {};
+
+    response.items.forEach(function (item, indx) {
+      installedHosts[item.Hosts.host_name] = {
+        name: item.Hosts.host_name,
+        cpu: item.Hosts.cpu_count,
+        memory: item.Hosts.total_mem,
+        disk_info: item.Hosts.disk_info,
+        osType: item.Hosts.os_type,
+        osArch: item.Hosts.os_arch,
+        ip: item.Hosts.ip,
+        bootStatus: "REGISTERED",
+        isInstalled: true,
+        hostComponents: item.host_components,
+        id: indx++
+      };
+    });
+    this.setDBProperty('hosts', installedHosts);
+    this.set('content.hosts', installedHosts);
+  },
+
+  loadHostsErrorCallback: function (jqXHR, ajaxOptions, error, opt) {
+    App.ajax.defaultErrorHandler(jqXHR, opt.url, opt.method, jqXHR.status);
+    console.log('Loading hosts failed');
+  },
+
+  /**
+   * Determine if <code>Assign Slaves and Clients</code> step should be skipped
+   * @method setSkipSlavesStep
+   * @param services
+   * @param step
+   */
+  setSkipSlavesStep: function (services, step) {
+    var hasServicesWithSlave = services.someProperty('hasSlave');
+    var hasServicesWithClient = services.someProperty('hasClient');
+    var hasServicesWithCustomAssignedNonMasters = services.someProperty('hasNonMastersWithCustomAssignment');
+    this.set('content.skipSlavesStep', !hasServicesWithSlave && !hasServicesWithClient || !hasServicesWithCustomAssignedNonMasters);
+    if (this.get('content.skipSlavesStep')) {
+      this.get('isStepDisabled').findProperty('step', step).set('value', this.get('content.skipSlavesStep'));
+    }
+  },
+
+  /**
+   * Load config themes for enhanced config layout.
+   *
+   * @method loadConfigThemes
+   * @return {$.Deferred}
+   */
+   loadConfigThemes: function() {
+    var self = this;
+    var dfd = $.Deferred();
+    if (App.get('isClusterSupportsEnhancedConfigs') && !this.get('stackConfigsLoaded')) {
+      var serviceNames = App.StackService.find().filter(function(s) {
+        return s.get('isSelected') || s.get('isInstalled');
+      }).mapProperty('serviceName');
+      // Load stack configs before loading themes
+      App.config.loadConfigsFromStack(serviceNames).done(function() {
+        self.loadConfigThemeForServices(serviceNames).always(function() {
+          self.set('stackConfigsLoaded', true);
+          App.themesMapper.generateAdvancedTabs(serviceNames);
+          dfd.resolve();
+        });
+      });
+    }
+    else {
+      dfd.resolve();
+      this.set('stackConfigsLoaded', true);
+    }
+    return dfd.promise();
+  },
+
+  saveTasksStatuses: function (tasksStatuses) {
+    this.set('content.tasksStatuses', tasksStatuses);
+    this.setDBProperty('tasksStatuses', tasksStatuses);
+  },
+
+  loadTasksStatuses: function() {
+    var tasksStatuses = this.getDBProperty('tasksStatuses');
+    this.set('content.tasksStatuses', tasksStatuses);
+  },
+
+  saveTasksRequestIds: function (tasksRequestIds) {
+    this.set('content.tasksRequestIds', tasksRequestIds);
+    this.setDBProperty('tasksRequestIds', tasksRequestIds);
+  },
+
+  loadTasksRequestIds: function() {
+    var tasksRequestIds = this.getDBProperty('tasksRequestIds');
+    this.set('content.tasksRequestIds', tasksRequestIds);
+  },
+
+  saveRequestIds: function (requestIds) {
+    this.set('content.requestIds', requestIds);
+    this.setDBProperty('requestIds', requestIds);
+  },
+
+  loadRequestIds: function() {
+    var requestIds = this.getDBProperty('requestIds');
+    this.set('content.requestIds', requestIds);
   }
 });

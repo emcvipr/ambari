@@ -33,8 +33,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 
 /**
@@ -50,6 +53,12 @@ public class UpdateKerberosConfigsServerAction extends AbstractServerAction {
 
   @Inject
   private ConfigHelper configHelper;
+
+  /**
+   * The KerberosConfigDataFileReaderFactory to use to obtain KerberosConfigDataFileReader instances
+   */
+  @Inject
+  private KerberosConfigDataFileReaderFactory kerberosConfigDataFileReaderFactory;
 
   /**
    * Executes this ServerAction
@@ -76,7 +85,8 @@ public class UpdateKerberosConfigsServerAction extends AbstractServerAction {
 
     String authenticatedUserName = getCommandParameterValue(getCommandParameters(), KerberosServerAction.AUTHENTICATED_USER_NAME);
     String dataDirectoryPath = getCommandParameterValue(getCommandParameters(), KerberosServerAction.DATA_DIRECTORY);
-    HashMap<String, Map<String, String>> configurations = new HashMap<String, Map<String, String>>();
+    HashMap<String, Map<String, String>> propertiesToSet = new HashMap<String, Map<String, String>>();
+    HashMap<String, Collection<String>> propertiesToRemove = new HashMap<String, Collection<String>>();
 
     // If the data directory path is set, attempt to process further, else assume there is no work to do
     if (dataDirectoryPath != null) {
@@ -84,57 +94,40 @@ public class UpdateKerberosConfigsServerAction extends AbstractServerAction {
 
       // If the data directory exists, attempt to process further, else assume there is no work to do
       if (dataDirectory.exists()) {
-        KerberosActionDataFileReader indexReader = null;
         KerberosConfigDataFileReader configReader = null;
+        Set<String> configTypes = new HashSet<String>();
 
         try {
-          // If the action data file exists, iterate over the records to find the identity-specific
-          // configuration settings to update
-          File indexFile = new File(dataDirectory, KerberosActionDataFile.DATA_FILE_NAME);
-          if (indexFile.exists()) {
-            indexReader = new KerberosActionDataFileReader(indexFile);
-
-            for (Map<String, String> record : indexReader) {
-              String principal = record.get(KerberosActionDataFile.PRINCIPAL);
-              String principalConfig = record.get(KerberosActionDataFile.PRINCIPAL_CONFIGURATION);
-              String[] principalTokens = principalConfig.split("/");
-              if (principalTokens.length == 2) {
-                String principalConfigType = principalTokens[0];
-                String principalConfigProp = principalTokens[1];
-                addConfigTypePropVal(configurations, principalConfigType, principalConfigProp, principal);
-              }
-
-              String keytabPath = record.get(KerberosActionDataFile.KEYTAB_FILE_PATH);
-              String keytabConfig = record.get(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION);
-              String[] keytabTokens = keytabConfig.split("/");
-              if (keytabTokens.length == 2) {
-                String keytabConfigType = keytabTokens[0];
-                String keytabConfigProp = keytabTokens[1];
-                addConfigTypePropVal(configurations, keytabConfigType, keytabConfigProp, keytabPath);
-              }
-            }
-          }
-
           // If the config data file exists, iterate over the records to find the (explicit)
           // configuration settings to update
-          File configFile = new File(dataDirectory, KerberosConfigDataFile.DATA_FILE_NAME);
+          File configFile = new File(dataDirectory, KerberosConfigDataFileReader.DATA_FILE_NAME);
           if (configFile.exists()) {
-            configReader = new KerberosConfigDataFileReader(configFile);
+            configReader = kerberosConfigDataFileReaderFactory.createKerberosConfigDataFileReader(configFile);
             for (Map<String, String> record : configReader) {
-              String configType = record.get(KerberosConfigDataFile.CONFIGURATION_TYPE);
-              String configKey = record.get(KerberosConfigDataFile.KEY);
-              String configVal = record.get(KerberosConfigDataFile.VALUE);
-              addConfigTypePropVal(configurations, configType, configKey, configVal);
+              String configType = record.get(KerberosConfigDataFileReader.CONFIGURATION_TYPE);
+              String configKey = record.get(KerberosConfigDataFileReader.KEY);
+              String configOp = record.get(KerberosConfigDataFileReader.OPERATION);
+
+              configTypes.add(configType);
+
+              if (KerberosConfigDataFileReader.OPERATION_TYPE_REMOVE.equals(configOp)) {
+                removeConfigTypeProp(propertiesToRemove, configType, configKey);
+              } else {
+                String configVal = record.get(KerberosConfigDataFileReader.VALUE);
+                addConfigTypePropVal(propertiesToSet, configType, configKey, configVal);
+              }
             }
           }
 
-          if (!configurations.isEmpty()) {
+          if (!configTypes.isEmpty()) {
             String configNote = cluster.getSecurityType() == SecurityType.KERBEROS
                 ? "Enabling Kerberos"
                 : "Disabling Kerberos";
 
-            for (Map.Entry<String, Map<String, String>> entry : configurations.entrySet()) {
-                configHelper.updateConfigType(cluster, controller, entry.getKey(), entry.getValue(),
+            for (String configType : configTypes) {
+              configHelper.updateConfigType(cluster, controller, configType,
+                  propertiesToSet.get(configType),
+                  propertiesToRemove.get(configType),
                   authenticatedUserName, configNote);
             }
           }
@@ -145,13 +138,6 @@ public class UpdateKerberosConfigsServerAction extends AbstractServerAction {
           commandReport = createCommandReport(1, HostRoleStatus.FAILED, "{}", actionLog.getStdOut(),
               actionLog.getStdErr());
         } finally {
-          if (indexReader != null && !indexReader.isClosed()) {
-            try {
-              indexReader.close();
-            } catch (Throwable t) {
-              // ignored
-            }
-          }
           if (configReader != null && !configReader.isClosed()) {
             try {
               configReader.close();
@@ -185,18 +171,35 @@ public class UpdateKerberosConfigsServerAction extends AbstractServerAction {
   /**
    * Adds a property to properties of a given service config type
    *
-   * @param configurations
-   * @param configtype     service config type
+   * @param configurations a map of configurations
+   * @param configType     service config type
    * @param prop           property to be added
-   * @param val            value for the proeprty
+   * @param val            value for the property
    */
-  private void addConfigTypePropVal(HashMap<String, Map<String, String>> configurations, String configtype, String prop, String val) {
-    Map<String, String> configtypePropsVal = configurations.get(configtype);
-    if (configtypePropsVal == null) {
-      configtypePropsVal = new HashMap<String, String>();
-      configurations.put(configtype, configtypePropsVal);
+  private void addConfigTypePropVal(HashMap<String, Map<String, String>> configurations, String configType, String prop, String val) {
+    Map<String, String> configTypePropsVal = configurations.get(configType);
+    if (configTypePropsVal == null) {
+      configTypePropsVal = new HashMap<String, String>();
+      configurations.put(configType, configTypePropsVal);
     }
-    configtypePropsVal.put(prop, val);
+    configTypePropsVal.put(prop, val);
+    actionLog.writeStdOut(String.format("Setting property %s/%s: %s", configType, prop, (val == null) ? "<null>" : val));
   }
 
+  /**
+   * Removes a property from the set of properties of a given service config type
+   *
+   * @param configurations a map of configurations
+   * @param configType     service config type
+   * @param prop           property to be removed
+   */
+  private void removeConfigTypeProp(HashMap<String, Collection<String>> configurations, String configType, String prop) {
+    Collection<String> configTypeProps = configurations.get(configType);
+    if (configTypeProps == null) {
+      configTypeProps = new HashSet<String>();
+      configurations.put(configType, configTypeProps);
+    }
+    configTypeProps.add(prop);
+    actionLog.writeStdOut(String.format("Removing property %s/%s", configType, prop));
+  }
 }

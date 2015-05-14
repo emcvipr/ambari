@@ -27,7 +27,7 @@ import java.io.IOException;
  * <p/>
  * This class encapsulates a {@link org.apache.commons.csv.CSVParser} to read a CSV-formatted file.
  */
-public class KerberosConfigDataFileReader extends AbstractKerberosDataFileReader {
+public class KerberosConfigDataFileReader extends AbstractKerberosDataFileReader implements KerberosConfigDataFile{
 
   /**
    * Creates a new KerberosConfigDataFileReader
@@ -36,9 +36,9 @@ public class KerberosConfigDataFileReader extends AbstractKerberosDataFileReader
    * closed before using.
    *
    * @param file a File declaring where to write the data
-   * @throws java.io.IOException
+   * @throws java.io.IOException if an error occurs while accessing the file
    */
-  public KerberosConfigDataFileReader(File file) throws IOException {
+  KerberosConfigDataFileReader(File file) throws IOException {
     super(file);
   }
 }

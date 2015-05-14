@@ -18,10 +18,13 @@
 
 package org.apache.ambari.server.controller.internal;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.google.inject.Inject;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.StackAccessException;
 import org.apache.ambari.server.StaticallyInject;
+import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
 import org.apache.ambari.server.controller.spi.NoSuchResourceException;
@@ -35,17 +38,25 @@ import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.apache.ambari.server.state.ServiceInfo;
 import org.apache.ambari.server.state.StackInfo;
+import org.apache.ambari.server.state.ThemeInfo;
 import org.apache.ambari.server.state.kerberos.KerberosDescriptor;
 import org.apache.ambari.server.state.kerberos.KerberosDescriptorFactory;
 import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptor;
 import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptorFactory;
+import org.apache.ambari.server.state.stack.MetricDefinition;
+import org.apache.ambari.server.state.stack.WidgetLayout;
+import org.apache.commons.lang.StringUtils;
 
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -80,6 +91,12 @@ public class StackArtifactResourceProvider extends AbstractControllerResourcePro
       PropertyHelper.getPropertyId("Artifacts", "service_name");
 
   /**
+   * stack service name
+   */
+  public static final String STACK_COMPONENT_NAME_PROPERTY_ID =
+    PropertyHelper.getPropertyId("Artifacts", "component_name");
+
+  /**
    * artifact name
    */
   public static final String ARTIFACT_NAME_PROPERTY_ID =
@@ -111,6 +128,15 @@ public class StackArtifactResourceProvider extends AbstractControllerResourcePro
    */
   public static final String KERBEROS_DESCRIPTOR_NAME = "kerberos_descriptor";
 
+  /**
+   * name of the metrics descriptor artifact.
+   */
+  public static final String METRICS_DESCRIPTOR_NAME = "metrics_descriptor";
+
+  /**
+   * name of the widgets descriptor artifact.
+   */
+  public static final String WIDGETS_DESCRIPTOR_NAME = "widgets_descriptor";
 
   /**
    * KerberosDescriptorFactory used to create KerberosDescriptor instances
@@ -123,6 +149,9 @@ public class StackArtifactResourceProvider extends AbstractControllerResourcePro
    */
   @Inject
   private static KerberosServiceDescriptorFactory kerberosServiceDescriptorFactory;
+
+  Type widgetLayoutType = new TypeToken<Map<String, List<WidgetLayout>>>(){}.getType();
+  Gson gson = new Gson();
 
   /**
    * set resource properties, pk and fk's
@@ -164,6 +193,8 @@ public class StackArtifactResourceProvider extends AbstractControllerResourcePro
     Set<Resource> resources = new HashSet<Resource>();
 
     resources.addAll(getKerberosDescriptors(request, predicate));
+    resources.addAll(getMetricsDescriptors(request, predicate));
+    resources.addAll(getWidgetsDescriptors(request, predicate));
     // add other artifacts types here
 
     if (resources.isEmpty()) {
@@ -210,7 +241,7 @@ public class StackArtifactResourceProvider extends AbstractControllerResourcePro
   }
 
   /**
-   * Get all stack and stack service descriptor resources.
+   * Get all stack and stack service kerberos descriptor resources.
    *
    * @param request    user request
    * @param predicate  request predicate
@@ -261,6 +292,177 @@ public class StackArtifactResourceProvider extends AbstractControllerResourcePro
       }
     }
     return resources;
+  }
+
+  /**
+   * Get all stack and stack service metrics descriptor resources.
+   *
+   * @param request    user request
+   * @param predicate  request predicate
+   *
+   * @return set of all stack related kerberos descriptor resources; will not return null
+   *
+   * @throws SystemException                if an unexpected exception occurs
+   * @throws UnsupportedPropertyException   if an unsupported property was requested
+   * @throws NoSuchParentResourceException  if a specified parent resource doesn't exist
+   * @throws NoSuchResourceException        if the requested resource doesn't exist
+   */
+  private Set<Resource> getMetricsDescriptors(Request request, Predicate predicate)
+      throws SystemException, UnsupportedPropertyException,
+           NoSuchParentResourceException, NoSuchResourceException {
+
+    Set<Resource> resources = new HashSet<Resource>();
+
+    for (Map<String, Object> properties : getPropertyMaps(predicate)) {
+      String artifactName = (String) properties.get(ARTIFACT_NAME_PROPERTY_ID);
+      if (artifactName == null || artifactName.equals(METRICS_DESCRIPTOR_NAME)) {
+        String stackName = (String) properties.get(STACK_NAME_PROPERTY_ID);
+        String stackVersion = (String) properties.get(STACK_VERSION_PROPERTY_ID);
+        String stackService = (String) properties.get(STACK_SERVICE_NAME_PROPERTY_ID);
+        String componentName = (String) properties.get(STACK_COMPONENT_NAME_PROPERTY_ID);
+
+        Map<String, Object> descriptor;
+        AmbariMetaInfo metaInfo = getManagementController().getAmbariMetaInfo();
+
+        try {
+          List<MetricDefinition> componentMetrics;
+          Map<String, Map<String, List<MetricDefinition>>> serviceMetrics;
+          if (stackService != null) {
+            if (componentName == null) {
+              // Service
+              serviceMetrics = metaInfo.getServiceMetrics(stackName, stackVersion, stackService);
+              descriptor = Collections.singletonMap(stackService, (Object) serviceMetrics);
+            } else {
+              // Component
+              componentMetrics = metaInfo.getMetrics(stackName, stackVersion, stackService, componentName, Resource.Type.Component.name());
+              descriptor = Collections.singletonMap(componentName, (Object) componentMetrics);
+            }
+          } else {
+            // Cluster
+            Map<String, Map<String, PropertyInfo>> clusterMetrics =
+              PropertyHelper.getMetricPropertyIds(Resource.Type.Cluster);
+            // Host
+            Map<String, Map<String, PropertyInfo>> hostMetrics =
+              PropertyHelper.getMetricPropertyIds(Resource.Type.Host);
+
+            descriptor = new HashMap<String, Object>();
+            descriptor.put(Resource.Type.Cluster.name(), clusterMetrics);
+            descriptor.put(Resource.Type.Host.name(), hostMetrics);
+          }
+
+
+        } catch (IOException e) {
+          LOG.error("Unable to process Metrics Descriptor. Properties: " + properties, e);
+          throw new SystemException("An internal exception occurred while attempting to build a Metrics Descriptor " +
+            "artifact. See ambari server logs for more information", e);
+        }
+
+        Resource resource = new ResourceImpl(Resource.Type.StackArtifact);
+        Set<String> requestedIds = getRequestPropertyIds(request, predicate);
+        setResourceProperty(resource, ARTIFACT_NAME_PROPERTY_ID, METRICS_DESCRIPTOR_NAME, requestedIds);
+        setResourceProperty(resource, ARTIFACT_DATA_PROPERTY_ID, descriptor, requestedIds);
+        setResourceProperty(resource, STACK_NAME_PROPERTY_ID, stackName, requestedIds);
+        setResourceProperty(resource, STACK_VERSION_PROPERTY_ID, stackVersion, requestedIds);
+        if (stackService != null) {
+          setResourceProperty(resource, STACK_SERVICE_NAME_PROPERTY_ID, stackService, requestedIds);
+        }
+        resources.add(resource);
+      }
+    }
+    return resources;
+  }
+
+  private Set<Resource> getWidgetsDescriptors(Request request, Predicate predicate)
+      throws SystemException, UnsupportedPropertyException,
+             NoSuchParentResourceException, NoSuchResourceException {
+
+    Set<Resource> resources = new HashSet<Resource>();
+
+    for (Map<String, Object> properties : getPropertyMaps(predicate)) {
+      String artifactName = (String) properties.get(ARTIFACT_NAME_PROPERTY_ID);
+      if (artifactName == null || artifactName.equals(WIDGETS_DESCRIPTOR_NAME)) {
+        String stackName = (String) properties.get(STACK_NAME_PROPERTY_ID);
+        String stackVersion = (String) properties.get(STACK_VERSION_PROPERTY_ID);
+        String stackService = (String) properties.get(STACK_SERVICE_NAME_PROPERTY_ID);
+
+        Map<String, Object> descriptor;
+        try {
+          descriptor = getWidgetsDescriptor(stackName, stackVersion, stackService);
+        } catch (IOException e) {
+          LOG.error("Unable to process Widgets Descriptor. Properties: " + properties, e);
+          throw new SystemException("An internal exception occurred while attempting to build a Widgets Descriptor " +
+            "artifact. See ambari server logs for more information", e);
+        }
+
+        if (descriptor != null) {
+          Resource resource = new ResourceImpl(Resource.Type.StackArtifact);
+          Set<String> requestedIds = getRequestPropertyIds(request, predicate);
+          setResourceProperty(resource, ARTIFACT_NAME_PROPERTY_ID, WIDGETS_DESCRIPTOR_NAME, requestedIds);
+          setResourceProperty(resource, ARTIFACT_DATA_PROPERTY_ID, descriptor, requestedIds);
+          setResourceProperty(resource, STACK_NAME_PROPERTY_ID, stackName, requestedIds);
+          setResourceProperty(resource, STACK_VERSION_PROPERTY_ID, stackVersion, requestedIds);
+          if (stackService != null) {
+            setResourceProperty(resource, STACK_SERVICE_NAME_PROPERTY_ID, stackService, requestedIds);
+          }
+          resources.add(resource);
+        }
+      }
+    }
+    return resources;
+  }
+
+  private Map<String, Object> getWidgetsDescriptor(String stackName,
+      String stackVersion, String serviceName)
+        throws NoSuchParentResourceException, IOException {
+
+    AmbariManagementController controller = getManagementController();
+    StackInfo stackInfo;
+    try {
+      stackInfo = controller.getAmbariMetaInfo().getStack(stackName, stackVersion);
+    } catch (StackAccessException e) {
+      throw new NoSuchParentResourceException(String.format(
+        "Parent stack resource doesn't exist: stackName='%s', stackVersion='%s'", stackName, stackVersion));
+    }
+
+    if (StringUtils.isEmpty(serviceName)) {
+      return getWidgetsDescriptorForCluster(stackInfo);
+    } else {
+      return getWidgetsDescriptorForService(stackInfo, serviceName);
+    }
+  }
+
+  public Map<String, Object> getWidgetsDescriptorForService(StackInfo stackInfo, String serviceName)
+      throws NoSuchParentResourceException, IOException {
+
+    Map<String, Object> widgetDescriptor = null;
+
+    ServiceInfo serviceInfo = stackInfo.getService(serviceName);
+    if (serviceInfo == null) {
+      throw new NoSuchParentResourceException("Service not found. serviceName" + " = " + serviceName);
+    }
+
+    File widgetDescriptorFile = serviceInfo.getWidgetsDescriptorFile();
+    if (widgetDescriptorFile != null && widgetDescriptorFile.exists()) {
+      widgetDescriptor = gson.fromJson(new FileReader(widgetDescriptorFile), widgetLayoutType);
+    }
+
+    return widgetDescriptor;
+  }
+
+  public Map<String, Object> getWidgetsDescriptorForCluster(StackInfo stackInfo)
+      throws NoSuchParentResourceException, IOException {
+
+    Map<String, Object> widgetDescriptor = null;
+
+    String widgetDescriptorFileLocation = stackInfo.getWidgetsDescriptorFileLocation();
+    if (widgetDescriptorFileLocation != null) {
+      File widgetDescriptorFile = new File(widgetDescriptorFileLocation);
+      if (widgetDescriptorFile.exists()) {
+        widgetDescriptor = gson.fromJson(new FileReader(widgetDescriptorFile), widgetLayoutType);
+      }
+    }
+
+    return widgetDescriptor;
   }
 
   /**

@@ -38,14 +38,11 @@
             <package>
               <name>zip</name>
             </package>
-            <package>
-              <name>mysql-connector-java</name>
-            </package>
           </packages>
         </osSpecific>
         
         <osSpecific>
-          <osFamily>redhat5,redhat6,suse11</osFamily>
+          <osFamily>redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>extjs-2.2-1</name>

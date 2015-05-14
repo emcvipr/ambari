@@ -18,9 +18,11 @@ limitations under the License.
 """
 
 from ambari_commons.constants import AMBARI_SUDO_BINARY
+from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
 from resource_management import *
 from resource_management.core.system import System
+from ambari_commons.os_check import OSCheck
 
 config = Script.get_config()
 sudo = AMBARI_SUDO_BINARY
@@ -28,27 +30,33 @@ sudo = AMBARI_SUDO_BINARY
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
-#hadoop params
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
-  mapreduce_libs_path = "/usr/hdp/current/hadoop-mapreduce-client/*"
-  hadoop_libexec_dir = "/usr/hdp/current/hadoop-client/libexec"
-else:
-  mapreduce_libs_path = "/usr/lib/hadoop-mapreduce/*"
-  hadoop_libexec_dir = "/usr/lib/hadoop/libexec"
-
-hadoop_conf_dir = "/etc/hadoop/conf"
+# default hadoop params
+mapreduce_libs_path = "/usr/lib/hadoop-mapreduce/*"
+hadoop_libexec_dir = conf_select.get_hadoop_dir("libexec")
+hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
 hadoop_conf_empty_dir = "/etc/hadoop/conf.empty"
+
+# HDP 2.2+ params
+if Script.is_hdp_stack_greater_or_equal("2.2"):
+  mapreduce_libs_path = "/usr/hdp/current/hadoop-mapreduce-client/*"
+
+  # not supported in HDP 2.2+
+  hadoop_conf_empty_dir = None
+
 versioned_hdp_root = '/usr/hdp/current'
+
 #security params
 security_enabled = config['configurations']['cluster-env']['security_enabled']
+
 #java params
 java_home = config['hostLevelParams']['java_home']
+
 #hadoop params
 hdfs_log_dir_prefix = config['configurations']['hadoop-env']['hdfs_log_dir_prefix']
 hadoop_pid_dir_prefix = config['configurations']['hadoop-env']['hadoop_pid_dir_prefix']
 hadoop_root_logger = config['configurations']['hadoop-env']['hadoop_root_logger']
 
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.0') >= 0 and compare_versions(hdp_stack_version, '2.1') < 0 and System.get_instance().os_family != "suse":
+if Script.is_hdp_stack_greater_or_equal("2.0") and Script.is_hdp_stack_less_than("2.1") and not OSCheck.is_suse_family():
   # deprecated rhel jsvc_path
   jsvc_path = "/usr/libexec/bigtop-utils"
 else:

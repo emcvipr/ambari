@@ -22,6 +22,9 @@ package org.apache.ambari.server.api.resources;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.Resource.Type;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public class StackConfigurationResourceDefinition extends BaseResourceDefinition {
 
   public StackConfigurationResourceDefinition(Type resourceType) {
@@ -42,4 +45,11 @@ public class StackConfigurationResourceDefinition extends BaseResourceDefinition
     return "configuration";
   }
 
+  @Override
+  public Set<SubResourceDefinition> getSubResourceDefinitions() {
+    Set<SubResourceDefinition> subs = new HashSet<SubResourceDefinition>();
+    subs.add(new SubResourceDefinition(Resource.Type.StackConfigurationDependency));
+
+    return subs;
+  }
 }

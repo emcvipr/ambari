@@ -22,6 +22,9 @@
           }
         }
       ],
+      "auth_to_local_properties" : [
+        "falcon-startup.properties/*.falcon.http.authentication.kerberos.name.rules"
+      ],
       "components": [
         {
           "name": "FALCON_SERVER",
@@ -29,7 +32,7 @@
             {
               "name": "falcon_server",
               "principal": {
-                "value": "falcon/${host}@${realm}",
+                "value": "falcon/_HOST@${realm}",
                 "type" : "service",
                 "configuration": "falcon-startup.properties/*.falcon.service.authentication.kerberos.principal",
                 "local_username" : "${falcon-env/falcon_user}"
@@ -50,7 +53,7 @@
             {
               "name": "/spnego",
               "principal": {
-                "value": "HTTP/${host}@${realm}",
+                "value": "HTTP/_HOST@${realm}",
                 "configuration": "falcon-startup.properties/*.falcon.http.authentication.kerberos.principal"
               },
               "keytab": {

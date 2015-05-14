@@ -21,26 +21,73 @@ import com.google.gson.Gson;
 import com.google.inject.assistedinject.Assisted;
 import com.google.inject.assistedinject.AssistedInject;
 import com.google.inject.persist.Transactional;
-
-import org.apache.ambari.server.*;
+import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.configuration.Configuration;
-import org.apache.ambari.server.controller.*;
-import org.apache.ambari.server.controller.spi.*;
+import org.apache.ambari.server.controller.AmbariManagementController;
+import org.apache.ambari.server.controller.MaintenanceStateHelper;
+import org.apache.ambari.server.controller.ServiceComponentHostRequest;
+import org.apache.ambari.server.controller.ServiceComponentHostResponse;
+import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
+import org.apache.ambari.server.controller.spi.NoSuchResourceException;
+import org.apache.ambari.server.controller.spi.Predicate;
+import org.apache.ambari.server.controller.spi.Request;
+import org.apache.ambari.server.controller.spi.RequestStatus;
+import org.apache.ambari.server.controller.spi.Resource;
+import org.apache.ambari.server.controller.spi.ResourceAlreadyExistsException;
+import org.apache.ambari.server.controller.spi.SystemException;
+import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
-import org.apache.ambari.server.state.*;
+import org.apache.ambari.server.stack.StackManager;
+import org.apache.ambari.server.state.ClientConfigFileDefinition;
+import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.ComponentInfo;
+import org.apache.ambari.server.state.Config;
+import org.apache.ambari.server.state.ConfigHelper;
+import org.apache.ambari.server.state.DesiredConfig;
 import org.apache.ambari.server.state.PropertyInfo.PropertyType;
+import org.apache.ambari.server.state.ServiceInfo;
+import org.apache.ambari.server.state.ServiceOsSpecific;
+import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.utils.StageUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.*;
-import org.apache.ambari.server.stack.StackManager;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.DB_NAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.GROUP_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.JAVA_HOME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.JAVA_VERSION;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.JCE_NAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.JDK_LOCATION;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.JDK_NAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.MYSQL_JDBC_URL;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.ORACLE_JDBC_URL;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.PACKAGE_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_REPO_INFO;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.STACK_NAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.STACK_VERSION;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.USER_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOST_SYS_PREPPED;
 
 /**
  * Resource provider for client config resources.
@@ -223,7 +270,7 @@ public class ClientConfigResourceProvider extends AbstractControllerResourceProv
       Map<String, Set<String>> clusterHostInfo = null;
       ServiceInfo serviceInfo = null;
       String osFamily = null;
-      clusterHostInfo = StageUtils.getClusterHostInfo(managementController.getClusters().getHostsForCluster(cluster.getClusterName()), cluster);
+      clusterHostInfo = StageUtils.getClusterHostInfo(cluster);
       serviceInfo = managementController.getAmbariMetaInfo().getService(stackId.getStackName(),
               stackId.getStackVersion(), serviceName);
       clusterHostInfo = substituteHostIndexes(clusterHostInfo);
@@ -232,6 +279,7 @@ public class ClientConfigResourceProvider extends AbstractControllerResourceProv
       TreeMap<String, String> hostLevelParams = new TreeMap<String, String>();
       hostLevelParams.put(JDK_LOCATION, managementController.getJdkResourceUrl());
       hostLevelParams.put(JAVA_HOME, managementController.getJavaHome());
+      hostLevelParams.put(JAVA_VERSION, String.valueOf(configs.getJavaVersion()));
       hostLevelParams.put(JDK_NAME, managementController.getJDKName());
       hostLevelParams.put(JCE_NAME, managementController.getJCEName());
       hostLevelParams.put(STACK_NAME, stackId.getStackName());
@@ -239,6 +287,7 @@ public class ClientConfigResourceProvider extends AbstractControllerResourceProv
       hostLevelParams.put(DB_NAME, managementController.getServerDB());
       hostLevelParams.put(MYSQL_JDBC_URL, managementController.getMysqljdbcUrl());
       hostLevelParams.put(ORACLE_JDBC_URL, managementController.getOjdbcUrl());
+      hostLevelParams.put(HOST_SYS_PREPPED, configs.areHostsSysPrepped());
       hostLevelParams.putAll(managementController.getRcaParameters());
       hostLevelParams.putAll(managementController.getRcaParameters());
 
@@ -355,7 +404,7 @@ public class ClientConfigResourceProvider extends AbstractControllerResourceProv
 
   private static Map<String, Set<String>> substituteHostIndexes(Map<String, Set<String>> clusterHostInfo) throws SystemException {
     Set<String> keysToSkip = new HashSet<String>(Arrays.asList("all_hosts", "all_ping_ports",
-            "ambari_server_host"));
+            "ambari_server_host", "all_racks", "all_ipv4_ips"));
     String[] allHosts = {};
     if (clusterHostInfo.get("all_hosts") != null) {
       allHosts = clusterHostInfo.get("all_hosts").toArray(new String[clusterHostInfo.get("all_hosts").size()]);

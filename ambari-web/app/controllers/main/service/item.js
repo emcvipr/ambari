@@ -45,6 +45,8 @@ App.MainServiceItemController = Em.Controller.extend({
     }
   },
 
+  isServicesInfoLoaded: false,
+
   initHosts: function() {
     if (App.get('components.masters').length !== 0) {
       var self = this;
@@ -52,7 +54,7 @@ App.MainServiceItemController = Em.Controller.extend({
       var hostNames = App.Host.find().mapProperty('hostName');
       this.set('allHosts', hostNames);
 
-      ['HBASE_MASTER', 'HIVE_METASTORE', 'ZOOKEEPER_SERVER', 'FLUME_HANDLER', 'HIVE_SERVER'].forEach(function(componentName) {
+      ['HBASE_MASTER', 'HIVE_METASTORE', 'ZOOKEEPER_SERVER', 'FLUME_HANDLER', 'HIVE_SERVER', 'RANGER_KMS_SERVER', 'NIMBUS'].forEach(function(componentName) {
         self.loadHostsWithoutComponent(componentName);
       });
     }
@@ -164,12 +166,16 @@ App.MainServiceItemController = Em.Controller.extend({
     var self = this;
     var serviceDisplayName = this.get('content.displayName');
     var isMaintenanceOFF = this.get('content.passiveState') === 'OFF';
+    
+    var msg = isMaintenanceOFF && serviceHealth == 'INSTALLED'? Em.I18n.t('services.service.stop.warningMsg.turnOnMM').format(serviceDisplayName) : null;
+    msg = self.addAdditionalWarningMessage(serviceHealth, msg, serviceDisplayName);
+    
     var bodyMessage = Em.Object.create({
       putInMaintenance: (serviceHealth == 'INSTALLED' && isMaintenanceOFF) || (serviceHealth == 'STARTED' && !isMaintenanceOFF),
       turnOnMmMsg: serviceHealth == 'INSTALLED' ? Em.I18n.t('passiveState.turnOnFor').format(serviceDisplayName) : Em.I18n.t('passiveState.turnOffFor').format(serviceDisplayName),
       confirmMsg: serviceHealth == 'INSTALLED'? Em.I18n.t('services.service.stop.confirmMsg').format(serviceDisplayName) : Em.I18n.t('services.service.start.confirmMsg').format(serviceDisplayName),
       confirmButton: serviceHealth == 'INSTALLED'? Em.I18n.t('services.service.stop.confirmButton') : Em.I18n.t('services.service.start.confirmButton'),
-      additionalWarningMsg:  isMaintenanceOFF && serviceHealth == 'INSTALLED'? Em.I18n.t('services.service.stop.warningMsg.turnOnMM').format(serviceDisplayName) : null
+      additionalWarningMsg:  msg
     });
 
     return App.showConfirmationFeedBackPopup(function(query, runMmOperation) {
@@ -178,6 +184,50 @@ App.MainServiceItemController = Em.Controller.extend({
     }, bodyMessage);
   },
 
+  addAdditionalWarningMessage: function(serviceHealth, msg, serviceDisplayName){
+    var servicesAffectedDisplayNames = [];
+    var servicesAffected = [];
+    
+    if(serviceHealth == 'INSTALLED'){
+      //To stop a service, display dependencies message...
+      var currentService = this.get('content.serviceName');
+      console.debug("Service to be stopped:", currentService);
+
+      var stackServices = App.StackService.find();
+      stackServices.forEach(function(service){
+        if(service.get('isInstalled') || service.get('isSelected')){ //only care about services installed...
+          var stackServiceDisplayName = service.get("displayName");
+          console.debug("Checking service dependencies for " + stackServiceDisplayName);
+          var requiredServices = service.get('requiredServices'); //services required in order to have the current service be functional...
+          if (!!requiredServices && requiredServices.length) { //only care about services with a non-empty requiredServices list.
+            console.debug("Service dependencies for " + stackServiceDisplayName, requiredServices);
+
+            requiredServices.forEach(function(_requiredService){
+              if (currentService === _requiredService) { //the service to be stopped is a required service by some other services...
+                console.debug(currentService + " is a service dependency for " + stackServiceDisplayName);
+                if(servicesAffected.indexOf(service) == -1 ) {
+                  servicesAffected.push(service);
+                  servicesAffectedDisplayNames.push(stackServiceDisplayName);
+                }
+              }
+            },this);
+          }
+        }
+      },this);
+      
+      var names = servicesAffectedDisplayNames.join();
+      if(names){
+        //only display this line with a non-empty dependency list
+        var dependenciesMsg = Em.I18n.t('services.service.stop.warningMsg.dependent.services').format(serviceDisplayName,names);
+        if(msg)
+          msg = msg + " " + dependenciesMsg;
+        else
+          msg = dependenciesMsg;
+      }
+    }
+    
+    return msg;
+  },
 
   startStopWithMmode: function(serviceHealth, query, runMmOperation) {
     var self = this;
@@ -474,17 +524,25 @@ App.MainServiceItemController = Em.Controller.extend({
   },
 
   runSmokeTestPrimary: function(query) {
+    var clusterLevelRequired = ['KERBEROS'];
+    var requestData = {
+        'serviceName': this.get('content.serviceName'),
+        'displayName': this.get('content.displayName'),
+        'actionName': this.get('content.serviceName') === 'ZOOKEEPER' ? 'ZOOKEEPER_QUORUM_SERVICE_CHECK' : this.get('content.serviceName') + '_SERVICE_CHECK',
+        'query': query
+    };
+    if (clusterLevelRequired.contains(this.get('content.serviceName'))) {
+      requestData.operationLevel = {
+        "level": "CLUSTER",
+        "cluster_name": App.get('clusterName')
+      };
+    }
     App.ajax.send({
       'name': 'service.item.smoke',
       'sender': this,
       'success':'runSmokeTestSuccessCallBack',
       'error':'runSmokeTestErrorCallBack',
-      'data': {
-        'serviceName': this.get('content.serviceName'),
-        'displayName': this.get('content.displayName'),
-        'actionName': this.get('content.serviceName') === 'ZOOKEEPER' ? 'ZOOKEEPER_QUORUM_SERVICE_CHECK' : this.get('content.serviceName') + '_SERVICE_CHECK',
-        'query': query
-      }
+      'data': requestData
     });
   },
 
@@ -625,11 +683,11 @@ App.MainServiceItemController = Em.Controller.extend({
         var selectedHost = this.get('selectedHost');
 
         // Install
-        if(component.get('componentName') == "HIVE_METASTORE" && !!selectedHost){
+        if(['HIVE_METASTORE', 'RANGER_KMS_SERVER', 'NIMBUS'].contains(component.get('componentName')) && !!selectedHost){
           App.router.get('mainHostDetailsController').addComponent(
             {
               context: component,
-              hiveMetastoreHost: selectedHost
+              selectedHost: selectedHost
             }
           );
         } else {
@@ -706,6 +764,11 @@ App.MainServiceItemController = Em.Controller.extend({
     ability_controller.enableRMHighAvailability();
   },
 
+  enableRAHighAvailability: function() {
+    var ability_controller = App.router.get('mainAdminHighAvailabilityController');
+    ability_controller.enableRAHighAvailability();
+  },
+
   downloadClientConfigs: function (event) {
     var component = this.get('content.clientComponents').rejectProperty('totalCount', 0)[0];
     componentsUtils.downloadClientConfigs.call(this, {
@@ -760,5 +823,4 @@ App.MainServiceItemController = Em.Controller.extend({
   },
 
   isPending:true
-
 });

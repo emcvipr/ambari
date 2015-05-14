@@ -26,9 +26,14 @@ import traceback
 RECOMMEND_COMPONENT_LAYOUT_ACTION = 'recommend-component-layout'
 VALIDATE_COMPONENT_LAYOUT_ACTION = 'validate-component-layout'
 RECOMMEND_CONFIGURATIONS = 'recommend-configurations'
+RECOMMEND_CONFIGURATION_DEPENDENCIES = 'recommend-configuration-dependencies'
 VALIDATE_CONFIGURATIONS = 'validate-configurations'
 
-ALL_ACTIONS = [ RECOMMEND_COMPONENT_LAYOUT_ACTION, VALIDATE_COMPONENT_LAYOUT_ACTION, RECOMMEND_CONFIGURATIONS, VALIDATE_CONFIGURATIONS ]
+ALL_ACTIONS = [RECOMMEND_COMPONENT_LAYOUT_ACTION,
+               VALIDATE_COMPONENT_LAYOUT_ACTION,
+               RECOMMEND_CONFIGURATIONS,
+               RECOMMEND_CONFIGURATION_DEPENDENCIES,
+               VALIDATE_CONFIGURATIONS]
 USAGE = "Usage: <action> <hosts_file> <services_file>\nPossible actions are: {0}\n".format( str(ALL_ACTIONS) )
 
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -46,7 +51,7 @@ def loadJson(path):
     with open(path, 'r') as f:
       return json.load(f)
   except Exception, err:
-    raise StackAdvisorException("File not found at: {0}".format(hostsFile))
+    raise StackAdvisorException("File not found at: {0}".format(path))
 
 
 def dumpJson(json_object, dump_file):
@@ -100,6 +105,9 @@ def main(argv=None):
     result_file = os.path.join(actionDir, "component-layout-validation.json")
   elif action == RECOMMEND_CONFIGURATIONS:
     result = stackAdvisor.recommendConfigurations(services, hosts)
+    result_file = os.path.join(actionDir, "configurations.json")
+  elif action == RECOMMEND_CONFIGURATION_DEPENDENCIES:
+    result = stackAdvisor.recommendConfigurationDependencies(services, hosts)
     result_file = os.path.join(actionDir, "configurations.json")
   else: # action == VALIDATE_CONFIGURATIONS
     result = stackAdvisor.validateConfigurations(services, hosts)

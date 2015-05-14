@@ -40,19 +40,20 @@ import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ParentObjectNotFoundException;
 import org.apache.ambari.server.StackAccessException;
 import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.controller.RootServiceResponseFactory.Services;
 import org.apache.ambari.server.customactions.ActionDefinition;
 import org.apache.ambari.server.customactions.ActionDefinitionManager;
+import org.apache.ambari.server.events.AlertDefinitionDisabledEvent;
 import org.apache.ambari.server.events.AlertDefinitionRegistrationEvent;
 import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
-import org.apache.ambari.server.metadata.ActionMetadata;
-import org.apache.ambari.server.metadata.AgentAlertDefinitions;
+import org.apache.ambari.server.metadata.AmbariServiceAlertDefinitions;
 import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
 import org.apache.ambari.server.orm.dao.MetainfoDAO;
 import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
 import org.apache.ambari.server.orm.entities.MetainfoEntity;
-import org.apache.ambari.server.stack.StackContext;
 import org.apache.ambari.server.stack.StackDirectory;
 import org.apache.ambari.server.stack.StackManager;
+import org.apache.ambari.server.stack.StackManagerFactory;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.ComponentInfo;
@@ -87,9 +88,8 @@ import com.google.inject.Singleton;
  */
 @Singleton
 public class AmbariMetaInfo {
-
-
   public static final String SERVICE_CONFIG_FOLDER_NAME = "configuration";
+  public static final String SERVICE_THEMES_FOLDER_NAME = "themes";
   public static final String SERVICE_CONFIG_FILE_NAME_POSTFIX = ".xml";
   public static final String RCO_FILE_NAME = "role_command_order.json";
   public static final String SERVICE_METRIC_FILE_NAME = "metrics.json";
@@ -99,6 +99,16 @@ public class AmbariMetaInfo {
    * The filename name for a Kerberos descriptor file at either the stack or service level
    */
   public static final String KERBEROS_DESCRIPTOR_FILE_NAME = "kerberos.json";
+
+  /**
+   * The filename name for a Widgets descriptor file at either the stack or service level
+   */
+  public static final String WIDGETS_DESCRIPTOR_FILE_NAME = "widgets.json";
+
+  /**
+   * Filename for theme file at service layer
+   */
+  public static final String SERVICE_THEME_FILE_NAME = "theme.json";
 
   /**
    * This string is used in placeholder in places that are common for
@@ -121,7 +131,7 @@ public class AmbariMetaInfo {
 
   // all the supported OS'es
   @Inject
-  private OsFamily os_family;
+  private OsFamily osFamily;
 
   /**
    * ALL_SUPPORTED_OS is dynamically generated list from loaded families from os_family.json
@@ -131,7 +141,6 @@ public class AmbariMetaInfo {
 
   private final ActionDefinitionManager adManager = new ActionDefinitionManager();
   private String serverVersion = "undefined";
-  private StackManager stackManager;
 
   private File stackRoot;
   private File commonServicesRoot;
@@ -145,7 +154,7 @@ public class AmbariMetaInfo {
    * Alert Definition DAO used to merge stack definitions into the database.
    */
   @Inject
-  AlertDefinitionDAO alertDefinitionDao;
+  private AlertDefinitionDAO alertDefinitionDao;
 
   /**
    * A factory that assists in the creation of {@link AlertDefinition} and
@@ -158,13 +167,15 @@ public class AmbariMetaInfo {
    * All of the {@link AlertDefinition}s that are scoped for the agents.
    */
   @Inject
-  private AgentAlertDefinitions agentAlertDefinitions;
+  private AmbariServiceAlertDefinitions ambariServiceAlertDefinitions;
 
   /**
    * Publishes the following events:
    * <ul>
    * <li>{@link AlertDefinitionRegistrationEvent} when new alerts are merged
    * from the stack</li>
+   * <li>{@link AlertDefinitionDisabledEvent} when existing definitions are
+   * disabled after being removed from the current stack</li>
    * </ul>
    */
   @Inject
@@ -182,10 +193,16 @@ public class AmbariMetaInfo {
   @Inject
   private KerberosServiceDescriptorFactory kerberosServiceDescriptorFactory;
 
-  //todo: only used by StackManager
+  /**
+   * Factory for injecting {@link StackManager} instances.
+   */
   @Inject
-  ActionMetadata actionMetadata;
+  private StackManagerFactory stackManagerFactory;
 
+  /**
+   * Singleton instance of the stack manager.
+   */
+  private StackManager stackManager;
 
   /**
    * Ambari Meta Info Object
@@ -196,22 +213,17 @@ public class AmbariMetaInfo {
   @Inject
   public AmbariMetaInfo(Configuration conf) throws Exception {
     String stackPath = conf.getMetadataPath();
-    String commonServicesPath = conf.getCommonServicesPath();
-    String serverVersionFilePath = conf.getServerVersionFilePath();
     stackRoot = new File(stackPath);
+
+    String commonServicesPath = conf.getCommonServicesPath();
     if(commonServicesPath != null && !commonServicesPath.isEmpty()) {
       commonServicesRoot = new File(commonServicesPath);
     }
-    serverVersionFile = new File(serverVersionFilePath);
-    customActionRoot = new File(conf.getCustomActionDefinitionPath());
-    os_family = new OsFamily(conf);
-    ALL_SUPPORTED_OS = new ArrayList<String>(os_family.os_list());
-  }
 
-  public AmbariMetaInfo(File stackRoot, File commonServicesRoot, File serverVersionFile) throws Exception {
-    this.stackRoot = stackRoot;
-    this.commonServicesRoot = commonServicesRoot;
-    this.serverVersionFile = serverVersionFile;
+    String serverVersionFilePath = conf.getServerVersionFilePath();
+    serverVersionFile = new File(serverVersionFilePath);
+
+    customActionRoot = new File(conf.getCustomActionDefinitionPath());
   }
 
   /**
@@ -222,10 +234,13 @@ public class AmbariMetaInfo {
   @Inject
   public void init() throws Exception {
     // Need to be initialized before all actions
-    ALL_SUPPORTED_OS = new ArrayList<String>(os_family.os_list());
+    ALL_SUPPORTED_OS = new ArrayList<String>(osFamily.os_list());
+
     readServerVersion();
-    stackManager = new StackManager(stackRoot,commonServicesRoot,
-        new StackContext(metaInfoDAO, actionMetadata, os_family));
+
+    stackManager = stackManagerFactory.create(stackRoot, commonServicesRoot,
+        osFamily);
+
     getCustomActionDefinitions(customActionRoot);
   }
 
@@ -520,7 +535,38 @@ public class AmbariMetaInfo {
     Collection<ServiceInfo> serviceInfos = getServices(stackName, version).values();
 
     for (ServiceInfo service : serviceInfos) {
-      if (service.isRestartRequiredAfterChange() != null && service.isRestartRequiredAfterChange()) {
+
+      Boolean restartRequiredAfterChange = service.isRestartRequiredAfterChange();
+
+      if (restartRequiredAfterChange != null && restartRequiredAfterChange) {
+        needRestartServices.add(service.getName());
+      }
+    }
+    return needRestartServices;
+  }
+
+  /**
+   * Get the set of names of services which require restart when host rack information is changed.
+   *
+   * @param stackName  the stack name
+   * @param version    the stack version
+   *
+   * @return the set of services which require restart when host rack information is changed
+   *
+   * @throws AmbariException if the service set can not be acquired
+   */
+  public Set<String> getRackSensitiveServicesNames(String stackName, String version)
+      throws AmbariException {
+
+    HashSet<String> needRestartServices = new HashSet<String>();
+
+    Collection<ServiceInfo> serviceInfos = getServices(stackName, version).values();
+
+    for (ServiceInfo service : serviceInfos) {
+
+      Boolean restartRequiredAfterRackChange = service.isRestartRequiredAfterRackChange();
+
+      if (restartRequiredAfterRackChange != null && restartRequiredAfterRackChange) {
         needRestartServices.add(service.getName());
       }
     }
@@ -795,12 +841,10 @@ public class AmbariMetaInfo {
   }
 
   /**
-   * Gets the metrics for a Role (component).
-   * @return the list of defined metrics.
+   * Return metrics for a stack service.
    */
-  public List<MetricDefinition> getMetrics(String stackName, String stackVersion,
-      String serviceName, String componentName, String metricType)
-  throws AmbariException {
+  public Map<String, Map<String, List<MetricDefinition>>> getServiceMetrics(String stackName,
+            String stackVersion, String serviceName) throws AmbariException {
 
     ServiceInfo svc = getService(stackName, stackVersion, serviceName);
 
@@ -831,7 +875,21 @@ public class AmbariMetaInfo {
       }
     }
 
-    if (map.containsKey(componentName)) {
+    return map;
+  }
+
+  /**
+   * Gets the metrics for a Role (component).
+   * @return the list of defined metrics.
+   */
+  public List<MetricDefinition> getMetrics(String stackName, String stackVersion,
+      String serviceName, String componentName, String metricType)
+      throws AmbariException {
+
+    Map<String, Map<String, List<MetricDefinition>>> map =
+      getServiceMetrics(stackName, stackVersion, serviceName);
+
+    if (map != null && map.containsKey(componentName)) {
       if (map.get(componentName).containsKey(metricType)) {
         return map.get(componentName).get(metricType);
       }
@@ -911,11 +969,17 @@ public class AmbariMetaInfo {
       StackInfo stackInfo = getStack(stackId.getStackName(),
           stackId.getStackVersion());
 
-      // creating a mapping between service name and service for fast lookups
+      // creating a mapping between names and service/component for fast lookups
       Collection<ServiceInfo> stackServices = stackInfo.getServices();
       Map<String, ServiceInfo> stackServiceMap = new HashMap<String, ServiceInfo>();
+      Map<String, ComponentInfo> stackComponentMap = new HashMap<String, ComponentInfo>();
       for (ServiceInfo stackService : stackServices) {
         stackServiceMap.put(stackService.getName(), stackService);
+
+        List<ComponentInfo> components = stackService.getComponents();
+        for (ComponentInfo component : components) {
+          stackComponentMap.put(component.getName(), component);
+        }
       }
 
       Map<String, Service> clusterServiceMap = cluster.getServices();
@@ -929,6 +993,7 @@ public class AmbariMetaInfo {
         if (null == stackService) {
           continue;
         }
+
 
         // get all alerts defined on the stack for each cluster service
         Set<AlertDefinition> serviceDefinitions = getAlertDefinitions(stackService);
@@ -971,14 +1036,26 @@ public class AmbariMetaInfo {
         }
       }
 
-      // host-only alert definitions
-      List<AlertDefinition> agentDefinitions = agentAlertDefinitions.getDefinitions();
+      // ambari agent host-only alert definitions
+      List<AlertDefinition> agentDefinitions = ambariServiceAlertDefinitions.getAgentDefinitions();
       for (AlertDefinition agentDefinition : agentDefinitions) {
         AlertDefinitionEntity entity = mappedEntities.get(agentDefinition.getName());
 
         // no entity means this is new; create a new entity
         if (null == entity) {
           entity = alertDefinitionFactory.coerce(clusterId, agentDefinition);
+          persist.add(entity);
+        }
+      }
+
+      // ambari server host-only alert definitions
+      List<AlertDefinition> serverDefinitions = ambariServiceAlertDefinitions.getServerDefinitions();
+      for (AlertDefinition serverDefinition : serverDefinitions) {
+        AlertDefinitionEntity entity = mappedEntities.get(serverDefinition.getName());
+
+        // no entity means this is new; create a new entity
+        if (null == entity) {
+          entity = alertDefinitionFactory.coerce(clusterId, serverDefinition);
           persist.add(entity);
         }
       }
@@ -998,6 +1075,51 @@ public class AmbariMetaInfo {
 
         AlertDefinitionRegistrationEvent event = new AlertDefinitionRegistrationEvent(
             cluster.getClusterId(), realDef);
+
+        eventPublisher.publish(event);
+      }
+
+      // for every definition, determine if the service and the component are
+      // still valid; if they are not, disable them - this covers the case
+      // with STORM/REST_API where that component was removed from the
+      // stack but still exists in the database - we disable the alert to
+      // preserve historical references
+      List<AlertDefinitionEntity> definitions = alertDefinitionDao.findAllEnabled(clusterId);
+      List<AlertDefinitionEntity> definitionsToDisable = new ArrayList<AlertDefinitionEntity>();
+
+      for (AlertDefinitionEntity definition : definitions) {
+        String serviceName = definition.getServiceName();
+        String componentName = definition.getComponentName();
+
+        // the AMBARI service is special, skip it here
+        if (Services.AMBARI.name().equals(serviceName)) {
+          continue;
+        }
+
+        if (!stackServiceMap.containsKey(serviceName)) {
+          LOG.info(
+              "The {} service has been marked as deleted for stack {}, disabling alert {}",
+              serviceName, stackId, definition.getDefinitionName());
+
+          definitionsToDisable.add(definition);
+        } else if (null != componentName
+            && !stackComponentMap.containsKey(componentName)) {
+          LOG.info(
+              "The {} component {} has been marked as deleted for stack {}, disabling alert {}",
+              serviceName, componentName, stackId,
+              definition.getDefinitionName());
+
+          definitionsToDisable.add(definition);
+        }
+      }
+
+      // disable definitions and fire the event
+      for (AlertDefinitionEntity definition : definitionsToDisable) {
+        definition.setEnabled(false);
+        alertDefinitionDao.merge(definition);
+
+        AlertDefinitionDisabledEvent event = new AlertDefinitionDisabledEvent(
+            clusterId, definition.getDefinitionId());
 
         eventPublisher.publish(event);
       }
@@ -1053,10 +1175,10 @@ public class AmbariMetaInfo {
           throw new AmbariException(String.format("Failed to parse kerberos descriptor file %s",
               file.getAbsolutePath()), e);
         }
-      }
-      else
+      } else {
         throw new AmbariException(String.format("Unable to read kerberos descriptor file %s",
             file.getAbsolutePath()));
+      }
     }
 
     if (kerberosDescriptor == null) {
@@ -1109,4 +1231,5 @@ public class AmbariMetaInfo {
 
     return kerberosServiceDescriptors;
   }
+
 }

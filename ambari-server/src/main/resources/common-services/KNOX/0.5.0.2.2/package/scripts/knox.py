@@ -33,6 +33,12 @@ def knox():
             owner=params.knox_user
   )
 
+  # Manually overriding service logon user & password set by the installation package
+  ServiceConfig(params.knox_gateway_win_service_name,
+                action="change_user",
+                username = params.knox_user,
+                password = Script.get_password(params.knox_user))
+
   File(os.path.join(params.knox_conf_dir, "gateway-log4j.properties"),
        owner=params.knox_user,
        content=params.gateway_log4j
@@ -45,7 +51,7 @@ def knox():
   )
 
   if params.security_enabled:
-    TemplateConfig( os.path.join(knox_conf_dir, "krb5JAASLogin.conf"),
+    TemplateConfig( os.path.join(params.knox_conf_dir, "krb5JAASLogin.conf"),
         owner = params.knox_user,
         template_tag = None
     )
@@ -60,12 +66,13 @@ def knox():
 def knox():
     import params
 
-    Directory(params.knox_conf_dir,
-              owner = params.knox_user,
-              group = params.knox_group,
-              recursive = True
-    )
-
+    directories = [params.knox_data_dir, params.knox_logs_dir, params.knox_pid_dir, params.knox_conf_dir]
+    for directory in directories:
+      Directory(directory,
+                owner = params.knox_user,
+                group = params.knox_group,
+                recursive = True
+      )
 
     XmlConfig("gateway-site.xml",
               conf_dir=params.knox_conf_dir,
@@ -93,16 +100,11 @@ def knox():
                       template_tag = None
       )
 
-    dirs_to_chown = (params.knox_data_dir, params.knox_logs_dir, params.knox_logs_dir, params.knox_pid_dir, params.knox_conf_dir)
-    cmd = ('chown','-R',format('{knox_user}:{knox_group}'))+dirs_to_chown
+    dirs_to_chown = tuple(directories)
+    cmd = ('chown','-R',format('{knox_user}:{knox_group}')) + dirs_to_chown
     Execute(cmd,
             sudo = True,
     )
-    
-    #File([params.knox_data_dir, params.knox_logs_dir, params.knox_logs_dir, params.knox_pid_dir, params.knox_conf_dir],
-    #     owner = params.knox_user,
-    #     group = params.knox_group
-    #)
 
     cmd = format('{knox_client_bin} create-master --master {knox_master_secret!p}')
     master_secret_exist = as_user(format('test -f {knox_master_secret_path}'), params.knox_user)

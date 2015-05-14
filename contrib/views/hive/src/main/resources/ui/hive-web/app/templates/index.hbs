@@ -16,15 +16,74 @@
 * limitations under the License.
 }}
 
-<aside class="col-md-3 col-xs-12 pull-left no-padding">
-  {{render 'databases'}}
-</aside>
+<div id="index-content">
+  <div class="main-content">
+    <aside class="col-md-3 col-xs-12 no-padding">
+      {{render 'databases'}}
+    </aside>
 
-<div class="col-md-9 col-xs 12 pull-left query-container">
+    <div class="col-md-9 col-xs-12 query-container">
+      {{#panel-widget headingTranslation="titles.query.editor" classNames="query-editor-panel"}}
+        {{render 'open-queries'}}
 
-  {{render 'alerts'}}
-  {{#panel-widget headingTranslation="titles.query.editor" classNames="query-editor-panel"}}
-    {{#popover-widget classNames="fa fa-info-circle popover-right" titleTranslation="popover.queryEditorHelp.title" }}
+        <div class="toolbox">
+          <button type="button"
+                  {{bind-attr class=":btn :btn-sm :btn-success :execute-query canExecute::disabled"}}
+                  {{action "executeQuery"}}>
+            {{t "buttons.execute"}}
+          </button>
+          <button type="button"
+                  {{bind-attr class=":btn :btn-sm :btn-default canExecute::disabled"}}
+                  {{action "explainQuery"}}>
+            {{t "buttons.explain"}}
+          </button>
+
+          <button type="button" class="btn btn-sm btn-default save-query-as" {{action "saveQuery"}}>{{t "buttons.saveAs"}}</button>
+
+          {{render 'insert-udfs'}}
+
+          <button type="button" class="btn btn-sm btn-primary  pull-right" {{action "addQuery"}}>{{t "buttons.newQuery"}}</button>
+        </div>
+      {{/panel-widget}}
+
+      {{#if jobProgress.stages}}
+        {{#progress-widget value=jobProgress.totalProgress}}
+        {{/progress-widget}}
+      {{/if}}
+
+      {{#if queryParams}}
+        {{#panel-widget headingTranslation="titles.query.parameters"}}
+          <div class="form-horizontal">
+            {{#each param in queryParams}}
+              <div {{bind-attr class=":form-group param.value:has-success:has-error"}}>
+                <label class="col-sm-3 control-label">{{param.name}}</label>
+                  <div class="col-sm-9">
+                    {{input value=param.value placeholder="value" class="form-control"}}
+                  </div>
+              </div>
+            {{/each}}
+          </div>
+        {{/panel-widget}}
+      {{/if}}
+
+      {{#if displayJobTabs}}
+        {{#panel-widget headingTranslation="titles.query.process"
+                        isLoading=model.isRunning
+                        menuItems=downloadMenu
+                        menuHeadingTranslation="titles.download"
+                        classNames="query-process-results-panel"}}
+          {{#tabs-widget tabs=queryProcessTabs selectedTab=selectedQueryProcessTab}}
+            {{outlet}}
+          {{/tabs-widget}}
+        {{/panel-widget}}
+      {{/if}}
+    </div>
+  </div>
+
+  {{outlet 'overlay'}}
+
+  <div class="query-menu">
+    {{#popover-widget classNames="fa fa-info-circle queries-icon" titleTranslation="popover.queryEditorHelp.title" }}
       <ul>
         <li>{{t 'popover.queryEditorHelp.content.line1'}}</li>
         <li>{{t 'popover.queryEditorHelp.content.line2'}}</li>
@@ -32,51 +91,6 @@
       </ul>
     {{/popover-widget}}
 
-    {{render 'open-queries'}}
-
-    <div class="toolbox">
-      <button type="button" class="btn btn-sm btn-success execute-query"
-              {{bind-attr class="canExecute::disabled"}}
-              {{action "executeQuery"}}>
-        {{t "buttons.execute"}}
-      </button>
-      <button type="button" class="btn btn-sm btn-default"
-              {{bind-attr class="canExecute::disabled"}}
-              {{action "explainQuery"}}>
-        {{t "buttons.explain"}}
-      </button>
-      <button type="button" class="btn btn-sm btn-default save-query-as" {{action "saveQuery"}}>{{t "buttons.saveAs"}}</button>
-
-      {{render 'insert-udfs'}}
-
-      <button type="button" class="btn btn-sm btn-primary  pull-right" {{action "addQuery"}}>{{t "buttons.newQuery"}}</button>
-    </div>
-  {{/panel-widget}}
-
-  {{#if queryParams}}
-    {{#panel-widget headingTranslation="titles.query.parameters"}}
-      <div class="form-horizontal">
-        {{#each param in queryParams}}
-          <div {{bind-attr class=":form-group param.value:has-success:has-error"}}>
-            <label class="col-sm-3 control-label">{{param.name}}</label>
-              <div class="col-sm-9">
-                {{input value=param.value placeholder="value" class="form-control"}}
-              </div>
-          </div>
-        {{/each}}
-      </div>
-    {{/panel-widget}}
-  {{/if}}
-
-  {{#if displayJobTabs}}
-    {{#panel-widget headingTranslation="titles.query.process"
-                    isLoading=model.isRunning
-                    menuItems=downloadMenu
-                    menuHeadingTranslation="titles.download"
-                    classNames="query-process-results-panel"}}
-      {{#tabs-widget tabs=queryProcessTabs selectedTab=selectedQueryProcessTab}}
-        {{outlet}}
-      {{/tabs-widget}}
-    {{/panel-widget}}
-  {{/if}}
+    {{render 'query-tabs'}}
+  </div>
 </div>

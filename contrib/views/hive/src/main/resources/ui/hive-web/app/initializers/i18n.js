@@ -22,15 +22,25 @@ var TRANSLATIONS;
 
 export default {
   name: 'i18n',
-  initialize: function() {
+  initialize: function () {
     Ember.ENV.I18N_COMPILE_WITHOUT_HANDLEBARS = true;
     Ember.FEATURES.I18N_TRANSLATE_HELPER_SPAN = false;
     Ember.I18n.translations = TRANSLATIONS;
     Ember.TextField.reopen(Ember.I18n.TranslateableAttributes);
   }
-};
+}
 
 TRANSLATIONS = {
+  tooltips: {
+    refresh: 'Refresh database',
+    loadSample: 'Load sample data',
+    query: 'Query',
+    settings: 'Settings',
+    visualExplain: 'Visual Explain',
+    tez: 'Tez',
+    notifications: 'Notifications'
+  },
+
   alerts: {
     errors: {
       save: {
@@ -40,9 +50,21 @@ TRANSLATIONS = {
       get: {
         tables: 'Error when trying to retrieve the tables for the selected database',
         columns: 'Error when trying to retrieve the table columns.'
+      },
+      sessions: {
+        delete: 'Error invalidating sessions'
+      },
+      job: {
+        status: "An error occured while processing the job."
+      }
+    },
+    success: {
+      sessions: {
+        deleted: 'Session invalidated'
       }
     }
   },
+
   modals: {
     delete: {
       heading: 'Confirm deletion',
@@ -53,21 +75,33 @@ TRANSLATIONS = {
     save: {
       heading: 'Saving item',
       saveBeforeCloseHeading: "Save item before closing?",
-      message: 'Enter name:'
+      message: 'Enter name:',
+      overwrite: 'Saving will overwrite previously saved query'
+    },
+
+    download: {
+      csv: 'Download results as CSV'
     }
   },
+
   titles: {
     database: 'Database Explorer',
     explorer: 'Databases',
     results: 'Search Results',
     settings: 'Database Settings',
     query: {
+      tab: 'Worksheet',
       editor: 'Query Editor',
       process: 'Query Process Results',
-      parameters: 'Parameters'
+      parameters: 'Parameters',
+      visualExplain: 'Visual Explain',
+      tez: 'TEZ',
+      messages: 'Messages'
     },
-    download: 'Save results...'
+    download: 'Save results...',
+    tableSample: '{{tableName}} sample'
   },
+
   placeholders: {
     search: {
       tables: 'Search tables...',
@@ -77,7 +111,8 @@ TRANSLATIONS = {
       database: 'Select Database...',
       udfs: 'Insert udfs',
       file: 'Select File Resource...',
-      noFileResource: '(no file)'
+      noFileResource: '(no file)',
+      value: "Select value..."
     },
     fileResource: {
       name: "resource name",
@@ -94,6 +129,7 @@ TRANSLATIONS = {
       value: '1'
     }
   },
+
   menus: {
     query: 'Query',
     savedQueries: 'Saved Queries',
@@ -103,6 +139,7 @@ TRANSLATIONS = {
     results: 'Results',
     explain: 'Explain'
   },
+
   columns: {
     id: 'id',
     shortQuery: 'preview',
@@ -117,6 +154,7 @@ TRANSLATIONS = {
     expand: '',
     actions: ''
   },
+
   buttons: {
     addItem: 'Add new item...',
     insert: 'Insert',
@@ -127,7 +165,7 @@ TRANSLATIONS = {
     explain: 'Explain',
     saveAs: 'Save as...',
     save: 'Save',
-    newQuery: 'New Query',
+    newQuery: 'New Worksheet',
     newUdf: 'New UDF',
     history: 'History',
     ok: 'OK',
@@ -143,10 +181,16 @@ TRANSLATIONS = {
     saveCsv: 'Download as CSV',
     runOnTez: 'Run on Tez'
   },
+
   labels: {
-    noTablesMatches: 'No tables matches for'
+    noTablesMatch: 'No tables match',
+    table: 'Table '
   },
+
   popover: {
+    visualExplain: {
+      statistics: "Statistics"
+    },
     queryEditorHelp: {
       title: "Did you know?",
       content: {
@@ -156,5 +200,15 @@ TRANSLATIONS = {
       }
     },
     add: 'Add'
-  }
+  },
+
+  tez: {
+    errors: {
+      'not.deployed': "Tez View isn't deployed.",
+      'no.instance': "No instance of Tez View found.",
+      'no.dag': "No DAG available"
+    }
+  },
+
+  generalError: 'Unexpected error'
 };

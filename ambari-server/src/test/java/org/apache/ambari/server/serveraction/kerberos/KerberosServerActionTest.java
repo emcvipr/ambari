@@ -21,7 +21,9 @@ package org.apache.ambari.server.serveraction.kerberos;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+
 import junit.framework.Assert;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.actionmanager.HostRoleCommand;
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
@@ -29,6 +31,7 @@ import org.apache.ambari.server.agent.CommandReport;
 import org.apache.ambari.server.agent.ExecutionCommand;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.stack.OsFamily;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -42,6 +45,7 @@ import java.util.concurrent.ConcurrentMap;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.easymock.EasyMock.createNiceMock;
 
 public class KerberosServerActionTest {
 
@@ -69,6 +73,7 @@ public class KerberosServerActionTest {
           @Override
           protected CommandReport processIdentity(Map<String, String> identityRecord, String evaluatedPrincipal,
                                                   KerberosOperationHandler operationHandler,
+                                                  Map<String, String> kerberosConfiguration,
                                                   Map<String, Object> requestSharedDataContext)
               throws AmbariException {
             Assert.assertNotNull(requestSharedDataContext);
@@ -76,7 +81,7 @@ public class KerberosServerActionTest {
             if (requestSharedDataContext.get("FAIL") != null) {
               return createCommandReport(1, HostRoleStatus.FAILED, "{}", "ERROR", "ERROR");
             } else {
-              requestSharedDataContext.put(identityRecord.get(KerberosActionDataFile.PRINCIPAL), evaluatedPrincipal);
+              requestSharedDataContext.put(identityRecord.get(KerberosIdentityDataFileReader.PRINCIPAL), evaluatedPrincipal);
               return null;
             }
           }
@@ -89,6 +94,7 @@ public class KerberosServerActionTest {
         });
 
         bind(Clusters.class).toInstance(clusters);
+        bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
       }
     });
 
@@ -98,16 +104,16 @@ public class KerberosServerActionTest {
     Assert.assertTrue(temporaryDirectory.mkdirs());
 
     // Create a data file
-    KerberosActionDataFileBuilder builder =
-        new KerberosActionDataFileBuilder(new File(temporaryDirectory, KerberosActionDataFile.DATA_FILE_NAME));
+    KerberosIdentityDataFileWriter writer =
+        new KerberosIdentityDataFileWriter(new File(temporaryDirectory, KerberosIdentityDataFileWriter.DATA_FILE_NAME));
     for (int i = 0; i < 10; i++) {
-      builder.addRecord("hostName", "serviceName" + i, "serviceComponentName" + i,
-          "principal|_HOST|_REALM" + i, "principal_type", "principalConfiguration" + i, "keytabFilePath" + i,
+      writer.writeRecord("hostName", "serviceName" + i, "serviceComponentName" + i,
+          "principal|_HOST|_REALM" + i, "principal_type", "keytabFilePath" + i,
           "keytabFileOwnerName" + i, "keytabFileOwnerAccess" + i,
           "keytabFileGroupName" + i, "keytabFileGroupAccess" + i,
-          "keytabFileConfiguration" + i);
+          "false");
     }
-    builder.close();
+    writer.close();
 
     commandParams.put(KerberosServerAction.DATA_DIRECTORY, temporaryDirectory.getAbsolutePath());
     commandParams.put(KerberosServerAction.DEFAULT_REALM, "REALM.COM");
@@ -128,7 +134,7 @@ public class KerberosServerActionTest {
   @After
   public void tearDown() throws Exception {
     if (temporaryDirectory != null) {
-      new File(temporaryDirectory, KerberosActionDataFile.DATA_FILE_NAME).delete();
+      new File(temporaryDirectory, KerberosIdentityDataFileWriter.DATA_FILE_NAME).delete();
       temporaryDirectory.delete();
     }
   }

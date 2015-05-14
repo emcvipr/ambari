@@ -35,7 +35,7 @@ public interface NotificationDispatcher {
    *
    * @return the dispatcher's type (never {@code null}).
    */
-  public String getType();
+  String getType();
 
   /**
    * Dispatches the specified notification.
@@ -43,7 +43,7 @@ public interface NotificationDispatcher {
    * @param notification
    *          the notificationt to dispatch (not {@code null}).
    */
-  public void dispatch(Notification notification);
+  void dispatch(Notification notification);
 
   /**
    * Gets whether the dispatcher supports sending a digest or summary in a
@@ -52,43 +52,26 @@ public interface NotificationDispatcher {
    *
    * @return {@code true} if digest is supported, {@code false} otherwise.
    */
-  public boolean isDigestSupported();
+  boolean isDigestSupported();
 
   /**
    * Validates alert target configuration. Checks if it can dispatch notifications with given properties set.
    * @param properties alert target properties
    * @return ConfigValidationResult with validation status and message
    */
-  public ConfigValidationResult validateTargetConfig(Map<String, Object> properties);
+  TargetConfigurationResult validateTargetConfig(Map<String, Object> properties);
 
-  public static class ConfigValidationResult {
-
-    public enum Status {
-      VALID, INVALID
-    }
-
-    private String message;
-    private Status status;
-
-    private ConfigValidationResult(Status status, String message) {
-      this.message = message;
-      this.status = status;
-    }
-
-    public String getMessage() {
-      return message;
-    }
-
-    public Status getStatus() {
-      return status;
-    }
-
-    public static ConfigValidationResult valid() {
-      return new ConfigValidationResult(Status.VALID, "Configuration is valid");
-    }
-
-    public static ConfigValidationResult invalid(String message) {
-      return new ConfigValidationResult(Status.INVALID, message);
-    }
-  }
+  /**
+   * Gets whether Ambari should attempt to generate the content of the
+   * {@link Notification} before giving it to the dispatcher. Some dispatchers
+   * may choose to format data in a way which is not easily represented in the
+   * {alert-templates.xml}.
+   * <p/>
+   * If {@code false} then the {@link Notification} will only contain the
+   * recipients and a map of properties for the dispatcher to use.
+   *
+   * @return {@code true} if Ambari should generate the {@link Notification}
+   *         content, {@code false} otherwise.
+   */
+  boolean isNotificationContentGenerationRequired();
 }

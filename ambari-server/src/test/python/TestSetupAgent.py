@@ -20,7 +20,23 @@ from mock.mock import MagicMock
 from unittest import TestCase
 from mock.mock import patch
 import sys
-setup_agent = __import__('setupAgent')
+
+from ambari_commons import OSCheck
+from only_for_platform import get_platform, not_for_platform, only_for_platform, PLATFORM_WINDOWS, PLATFORM_LINUX
+from mock.mock import MagicMock, patch, ANY, Mock
+
+if get_platform() != PLATFORM_WINDOWS:
+  os_distro_value = ('Suse','11','Final')
+else:
+  os_distro_value = ('win2012serverr2','6.3','WindowsServer')
+
+with patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value)):
+#  from ambari_agent import NetUtil, security
+
+#  if get_platform() != PLATFORM_WINDOWS:
+#    from ambari_commons.shell import shellRunnerLinux
+
+  setup_agent = __import__('setupAgent')
 
 class TestSetupAgent(TestCase):
 
@@ -42,6 +58,7 @@ class TestSetupAgent(TestCase):
     pass
 
 
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(setup_agent, 'execOsCommand')
   def test_configureAgent(self, execOsCommand_mock):
     # Test if expected_hostname is passed
@@ -110,13 +127,14 @@ class TestSetupAgent(TestCase):
     execOsCommand_mock.reset_mock()
     pass
 
-  @patch.object(setup_agent, 'getAvaliableAgentPackageVersions')
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch.object(setup_agent, 'getAvailableAgentPackageVersions')
   @patch('ambari_commons.OSCheck.is_suse_family')
   @patch('ambari_commons.OSCheck.is_ubuntu_family')
   @patch.object(setup_agent, 'findNearestAgentPackageVersion')
   def test_returned_optimal_version_is_initial_on_suse(self, findNearestAgentPackageVersion_method, is_ubuntu_family_method,
-                                                       is_suse_family_method, getAvaliableAgentPackageVersions_method):
-    getAvaliableAgentPackageVersions_method.return_value = {"exitstatus": 0, "log": "1.1.1"}
+                                                       is_suse_family_method, getAvailableAgentPackageVersions_method):
+    getAvailableAgentPackageVersions_method.return_value = {"exitstatus": 0, "log": "1.1.1"}
     is_suse_family_method.return_value = True
     is_ubuntu_family_method.return_value = False
 
@@ -126,13 +144,14 @@ class TestSetupAgent(TestCase):
     self.assertTrue(result_version["exitstatus"] == 1)
     pass
 
-  @patch.object(setup_agent, 'getAvaliableAgentPackageVersions')
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch.object(setup_agent, 'getAvailableAgentPackageVersions')
   @patch('ambari_commons.OSCheck.is_suse_family')
   @patch('ambari_commons.OSCheck.is_ubuntu_family')
   @patch.object(setup_agent, 'findNearestAgentPackageVersion')
   def test_returned_optimal_version_is_initial_on_ubuntu(self, findNearestAgentPackageVersion_method, is_ubuntu_family_method,
-                                                       is_suse_family_method, getAvaliableAgentPackageVersions_method):
-    getAvaliableAgentPackageVersions_method.return_value = {"exitstatus": 0, "log": "1.1.1"}
+                                                       is_suse_family_method, getAvailableAgentPackageVersions_method):
+    getAvailableAgentPackageVersions_method.return_value = {"exitstatus": 0, "log": "1.1.1"}
     is_suse_family_method.return_value = False
     is_ubuntu_family_method.return_value = True
 
@@ -142,6 +161,7 @@ class TestSetupAgent(TestCase):
     self.assertTrue(result_version["exitstatus"] == 1)
     pass
 
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch('ambari_commons.OSCheck.is_suse_family')
   @patch('ambari_commons.OSCheck.is_ubuntu_family')
   @patch.object(setup_agent, 'findNearestAgentPackageVersion')
@@ -163,6 +183,7 @@ class TestSetupAgent(TestCase):
     self.assertTrue(result_version["exitstatus"] == 1)
     pass
 
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch('ambari_commons.OSCheck.is_suse_family')
   @patch('ambari_commons.OSCheck.is_ubuntu_family')
   @patch.object(setup_agent, 'findNearestAgentPackageVersion')
@@ -184,14 +205,15 @@ class TestSetupAgent(TestCase):
     self.assertTrue(result_version["exitstatus"] == 1)
     pass
 
-  @patch.object(setup_agent, 'getAvaliableAgentPackageVersions')
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch.object(setup_agent, 'getAvailableAgentPackageVersions')
   @patch('ambari_commons.OSCheck.is_suse_family')
   @patch('ambari_commons.OSCheck.is_ubuntu_family')
   @patch.object(setup_agent, 'findNearestAgentPackageVersion')
   def test_returned_optimal_version_is_initial(self, findNearestAgentPackageVersion_method,
                                                is_ubuntu_family_method,
-                                               is_suse_family_method, getAvaliableAgentPackageVersions_method):
-    getAvaliableAgentPackageVersions_method.return_value = {"exitstatus": 0, "log": "1.1.1"}
+                                               is_suse_family_method, getAvailableAgentPackageVersions_method):
+    getAvailableAgentPackageVersions_method.return_value = {"exitstatus": 0, "log": "1.1.1"}
     is_suse_family_method.return_value = False
     is_ubuntu_family_method.return_value = False
 
@@ -201,14 +223,15 @@ class TestSetupAgent(TestCase):
     self.assertTrue(result_version["log"] == projectVersion)
     pass
 
-  @patch.object(setup_agent, 'getAvaliableAgentPackageVersions')
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch.object(setup_agent, 'getAvailableAgentPackageVersions')
   @patch('ambari_commons.OSCheck.is_suse_family')
   @patch('ambari_commons.OSCheck.is_ubuntu_family')
   @patch.object(setup_agent, 'findNearestAgentPackageVersion')
   def test_returned_optimal_version_is_default(self, findNearestAgentPackageVersion_method,
                                                is_ubuntu_family_method,
-                                               is_suse_family_method, getAvaliableAgentPackageVersions_method):
-    getAvaliableAgentPackageVersions_method.return_value = {"exitstatus": 0, "log": "1.1.1"}
+                                               is_suse_family_method, getAvailableAgentPackageVersions_method):
+    getAvailableAgentPackageVersions_method.return_value = {"exitstatus": 0, "log": "1.1.1"}
     is_suse_family_method.return_value = False
     is_ubuntu_family_method.return_value = False
     findNearestAgentPackageVersion_method.return_value = {
@@ -223,11 +246,13 @@ class TestSetupAgent(TestCase):
     self.assertTrue(result_version["exitstatus"] == 1)
     pass
 
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(subprocess, 'Popen')
   def test_execOsCommand(self, Popen_mock):
     self.assertFalse(setup_agent.execOsCommand("hostname -f") == None)
 
-  @patch.object(setup_agent, 'tryStopAgent')
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch.object(setup_agent, 'checkVerbose')
   @patch.object(setup_agent, 'isAgentPackageAlreadyInstalled')
   @patch.object(setup_agent, 'runAgent')
   @patch.object(setup_agent, 'configureAgent')
@@ -242,14 +267,14 @@ class TestSetupAgent(TestCase):
   def test_setup_agent_main(self, dirname_mock, realpath_mock, exit_mock, checkServerReachability_mock,
                             getOptimalVersion_mock, is_ubuntu_family_mock, is_suse_family_mock,
                             installAgent_mock, configureAgent_mock, runAgent_mock,
-                            isAgentPackageAlreadyInstalled_mock, tryStopAgent_mock):
+                            isAgentPackageAlreadyInstalled_mock, checkVerbose_mock):
     checkServerReachability_mock.return_value = {'log': 'log', 'exitstatus': 0}
     installAgent_mock.return_value = {'log': 'log', 'exitstatus': 0}
     configureAgent_mock.return_value = {'log': 'log', 'exitstatus': 0}
     runAgent_mock.return_value = {'log': 'log', 'exitstatus': 0}
     getOptimalVersion_mock.return_value = {'log': '1.1.2, 1.1.3, ', 'exitstatus': 1}
     ret = setup_agent.main(("setupAgent.py","agents_host","password", "server_hostname","1.1.1","8080"))
-    self.assertTrue(tryStopAgent_mock.called)
+    self.assertTrue(checkVerbose_mock.called)
     self.assertFalse(exit_mock.called)
     self.assertTrue("exitstatus" in ret)
     self.assertEqual(ret["exitstatus"], 1)
@@ -394,11 +419,12 @@ class TestSetupAgent(TestCase):
     pass
 
   @patch.object(setup_agent, 'execOsCommand')
-  def test_getAvaliableAgentPackageVersions(self, execOsCommand_mock):
-    setup_agent.getAvaliableAgentPackageVersions()
+  def test_getAvailableAgentPackageVersions(self, execOsCommand_mock):
+    setup_agent.getAvailableAgentPackageVersions()
     self.assertTrue(execOsCommand_mock.called)
     pass
 
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(setup_agent, 'execOsCommand')
   def test_installAgent(self, execOsCommand_mock):
     setup_agent.installAgent("1.1.1")

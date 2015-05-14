@@ -20,6 +20,7 @@ limitations under the License.
 import os
 
 from resource_management import *
+import getpass
 
 def setup_java():
   """
@@ -44,10 +45,10 @@ def setup_java():
 
   if params.jdk_name.endswith(".bin"):
     chmod_cmd = ("chmod", "+x", jdk_curl_target)
-    install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && echo A | {jdk_curl_target} -noregister && {sudo} cp -r {tmp_java_dir}/* {java_dir}")
+    install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && echo A | {jdk_curl_target} -noregister && {sudo} cp -rp {tmp_java_dir}/* {java_dir}")
   elif params.jdk_name.endswith(".gz"):
     chmod_cmd = ("chmod","a+x", java_dir)
-    install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && tar -xf {jdk_curl_target} && {sudo} cp -r {tmp_java_dir}/* {java_dir}")
+    install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && tar -xf {jdk_curl_target} && {sudo} cp -rp {tmp_java_dir}/* {java_dir}")
 
   Directory(java_dir
   )
@@ -61,12 +62,23 @@ def setup_java():
           not_if = format("test -e {java_exec}")
   )
   
+  File(format("{java_home}/bin/java"),
+          mode=0755,
+          cd_access="a",
+  )
+  
   Execute(("chgrp","-R", params.user_group, params.java_home),
+          sudo = True,          
+  )
+  Execute(("chown","-R", getpass.getuser(), params.java_home),
           sudo = True,          
   )
 
 def install_packages():
   import params
+  if params.host_sys_prepped:
+    return
+
   packages = ['unzip', 'curl']
   if params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.2') >= 0:
     packages.append('hdp-select')

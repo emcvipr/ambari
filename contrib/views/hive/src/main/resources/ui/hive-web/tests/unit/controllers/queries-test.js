@@ -20,7 +20,10 @@ import Ember from 'ember';
 import { moduleFor, test } from 'ember-qunit';
 
 moduleFor('controller:queries', 'QueriesController', {
-  needs: [ 'controller:history' ]
+  needs: [
+    'controller:history',
+    'controller:open-queries'
+  ]
 });
 
 test('controller is initialized', function() {
@@ -29,19 +32,4 @@ test('controller is initialized', function() {
   var component = this.subject();
 
   equal(component.get('columns.length'), 4, 'Columns are initialized correctly');
-});
-
-test('Should hide new queries', function() {
-  expect(1);
-
-  var queries = [
-    { isNew: true },
-    { isNew: false}
-  ];
-
-  var controller = this.subject({
-    queries: queries
-  });
-
-  equal(controller.get('model.length'), 1, 'Hide new queries from the list');
 });

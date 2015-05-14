@@ -22,12 +22,16 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.state.ConfigHelper;
+import org.apache.ambari.server.state.PropertyDependencyInfo;
+import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.state.RepositoryInfo;
 import org.apache.ambari.server.state.ServiceInfo;
 import org.apache.ambari.server.state.StackInfo;
@@ -153,6 +157,7 @@ public class StackModule extends BaseModule<StackModule, StackInfo> implements V
       mergeStackWithParent(parentVersion, allStacks, commonServices);
     }
     processRepositories();
+    processPropertyDependencies();
     moduleState = ModuleState.RESOLVED;
   }
 
@@ -218,6 +223,10 @@ public class StackModule extends BaseModule<StackModule, StackInfo> implements V
     // grab stack level kerberos.json from parent stack
     if (stackInfo.getKerberosDescriptorFileLocation() == null) {
       stackInfo.setKerberosDescriptorFileLocation(parentStack.getModuleInfo().getKerberosDescriptorFileLocation());
+    }
+
+    if (stackInfo.getWidgetsDescriptorFileLocation() == null) {
+      stackInfo.setWidgetsDescriptorFileLocation(parentStack.getModuleInfo().getWidgetsDescriptorFileLocation());
     }
 
     mergeServicesWithParent(parentStack, allStacks, commonServices);
@@ -408,6 +417,7 @@ public class StackModule extends BaseModule<StackModule, StackInfo> implements V
       stackInfo.setStackHooksFolder(stackDirectory.getHooksDir());
       stackInfo.setRcoFileLocation(stackDirectory.getRcoFilePath());
       stackInfo.setKerberosDescriptorFileLocation(stackDirectory.getKerberosDescriptorFilePath());
+      stackInfo.setWidgetsDescriptorFileLocation(stackDirectory.getWidgetsDescriptorFilePath());
       stackInfo.setUpgradesFolder(stackDirectory.getUpgradesDir());
       stackInfo.setUpgradePacks(stackDirectory.getUpgradePacks());
       stackInfo.setRoleCommandOrder(stackDirectory.getRoleCommandOrder());
@@ -570,6 +580,51 @@ public class StackModule extends BaseModule<StackModule, StackInfo> implements V
   private void addServices(Collection<ServiceModule> services) {
     for (ServiceModule service : services) {
       addService(service);
+    }
+  }
+
+  /**
+   * Process <depends-on></depends-on> properties
+   */
+  private void processPropertyDependencies() {
+
+    // Stack-definition has 'depends-on' relationship specified.
+    // We have a map to construct the 'depended-by' relationship.
+    Map<PropertyDependencyInfo, Set<PropertyDependencyInfo>> dependedByMap = new HashMap<PropertyDependencyInfo, Set<PropertyDependencyInfo>>();
+
+    // Go through all service-configs and gather the reversed 'depended-by'
+    // relationship into map. Since we do not have the reverse {@link PropertyInfo},
+    // we have to loop through service-configs again later.
+    for (ServiceModule serviceModule : serviceModules.values()) {
+      for (PropertyInfo pi : serviceModule.getModuleInfo().getProperties()) {
+        for (PropertyDependencyInfo pdi : pi.getDependsOnProperties()) {
+          String type = ConfigHelper.fileNameToConfigType(pi.getFilename());
+          String name = pi.getName();
+          PropertyDependencyInfo propertyDependency =
+            new PropertyDependencyInfo(type, name);
+          if (dependedByMap.keySet().contains(pdi)) {
+            dependedByMap.get(pdi).add(propertyDependency);
+          } else {
+            Set<PropertyDependencyInfo> newDependenciesSet =
+              new HashSet<PropertyDependencyInfo>();
+            newDependenciesSet.add(propertyDependency);
+            dependedByMap.put(pdi, newDependenciesSet);
+          }
+        }
+      }
+    }
+
+    // Go through all service-configs again and set their 'depended-by' if necessary.
+    for (ServiceModule serviceModule : serviceModules.values()) {
+      for (PropertyInfo pi : serviceModule.getModuleInfo().getProperties()) {
+        String type = ConfigHelper.fileNameToConfigType(pi.getFilename());
+        String name = pi.getName();
+        Set<PropertyDependencyInfo> set =
+          dependedByMap.remove(new PropertyDependencyInfo(type, name));
+        if (set != null) {
+          pi.getDependedByProperties().addAll(set);
+        }
+      }
     }
   }
 

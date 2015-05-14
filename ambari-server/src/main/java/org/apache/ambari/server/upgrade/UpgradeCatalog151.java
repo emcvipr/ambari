@@ -39,6 +39,10 @@ public class UpgradeCatalog151 extends AbstractUpgradeCatalog {
     return "1.5.0";
   }
 
+  @Override
+  public String getTargetVersion() {
+    return "1.5.1";
+  }
 
   // ----- Constructors ------------------------------------------------------
 
@@ -134,13 +138,15 @@ public class UpgradeCatalog151 extends AbstractUpgradeCatalog {
 
 
   // ----- UpgradeCatalog ----------------------------------------------------
-
+  /**
+   * {@inheritDoc}
+   */
   @Override
-  public void executeDMLUpdates() throws AmbariException, SQLException {
+  public void executePreDMLUpdates() {
+    ;
   }
 
   @Override
-  public String getTargetVersion() {
-    return "1.5.1";
+  public void executeDMLUpdates() throws AmbariException, SQLException {
   }
 }

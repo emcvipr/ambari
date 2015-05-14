@@ -37,8 +37,6 @@ import org.apache.ambari.server.controller.ServiceComponentHostRequest;
 import org.apache.ambari.server.controller.ServiceComponentHostResponse;
 import org.apache.ambari.server.controller.ServiceRequest;
 import org.apache.ambari.server.controller.ServiceResponse;
-import org.apache.ambari.server.controller.predicate.AndPredicate;
-import org.apache.ambari.server.controller.predicate.EqualsPredicate;
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
 import org.apache.ambari.server.controller.spi.NoSuchResourceException;
 import org.apache.ambari.server.controller.spi.Predicate;
@@ -52,10 +50,7 @@ import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.apache.ambari.server.metadata.RoleCommandOrder;
 import org.apache.ambari.server.serveraction.kerberos.KerberosAdminAuthenticationException;
 import org.apache.ambari.server.serveraction.kerberos.KerberosInvalidConfigurationException;
-import org.apache.ambari.server.serveraction.kerberos.KerberosKDCConnectionException;
-import org.apache.ambari.server.serveraction.kerberos.KerberosLDAPContainerException;
 import org.apache.ambari.server.serveraction.kerberos.KerberosMissingAdminCredentialsException;
-import org.apache.ambari.server.serveraction.kerberos.KerberosRealmException;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.ComponentInfo;
@@ -67,7 +62,6 @@ import org.apache.ambari.server.state.ServiceFactory;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.State;
 import org.apache.commons.lang.StringUtils;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -90,10 +84,10 @@ public class ServiceResourceProvider extends AbstractControllerResourceProvider 
   // ----- Property ID constants ---------------------------------------------
 
   // Services
-  protected static final String SERVICE_CLUSTER_NAME_PROPERTY_ID    = PropertyHelper.getPropertyId("ServiceInfo", "cluster_name");
-  protected static final String SERVICE_SERVICE_NAME_PROPERTY_ID    = PropertyHelper.getPropertyId("ServiceInfo", "service_name");
-  protected static final String SERVICE_SERVICE_STATE_PROPERTY_ID   = PropertyHelper.getPropertyId("ServiceInfo", "state");
-  protected static final String SERVICE_MAINTENANCE_STATE_PROPERTY_ID = PropertyHelper.getPropertyId("ServiceInfo", "maintenance_state");
+  public static final String SERVICE_CLUSTER_NAME_PROPERTY_ID    = PropertyHelper.getPropertyId("ServiceInfo", "cluster_name");
+  public static final String SERVICE_SERVICE_NAME_PROPERTY_ID    = PropertyHelper.getPropertyId("ServiceInfo", "service_name");
+  public static final String SERVICE_SERVICE_STATE_PROPERTY_ID   = PropertyHelper.getPropertyId("ServiceInfo", "state");
+  public static final String SERVICE_MAINTENANCE_STATE_PROPERTY_ID = PropertyHelper.getPropertyId("ServiceInfo", "maintenance_state");
 
   //Parameters from the predicate
   private static final String QUERY_PARAMETERS_RUN_SMOKE_TEST_ID =
@@ -285,52 +279,6 @@ public class ServiceResourceProvider extends AbstractControllerResourceProvider 
     return pkPropertyIds;
   }
 
-
-  // ----- ServiceResourceProvider -----------------------------------------
-
-  RequestStatusResponse installAndStart(String clusterName) throws  SystemException,
-      UnsupportedPropertyException, NoSuchParentResourceException {
-
-    final RequestStageContainer requestStages;
-    Map<String, Object> installProperties = new HashMap<String, Object>();
-    installProperties.put(SERVICE_SERVICE_STATE_PROPERTY_ID, "INSTALLED");
-    Map<String, String> requestInfo = new HashMap<String, String>();
-    requestInfo.put("context", "Install and start all services");
-    Request installRequest = new RequestImpl(null, Collections.singleton(installProperties), requestInfo, null);
-    Predicate statePredicate = new EqualsPredicate<String>(SERVICE_SERVICE_STATE_PROPERTY_ID, "INIT");
-    Predicate clusterPredicate = new EqualsPredicate<String>(SERVICE_CLUSTER_NAME_PROPERTY_ID, clusterName);
-    Predicate installPredicate = new AndPredicate(statePredicate, clusterPredicate);
-
-    final Request startRequest;
-    Predicate startPredicate;
-    try {
-      LOG.info("Installing all services");
-      requestStages = doUpdateResources(null, installRequest, installPredicate);
-      notifyUpdate(Resource.Type.Service, installRequest, installPredicate);
-
-      Map<String, Object> startProperties = new HashMap<String, Object>();
-      startProperties.put(SERVICE_SERVICE_STATE_PROPERTY_ID, "STARTED");
-      startRequest = new RequestImpl(null, Collections.singleton(startProperties), requestInfo, null);
-      Predicate installedStatePredicate = new EqualsPredicate<String>(SERVICE_SERVICE_STATE_PROPERTY_ID, "INSTALLED");
-      Predicate serviceClusterPredicate = new EqualsPredicate<String>(SERVICE_CLUSTER_NAME_PROPERTY_ID, clusterName);
-      startPredicate = new AndPredicate(installedStatePredicate, serviceClusterPredicate);
-
-      LOG.info("Starting all services");
-      doUpdateResources(requestStages, startRequest, startPredicate);
-      notifyUpdate(Resource.Type.Service, startRequest, startPredicate);
-      try {
-        requestStages.persist();
-      } catch (AmbariException e) {
-        throw new SystemException(e.getMessage(), e);
-      }
-      return requestStages.getRequestStatusResponse();
-
-    } catch (NoSuchResourceException e) {
-      throw new SystemException("Attempted to modify a non-existing service",  e);
-    }
-  }
-
-
   // ----- utility methods -------------------------------------------------
 
   private RequestStageContainer doUpdateResources(final RequestStageContainer stages, final Request request, Predicate predicate)
@@ -387,7 +335,7 @@ public class ServiceResourceProvider extends AbstractControllerResourceProvider 
   }
 
   // Create services from the given request.
-  protected synchronized void createServices(Set<ServiceRequest> requests)
+  public synchronized void createServices(Set<ServiceRequest> requests)
       throws AmbariException {
 
     if (requests.isEmpty()) {
@@ -510,6 +458,9 @@ public class ServiceResourceProvider extends AbstractControllerResourceProvider 
       s.setDesiredState(state);
       s.setDesiredStackVersion(cluster.getDesiredStackVersion());
       cluster.addService(s);
+      // Initialize service widgets
+      getManagementController().initializeWidgetsAndLayouts(cluster, s);
+
       s.persist();
     }
   }

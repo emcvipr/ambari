@@ -87,8 +87,18 @@ public class ServiceInfo implements Validable{
   @XmlElement(name = "restartRequiredAfterChange")
   private Boolean restartRequiredAfterChange;
 
+  @JsonIgnore
+  @XmlElement(name = "restartRequiredAfterRackChange")
+  private Boolean restartRequiredAfterRackChange;
+
   @XmlElement(name = "extends")
   private String parent;
+
+  @XmlElement(name = "widgetsFileName")
+  private String widgetsFileName = AmbariMetaInfo.WIDGETS_DESCRIPTOR_FILE_NAME;
+
+  @XmlElement(name = "metricsFileName")
+  private String metricsFileName = AmbariMetaInfo.SERVICE_METRIC_FILE_NAME;
 
   @XmlTransient
   private volatile Map<String, PropertyInfo> requiredProperties;
@@ -99,10 +109,11 @@ public class ServiceInfo implements Validable{
 
   public void setRestartRequiredAfterChange(Boolean restartRequiredAfterChange) {
     this.restartRequiredAfterChange = restartRequiredAfterChange;
-  }  
-  
+  }
+
   @XmlTransient
   private File metricsFile = null;
+
   @XmlTransient
   private Map<String, Map<String, List<MetricDefinition>>> metrics = null;
   
@@ -111,6 +122,9 @@ public class ServiceInfo implements Validable{
 
   @XmlTransient
   private File kerberosDescriptorFile = null;
+
+  @XmlTransient
+  private File widgetsDescriptorFile = null;
   
   @XmlTransient
   private boolean valid = true;
@@ -161,6 +175,18 @@ public class ServiceInfo implements Validable{
   @JsonIgnore
   @XmlElement(name="configuration-dir")
   private String configDir = AmbariMetaInfo.SERVICE_CONFIG_FOLDER_NAME;
+
+  @JsonIgnore
+  @XmlElement(name = "themes-dir")
+  private String themesDir = AmbariMetaInfo.SERVICE_THEMES_FOLDER_NAME;
+
+  @JsonIgnore
+  @XmlElementWrapper(name = "themes")
+  @XmlElements(@XmlElement(name = "theme"))
+  private List<ThemeInfo> themes;
+
+  @XmlTransient
+  private volatile Map<String, ThemeInfo> themesMap;
 
 
   /**
@@ -245,6 +271,22 @@ public class ServiceInfo implements Validable{
   }
   public List<String> getRequiredServices() {
     return requiredServices;
+  }
+
+  public String getWidgetsFileName() {
+    return widgetsFileName;
+  }
+
+  public void setWidgetsFileName(String widgetsFileName) {
+    this.widgetsFileName = widgetsFileName;
+  }
+
+  public String getMetricsFileName() {
+    return metricsFileName;
+  }
+
+  public void setMetricsFileName(String metricsFileName) {
+    this.metricsFileName = metricsFileName;
   }
 
   public void setRequiredServices(List<String> requiredServices) {
@@ -598,6 +640,17 @@ public class ServiceInfo implements Validable{
   }
 
   /**
+   * @return the widgets descriptor file, or <code>null</code> if none exists
+   */
+  public File getWidgetsDescriptorFile() {
+    return widgetsDescriptorFile;
+  }
+
+  public void setWidgetsDescriptorFile(File widgetsDescriptorFile) {
+    this.widgetsDescriptorFile = widgetsDescriptorFile;
+  }
+
+  /**
    * @return config types this service contains configuration for, but which are primarily related to another service
    */
   public Set<String> getExcludedConfigTypes() {
@@ -626,5 +679,60 @@ public class ServiceInfo implements Validable{
       }
     }
     return result;
+  }
+
+  /**
+   * Determine whether or not a restart is required for this service after a host rack info change.
+   *
+   * @return true if a restart is required
+   */
+  public Boolean isRestartRequiredAfterRackChange() {
+    return restartRequiredAfterRackChange;
+  }
+
+  /**
+   * Set indicator for required restart after a host rack info change.
+   *
+   * @param restartRequiredAfterRackChange  true if a restart is required
+   */
+  public void setRestartRequiredAfterRackChange(Boolean restartRequiredAfterRackChange) {
+    this.restartRequiredAfterRackChange = restartRequiredAfterRackChange;
+  }
+
+  public String getThemesDir() {
+    return themesDir;
+  }
+
+  public void setThemesDir(String themesDir) {
+    this.themesDir = themesDir;
+  }
+
+  public List<ThemeInfo> getThemes() {
+    return themes;
+  }
+
+  public void setThemes(List<ThemeInfo> themes) {
+    this.themes = themes;
+  }
+
+  public Map<String, ThemeInfo> getThemesMap() {
+    if (themesMap == null) {
+      synchronized (this) {
+      }
+      if (themesMap == null) {
+        Map<String, ThemeInfo> tmp = new TreeMap<String, ThemeInfo>();
+        if (themes != null) {
+          for (ThemeInfo theme : themes) {
+            tmp.put(theme.getFileName(), theme);
+          }
+        }
+        themesMap = tmp;
+      }
+    }
+    return themesMap;
+  }
+
+  public void setThemesMap(Map<String, ThemeInfo> themesMap) {
+    this.themesMap = themesMap;
   }
 }

@@ -31,6 +31,7 @@ import org.apache.ambari.eventdb.webservice.WorkflowJsonService;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.StaticallyInject;
 import org.apache.ambari.server.actionmanager.ActionManager;
+import org.apache.ambari.server.actionmanager.HostRoleCommandFactory;
 import org.apache.ambari.server.agent.HeartBeatHandler;
 import org.apache.ambari.server.agent.rest.AgentResource;
 import org.apache.ambari.server.api.AmbariErrorHandler;
@@ -47,9 +48,11 @@ import org.apache.ambari.server.configuration.ComponentSSLConfiguration;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.internal.AbstractControllerResourceProvider;
 import org.apache.ambari.server.controller.internal.AmbariPrivilegeResourceProvider;
+import org.apache.ambari.server.controller.internal.BaseClusterRequest;
 import org.apache.ambari.server.controller.internal.BlueprintResourceProvider;
 import org.apache.ambari.server.controller.internal.ClusterPrivilegeResourceProvider;
 import org.apache.ambari.server.controller.internal.ClusterResourceProvider;
+import org.apache.ambari.server.controller.internal.HostResourceProvider;
 import org.apache.ambari.server.controller.internal.PermissionResourceProvider;
 import org.apache.ambari.server.controller.internal.PrivilegeResourceProvider;
 import org.apache.ambari.server.controller.internal.StackAdvisorResourceProvider;
@@ -57,6 +60,7 @@ import org.apache.ambari.server.controller.internal.StackDefinedPropertyProvider
 import org.apache.ambari.server.controller.internal.StackDependencyResourceProvider;
 import org.apache.ambari.server.controller.internal.UserPrivilegeResourceProvider;
 import org.apache.ambari.server.controller.internal.ViewPermissionResourceProvider;
+import org.apache.ambari.server.controller.utilities.DatabaseChecker;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.PersistenceType;
 import org.apache.ambari.server.orm.dao.BlueprintDAO;
@@ -85,9 +89,11 @@ import org.apache.ambari.server.security.unsecured.rest.CertificateDownload;
 import org.apache.ambari.server.security.unsecured.rest.CertificateSign;
 import org.apache.ambari.server.security.unsecured.rest.ConnectionInfo;
 import org.apache.ambari.server.state.Clusters;
-import org.apache.ambari.server.state.ConfigHelper;
+import org.apache.ambari.server.topology.AmbariContext;
+import org.apache.ambari.server.topology.BlueprintFactory;
+import org.apache.ambari.server.topology.TopologyManager;
+import org.apache.ambari.server.topology.TopologyRequestFactoryImpl;
 import org.apache.ambari.server.utils.StageUtils;
-import org.apache.ambari.server.utils.VersionUtils;
 import org.apache.ambari.server.view.ViewRegistry;
 import org.apache.velocity.app.Velocity;
 import org.eclipse.jetty.server.Connector;
@@ -203,17 +209,14 @@ public class AmbariServer {
 
   @SuppressWarnings("deprecation")
   public void run() throws Exception {
-    // Initialize meta info before heartbeat monitor
-    ambariMetaInfo.init();
-    LOG.info("********* Meta Info initialized **********");
-
     performStaticInjection();
     initDB();
     server = new Server();
     server.setSessionIdManager(sessionIdManager);
     Server serverForAgent = new Server();
 
-    checkDBVersion();
+    DatabaseChecker.checkDBVersion();
+    DatabaseChecker.checkDBConsistency();
 
     try {
       ClassPathXmlApplicationContext parentSpringAppContext =
@@ -257,7 +260,6 @@ public class AmbariServer {
       root.getServletContext().setAttribute(
           WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE,
           springWebAppContext);
-      handlerList.setSpringWebAppContext(springWebAppContext);
 
       certMan.initRootCert();
 
@@ -396,11 +398,14 @@ public class AmbariServer {
                     "org.apache.ambari.server.api.AmbariCsrfProtectionFilter");
       }
 
-      //Set jetty thread pool
-      serverForAgent.setThreadPool(
-          new QueuedThreadPool(configs.getAgentThreadPoolSize()));
-      server.setThreadPool(
-          new QueuedThreadPool(configs.getClientThreadPoolSize()));
+      // Set jetty thread pool
+      QueuedThreadPool qtp = new QueuedThreadPool(configs.getAgentThreadPoolSize());
+      qtp.setName("qtp-ambari-agent");
+      serverForAgent.setThreadPool(qtp);
+
+      qtp = new QueuedThreadPool(configs.getClientThreadPoolSize());
+      qtp.setName("qtp-client");
+      server.setThreadPool(qtp);
 
       /* Configure the API server to use the NIO connectors */
       SelectChannelConnector apiConnector;
@@ -570,29 +575,6 @@ public class AmbariServer {
     }
   }
 
-  protected void checkDBVersion() throws AmbariException {
-    LOG.info("Checking DB store version");
-    MetainfoEntity schemaVersionEntity = metainfoDAO.findByKey(Configuration.SERVER_VERSION_KEY);
-    String schemaVersion = null;
-    String serverVersion = null;
-
-    if (schemaVersionEntity != null) {
-      schemaVersion = schemaVersionEntity.getMetainfoValue();
-      serverVersion = ambariMetaInfo.getServerVersion();
-    }
-
-    if (schemaVersionEntity==null || VersionUtils.compareVersions(schemaVersion, serverVersion, 3) != 0) {
-      String error = "Current database store version is not compatible with " +
-          "current server version"
-          + ", serverVersion=" + serverVersion
-          + ", schemaVersion=" + schemaVersion;
-      LOG.warn(error);
-      throw new AmbariException(error);
-    }
-
-    LOG.info("DB store version is compatible");
-  }
-
   public void stop() throws Exception {
     try {
       server.stop();
@@ -620,15 +602,21 @@ public class AmbariServer {
     BootStrapResource.init(injector.getInstance(BootStrapImpl.class));
     StackAdvisorResourceProvider.init(injector.getInstance(StackAdvisorHelper.class));
     StageUtils.setGson(injector.getInstance(Gson.class));
+    StageUtils.setTopologyManager(injector.getInstance(TopologyManager.class));
     WorkflowJsonService.setDBProperties(
         injector.getInstance(Configuration.class));
     SecurityFilter.init(injector.getInstance(Configuration.class));
     StackDefinedPropertyProvider.init(injector);
     AbstractControllerResourceProvider.init(injector.getInstance(ResourceProviderFactory.class));
-    BlueprintResourceProvider.init(injector.getInstance(BlueprintDAO.class),
-        injector.getInstance(Gson.class), ambariMetaInfo);
+    BlueprintResourceProvider.init(injector.getInstance(BlueprintFactory.class),
+        injector.getInstance(BlueprintDAO.class), injector.getInstance(Gson.class));
     StackDependencyResourceProvider.init(ambariMetaInfo);
-    ClusterResourceProvider.init(injector.getInstance(BlueprintDAO.class), ambariMetaInfo, injector.getInstance(ConfigHelper.class));
+    ClusterResourceProvider.init(injector.getInstance(TopologyManager.class),
+        injector.getInstance(TopologyRequestFactoryImpl.class));
+    HostResourceProvider.setTopologyManager(injector.getInstance(TopologyManager.class));
+    BlueprintFactory.init(injector.getInstance(BlueprintDAO.class));
+    BaseClusterRequest.init(injector.getInstance(BlueprintFactory.class));
+    AmbariContext.init(injector.getInstance(HostRoleCommandFactory.class));
 
     PermissionResourceProvider.init(injector.getInstance(PermissionDAO.class));
     ViewPermissionResourceProvider.init(injector.getInstance(PermissionDAO.class));
@@ -639,6 +627,7 @@ public class AmbariServer {
         injector.getInstance(GroupDAO.class), injector.getInstance(ViewInstanceDAO.class));
     ClusterPrivilegeResourceProvider.init(injector.getInstance(ClusterDAO.class));
     AmbariPrivilegeResourceProvider.init(injector.getInstance(ClusterDAO.class));
+    ActionManager.setTopologyManager(injector.getInstance(TopologyManager.class));
   }
 
   /**

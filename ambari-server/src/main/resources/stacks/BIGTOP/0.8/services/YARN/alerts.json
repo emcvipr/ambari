@@ -20,13 +20,13 @@
           },
           "reporting": {
             "ok": {
-              "text": "HTTP {0} response in {2:.3f} seconds"
+              "text": "HTTP {0} response in {2:.3f}s"
             },
             "warning":{
-              "text": "HTTP {0} response in {2:.3f} seconds"
+              "text": "HTTP {0} response from {1} in {2:.3f}s ({3})"
             },
             "critical": {
-              "text": "Connection failed to {1}: {3}"
+              "text": "Connection failed to {1} ({3})"
             }
           }
         }
@@ -183,13 +183,13 @@
           },
           "reporting": {
             "ok": {
-              "text": "HTTP {0} response in {2:.3f} seconds"
+              "text": "HTTP {0} response in {2:.3f}s"
             },
             "warning":{
-              "text": "HTTP {0} response in {2:.3f} seconds"
+              "text": "HTTP {0} response from {1} in {2:.3f}s ({3})"
             },
             "critical": {
-              "text": "Connection failed to {1}: {3}"
+              "text": "Connection failed to {1} ({3})"
             }
           }
         }
@@ -203,7 +203,18 @@
         "enabled": true,
         "source": {
           "type": "SCRIPT",
-          "path": "YARN/2.1.0.2.0/package/alerts/alert_nodemanager_health.py"
+          "path": "YARN/2.1.0.2.0/package/alerts/alert_nodemanager_health.py",
+          "parameters": [
+            {
+              "name": "connection.timeout",
+              "display_name": "Connection Timeout",
+              "value": 5.0,
+              "type": "NUMERIC",
+              "description": "The maximum time before this alert is considered to be CRITICAL",
+              "units": "seconds",
+              "threshold": "CRITICAL"
+            }
+          ]
         }
       }
     ],
@@ -231,13 +242,13 @@
           },
           "reporting": {
             "ok": {
-              "text": "HTTP {0} response in {2:.3f} seconds"
+              "text": "HTTP {0} response in {2:.3f}s"
             },
             "warning":{
-              "text": "HTTP {0} response in {2:.3f} seconds"
+              "text": "HTTP {0} response from {1} in {2:.3f}s ({3})"
             },
             "critical": {
-              "text": "Connection failed to {1}: {3}"
+              "text": "Connection failed to {1} ({3})"
             }
           }
         }
@@ -348,13 +359,13 @@
           },
           "reporting": {
             "ok": {
-              "text": "HTTP {0} response in {2:.3f} seconds"
+              "text": "HTTP {0} response in {2:.3f}s"
             },
             "warning":{
-              "text": "HTTP {0} response in {2:.3f} seconds"
+              "text": "HTTP {0} response from {1} in {2:.3f}s ({3})"
             },
             "critical": {
-              "text": "Connection failed to {1}: {3}"
+              "text": "Connection failed to {1} ({3})"
             }
           }
         }

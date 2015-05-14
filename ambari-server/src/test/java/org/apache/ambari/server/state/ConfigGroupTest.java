@@ -17,10 +17,9 @@
  */
 package org.apache.ambari.server.state;
 
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
-import com.google.inject.persist.Transactional;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 
 import junit.framework.Assert;
 
@@ -40,9 +39,10 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
+import com.google.inject.persist.Transactional;
 
 public class ConfigGroupTest {
 
@@ -70,11 +70,9 @@ public class ConfigGroupTest {
     configGroupHostMappingDAO = injector.getInstance
       (ConfigGroupHostMappingDAO.class);
 
-    metaInfo.init();
     clusterName = "foo";
-    clusters.addCluster(clusterName);
+    clusters.addCluster(clusterName, new StackId("HDP-0.1"));
     cluster = clusters.getCluster(clusterName);
-    cluster.setDesiredStackVersion(new StackId("HDP-0.1"));
     Assert.assertNotNull(cluster);
     clusters.addHost("h1");
     clusters.addHost("h2");
@@ -105,10 +103,10 @@ public class ConfigGroupTest {
     Host host = clusters.getHost("h1");
 
     Map<String, Config> configs = new HashMap<String, Config>();
-    Map<String, Host> hosts = new HashMap<String, Host>();
+    Map<Long, Host> hosts = new HashMap<Long, Host>();
 
     configs.put(config.getType(), config);
-    hosts.put(host.getHostName(), host);
+    hosts.put(1L, host);
 
     ConfigGroup configGroup = configGroupFactory.createNew(cluster, "cg-test",
       "HDFS", "New HDFS configs for h1", configs, hosts);
@@ -188,7 +186,7 @@ public class ConfigGroupTest {
     Assert.assertEquals("NewTag", configGroupEntity.getTag());
     Assert.assertEquals("NewDesc", configGroupEntity.getDescription());
     Assert.assertNotNull(cluster.getConfig("test-site", "version100"));
-    
+
     ConfigGroupConfigMappingEntity configMappingEntity = null;
     Object[] array = configGroupEntity.getConfigGroupConfigMappingEntities().toArray();
     for(Object o: array) {
@@ -213,7 +211,6 @@ public class ConfigGroupTest {
     configGroup.delete();
 
     Assert.assertNull(configGroupDAO.findById(id));
-    Assert.assertNull(cluster.getConfigGroups().get(id));
   }
 
   @Test
@@ -228,8 +225,9 @@ public class ConfigGroupTest {
     clusters.unmapHostFromCluster("h1", clusterName);
 
     Assert.assertNull(clusters.getHostsForCluster(clusterName).get("h1"));
-    Assert.assertTrue(configGroupHostMappingDAO.findByHost("h1").isEmpty());
-    Assert.assertNull(configGroup.getHosts().get("h1"));
+    // Assumes that 1L is the id of host h1, as specified in createConfigGroup
+    Assert.assertTrue(configGroupHostMappingDAO.findByHostId(1L).isEmpty());
+    Assert.assertFalse(configGroup.getHosts().containsKey(1L));
   }
 
   @Test

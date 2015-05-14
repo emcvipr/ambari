@@ -37,10 +37,11 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
+import java.util.UUID;
 
 import javax.persistence.EntityManager;
-import javax.xml.bind.JAXBException;
 
 import junit.framework.Assert;
 
@@ -49,7 +50,7 @@ import org.apache.ambari.server.StackAccessException;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.metadata.ActionMetadata;
-import org.apache.ambari.server.metadata.AgentAlertDefinitions;
+import org.apache.ambari.server.metadata.AmbariServiceAlertDefinitions;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.OrmTestHelper;
@@ -58,6 +59,7 @@ import org.apache.ambari.server.orm.dao.MetainfoDAO;
 import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
 import org.apache.ambari.server.orm.entities.MetainfoEntity;
 import org.apache.ambari.server.stack.StackManager;
+import org.apache.ambari.server.stack.StackManagerFactory;
 import org.apache.ambari.server.state.AutoDeployInfo;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
@@ -65,6 +67,7 @@ import org.apache.ambari.server.state.ComponentInfo;
 import org.apache.ambari.server.state.CustomCommandDefinition;
 import org.apache.ambari.server.state.DependencyInfo;
 import org.apache.ambari.server.state.OperatingSystemInfo;
+import org.apache.ambari.server.state.PropertyDependencyInfo;
 import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.state.RepositoryInfo;
 import org.apache.ambari.server.state.ServiceInfo;
@@ -76,6 +79,7 @@ import org.apache.ambari.server.state.alert.MetricSource;
 import org.apache.ambari.server.state.alert.PortSource;
 import org.apache.ambari.server.state.alert.Reporting;
 import org.apache.ambari.server.state.alert.Source;
+import org.apache.ambari.server.state.alert.SourceType;
 import org.apache.ambari.server.state.kerberos.KerberosDescriptor;
 import org.apache.ambari.server.state.kerberos.KerberosDescriptorFactory;
 import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptorFactory;
@@ -101,7 +105,6 @@ import com.google.inject.util.Modules;
 public class AmbariMetaInfoTest {
 
   private static final String STACK_NAME_HDP = "HDP";
-  private static final String STACK_NAME_XYZ = "XYZ";
   private static final String STACK_VERSION_HDP = "0.1";
   private static final String EXT_STACK_NAME = "2.0.6";
   private static final String STACK_VERSION_HDP_02 = "0.2";
@@ -141,7 +144,7 @@ public class AmbariMetaInfoTest {
   @Before
   public void before() throws Exception {
     File stacks = new File("src/test/resources/stacks");
-    File version = new File("target/version");
+    File version = new File("src/test/resources/version");
     if (System.getProperty("os.name").contains("Windows")) {
       stacks = new File(ClassLoader.getSystemClassLoader().getResource("stacks").getPath());
       version = new File(new File(ClassLoader.getSystemClassLoader().getResource("").getPath()).getParent(), "version");
@@ -161,6 +164,13 @@ public class AmbariMetaInfoTest {
   public void getRestartRequiredServicesNames() throws AmbariException {
     Set<String> res = metaInfo.getRestartRequiredServicesNames(STACK_NAME_HDP, "2.0.7");
     assertEquals(1, res.size());
+  }
+
+  @Test
+  public void testGetRackSensitiveServicesNames() throws AmbariException {
+    Set<String> res = metaInfo.getRackSensitiveServicesNames(STACK_NAME_HDP, "2.0.7");
+    assertEquals(1, res.size());
+    assertEquals("HDFS", res.iterator().next());
   }
 
   @Test
@@ -266,7 +276,9 @@ public class AmbariMetaInfoTest {
 
     List<RepositoryInfo> redhat6Repo = ambariMetaInfo.getRepositories(
         STACK_NAME_HDP, "2.1.1", "redhat6");
+
     assertNotNull(redhat6Repo);
+
     for (RepositoryInfo ri : redhat6Repo) {
       if (HDP_REPO_NAME.equals(ri.getRepoName())) {
         assertEquals(newBaseUrl, ri.getBaseUrl());
@@ -536,7 +548,7 @@ public class AmbariMetaInfoTest {
   public void testMetaInfoFileFilter() throws Exception {
     String buildDir = tmpFolder.getRoot().getAbsolutePath();
     File stackRoot = new File("src/test/resources/stacks");
-    File version = new File("target/version");
+    File version = new File("src/test/resources/version");
     if (System.getProperty("os.name").contains("Windows")) {
       stackRoot = new File(ClassLoader.getSystemClassLoader().getResource("stacks").getPath());
       version = new File(new File(ClassLoader.getSystemClassLoader().getResource("").getPath()).getParent(), "version");
@@ -553,7 +565,9 @@ public class AmbariMetaInfoTest {
     if (!f3.exists()) {
       f3.createNewFile();
     }
+
     ambariMetaInfo.init();
+
     // Tests the stack is loaded as expected
     getServices();
     getComponentsByService();
@@ -738,7 +752,11 @@ public class AmbariMetaInfoTest {
     PropertyInfo redefinedProperty3 = null;
     PropertyInfo inheritedProperty = null;
     PropertyInfo newProperty = null;
+    PropertyInfo newEnhancedProperty = null;
     PropertyInfo originalProperty = null;
+
+    PropertyDependencyInfo propertyDependencyInfo =
+      new PropertyDependencyInfo("yarn-site", "new-enhanced-yarn-property");
 
     for (PropertyInfo propertyInfo : redefinedService.getProperties()) {
       if (propertyInfo.getName().equals("yarn.resourcemanager.resource-tracker.address")) {
@@ -755,6 +773,8 @@ public class AmbariMetaInfoTest {
         inheritedProperty = propertyInfo;
       } else if (propertyInfo.getName().equals("new-yarn-property")) {
         newProperty = propertyInfo;
+      } else if (propertyInfo.getName().equals("new-enhanced-yarn-property")) {
+        newEnhancedProperty = propertyInfo;
       } else if (propertyInfo.getName().equals("yarn.nodemanager.aux-services")) {
         originalProperty = propertyInfo;
       }
@@ -777,6 +797,24 @@ public class AmbariMetaInfoTest {
     Assert.assertEquals("some-value", newProperty.getValue());
     Assert.assertEquals("some description.", newProperty.getDescription());
     Assert.assertEquals("yarn-site.xml", newProperty.getFilename());
+    Assert.assertEquals(1, newProperty.getDependedByProperties().size());
+    Assert.assertTrue(newProperty.getDependedByProperties().contains(propertyDependencyInfo));
+    // New enhanced property
+    Assert.assertNotNull(newEnhancedProperty);
+    Assert.assertEquals("1024", newEnhancedProperty.getValue());
+    Assert.assertEquals("some enhanced description.", newEnhancedProperty.getDescription());
+    Assert.assertEquals("yarn-site.xml", newEnhancedProperty.getFilename());
+    Assert.assertEquals(2, newEnhancedProperty.getDependsOnProperties().size());
+    Assert.assertTrue(newEnhancedProperty.getDependsOnProperties().contains(new PropertyDependencyInfo("yarn-site", "new-yarn-property")));
+    Assert.assertTrue(newEnhancedProperty.getDependsOnProperties().contains(new PropertyDependencyInfo("global", "yarn_heapsize")));
+    Assert.assertEquals("MB", newEnhancedProperty.getPropertyValueAttributes().getUnit());
+    Assert.assertEquals("int", newEnhancedProperty.getPropertyValueAttributes().getType());
+    Assert.assertEquals("512", newEnhancedProperty.getPropertyValueAttributes().getMinimum());
+    Assert.assertEquals("15360", newEnhancedProperty.getPropertyValueAttributes().getMaximum());
+    Assert.assertEquals("256", newEnhancedProperty.getPropertyValueAttributes().getIncrementStep());
+    Assert.assertNull(newEnhancedProperty.getPropertyValueAttributes().getEntries());
+    Assert.assertNull(newEnhancedProperty.getPropertyValueAttributes().getEntriesEditable());
+
     // Original property
     Assert.assertNotNull(originalProperty);
     Assert.assertEquals("mapreduce.shuffle", originalProperty.getValue());
@@ -796,7 +834,7 @@ public class AmbariMetaInfoTest {
   @Test
   public void testBadStack() throws Exception {
     File stackRoot = new File("src/test/resources/bad-stacks");
-    File version = new File("target/version");
+    File version = new File("src/test/resources/version");
     if (System.getProperty("os.name").contains("Windows")) {
       stackRoot = new File(ClassLoader.getSystemClassLoader().getResource("bad-stacks").getPath());
       version = new File(new File(ClassLoader.getSystemClassLoader().getResource("").getPath()).getParent(), "version");
@@ -1674,16 +1712,21 @@ public class AmbariMetaInfoTest {
 
     injector.getInstance(GuiceJpaInitializer.class);
     injector.getInstance(EntityManager.class);
-    injector.getInstance(OrmTestHelper.class).createCluster();
+    long clusterId = injector.getInstance(OrmTestHelper.class).createCluster(
+        "cluster" + System.currentTimeMillis());
 
-    metaInfo.alertDefinitionDao = injector.getInstance(AlertDefinitionDAO.class);
     Class<?> c = metaInfo.getClass().getSuperclass();
-    Field f = c.getDeclaredField("agentAlertDefinitions");
+
+    Field f = c.getDeclaredField("alertDefinitionDao");
     f.setAccessible(true);
-    f.set(metaInfo, injector.getInstance(AgentAlertDefinitions.class));
+    f.set(metaInfo, injector.getInstance(AlertDefinitionDAO.class));
+
+    f = c.getDeclaredField("ambariServiceAlertDefinitions");
+    f.setAccessible(true);
+    f.set(metaInfo, injector.getInstance(AmbariServiceAlertDefinitions.class));
 
     Clusters clusters = injector.getInstance(Clusters.class);
-    Cluster cluster = clusters.getClusterById(1);
+    Cluster cluster = clusters.getClusterById(clusterId);
     cluster.setDesiredStackVersion(
         new StackId(STACK_NAME_HDP, "2.0.6"));
 
@@ -1692,8 +1735,8 @@ public class AmbariMetaInfoTest {
     metaInfo.reconcileAlertDefinitions(clusters);
 
     AlertDefinitionDAO dao = injector.getInstance(AlertDefinitionDAO.class);
-    List<AlertDefinitionEntity> definitions = dao.findAll();
-    assertEquals(7, definitions.size());
+    List<AlertDefinitionEntity> definitions = dao.findAll(clusterId);
+    assertEquals(9, definitions.size());
 
     // figure out how many of these alerts were merged into from the
     // non-stack alerts.json
@@ -1706,7 +1749,7 @@ public class AmbariMetaInfoTest {
     }
 
     assertEquals(1, hostAlertCount);
-    assertEquals(6, definitions.size() - hostAlertCount);
+    assertEquals(8, definitions.size() - hostAlertCount);
 
     for (AlertDefinitionEntity definition : definitions) {
       definition.setScheduleInterval(28);
@@ -1716,11 +1759,50 @@ public class AmbariMetaInfoTest {
     metaInfo.reconcileAlertDefinitions(clusters);
 
     definitions = dao.findAll();
-    assertEquals(7, definitions.size());
+    assertEquals(9, definitions.size());
 
     for (AlertDefinitionEntity definition : definitions) {
       assertEquals(28, definition.getScheduleInterval().intValue());
     }
+
+    // find all enabled for the cluster should find 6 (the ones from HDFS;
+    // it will not find the agent alert since it's not bound to the cluster)
+    definitions = dao.findAllEnabled(cluster.getClusterId());
+    assertEquals(8, definitions.size());
+
+    // create new definition
+    AlertDefinitionEntity entity = new AlertDefinitionEntity();
+    entity.setClusterId(clusterId);
+    entity.setDefinitionName("bad_hdfs_alert");
+    entity.setLabel("Bad HDFS Alert");
+    entity.setDescription("A way to fake a component being removed");
+    entity.setEnabled(true);
+    entity.setHash(UUID.randomUUID().toString());
+    entity.setScheduleInterval(1);
+    entity.setServiceName("HDFS");
+    entity.setComponentName("BAD_COMPONENT");
+    entity.setSourceType(SourceType.METRIC);
+    entity.setSource("{\"type\" : \"METRIC\"}");
+    dao.create(entity);
+
+    // verify the new definition is found (6 HDFS + 1 new one)
+    definitions = dao.findAllEnabled(cluster.getClusterId());
+    assertEquals(9, definitions.size());
+
+    // reconcile, which should disable our bad definition
+    metaInfo.reconcileAlertDefinitions(clusters);
+
+    // find all enabled for the cluster should find 6
+    definitions = dao.findAllEnabled(cluster.getClusterId());
+    assertEquals(8, definitions.size());
+
+    // find all should find 6 HDFS + 1 disabled + 1 agent alert + 2 server
+    // alerts
+    definitions = dao.findAll();
+    assertEquals(10, definitions.size());
+
+    entity = dao.findById(entity.getDefinitionId());
+    assertFalse(entity.getEnabled());
   }
 
   @Test
@@ -1777,7 +1859,7 @@ public class AmbariMetaInfoTest {
   private TestAmbariMetaInfo setupTempAmbariMetaInfo(String buildDir, boolean replayMocks) throws Exception {
     File stackRootTmp = new File(buildDir + "/ambari-metaInfo");
     File stackRoot = new File("src/test/resources/stacks");
-    File version = new File("target/version");
+    File version = new File("src/test/resources/version");
 
     if (System.getProperty("os.name").contains("Windows")) {
       stackRoot = new File(ClassLoader.getSystemClassLoader().getResource("stacks").getPath());
@@ -1792,7 +1874,12 @@ public class AmbariMetaInfoTest {
   }
 
   private TestAmbariMetaInfo createAmbariMetaInfo(File stackRoot, File versionFile, boolean replayMocks) throws Exception {
-    TestAmbariMetaInfo metaInfo = new TestAmbariMetaInfo(stackRoot, versionFile);
+    Properties properties = new Properties();
+    properties.setProperty(Configuration.METADETA_DIR_PATH, stackRoot.getPath());
+    properties.setProperty(Configuration.SERVER_VERSION_FILE, versionFile.getPath());
+    Configuration configuration = new Configuration(properties);
+
+    TestAmbariMetaInfo metaInfo = new TestAmbariMetaInfo(configuration);
     if (replayMocks) {
       metaInfo.replayAllMocks();
 
@@ -1829,20 +1916,28 @@ public class AmbariMetaInfoTest {
     AlertDefinitionFactory alertDefinitionFactory;
     OsFamily osFamily;
 
-    public TestAmbariMetaInfo(File stackRoot, File serverVersionFile) throws Exception {
-      super(stackRoot, null, serverVersionFile);
-      // MetainfoDAO
-      metaInfoDAO = createNiceMock(MetainfoDAO.class);
+    public TestAmbariMetaInfo(Configuration configuration) throws Exception {
+      super(configuration);
+
+      Injector injector = Guice.createInjector(Modules.override(
+          new InMemoryDefaultTestModule()).with(new MockModule()));
+
+      injector.getInstance(GuiceJpaInitializer.class);
+      injector.getInstance(EntityManager.class);
+
       Class<?> c = getClass().getSuperclass();
+
+      // MetainfoDAO
+      metaInfoDAO = injector.getInstance(MetainfoDAO.class);
       Field f = c.getDeclaredField("metaInfoDAO");
       f.setAccessible(true);
       f.set(this, metaInfoDAO);
 
-      // ActionMetadata
-      ActionMetadata actionMetadata = new ActionMetadata();
-      f = c.getDeclaredField("actionMetadata");
+      // StackManagerFactory
+      StackManagerFactory stackManagerFactory = injector.getInstance(StackManagerFactory.class);
+      f = c.getDeclaredField("stackManagerFactory");
       f.setAccessible(true);
-      f.set(this, actionMetadata);
+      f.set(this, stackManagerFactory);
 
       //AlertDefinitionDAO
       alertDefinitionDAO = createNiceMock(AlertDefinitionDAO.class);
@@ -1883,15 +1978,29 @@ public class AmbariMetaInfoTest {
       else {
         expect(config.getSharedResourcesDirPath()).andReturn("./src/test/resources").anyTimes();
       }
+
       replay(config);
+
       osFamily = new OsFamily(config);
-      f = c.getDeclaredField("os_family");
+
+      f = c.getDeclaredField("osFamily");
       f.setAccessible(true);
       f.set(this, osFamily);
     }
 
     public void replayAllMocks() {
       replay(metaInfoDAO, alertDefinitionDAO);
+    }
+
+    public class MockModule extends AbstractModule {
+      @Override
+      protected void configure() {
+        bind(ActionMetadata.class);
+
+        // create a mock metainfo DAO for the entire system so that injectables
+        // can use the mock as well
+        bind(MetainfoDAO.class).toInstance(createNiceMock(MetainfoDAO.class));
+      }
     }
   }
 }

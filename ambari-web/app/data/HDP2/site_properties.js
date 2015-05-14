@@ -112,6 +112,39 @@ var hdp2properties = [
   },
   {
     "id": "site property",
+    "name": "nfs.file.dump.dir",
+    "displayName": "NFSGateway dump directory",
+    "defaultDirectory": "/tmp/.hdfs-nfs",
+    "displayType": "directory",
+    "category": "NFS_GATEWAY",
+    "serviceName": "HDFS",
+    "filename": "hdfs-site.xml",
+    "index": 1
+  },
+  {
+    "id": "site property",
+    "name": "dfs.namenode.accesstime.precision",
+    "displayName": "Access time precision",
+    "defaultValue": "0",
+    "displayType": "long",
+    "category": "NFS_GATEWAY",
+    "serviceName": "HDFS",
+    "filename": "hdfs-site.xml",
+    "index": 2
+  },
+  {
+    "id": "site property",
+    "name": "nfs.exports.allowed.hosts",
+    "displayName": "Allowed hosts",
+    "defaultValue": "* rw",
+    "displayType": "string",
+    "category": "NFS_GATEWAY",
+    "serviceName": "HDFS",
+    "filename": "hdfs-site.xml",
+    "index": 3
+  },
+  {
+    "id": "site property",
     "name": "dfs.replication",
     "displayName": "Block replication",
     "displayType": "int",
@@ -704,7 +737,7 @@ var hdp2properties = [
   {
     "id": "site property",
     "name": "hbase.hregion.majorcompaction",
-    "displayName": "HBase Region Major Compaction",
+    "displayName": "HBase Region Major Compaction Interval",
     "displayType": "int",
     "unit": "ms",
     "category": "HBASE_REGIONSERVER",
@@ -993,6 +1026,15 @@ var hdp2properties = [
   },
   {
     "id": "site property",
+    "name": "nimbus.seeds",
+    "displayName": "nimbus.seeds",
+    "displayType": "masterHosts",
+    "serviceName": "STORM",
+    "filename": "storm-site.xml",
+    "category": "NIMBUS"
+  },
+  {
+    "id": "site property",
     "name": "nimbus.thrift.port",
     "displayName": "nimbus.thrift.port",
     "displayType": "int",
@@ -1119,7 +1161,7 @@ var hdp2properties = [
   },
   {
     "id": "site property",
-    "isOverrideable": false,
+    "isOverridable": false,
     "serviceName": "STORM",
     "category": "SUPERVISOR",
     "displayName": "supervisor.childopts",
@@ -1814,6 +1856,17 @@ var hdp2properties = [
     "category": "KAFKA_BROKER",
     "index": 0
   },
+    {
+    "id": "site property",
+    "name": "listeners",
+    "displayName": "listeners",
+    "value": "",
+    "defaultValue": "",
+    "displayType": "advanced",
+    "serviceName": "KAFKA",
+    "filename": "kafka-broker.xml",
+    "category": "KAFKA_BROKER"
+  },
   {
     "id": "site property",
     "name": "log.roll.hours",
@@ -1865,6 +1918,268 @@ var hdp2properties = [
     "index": 0
   },
 
+/********************************************* ACCUMULO *****************************/
+  {
+    "id": "site property",
+    "name": "accumulo_instance_name",
+    "displayName": "Instance Name",
+    "displayType": "string",
+    "isOverridable": false,
+    "isReconfigurable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "General"
+  },
+  {
+    "id": "site property",
+    "name": "accumulo_root_password",
+    "displayName": "Accumulo root password",
+    "displayType": "password",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "General"
+  },
+  {
+    "id": "site property",
+    "name": "trace.user",
+    "displayName": "Trace user",
+    "displayType": "string",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "General"
+  },
+  {
+    "id": "site property",
+    "name": "trace_password",
+    "displayName": "Trace user password",
+    "displayType": "password",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "General"
+  },
+  {
+    "id": "site property",
+    "name": "instance_secret",
+    "displayName": "Instance Secret",
+    "displayType": "password",
+    "isOverridable": false,
+    "isReconfigurable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "General"
+  },
+  {
+    "id": "site property",
+    "name": "server_content",
+    "displayName": "Server accumulo-env template",
+    "displayType": "content",
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "Advanced accumulo-env"
+  },
+  {
+    "id": "puppet var",
+    "name": "accumulo_master_heapsize",
+    "displayName": "Accumulo Master Maximum Java heap size",
+    "displayType": "int",
+    "unit": "MB",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "Advanced accumulo-env"
+  },
+  {
+    "id": "puppet var",
+    "name": "accumulo_tserver_heapsize",
+    "displayName": "Accumulo TServer Maximum Java heap size",
+    "displayType": "int",
+    "unit": "MB",
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "Advanced accumulo-env"
+  },
+  {
+    "id": "puppet var",
+    "name": "accumulo_monitor_heapsize",
+    "displayName": "Accumulo Monitor Maximum Java heap size",
+    "displayType": "int",
+    "unit": "MB",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "Advanced accumulo-env"
+  },
+  {
+    "id": "puppet var",
+    "name": "accumulo_gc_heapsize",
+    "displayName": "Accumulo GC Maximum Java heap size",
+    "displayType": "int",
+    "unit": "MB",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "Advanced accumulo-env"
+  },
+  {
+    "id": "puppet var",
+    "name": "accumulo_other_heapsize",
+    "displayName": "Accumulo Other Maximum Java heap size",
+    "displayType": "int",
+    "unit": "MB",
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "Advanced accumulo-env"
+  },
+  {
+    "id": "puppet var",
+    "name": "accumulo_log_dir",
+    "displayName": "Accumulo Log Dir",
+    "isReconfigurable": false,
+    "displayType": "directory",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "Advanced accumulo-env"
+  },
+  {
+    "id": "puppet var",
+    "name": "accumulo_pid_dir",
+    "displayName": "Accumulo PID Dir",
+    "isReconfigurable": false,
+    "displayType": "directory",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "Advanced accumulo-env"
+  },
+  {
+    "id": "puppet var",
+    "name": "accumulo_monitor_bind_all",
+    "displayName": "Monitor Bind All Interfaces",
+    "displayType": "checkbox",
+    "defaultValue": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-env.xml",
+    "category": "Advanced accumulo-env"
+  },
+  {
+    "id": "site property",
+    "name": "instance.volumes",
+    "displayName": "instance.volumes",
+    "displayType": "string",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 0
+  },
+  {
+    "id": "site property",
+    "name": "instance.zookeeper.host",
+    "displayName": "instance.zookeeper.host",
+    "displayType": "string",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 1
+  },
+  {
+    "id": "site property",
+    "name": "instance.zookeeper.timeout",
+    "displayName": "instance.zookeeper.timeout",
+    "displayType": "string",
+    "isOverridable": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 2
+  },
+  {
+    "id": "site property",
+    "name": "master.port.client",
+    "displayName": "master.port.client",
+    "displayType": "int",
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 3
+  },
+  {
+    "id": "site property",
+    "name": "tserver.port.client",
+    "displayName": "tserver.port.client",
+    "displayType": "int",
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 4
+  },
+  {
+    "id": "site property",
+    "name": "monitor.port.client",
+    "displayName": "monitor.port.client",
+    "displayType": "int",
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 5
+  },
+  {
+    "id": "site property",
+    "name": "monitor.port.log4j",
+    "displayName": "monitor.port.log4j",
+    "displayType": "int",
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 6
+  },
+  {
+    "id": "site property",
+    "name": "gc.port.client",
+    "displayName": "gc.port.client",
+    "displayType": "int",
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 7
+  },
+  {
+    "id": "site property",
+    "name": "trace.port.client",
+    "displayName": "trace.port.client",
+    "displayType": "int",
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 8
+  },
+  {
+    "id": "site property",
+    "name": "tserver.memory.maps.native.enabled",
+    "displayName": "tserver.memory.maps.native.enabled",
+    "displayType": "checkbox",
+    "defaultValue": false,
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 9
+  },
+  {
+    "id": "site property",
+    "name": "general.classpaths",
+    "displayName": "general.classpaths",
+    "displayType": "content",
+    "serviceName": "ACCUMULO",
+    "filename": "accumulo-site.xml",
+    "category": "Advanced accumulo-site",
+    "index": 10
+  },
+
 /*******************************************kerberos***********************************/
   {
     "id": "puppet var",
@@ -1888,7 +2203,7 @@ var hdp2properties = [
     "isRequiredByAgent": true,
     "displayType": "supportTextConnection",
     "serviceName": "KERBEROS",
-    "filename": "krb5-conf.xml",
+    "filename": "kerberos-env.xml",
     "category": "KDC",
     "index": 1
   },
@@ -1899,6 +2214,7 @@ var hdp2properties = [
     "isOverridable": false,
     "isVisible": true,
     "isRequiredByAgent": true,
+    "isReconfigurable": false,
     "serviceName": "KERBEROS",
     "filename": "kerberos-env.xml",
     "category": "KDC",
@@ -1920,6 +2236,7 @@ var hdp2properties = [
     "name": "container_dn",
     "displayName": "Container DN",
     "isVisible": false,
+    "isOverridable": false,
     "serviceName": "KERBEROS",
     "filename": "kerberos-env.xml",
     "category": "KDC",
@@ -1927,21 +2244,135 @@ var hdp2properties = [
   },
   {
     "id": "puppet var",
-    "name": "create_attributes_template",
-    "displayName": "Attribute template",
+    "name": "manage_identities",
+    "displayName": "Manage Kerberos Identities",
+    "displayType": "checkbox",
+    "isVisible": false,
+    "isOverridable": false,
     "serviceName": "KERBEROS",
     "filename": "kerberos-env.xml",
-    "displayType": "content",
-    "category": "Advanced kerberos-env"
+    "category": "Advanced kerberos-env",
+    "index" : 0
+  },
+  {
+    "id": "puppet var",
+    "name": "install_packages",
+    "displayName": "Install OS-specific Kerberos client package(s)",
+    "displayType": "checkbox",
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "category": "Advanced kerberos-env",
+    "index" : 1
+  },
+  {
+    "id": "puppet var",
+    "name": "executable_search_paths",
+    "displayName": "Executable Search Paths",
+    "displayType": "multiline",
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "category": "Advanced kerberos-env",
+    "index" : 2
   },
   {
     "id": "puppet var",
     "name": "encryption_types",
     "displayName": "Encryption Types",
+    "isOverridable": false,
+    "isVisible": true,
     "serviceName": "KERBEROS",
     "filename": "kerberos-env.xml",
     "displayType": "multiLine",
-    "category": "Advanced kerberos-env"
+    "category": "Advanced kerberos-env",
+    "index" : 3
+  },
+  {
+    "id": "puppet var",
+    "name": "password_length",
+    "displayName": "Password Length",
+    "displayType": "int",
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "category": "Advanced kerberos-env",
+    "index" : 4
+  },
+  {
+    "id": "puppet var",
+    "name": "password_min_lowercase_letters",
+    "displayName": "Password Minimum # Lowercase Letters",
+    "displayType": "int",
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "category": "Advanced kerberos-env",
+    "index" : 5
+  },
+  {
+    "id": "puppet var",
+    "name": "password_min_uppercase_letters",
+    "displayName": "Password Minimum # Uppercase Letters",
+    "displayType": "int",
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "category": "Advanced kerberos-env",
+    "index" : 6
+  },
+  {
+    "id": "puppet var",
+    "name": "password_min_digits",
+    "displayName": "Password Minimum # Digits",
+    "displayType": "int",
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "category": "Advanced kerberos-env",
+    "index" : 7
+  },
+  {
+    "id": "puppet var",
+    "name": "password_min_punctuation",
+    "displayName": "Password Minimum # Punctuation Characters",
+    "displayType": "int",
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "category": "Advanced kerberos-env",
+    "index" : 8
+  },
+  {
+    "id": "puppet var",
+    "name": "password_min_whitespace",
+    "displayName": "Password Minimum # Whitespace Characters",
+    "displayType": "int",
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "category": "Advanced kerberos-env",
+    "index" : 9
+  },
+  {
+    "id": "puppet var",
+    "name": "create_attributes_template",
+    "displayName": "Attribute template",
+    "displayType": "content",
+    "isOverridable": false,
+    "isVisible": true,
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "category": "Advanced kerberos-env",
+    "index" : 10
   },
   {
     "id": "puppet var",
@@ -1964,7 +2395,7 @@ var hdp2properties = [
     "isVisible": true,
     "isRequiredByAgent": true,
     "serviceName": "KERBEROS",
-    "filename": "krb5-conf.xml",
+    "filename": "kerberos-env.xml",
     "category": "Kadmin",
     "index": 0
   },
@@ -1999,6 +2430,8 @@ var hdp2properties = [
     "name": "manage_krb5_conf",
     "displayName": "Manage Kerberos client krb5.conf",
     "displayType": "checkbox",
+    "isOverridable": false,
+    "isVisible": true,
     "dependentConfigPattern": "CATEGORY",
     "serviceName": "KERBEROS",
     "filename": "krb5-conf.xml",
@@ -2036,36 +2469,6 @@ var hdp2properties = [
     "filename": "krb5-conf.xml",
     "category": "Advanced krb5-conf",
     "index": 2
-  },
-  {
-    "id": "puppet var",
-    "name": "libdefaults_default_tgs_enctypes",
-    "displayName": "libdefaults_default_tgs_enctypes",
-    "value": "",
-    "defaultValue": "",
-    "description": "",
-    "isOverridable": false,
-    "isVisible": true,
-    "isRequiredByAgent": true,
-    "isRequired": false,
-    "serviceName": "KERBEROS",
-    "filename": "krb5-conf.xml",
-    "category": "Advanced krb5-conf"
-  },
-  {
-    "id": "puppet var",
-    "name": "libdefaults_default_tkt_enctypes",
-    "displayName": "libdefaults_default_tkt_enctypes",
-    "value": "",
-    "defaultValue": "",
-    "description": "",
-    "isOverridable": false,
-    "isVisible": true,
-    "isRequiredByAgent": true,
-    "isRequired": false,
-    "serviceName": "KERBEROS",
-    "filename": "krb5-conf.xml",
-    "category": "Advanced krb5-conf"
   },
 /********************************************* flume-agent *****************************/
   {
@@ -2247,6 +2650,37 @@ var hdp2properties = [
     "filename": "hadoop-env.xml",
     "category": "DATANODE",
     "index": 2
+  },
+  {
+    "id": "puppet var",
+    "name": "nfsgateway_hosts", //not in the schema. For UI purpose
+    "displayName": "NFSGateway hosts",
+    "value": "",
+    "defaultValue": "",
+    "description": "The hosts that have been assigned to run NFSGateway",
+    "displayType": "slaveHosts",
+    "isRequired": false,
+    "isOverridable": false,
+    "isVisible": true,
+    "isRequiredByAgent": false,
+    "serviceName": "HDFS",
+    "filename": "hadoop-env.xml",
+    "category": "NFS_GATEWAY",
+    "index": 0
+  },
+    {
+    "id": "puppet var",
+    "name": "nfsgateway_heapsize",
+    "displayName": "NFSGateway maximum Java heap size",
+    "description": "Maximum Java heap size for NFSGateway (Java option -Xmx)",
+    "defaultValue": "1024",
+    "displayType": "int",
+    "unit": "MB",
+    "isVisible": true,
+    "serviceName": "HDFS",
+    "filename": "hadoop-env.xml",
+    "category": "NFS_GATEWAY",
+    "index": 1
   },
   {
     "id": "puppet var",
@@ -2866,6 +3300,7 @@ var hdp2properties = [
     "isOverridable": false,
     "isVisible": false,
     "isReconfigurable": false,
+    "isRequiredByAgent": false,
     "serviceName": "HIVE",
     "filename": "hive-env.xml",
     "category": "HIVE_METASTORE",
@@ -2882,6 +3317,7 @@ var hdp2properties = [
     "isOverridable": false,
     "isVisible": false,
     "isReconfigurable": false,
+    "isRequiredByAgent": false,
     "serviceName": "HIVE",
     "filename": "hive-env.xml",
     "category": "HIVE_METASTORE",
@@ -2898,6 +3334,7 @@ var hdp2properties = [
     "isOverridable": false,
     "isVisible": false,
     "isReconfigurable": false,
+    "isRequiredByAgent": false,
     "serviceName": "HIVE",
     "filename": "hive-env.xml",
     "category": "HIVE_METASTORE",
@@ -2915,6 +3352,7 @@ var hdp2properties = [
     "isOverridable": false,
     "isVisible": false,
     "isReconfigurable": false,
+    "isRequiredByAgent": false,
     "serviceName": "HIVE",
     "filename": "hive-env.xml",
     "category": "HIVE_METASTORE",
@@ -2932,6 +3370,7 @@ var hdp2properties = [
     "isVisible": false,
     "isOverridable": false,
     "isReconfigurable": false,
+    "isRequiredByAgent": false,
     "serviceName": "HIVE",
     "filename": "hive-env.xml",
     "category": "HIVE_METASTORE",
@@ -2948,6 +3387,7 @@ var hdp2properties = [
     "displayType": "masterHost",
     "isOverridable": false,
     "isReconfigurable": false,
+    "isRequiredByAgent": false,
     "isVisible": false,
     "serviceName": "HIVE",
     "filename": "hive-env.xml",
@@ -2964,32 +3404,22 @@ var hdp2properties = [
       {
         displayName: 'New MySQL Database',
         foreignKeys: ['hive_ambari_database', 'hive_ambari_host'],
-        hidden: App.get('isHadoopWindowsStack')
+        hidden: false
       },
       {
         displayName: 'Existing MySQL Database',
         foreignKeys: ['hive_existing_mysql_database', 'hive_existing_mysql_host'],
-        hidden: App.get('isHadoopWindowsStack')
+        hidden: false
       },
       {
         displayName: 'Existing PostgreSQL Database',
         foreignKeys: ['hive_existing_postgresql_database', 'hive_existing_postgresql_host'],
-        hidden: App.get('isHadoopWindowsStack')
+        hidden: false
       },
       {
         displayName: 'Existing Oracle Database',
         foreignKeys: ['hive_existing_oracle_database', 'hive_existing_oracle_host'],
-        hidden: App.get('isHadoopWindowsStack')
-      },
-      {
-        displayName: 'Existing MSSQL Server database with SQL authentication',
-        foreignKeys: ['hive_existing_mssql_server_database', 'hive_existing_mssql_server_host'],
-        hidden: !App.get('isHadoopWindowsStack')
-      },
-      {
-        displayName: 'Existing MSSQL Server database with integrated authentication',
-        foreignKeys: ['hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'],
-        hidden: !App.get('isHadoopWindowsStack')
+        hidden: false
       }
     ],
     "description": "MySQL will be installed by Ambari",
@@ -3027,6 +3457,7 @@ var hdp2properties = [
     "defaultValue": "",
     "displayType": "host",
     "isOverridable": false,
+    "isRequiredByAgent": false,
     "isVisible": false,
     "isObserved": true,
     "serviceName": "HIVE",
@@ -3042,6 +3473,7 @@ var hdp2properties = [
     "defaultValue": "",
     "displayType": "host",
     "isOverridable": false,
+    "isRequiredByAgent": false,
     "isVisible": false,
     "isObserved": true,
     "serviceName": "HIVE",
@@ -3057,6 +3489,7 @@ var hdp2properties = [
     "defaultValue": "",
     "displayType": "host",
     "isOverridable": false,
+    "isRequiredByAgent": false,
     "isVisible": false,
     "isObserved": true,
     "serviceName": "HIVE",
@@ -3089,6 +3522,7 @@ var hdp2properties = [
     "defaultValue": "",
     "displayType": "host",
     "isOverridable": false,
+    "isRequiredByAgent": false,
     "isVisible": false,
     "isObserved": true,
     "serviceName": "HIVE",
@@ -3104,6 +3538,7 @@ var hdp2properties = [
     "defaultValue": "",
     "displayType": "host",
     "isOverridable": false,
+    "isRequiredByAgent": false,
     "isVisible": false,
     "isObserved": true,
     "serviceName": "HIVE",
@@ -3275,6 +3710,7 @@ var hdp2properties = [
     "description": "Using an existing Oracle database for Oozie Metastore",
     "displayType": "masterHost",
     "isVisible": false,
+    "isRequiredByAgent": false,
     "isObserved": true,
     "isReconfigurable": false,
     "isOverridable": false,
@@ -3294,6 +3730,7 @@ var hdp2properties = [
     "displayType": "masterHost",
     "isOverridable": false,
     "isVisible": false,
+    "isRequiredByAgent": false,
     "isReconfigurable": false,
     "serviceName": "OOZIE",
     "filename": "oozie-env.xml",
@@ -3310,6 +3747,7 @@ var hdp2properties = [
     "description": "MySQL will be installed by Ambari",
     "displayType": "masterHost",
     "isVisible": false,
+    "isRequiredByAgent": false,
     "isReconfigurable": false,
     "isOverridable": false,
     "serviceName": "OOZIE",
@@ -3344,6 +3782,7 @@ var hdp2properties = [
     "description": "Using an existing MySQL database for Oozie Metastore",
     "displayType": "masterHost",
     "isVisible": false,
+    "isRequiredByAgent": false,
     "isReconfigurable": false,
     "isOverridable": false,
     "serviceName": "OOZIE",
@@ -3360,6 +3799,7 @@ var hdp2properties = [
     "description": "Using an existing MSSQL database with SQL authentication for Oozie Metastore",
     "displayType": "masterHost",
     "isVisible": false,
+    "isRequiredByAgent": false,
     "isReconfigurable": false,
     "isOverridable": false,
     "serviceName": "OOZIE",
@@ -3376,6 +3816,7 @@ var hdp2properties = [
     "description": "Using an existing MSSQL database with integrated authentication for Oozie Metastore",
     "displayType": "masterHost",
     "isVisible": false,
+    "isRequiredByAgent": false,
     "isReconfigurable": false,
     "isOverridable": false,
     "serviceName": "OOZIE",
@@ -3393,32 +3834,22 @@ var hdp2properties = [
       {
         displayName: 'New Derby Database',
         foreignKeys: ['oozie_derby_database'],
-        hidden: App.get('isHadoopWindowsStack')
+        hidden: false
       },
       {
         displayName: 'Existing MySQL Database',
         foreignKeys: ['oozie_existing_mysql_database', 'oozie_existing_mysql_host'],
-        hidden: App.get('isHadoopWindowsStack')
+        hidden: false
       },
       {
         displayName: 'Existing PostgreSQL Database',
         foreignKeys: ['oozie_existing_postgresql_database', 'oozie_existing_postgresql_host'],
-        hidden: App.get('isHadoopWindowsStack')
+        hidden: false
       },
       {
         displayName: 'Existing Oracle Database',
         foreignKeys: ['oozie_existing_oracle_database', 'oozie_existing_oracle_host'],
-        hidden: App.get('isHadoopWindowsStack')
-      },
-      {
-        displayName: 'Existing MSSQL Server database with SQL authentication',
-        foreignKeys: ['oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host'],
-        hidden: !App.get('isHadoopWindowsStack')
-      },
-      {
-        displayName: 'Existing MSSQL Server database with integrated authentication',
-        foreignKeys: ['oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'],
-        hidden: !App.get('isHadoopWindowsStack')
+        hidden: false
       }
     ],
     "description": "Current Derby Database will be installed by Ambari",
@@ -3473,6 +3904,7 @@ var hdp2properties = [
     "isOverridable": false,
     "displayType": "host",
     "isVisible": false,
+    "isRequiredByAgent": false,
     "isObserved": true,
     "serviceName": "OOZIE",
     "filename": "oozie-env.xml",
@@ -3488,6 +3920,7 @@ var hdp2properties = [
     "isOverridable": false,
     "displayType": "host",
     "isVisible": false,
+    "isRequiredByAgent": false,
     "isObserved": true,
     "serviceName": "OOZIE",
     "filename": "oozie-env.xml",
@@ -3503,6 +3936,7 @@ var hdp2properties = [
     "isOverridable": false,
     "displayType": "host",
     "isVisible": false,
+    "isRequiredByAgent": false,
     "isObserved": true,
     "serviceName": "OOZIE",
     "filename": "oozie-env.xml",
@@ -3520,6 +3954,7 @@ var hdp2properties = [
     "isOverridable": false,
     "displayType": "masterHost",
     "isVisible": false,
+    "isRequiredByAgent": false,
     "isRequiredByAgent": false,
     "serviceName": "OOZIE",
     "filename": "oozie-env.xml",
@@ -4002,7 +4437,7 @@ var hdp2properties = [
     "displayType": "checkbox",
     "isReconfigurable": true,
     "isOverridable": false,
-    "isVisible": !App.get('isHadoopWindowsStack'),
+    "isVisible": true,
     "filename": "cluster-env.xml",
     "category": "Users and Groups"
   },
@@ -4574,41 +5009,59 @@ var hdp2properties = [
     "name": "smokeuser_principal_name",
     "displayName": "Smoke user principal",
     "category": "Ambari Principals",
+    "filename": "cluster-env.xml",
     "index": 1
   },
   {
     "name": "smokeuser_keytab",
     "displayName": "Smoke user keytab",
     "category": "Ambari Principals",
+    "filename": "cluster-env.xml",
     "index": 2
   },
   {
     "name": "hdfs_principal_name",
     "displayName": "HDFS user principal",
     "category": "Ambari Principals",
+    "filename": "hadoop-env.xml",
     "index": 3
   },
   {
     "name": "hdfs_user_keytab",
     "displayName": "HDFS user keytab",
     "category": "Ambari Principals",
+    "filename": "hadoop-env.xml",
     "index": 4
   },
   {
     "name": "hbase_principal_name",
     "displayName": "HBase user principal",
     "category": "Ambari Principals",
+    "filename": "hbase-env.xml",
     "index": 5
   },
   {
     "name": "hbase_user_keytab",
     "displayName": "HBase user keytab",
     "category": "Ambari Principals",
+    "filename": "hbase-env.xml",
     "index": 6
   }
 ];
 
 if (App.get('isHadoopWindowsStack')) {
+  var excludedWindowsConfigs = [
+    'dfs.client.read.shortcircuit',
+    'knox_pid_dir',
+    'ignore_groupsusers_create',
+    'hive_database',
+    'oozie_database'
+  ];
+
+  hdp2properties = hdp2properties.filter(function (item) {
+    return !excludedWindowsConfigs.contains(item.name);
+  });
+
   hdp2properties.push(
     {
       "id": "puppet var",
@@ -4619,7 +5072,7 @@ if (App.get('isHadoopWindowsStack')) {
       "isReconfigurable": false,
       "displayType": "user",
       "isOverridable": false,
-      "isVisible": App.get('isHadoopWindowsStack'),
+      "isVisible": true,
       "serviceName": "MISC",
       "filename": "cluster-env.xml",
       "category": "Users and Groups",
@@ -4634,12 +5087,70 @@ if (App.get('isHadoopWindowsStack')) {
       "isReconfigurable": false,
       "displayType": "password",
       "isOverridable": false,
-      "isVisible": App.get('isHadoopWindowsStack'),
+      "isVisible": true,
       "serviceName": "MISC",
       "filename": "cluster-env.xml",
       "category": "Users and Groups",
       "belongsToService": ["HDFS"],
       "index": 1
+    },
+    {
+      "id": "puppet var",
+      "name": "hive_database",
+      "displayName": "Hive Database",
+      "value": "",
+      "defaultValue": "Existing MSSQL Server database with SQL authentication",
+      "options": [
+        {
+          displayName: 'Existing MSSQL Server database with SQL authentication',
+          foreignKeys: ['hive_existing_mssql_server_database', 'hive_existing_mssql_server_host'],
+          hidden: false
+        },
+        {
+          displayName: 'Existing MSSQL Server database with integrated authentication',
+          foreignKeys: ['hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'],
+          hidden: false
+        }
+      ],
+      "description": "",
+      "displayType": "radio button",
+      "isReconfigurable": true,
+      "radioName": "hive-database",
+      "isOverridable": false,
+      "isVisible": true,
+      "serviceName": "HIVE",
+      "filename": "hive-env.xml",
+      "category": "HIVE_METASTORE",
+      "index": 2
+    },
+    {
+      "id": "puppet var",
+      "name": "oozie_database",
+      "displayName": "Oozie Database",
+      "value": "",
+      "defaultValue": "Existing MSSQL Server database with SQL authentication",
+      "options": [
+        {
+          displayName: 'Existing MSSQL Server database with SQL authentication',
+          foreignKeys: ['oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host'],
+          hidden: false
+        },
+        {
+          displayName: 'Existing MSSQL Server database with integrated authentication',
+          foreignKeys: ['oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'],
+          hidden: false
+        }
+      ],
+      "description": "",
+      "displayType": "radio button",
+      "isReconfigurable": true,
+      "isOverridable": false,
+      "radioName": "oozie-database",
+      "isVisible": true,
+      "serviceName": "OOZIE",
+      "filename": "oozie-env.xml",
+      "category": "OOZIE_SERVER",
+      "index": 2
     }
   );
 }

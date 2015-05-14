@@ -56,7 +56,6 @@ App.MainAlertDefinitionsView = App.TableView.extend({
     Em.run.next(function () {
       self.set('isInitialRendering', false);
       self.tooltipsUpdater();
-      self.addObserver('pageContent.length', self, 'tooltipsUpdater');
     });
   },
 
@@ -293,6 +292,10 @@ App.MainAlertDefinitionsView = App.TableView.extend({
       {
         value: 'AGGREGATE',
         label: 'AGGREGATE'
+      },
+      {
+        value: 'SERVER',
+        label: 'SERVER'
       }
     ],
     onChangeValue: function(){
@@ -494,6 +497,7 @@ App.MainAlertDefinitionsView = App.TableView.extend({
     if (this.get('paginationLeftClass') === 'paginate_previous') {
       this._super();
     }
+    this.tooltipsUpdater();
   },
 
   /**
@@ -504,6 +508,7 @@ App.MainAlertDefinitionsView = App.TableView.extend({
     if (this.get('paginationRightClass') === 'paginate_next') {
       this._super();
     }
+    this.tooltipsUpdater();
   },
 
   /**
@@ -520,6 +525,7 @@ App.MainAlertDefinitionsView = App.TableView.extend({
     if (!this.get('isInitialRendering')) {
       this._super(iColumn, value, type);
     }
+    this.tooltipsUpdater();
   }
 
 });

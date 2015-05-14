@@ -22,7 +22,9 @@ package org.apache.ambari.server.controller;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.ambari.server.state.PropertyDependencyInfo;
 import org.apache.ambari.server.state.PropertyInfo.PropertyType;
+import org.apache.ambari.server.state.ValueAttributesInfo;
 
 public class StackConfigurationResponse {
 
@@ -50,19 +52,28 @@ public class StackConfigurationResponse {
    * @param propertyDescription Property Description
    * @param type Configuration type
    * @param isRequired Is required to be set
-   * @param propertyType Property Type
+   * @param propertyTypes Property Types
    * @param propertyAttributes Attributes map
+   * @param propertyValueAttributes Value Attributes
+   * @param dependsOnProperties depends on properties set
    */
   public StackConfigurationResponse(String propertyName, String propertyValue,
-                                    String propertyDescription, String type,
-                                    Boolean isRequired, Set<PropertyType> propertyTypes, Map<String, String> propertyAttributes) {
+                                    String propertyDescription, String propertyDisplayName, String type,
+                                    Boolean isRequired,
+                                    Set<PropertyType> propertyTypes,
+                                    Map<String, String> propertyAttributes,
+                                    ValueAttributesInfo propertyValueAttributes,
+                                    Set<PropertyDependencyInfo> dependsOnProperties) {
     setPropertyName(propertyName);
     setPropertyValue(propertyValue);
     setPropertyDescription(propertyDescription);
+    setPropertyDisplayName(propertyDisplayName);
     setType(type);
     setRequired(isRequired);
     setPropertyType(propertyTypes);
     setPropertyAttributes(propertyAttributes);
+    setPropertyValueAttributes(propertyValueAttributes);
+    setDependsOnProperties(dependsOnProperties);
   }
 
   private String stackName;
@@ -71,8 +82,11 @@ public class StackConfigurationResponse {
   private String propertyName;
   private String propertyValue;
   private String propertyDescription;
+  private String propertyDisplayName;
   private String type;
   private Map<String, String> propertyAttributes;
+  private ValueAttributesInfo propertyValueAttributes;
+  private Set<PropertyDependencyInfo> dependsOnProperties;
   private Boolean isRequired;
   private Set<PropertyType> propertyTypes;
 
@@ -124,6 +138,14 @@ public class StackConfigurationResponse {
     this.propertyDescription = propertyDescription;
   }
 
+  public String getPropertyDisplayName() {
+    return propertyDisplayName;
+  }
+
+  public void setPropertyDisplayName(String propertyDisplayName) {
+    this.propertyDisplayName = propertyDisplayName;
+  }
+
   /**
    * Configuration type
    * @return Configuration type (*-site.xml)
@@ -152,6 +174,42 @@ public class StackConfigurationResponse {
    */
   public void setPropertyAttributes(Map<String, String> propertyAttributes) {
     this.propertyAttributes = propertyAttributes;
+  }
+
+  /**
+   * Provides value attributes of this configuration.
+   *
+   * @return value attributes
+   */
+  public ValueAttributesInfo getPropertyValueAttributes() {
+    return propertyValueAttributes;
+  }
+
+  /**
+   * Sets value attributes for this configuration.
+   *
+   * @param propertyValueAttributes
+   */
+  public void setPropertyValueAttributes(ValueAttributesInfo propertyValueAttributes) {
+    this.propertyValueAttributes = propertyValueAttributes;
+  }
+
+  /**
+   * Provides depends on properties of this configuration.
+   *
+   * @return depends on properties set
+   */
+  public Set<PropertyDependencyInfo> getDependsOnProperties() {
+    return dependsOnProperties;
+  }
+
+  /**
+   * Sets depends on properties set for this configuration.
+   *
+   * @param dependsOnProperties
+   */
+  public void setDependsOnProperties(Set<PropertyDependencyInfo> dependsOnProperties) {
+    this.dependsOnProperties = dependsOnProperties;
   }
 
   /**

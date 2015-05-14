@@ -52,6 +52,10 @@ class Facter(object):
   def __init__(self):
     pass
 
+  # Return first ip adress
+  def getIpAddress(self):
+    return socket.gethostbyname(socket.getfqdn().lower())
+
   # Returns the currently running user id
   def getId(self):
     return getpass.getuser()
@@ -59,10 +63,6 @@ class Facter(object):
   # Returns the OS name
   def getKernel(self):
     return platform.system()
-
-  # Returns the FQDN of the host
-  def getFqdn(self):
-    return socket.getfqdn().lower()
 
   # Returns the host's primary DNS domain name
   def getDomain(self):
@@ -188,10 +188,10 @@ class FacterWindows(Facter):
   GET_PAGE_FILE_INFO = '$pgo=(Get-WmiObject Win32_PageFileUsage); echo "$($pgo.AllocatedBaseSize) $($pgo.AllocatedBaseSize-$pgo.CurrentUsage)"'
   GET_UPTIME_CMD = 'echo $([int]((get-date)-[system.management.managementdatetimeconverter]::todatetime((get-wmiobject -class win32_operatingsystem).Lastbootuptime)).TotalSeconds)'
 
-  # Return first ip adress
-  def getIpAddress(self):
-    #TODO check if we need ipconfig
-    return socket.gethostbyname(socket.gethostname().lower())
+
+  # Returns the FQDN of the host
+  def getFqdn(self):
+    return socket.getfqdn().lower()
 
   # Return  netmask
   def getNetmask(self):
@@ -289,6 +289,9 @@ class FacterLinux(Facter):
   GET_UPTIME_CMD = "cat /proc/uptime"
   GET_MEMINFO_CMD = "cat /proc/meminfo"
 
+  # hostname command
+  GET_HOSTNAME_CMD = "/bin/hostname -f"
+
   def __init__(self):
 
     self.DATA_IFCONFIG_OUTPUT = FacterLinux.setDataIfConfigOutput()
@@ -325,6 +328,20 @@ class FacterLinux(Facter):
       log.warn("Can't execute {0}".format(FacterLinux.GET_MEMINFO_CMD))
     return ""
 
+  # Returns the FQDN of the host
+  def getFqdn(self):
+    # Try to use OS command to get hostname first due to Python Issue5004
+    try:
+      retcode, out, err = run_os_command(self.GET_HOSTNAME_CMD)
+      if (0 == retcode and 0 != len(out.strip())):
+        return out.strip()
+      else:
+        log.warn("Could not get fqdn using {0}".format(self.GET_HOSTNAME_CMD))
+    except OSError:
+      log.warn("Could not run {0} for fqdn".format(self.GET_HOSTNAME_CMD))
+    return socket.getfqdn().lower()
+
+
   def isSeLinux(self):
 
     try:
@@ -355,29 +372,31 @@ class FacterLinux(Facter):
 
     return result
 
-  # Return first ip adress
-  def getIpAddress(self):
-    ip_pattern="(?: inet addr:)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
-    if OSCheck.is_redhat7():
-      ip_pattern="(?: inet )(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
-    result = self.data_return_first(ip_pattern,self.DATA_IFCONFIG_OUTPUT)
-    if result == '':
-      log.warn("Can't get an ip address from {0}".format(self.DATA_IFCONFIG_OUTPUT))
-      return socket.gethostbyname(socket.gethostname().lower())
-    else:
-      return result
-
   # Return  netmask
   def getNetmask(self):
-    mask_pattern="(?: Mask:)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
+    import fcntl
+    import struct
+    primary_ip = self.getIpAddress().strip()
+    interface_pattern="(\w+)(?:.*Link encap:)"
     if OSCheck.is_redhat7():
-      mask_pattern="(?: netmask )(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
-    result = self.data_return_first(mask_pattern,self.DATA_IFCONFIG_OUTPUT)
-    if result == '':
-      log.warn("Can't get a netmask from {0}".format(self.DATA_IFCONFIG_OUTPUT))
-      return 'OS NOT SUPPORTED'
-    else:
-      return result
+      interface_pattern="(\w+)(?:.*flags=)"
+    for i in re.findall(interface_pattern, self.DATA_IFCONFIG_OUTPUT):
+      if primary_ip == self.get_ip_address_by_ifname(i.strip()).strip():
+        return socket.inet_ntoa(fcntl.ioctl(socket.socket(socket.AF_INET, socket.SOCK_DGRAM), 35099, struct.pack('256s', i))[20:24])
+        
+
+      
+  # Return IP by interface name
+  def get_ip_address_by_ifname(self, ifname):
+    import fcntl
+    import struct
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    return socket.inet_ntoa(fcntl.ioctl(
+        s.fileno(),
+        0x8915,  # SIOCGIFADDR
+        struct.pack('256s', ifname[:15])
+    )[20:24])
+
 
   # Return interfaces
   def getInterfaces(self):

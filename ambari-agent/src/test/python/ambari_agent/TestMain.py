@@ -25,10 +25,10 @@ import signal
 import os
 import socket
 import tempfile
-import platform
 import ConfigParser
+
 from ambari_commons import OSCheck
-from only_for_platform import only_for_platform, get_platform, PLATFORM_WINDOWS, PLATFORM_LINUX
+from only_for_platform import get_platform, not_for_platform, only_for_platform, PLATFORM_WINDOWS, PLATFORM_LINUX
 from mock.mock import MagicMock, patch, ANY, Mock
 
 if get_platform() != PLATFORM_WINDOWS:
@@ -46,7 +46,8 @@ with patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_
   import ambari_agent.HeartbeatHandlers as HeartbeatHandlers
   from ambari_commons.os_check import OSConst, OSCheck
 
-  from ambari_commons.shell import shellRunner
+  if get_platform() != PLATFORM_WINDOWS:
+    from ambari_commons.shell import shellRunnerLinux
 
 class TestMain(unittest.TestCase):
 
@@ -62,16 +63,16 @@ class TestMain(unittest.TestCase):
 
   @only_for_platform(PLATFORM_LINUX)
   @patch("ambari_agent.HeartbeatHandlers.HeartbeatStopHandlersLinux")
-  @patch("os._exit")
+  @patch("sys.exit")
   @patch("os.getpid")
   @patch.object(ProcessHelper, "stopAgent")
-  def test_signal_handler(self, stopAgent_mock, os_getpid_mock, os_exit_mock, heartbeat_handler_mock):
+  def test_signal_handler(self, stopAgent_mock, os_getpid_mock, sys_exit_mock, heartbeat_handler_mock):
     # testing exit of children
     main.agentPid = 4444
     os_getpid_mock.return_value = 5555
     HeartbeatHandlers.signal_handler("signum", "frame")
     heartbeat_handler_mock.set_stop.assert_called()
-    os_exit_mock.reset_mock()
+    sys_exit_mock.reset_mock()
 
     # testing exit of main process
     os_getpid_mock.return_value = main.agentPid
@@ -82,7 +83,8 @@ class TestMain(unittest.TestCase):
   @patch.object(main.logger, "addHandler")
   @patch.object(main.logger, "setLevel")
   @patch("logging.handlers.RotatingFileHandler")
-  def test_setup_logging(self, rfh_mock, setLevel_mock, addHandler_mock):
+  @patch("logging.basicConfig")
+  def test_setup_logging(self, basicConfig_mock, rfh_mock, setLevel_mock, addHandler_mock):
     # Testing silent mode
     main.setup_logging(False)
     self.assertTrue(addHandler_mock.called)
@@ -139,9 +141,11 @@ class TestMain(unittest.TestCase):
     signal_mock.assert_any_call(signal.SIGUSR1, HeartbeatHandlers.debug)
 
 
+  @patch("platform.linux_distribution")
   @patch("os.path.exists")
   @patch("ConfigParser.RawConfigParser.read")
-  def test_resolve_ambari_config(self, read_mock, exists_mock):
+  def test_resolve_ambari_config(self, read_mock, exists_mock, platform_mock):
+    platform_mock.return_value = "Linux"
     # Trying case if conf file exists
     exists_mock.return_value = True
     main.resolve_ambari_config()
@@ -199,12 +203,13 @@ class TestMain(unittest.TestCase):
     main.perform_prestart_checks(None)
     self.assertFalse(exit_mock.called)
 
-  @only_for_platform(PLATFORM_LINUX)
+  @not_for_platform(PLATFORM_WINDOWS)
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch("time.sleep")
-  @patch.object(shellRunner,"run")
-  @patch("os._exit")
+  @patch.object(shellRunnerLinux,"run")
+  @patch("sys.exit")
   @patch("os.path.exists")
-  def test_daemonize_and_stop(self, exists_mock, _exit_mock, kill_mock, sleep_mock):
+  def test_daemonize_and_stop(self, exists_mock, sys_exit_mock, kill_mock, sleep_mock):
     oldpid = ProcessHelper.pidfile
     pid = str(os.getpid())
     _, tmpoutfile = tempfile.mkstemp()
@@ -220,11 +225,11 @@ class TestMain(unittest.TestCase):
     exists_mock.return_value = False
     main.stop_agent()
     kill_mock.assert_called_with(['ambari-sudo.sh', 'kill', '-15', pid])
-    _exit_mock.assert_called_with(0)
+    sys_exit_mock.assert_called_with(0)
 
     # Restore
     kill_mock.reset_mock()
-    _exit_mock.reset_mock()
+    sys_exit_mock.reset_mock()
     kill_mock.return_value = {'exitCode': 0, 'output': 'out', 'error': 'err'}
 
     # Testing exit when failed to remove pid file
@@ -232,7 +237,7 @@ class TestMain(unittest.TestCase):
     main.stop_agent()
     kill_mock.assert_any_call(['ambari-sudo.sh', 'kill', '-15', pid])
     kill_mock.assert_any_call(['ambari-sudo.sh', 'kill', '-9', pid])
-    _exit_mock.assert_called_with(1)
+    sys_exit_mock.assert_called_with(1)
 
     # Restore
     ProcessHelper.pidfile = oldpid
@@ -242,10 +247,10 @@ class TestMain(unittest.TestCase):
   @patch("os.path.join")
   @patch('__builtin__.open')
   @patch.object(ConfigParser, "ConfigParser")
-  @patch("os._exit")
+  @patch("sys.exit")
   @patch("os.walk")
   @patch("os.remove")
-  def test_reset(self, os_remove_mock, os_walk_mock, os_exit_mock, config_parser_mock, open_mock, os_path_join_mock, os_rmdir_mock):
+  def test_reset(self, os_remove_mock, os_walk_mock, sys_exit_mock, config_parser_mock, open_mock, os_path_join_mock, os_rmdir_mock):
     # Agent config update
     config_mock = MagicMock()
     os_walk_mock.return_value = [('/', ('',), ('file1.txt', 'file2.txt'))]
@@ -256,14 +261,18 @@ class TestMain(unittest.TestCase):
     self.assertEqual(config_mock.set.call_count, 1)
     self.assertEqual(os_remove_mock.call_count, 2)
 
+    self.assertTrue(sys_exit_mock.called)
+
   @patch("os.rmdir")
   @patch("os.path.join")
   @patch('__builtin__.open')
   @patch.object(ConfigParser, "ConfigParser")
-  @patch("os._exit")
+  @patch("sys.exit")
   @patch("os.walk")
   @patch("os.remove")
-  def test_reset_invalid_path(self, os_remove_mock, os_walk_mock, os_exit_mock, config_parser_mock, open_mock, os_path_join_mock, os_rmdir_mock):
+  def test_reset_invalid_path(self, os_remove_mock, os_walk_mock, sys_exit_mock,
+      config_parser_mock, open_mock, os_path_join_mock, os_rmdir_mock):
+
     # Agent config file cannot be accessed
     config_mock = MagicMock()
     os_walk_mock.return_value = [('/', ('',), ('file1.txt', 'file2.txt'))]
@@ -275,6 +284,8 @@ class TestMain(unittest.TestCase):
       self.fail("Should have thrown exception!")
     except:
       self.assertTrue(True)
+
+    self.assertTrue(sys_exit_mock.called)
 
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))

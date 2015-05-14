@@ -18,6 +18,8 @@
 
 package org.apache.ambari.server.orm.entities;
 
+import java.util.List;
+
 import javax.persistence.Basic;
 import javax.persistence.CascadeType;
 import javax.persistence.CollectionTable;
@@ -31,11 +33,11 @@ import javax.persistence.JoinColumn;
 import javax.persistence.JoinTable;
 import javax.persistence.ManyToMany;
 import javax.persistence.ManyToOne;
-import javax.persistence.OneToMany;
+import javax.persistence.NamedQueries;
+import javax.persistence.NamedQuery;
+import javax.persistence.OneToOne;
 import javax.persistence.Table;
 import javax.persistence.TableGenerator;
-import java.util.Collection;
-import java.util.List;
 
 @Entity
 @Table(name = "serviceconfig")
@@ -43,8 +45,11 @@ import java.util.List;
   table = "ambari_sequences", pkColumnName = "sequence_name", valueColumnName = "sequence_value"
   , pkColumnValue = "service_config_id_seq"
   , initialValue = 1
-  , allocationSize = 1
 )
+@NamedQueries({
+    @NamedQuery(name = "ServiceConfigEntity.findNextServiceConfigVersion", query = "SELECT COALESCE(MAX(serviceConfig.version), 0) + 1 AS nextVersion FROM ServiceConfigEntity serviceConfig WHERE serviceConfig.serviceName=:serviceName AND serviceConfig.clusterId=:clusterId"),
+    @NamedQuery(name = "ServiceConfigEntity.findAllServiceConfigsByStack", query = "SELECT serviceConfig FROM ServiceConfigEntity serviceConfig WHERE serviceConfig.clusterId=:clusterId AND serviceConfig.stack=:stack"),
+    @NamedQuery(name = "ServiceConfigEntity.findLatestServiceConfigsByStack", query = "SELECT serviceConfig FROM ServiceConfigEntity serviceConfig WHERE serviceConfig.clusterId = :clusterId AND serviceConfig.createTimestamp = (SELECT MAX(serviceConfig2.createTimestamp) FROM ServiceConfigEntity serviceConfig2 WHERE serviceConfig2.clusterId=:clusterId AND serviceConfig2.stack=:stack AND serviceConfig2.serviceName = serviceConfig.serviceName)") })
 public class ServiceConfigEntity {
   @Id
   @Column(name = "service_config_id")
@@ -81,20 +86,27 @@ public class ServiceConfigEntity {
 
   @ElementCollection()
   @CollectionTable(name = "serviceconfighosts", joinColumns = {@JoinColumn(name = "service_config_id")})
-  @Column(name = "hostname")
-  private List<String> hostNames;
+  @Column(name = "host_id")
+  private List<Long> hostIds;
 
-  @ManyToMany
   @JoinTable(
     name = "serviceconfigmapping",
     joinColumns = {@JoinColumn(name = "service_config_id", referencedColumnName = "service_config_id")},
     inverseJoinColumns = {@JoinColumn(name = "config_id", referencedColumnName = "config_id")}
   )
+  @ManyToMany(cascade = { CascadeType.REMOVE })
   private List<ClusterConfigEntity> clusterConfigEntities;
 
   @ManyToOne
   @JoinColumn(name = "cluster_id", referencedColumnName = "cluster_id", nullable = false)
   private ClusterEntity clusterEntity;
+
+  /**
+   * Unidirectional one-to-one association to {@link StackEntity}
+   */
+  @OneToOne
+  @JoinColumn(name = "stack_id", unique = false, nullable = false, insertable = true, updatable = true)
+  private StackEntity stack;
 
   public Long getServiceConfigId() {
     return serviceConfigId;
@@ -125,7 +137,7 @@ public class ServiceConfigEntity {
   }
 
   public void setCreateTimestamp(Long create_timestamp) {
-    this.createTimestamp = create_timestamp;
+    createTimestamp = create_timestamp;
   }
 
   public List<ClusterConfigEntity> getClusterConfigEntities() {
@@ -176,11 +188,72 @@ public class ServiceConfigEntity {
     this.groupId = groupId;
   }
 
-  public List<String> getHostNames() {
-    return hostNames;
+  public List<Long> getHostIds() {
+    return hostIds;
   }
 
-  public void setHostNames(List<String> hostNames) {
-    this.hostNames = hostNames;
+  public void setHostIds(List<Long> hostIds) {
+    this.hostIds = hostIds;
+  }
+
+  /**
+   * Gets the service configuration's stack.
+   *
+   * @return the stack.
+   */
+  public StackEntity getStack() {
+    return stack;
+  }
+
+  /**
+   * Sets the service configuration's stack.
+   *
+   * @param stack
+   *          the stack to set for the service configuration (not {@code null}).
+   */
+  public void setStack(StackEntity stack) {
+    this.stack = stack;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public int hashCode() {
+    final int prime = 31;
+    int result = 1;
+
+    result = prime * result
+        + ((serviceConfigId == null) ? 0 : serviceConfigId.hashCode());
+
+    return result;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public boolean equals(Object obj) {
+    if (this == obj) {
+      return true;
+    }
+
+    if (obj == null) {
+      return false;
+    }
+
+    if (getClass() != obj.getClass()) {
+      return false;
+    }
+
+    ServiceConfigEntity other = (ServiceConfigEntity) obj;
+    if (serviceConfigId == null) {
+      if (other.serviceConfigId != null) {
+        return false;
+      }
+    } else if (!serviceConfigId.equals(other.serviceConfigId)) {
+      return false;
+    }
+    return true;
   }
 }

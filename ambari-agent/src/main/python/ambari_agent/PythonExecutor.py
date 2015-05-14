@@ -31,6 +31,7 @@ from ambari_commons.os_check import OSConst, OSCheck
 from Grep import Grep
 import sys
 from ambari_commons import shell
+from ambari_commons.shell import shellRunner
 
 
 logger = logging.getLogger()
@@ -42,11 +43,11 @@ class PythonExecutor:
   used as a singleton for a concurrent execution of python scripts
   """
   NO_ERROR = "none"
-  grep = Grep()
-  event = threading.Event()
-  python_process_has_been_killed = False
 
   def __init__(self, tmpDir, config):
+    self.grep = Grep()
+    self.event = threading.Event()
+    self.python_process_has_been_killed = False
     self.tmpDir = tmpDir
     self.config = config
     pass
@@ -63,7 +64,7 @@ class PythonExecutor:
 
   def run_file(self, script, script_params, tmp_dir, tmpoutfile, tmperrfile,
                timeout, tmpstructedoutfile, logger_level, callback, task_id,
-               override_output_files = True, handle = None):
+               override_output_files = True, handle = None, log_info_on_failure=True):
     """
     Executes the specified python file in a separate subprocess.
     Method returns only when the subprocess is finished.
@@ -93,14 +94,35 @@ class PythonExecutor:
       process.communicate()
       self.event.set()
       thread.join()
-      return self.prepare_process_result(process, tmpoutfile, tmperrfile, tmpstructedoutfile, timeout=timeout)
+      result = self.prepare_process_result(process, tmpoutfile, tmperrfile, tmpstructedoutfile, timeout=timeout)
+      
+      if log_info_on_failure and result['exitcode']:
+        self.on_failure(pythonCommand, result)
+      
+      return result
     else:
       holder = Holder(pythonCommand, tmpoutfile, tmperrfile, tmpstructedoutfile, handle)
 
       background = BackgroundThread(holder, self)
       background.start()
       return {"exitcode": 777}
+    
+  def on_failure(self, pythonCommand, result):
+    """
+    Log some useful information after task failure.
+    """
+    logger.info("Command " + pprint.pformat(pythonCommand) + " failed with exitcode=" + str(result['exitcode']))
+    if OSCheck.is_windows_family():
+      cmd_list = ["WMIC path win32_process get Caption,Processid,Commandline", "netstat -an"]
+    else:
+      cmd_list = ["ps faux", "netstat -tulpn"]
 
+    shell_runner = shellRunner()
+    
+    for cmd in cmd_list:
+      ret = shell_runner.run(cmd)
+      logger.info("Command '{0}' returned {1}. {2}{3}".format(cmd, ret["exitCode"], ret["error"], ret["output"]))
+    
   def prepare_process_result(self, process, tmpoutfile, tmperrfile, tmpstructedoutfile, timeout=None):
     out, error, structured_out = self.read_result_from_files(tmpoutfile, tmperrfile, tmpstructedoutfile)
     # Building results
@@ -137,14 +159,11 @@ class PythonExecutor:
     to make possible unit testing
     """
     close_fds = None if OSCheck.get_os_family() == OSConst.WINSRV_FAMILY else True
-
+    command_env = dict(os.environ)
     if OSCheck.get_os_family() == OSConst.WINSRV_FAMILY:
-      command_env = dict(os.environ)
       command_env["PYTHONPATH"] = os.pathsep.join(sys.path)
       for k, v in command_env.iteritems():
         command_env[k] = str(v)
-    else:
-      command_env = None
 
     return subprocess.Popen(command,
       stdout=tmpout,
@@ -162,11 +181,10 @@ class PythonExecutor:
   def condenseOutput(self, stdout, stderr, retcode, structured_out):
     log_lines_count = self.config.get('heartbeat', 'log_lines_count')
     
-    grep = self.grep
     result = {
       "exitcode": retcode,
-      "stdout": grep.tail(stdout, log_lines_count) if log_lines_count else stdout,
-      "stderr": grep.tail(stderr, log_lines_count) if log_lines_count else stderr,
+      "stdout": self.grep.tail(stdout, log_lines_count) if log_lines_count else stdout,
+      "stderr": self.grep.tail(stderr, log_lines_count) if log_lines_count else stderr,
       "structuredOut" : structured_out
     }
     

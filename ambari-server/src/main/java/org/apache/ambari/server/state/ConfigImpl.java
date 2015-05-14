@@ -18,7 +18,11 @@
 
 package org.apache.ambari.server.state;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.ambari.server.orm.dao.ClusterDAO;
 import org.apache.ambari.server.orm.dao.ServiceConfigDAO;
@@ -31,44 +35,51 @@ import com.google.inject.Injector;
 import com.google.inject.assistedinject.Assisted;
 import com.google.inject.assistedinject.AssistedInject;
 import com.google.inject.persist.Transactional;
-import org.apache.ambari.server.orm.entities.ServiceConfigEntity;
 
 public class ConfigImpl implements Config {
   public static final String GENERATED_TAG_PREFIX = "generatedTag_";
 
   private Cluster cluster;
+  private StackId stackId;
   private String type;
   private String tag;
   private Long version;
   private Map<String, String> properties;
   private Map<String, Map<String, String>> propertiesAttributes;
   private ClusterConfigEntity entity;
-
   @Inject
   private ClusterDAO clusterDAO;
   @Inject
   private Gson gson;
   @Inject
   private ServiceConfigDAO serviceConfigDAO;
-  
-
   @AssistedInject
-  public ConfigImpl(@Assisted Cluster cluster, @Assisted String type, @Assisted Map<String, String> properties, 
+  public ConfigImpl(@Assisted Cluster cluster, @Assisted String type, @Assisted Map<String, String> properties,
       @Assisted Map<String, Map<String, String>> propertiesAttributes, Injector injector) {
     this.cluster = cluster;
     this.type = type;
     this.properties = properties;
     this.propertiesAttributes = propertiesAttributes;
+
+    // when creating a brand new config without a backing entity, use the
+    // cluster's desired stack as the config's stack
+    stackId = cluster.getDesiredStackVersion();
+
     injector.injectMembers(this);
-    
+
   }
-  
+
+
   @AssistedInject
   public ConfigImpl(@Assisted Cluster cluster, @Assisted ClusterConfigEntity entity, Injector injector) {
     this.cluster = cluster;
-    this.type = entity.getType();
-    this.tag = entity.getTag();
-    this.version = entity.getVersion();
+    type = entity.getType();
+    tag = entity.getTag();
+    version = entity.getVersion();
+
+    // when using an existing entity, use the actual value of the entity's stack
+    stackId = new StackId(entity.getStack());
+
     this.entity = entity;
     injector.injectMembers(this);
   }
@@ -80,6 +91,19 @@ public class ConfigImpl implements Config {
     this.type = type;
   }
 
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public synchronized StackId getStackId() {
+    return stackId;
+  }
+
+  @Override
+  public synchronized void setStackId(StackId stackId) {
+    this.stackId = stackId;
+  }
+
   @Override
   public String getType() {
     return type;
@@ -87,7 +111,7 @@ public class ConfigImpl implements Config {
 
   @Override
   public synchronized String getTag() {
-    if (this.tag == null) {
+    if (tag == null) {
       tag = GENERATED_TAG_PREFIX + getVersion();
     }
     return tag;
@@ -95,8 +119,8 @@ public class ConfigImpl implements Config {
 
   @Override
   public synchronized Long getVersion() {
-    if (this.version == null && cluster != null) {
-      this.version = cluster.getNextConfigVersion(type);
+    if (version == null && cluster != null) {
+      version = cluster.getNextConfigVersion(type);
     }
     return version;
   }
@@ -104,9 +128,9 @@ public class ConfigImpl implements Config {
   @Override
   public synchronized Map<String, String> getProperties() {
     if (null != entity && null == properties) {
-      
+
       properties = gson.<Map<String, String>>fromJson(entity.getData(), Map.class);
-      
+
     }
     return null == properties ? new HashMap<String, String>()
         : new HashMap<String, String>(properties);
@@ -159,33 +183,53 @@ public class ConfigImpl implements Config {
       this.properties.remove(key);
     }
   }
-  
-  @Transactional
+
   @Override
-  public synchronized void persist() {
-    
-    ClusterEntity clusterEntity = clusterDAO.findById(cluster.getClusterId());
-
-    ClusterConfigEntity entity = new ClusterConfigEntity();
-    entity.setClusterEntity(clusterEntity);
-    entity.setClusterId(cluster.getClusterId());
-    entity.setType(getType());
-    entity.setVersion(getVersion());
-    entity.setTag(getTag());
-    entity.setTimestamp(new Date().getTime());
-    
-    entity.setData(gson.toJson(getProperties()));
-    if (null != getPropertiesAttributes()) {
-      entity.setAttributes(gson.toJson(getPropertiesAttributes()));
-    }
-    clusterDAO.createConfig(entity);
-
-    clusterEntity.getClusterConfigEntities().add(entity);
-    clusterDAO.merge(clusterEntity);
-    cluster.refresh();
-
+  public void persist() {
+    persist(true);
   }
 
+  @Override
+  @Transactional
+  public synchronized void persist(boolean newConfig) {
+    ClusterEntity clusterEntity = clusterDAO.findById(cluster.getClusterId());
 
+    if (newConfig) {
+      ClusterConfigEntity entity = new ClusterConfigEntity();
+      entity.setClusterEntity(clusterEntity);
+      entity.setClusterId(cluster.getClusterId());
+      entity.setType(getType());
+      entity.setVersion(getVersion());
+      entity.setTag(getTag());
+      entity.setTimestamp(new Date().getTime());
+      entity.setStack(clusterEntity.getDesiredStack());
+      entity.setData(gson.toJson(getProperties()));
+      if (null != getPropertiesAttributes()) {
+        entity.setAttributes(gson.toJson(getPropertiesAttributes()));
+      }
 
+      clusterDAO.createConfig(entity);
+
+      clusterEntity.getClusterConfigEntities().add(entity);
+    } else {
+      // only supporting changes to the properties
+      ClusterConfigEntity entity = null;
+      for (ClusterConfigEntity cfe : clusterEntity.getClusterConfigEntities()) {
+        if (getTag().equals(cfe.getTag()) &&
+            getType().equals(cfe.getType()) &&
+            getVersion().equals(cfe.getVersion())) {
+          entity = cfe;
+          break;
+        }
+
+      }
+
+      if (null != entity) {
+        entity.setData(gson.toJson(getProperties()));
+      }
+    }
+
+    clusterDAO.merge(clusterEntity);
+    cluster.refresh();
+  }
 }

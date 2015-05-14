@@ -18,6 +18,9 @@ limitations under the License.
 """
 
 from resource_management import *
+
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions.security_commons import build_expectations, \
   cached_kinit_executor, validate_security_config_properties, get_params_from_filesystem, \
   FILE_TYPE_XML
@@ -27,32 +30,15 @@ import os
 from knox import knox
 from knox_ldap import ldap
 from setup_ranger_knox import setup_ranger_knox
-import service_mapping
 from ambari_commons import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 
+
 class KnoxGateway(Script):
-
-  @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
-  def get_stack_to_component(self):
-    return {"HDP": "knox-server"}
-
-  @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
   def install(self, env):
+    import params
+    env.set_params(params)
     self.install_packages(env)
-    import params
-    env.set_params(params)
-    
-    File(format('{knox_conf_dir}/topologies/sandbox.xml'),
-         action = "delete",
-    )
-
-  @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
-  def install(self, env):
-    import params
-    env.set_params(params)
-    if not check_windows_service_exists(service_mapping.knox_geteway_win_service_name):
-      self.install_packages(env)
 
     File(os.path.join(params.knox_conf_dir, 'topologies', 'sandbox.xml'),
          action = "delete",
@@ -64,16 +50,58 @@ class KnoxGateway(Script):
     knox()
     ldap()
 
-  @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
+  def configureldap(self, env):
+    import params
+    env.set_params(params)
+    ldap()
+
+
+
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class KnoxGatewayWindows(KnoxGateway):
+  def start(self, env):
+    import params
+    env.set_params(params)
+    self.configure(env)
+    # setup_ranger_knox(env)
+    Service(params.knox_gateway_win_service_name, action="start")
+
+  def stop(self, env):
+    import params
+    env.set_params(params)
+    Service(params.knox_gateway_win_service_name, action="stop")
+
+  def status(self, env):
+    import status_params
+    env.set_params(status_params)
+    check_windows_service_status(status_params.knox_gateway_win_service_name)
+
+  def startdemoldap(self, env):
+    import params
+    env.set_params(params)
+    self.configureldap(env)
+    Service(params.knox_ldap_win_service_name, action="start")
+
+  def stopdemoldap(self, env):
+    import params
+    env.set_params(params)
+    Service(params.knox_ldap_win_service_name, action="stop")
+
+
+
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class KnoxGatewayDefault(KnoxGateway):
+  def get_stack_to_component(self):
+    return {"HDP": "knox-server"}
+
   def pre_rolling_restart(self, env):
     import params
     env.set_params(params)
-
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
       upgrade.backup_data()
-      Execute(format("hdp-select set knox-server {version}"))
+      conf_select.select(params.stack_name, "knox", params.version)
+      hdp_select.select("knox-server", params.version)
 
-  @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
   def start(self, env, rolling_restart=False):
     import params
     env.set_params(params)
@@ -81,21 +109,17 @@ class KnoxGateway(Script):
     daemon_cmd = format('{knox_bin} start')
     no_op_test = format('ls {knox_pid_file} >/dev/null 2>&1 && ps -p `cat {knox_pid_file}` >/dev/null 2>&1')
     setup_ranger_knox()
+    # Used to setup symlink, needed to update the knox managed symlink, in case of custom locations
+    if os.path.islink(params.knox_managed_pid_symlink) and os.path.realpath(params.knox_managed_pid_symlink) != params.knox_pid_dir:
+      os.unlink(params.knox_managed_pid_symlink)
+      os.symlink(params.knox_pid_dir, params.knox_managed_pid_symlink)
+
     Execute(daemon_cmd,
             user=params.knox_user,
             environment={'JAVA_HOME': params.java_home},
             not_if=no_op_test
     )
 
-  @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
-  def start(self, env):
-    import params
-    env.set_params(params)
-    self.configure(env)
-    # setup_ranger_knox(env)
-    Service(service_mapping.knox_geteway_win_service_name, action="start")
-
-  @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
   def stop(self, env, rolling_restart=False):
     import params
     env.set_params(params)
@@ -107,29 +131,11 @@ class KnoxGateway(Script):
     )
     Execute (format("rm -f {knox_pid_file}"))
 
-  @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
-  def stop(self, env):
-    import params
-    env.set_params(params)
-    Service(service_mapping.knox_geteway_win_service_name, action="stop")
-
-  @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
   def status(self, env):
     import status_params
     env.set_params(status_params)
     check_process_status(status_params.knox_pid_file)
 
-  @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
-  def status(self, env):
-    import params
-    check_windows_service_status(service_mapping.knox_geteway_win_service_name)
-
-  def configureldap(self, env):
-    import params
-    env.set_params(params)
-    ldap()
-
-  @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
   def startdemoldap(self, env):
     import params
     env.set_params(params)
@@ -142,14 +148,6 @@ class KnoxGateway(Script):
             not_if=no_op_test
     )
 
-  @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
-  def startdemoldap(self, env):
-    import params
-    env.set_params(params)
-    self.configureldap(env)
-    Service(service_mapping.knox_ldap_win_service_name, action="start")
-
-  @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
   def stopdemoldap(self, env):
     import params
     env.set_params(params)
@@ -161,16 +159,8 @@ class KnoxGateway(Script):
             )
     Execute (format("rm -f {ldap_pid_file}"))
 
-  @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
-  def stopdemoldap(self, env):
-    import params
-    env.set_params(params)
-    Service(service_mapping.knox_ldap_win_service_name, action="stop")
-
-  @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
   def security_status(self, env):
     import status_params
-
     env.set_params(status_params)
 
     if status_params.security_enabled:

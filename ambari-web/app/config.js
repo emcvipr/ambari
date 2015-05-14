@@ -64,13 +64,15 @@ App.enableExperimental = false;
 App.supports = {
   preUpgradeCheck: true,
   stackUpgrade: true,
+  displayOlderVersions: false,
   autoRollbackHA: false,
   alwaysEnableManagedMySQLForHive: false,
   preKerberizeCheck: false,
-  automatedKerberos: true,
   customizeAgentUserAccount: false,
   installGanglia: false,
-  opsDuringRollingUpgrade: false
+  opsDuringRollingUpgrade: false,
+  customizedWidgetLayout: false,
+  enhancedConfigs: true
 };
 
 if (App.enableExperimental) {

@@ -18,12 +18,11 @@
 
 package org.apache.ambari.server.orm.dao;
 
-import com.google.inject.Inject;
-import com.google.inject.Provider;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
-import org.apache.ambari.server.orm.RequiresSession;
-import org.apache.ambari.server.orm.entities.ServiceConfigEntity;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 import javax.persistence.EntityManager;
 import javax.persistence.Tuple;
@@ -31,21 +30,30 @@ import javax.persistence.TypedQuery;
 import javax.persistence.criteria.CriteriaBuilder;
 import javax.persistence.criteria.CriteriaQuery;
 import javax.persistence.criteria.Root;
-import javax.persistence.criteria.Subquery;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+
+import org.apache.ambari.server.orm.RequiresSession;
+import org.apache.ambari.server.orm.cache.ConfigGroupHostMapping;
+import org.apache.ambari.server.orm.entities.ServiceConfigEntity;
+import org.apache.ambari.server.orm.entities.StackEntity;
+import org.apache.ambari.server.state.StackId;
+
+import com.google.inject.Inject;
+import com.google.inject.Provider;
+import com.google.inject.Singleton;
+import com.google.inject.persist.Transactional;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.Predicate;
 
 @Singleton
 public class ServiceConfigDAO {
   @Inject
-  Provider<EntityManager> entityManagerProvider;
-  @Inject
-  DaoUtils daoUtils;
+  private Provider<EntityManager> entityManagerProvider;
 
+  @Inject
+  private StackDAO stackDAO;
+
+  @Inject
+  private DaoUtils daoUtils;
 
   @RequiresSession
   public ServiceConfigEntity find(Long serviceConfigId) {
@@ -58,20 +66,6 @@ public class ServiceConfigDAO {
         createQuery("SELECT scv FROM ServiceConfigEntity scv " +
             "WHERE scv.serviceName=?1 AND scv.version=?2", ServiceConfigEntity.class);
     return daoUtils.selectOne(query, serviceName, version);
-  }
-
-  @RequiresSession
-  public Map<String, Long> findMaxVersions(Long clusterId) {
-    Map<String, Long> maxVersions = new HashMap<String, Long>();
-
-    TypedQuery<String> query = entityManagerProvider.get().createQuery("SELECT DISTINCT scv.serviceName FROM ServiceConfigEntity scv WHERE scv.clusterId = ?1", String.class);
-    List<String> serviceNames = daoUtils.selectList(query, clusterId);
-
-    for (String serviceName : serviceNames) {
-      maxVersions.put(serviceName, findMaxVersion(clusterId, serviceName).getVersion());
-    }
-
-    return maxVersions;
   }
 
   @RequiresSession
@@ -125,6 +119,60 @@ public class ServiceConfigDAO {
     return daoUtils.selectList(query, clusterId);
   }
 
+  /**
+   * Get all service configurations for the specified cluster and stack. This
+   * will return different versions of the same configuration (HDFS v1 and v2)
+   * if they exist.
+   *
+   * @param clusterId
+   *          the cluster (not {@code null}).
+   * @param stackId
+   *          the stack (not {@code null}).
+   * @return all service configurations for the cluster and stack.
+   */
+  @RequiresSession
+  public List<ServiceConfigEntity> getAllServiceConfigsForClusterAndStack(Long clusterId,
+      StackId stackId) {
+
+    StackEntity stackEntity = stackDAO.find(stackId.getStackName(),
+        stackId.getStackVersion());
+
+    TypedQuery<ServiceConfigEntity> query = entityManagerProvider.get().createNamedQuery(
+        "ServiceConfigEntity.findAllServiceConfigsByStack",
+        ServiceConfigEntity.class);
+
+    query.setParameter("clusterId", clusterId);
+    query.setParameter("stack", stackEntity);
+
+    return daoUtils.selectList(query);
+  }
+
+  /**
+   * Gets the latest service configurations for the specified cluster and stack.
+   *
+   * @param clusterId
+   *          the cluster (not {@code null}).
+   * @param stackId
+   *          the stack (not {@code null}).
+   * @return the latest service configurations for the cluster and stack.
+   */
+  @RequiresSession
+  public List<ServiceConfigEntity> getLatestServiceConfigs(Long clusterId,
+      StackId stackId) {
+
+    StackEntity stackEntity = stackDAO.find(stackId.getStackName(),
+        stackId.getStackVersion());
+
+    TypedQuery<ServiceConfigEntity> query = entityManagerProvider.get().createNamedQuery(
+        "ServiceConfigEntity.findLatestServiceConfigsByStack",
+        ServiceConfigEntity.class);
+
+    query.setParameter("clusterId", clusterId);
+    query.setParameter("stack", stackEntity);
+
+    return daoUtils.selectList(query);
+  }
+
   @RequiresSession
   public ServiceConfigEntity getLastServiceConfig(Long clusterId, String serviceName) {
     TypedQuery<ServiceConfigEntity> query = entityManagerProvider.get().
@@ -146,6 +194,11 @@ public class ServiceConfigDAO {
     return daoUtils.selectSingle(query, clusterId, serviceName);
   }
 
+  /**
+   * Get all service configs for the given cluster.
+   * @param clusterId Cluster Id
+   * @return Collection of service configs in the given cluster.
+   */
   @RequiresSession
   public List<ServiceConfigEntity> getServiceConfigs(Long clusterId) {
     TypedQuery<ServiceConfigEntity> query = entityManagerProvider.get()
@@ -154,6 +207,54 @@ public class ServiceConfigDAO {
         "ORDER BY scv.createTimestamp DESC", ServiceConfigEntity.class);
 
     return daoUtils.selectList(query, clusterId);
+  }
+
+  /**
+   * Get all service configs
+   * @return Collection of all service configs.
+   */
+  @RequiresSession
+  public List<ServiceConfigEntity> findAll() {
+    return daoUtils.selectAll(entityManagerProvider.get(), ServiceConfigEntity.class);
+  }
+
+  /**
+   * Gets the next version that will be created when persisting a new
+   * {@link ServiceConfigEntity}.
+   *
+   * @param clusterId
+   *          the cluster that the service is a part of.
+   * @param serviceName
+   *          the name of the service (not {@code null}).
+   * @return the maximum version value + 1
+   */
+  @RequiresSession
+  public Long findNextServiceConfigVersion(long clusterId, String serviceName) {
+    TypedQuery<Number> query = entityManagerProvider.get().createNamedQuery(
+        "ServiceConfigEntity.findNextServiceConfigVersion", Number.class);
+
+    query.setParameter("clusterId", clusterId);
+    query.setParameter("serviceName", serviceName);
+
+    return daoUtils.selectSingle(query).longValue();
+  }
+
+  @Transactional
+  public void removeHostFromServiceConfigs(final Long hostId) {
+    List<ServiceConfigEntity> allServiceConfigs = this.findAll();
+    for (ServiceConfigEntity serviceConfigEntity : allServiceConfigs) {
+      List<Long> hostIds = serviceConfigEntity.getHostIds();
+      if (hostIds != null && hostIds.contains(hostId)) {
+        // Remove the hostId
+        CollectionUtils.filter(hostIds, new Predicate() {
+          @Override
+          public boolean evaluate(Object arg0) {
+            return !((Long) arg0).equals(hostId);
+          }
+        });
+        serviceConfigEntity.setHostIds(hostIds);
+      }
+    }
   }
 
   @Transactional
@@ -170,6 +271,4 @@ public class ServiceConfigDAO {
   public void remove(ServiceConfigEntity serviceConfigEntity) {
     entityManagerProvider.get().remove(merge(serviceConfigEntity));
   }
-
-
 }

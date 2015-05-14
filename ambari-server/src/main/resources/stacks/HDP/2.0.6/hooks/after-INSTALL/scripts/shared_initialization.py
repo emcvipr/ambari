@@ -23,7 +23,7 @@ def setup_hdp_install_directory():
   # This is a name of marker file.
   SELECT_ALL_PERFORMED_MARKER = "/var/lib/ambari-agent/data/hdp-select-set-all.performed"
   import params
-  if params.hdp_stack_version != "" and compare_versions(params.stack_version_unformatted, '2.2') >= 0:
+  if params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.2') >= 0:
     Execute(as_sudo(['touch', SELECT_ALL_PERFORMED_MARKER]) + ' ; ' +
                    format('{sudo} /usr/bin/hdp-select set all `ambari-python-wrap /usr/bin/hdp-select versions | grep ^{stack_version_unformatted} | tail -1`'),
             only_if=format('ls -d /usr/hdp/{stack_version_unformatted}*'),   # If any HDP version is installed
@@ -34,10 +34,11 @@ def setup_config():
   import params
   stackversion = params.stack_version_unformatted
   if params.has_namenode or stackversion.find('Gluster') >= 0:
+    # create core-site only if the hadoop config diretory exists
     XmlConfig("core-site.xml",
               conf_dir=params.hadoop_conf_dir,
               configurations=params.config['configurations']['core-site'],
               configuration_attributes=params.config['configuration_attributes']['core-site'],
               owner=params.hdfs_user,
-              group=params.user_group
-    )
+              group=params.user_group,
+              only_if=format("ls {hadoop_conf_dir}"))

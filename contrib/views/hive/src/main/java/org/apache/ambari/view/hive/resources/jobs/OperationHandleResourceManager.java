@@ -18,42 +18,75 @@
 
 package org.apache.ambari.view.hive.resources.jobs;
 
-import org.apache.ambari.view.ViewContext;
+import org.apache.ambari.view.hive.persistence.IStorageFactory;
 import org.apache.ambari.view.hive.persistence.utils.FilteringStrategy;
 import org.apache.ambari.view.hive.persistence.utils.Indexed;
 import org.apache.ambari.view.hive.persistence.utils.ItemNotFound;
 import org.apache.ambari.view.hive.resources.SharedCRUDResourceManager;
+import org.apache.ambari.view.hive.resources.jobs.viewJobs.Job;
 import org.apache.ambari.view.hive.utils.ServiceFormattedException;
 import org.apache.hive.service.cli.thrift.TOperationHandle;
-import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.util.List;
 
-public class OperationHandleResourceManager extends SharedCRUDResourceManager<StoredOperationHandle> {
+public class OperationHandleResourceManager extends SharedCRUDResourceManager<StoredOperationHandle>
+    implements IOperationHandleResourceManager {
   /**
    * Constructor
-   *
-   * @param context       View Context instance
    */
-  public OperationHandleResourceManager(ViewContext context) {
-    super(StoredOperationHandle.class, context);
+  public OperationHandleResourceManager(IStorageFactory storageFabric) {
+    super(StoredOperationHandle.class, storageFabric);
   }
 
+  @Override
   public List<StoredOperationHandle> readJobRelatedHandles(final Job job) {
-    try {
-      return getStorage().loadWhere(StoredOperationHandle.class, "jobId = " + job.getId());
-    } catch (NotImplementedException e) {
-      // fallback to filtering strategy
-      return getStorage().loadAll(StoredOperationHandle.class, new FilteringStrategy() {
-        @Override
-        public boolean isConform(Indexed item) {
-          StoredOperationHandle handle = (StoredOperationHandle) item;
-          return (handle.getJobId() != null && handle.getJobId().equals(job.getId()));
-        }
-      });
-    }
+    return storageFactory.getStorage().loadAll(StoredOperationHandle.class, new FilteringStrategy() {
+      @Override
+      public boolean isConform(Indexed item) {
+        StoredOperationHandle handle = (StoredOperationHandle) item;
+        return (handle.getJobId() != null && handle.getJobId().equals(job.getId()));
+      }
+
+      @Override
+      public String whereStatement() {
+        return "jobId = '" + job.getId() + "'";
+      }
+    });
   }
 
+  @Override
+  public StoredOperationHandle getHandleForJob(Job job) throws ItemNotFound {
+    List<StoredOperationHandle> jobRelatedHandles = readJobRelatedHandles(job);
+    if (jobRelatedHandles.size() == 0)
+      throw new ItemNotFound();
+    return jobRelatedHandles.get(0);
+  }
+
+  @Override
+  public List<Job> getHandleRelatedJobs(final StoredOperationHandle operationHandle) {
+    return storageFactory.getStorage().loadAll(Job.class, new FilteringStrategy() {
+      @Override
+      public boolean isConform(Indexed item) {
+        Job job = (Job) item;
+        return (job.getId() != null && job.getId().equals(operationHandle.getJobId()));
+      }
+
+      @Override
+      public String whereStatement() {
+        return "id = '" + operationHandle.getJobId() + "'";
+      }
+    });
+  }
+
+  @Override
+  public Job getJobByHandle(StoredOperationHandle handle) throws ItemNotFound {
+    List<Job> handleRelatedJobs = getHandleRelatedJobs(handle);
+    if (handleRelatedJobs.size() == 0)
+      throw new ItemNotFound();
+    return handleRelatedJobs.get(0);
+  }
+
+  @Override
   public void putHandleForJob(TOperationHandle h, Job job) {
     StoredOperationHandle handle = StoredOperationHandle.buildFromTOperationHandle(h);
     handle.setJobId(job.getId());
@@ -64,22 +97,16 @@ public class OperationHandleResourceManager extends SharedCRUDResourceManager<St
       try {
         update(handle, jobRelatedHandles.get(0).getId());
       } catch (ItemNotFound itemNotFound) {
-        throw new ServiceFormattedException("Error when updating operation handle: " + itemNotFound.toString(), itemNotFound);
+        throw new ServiceFormattedException("E050 Error when updating operation handle: " + itemNotFound.toString(), itemNotFound);
       }
     } else {
       create(handle);
     }
   }
 
+  @Override
   public boolean containsHandleForJob(Job job) {
     List<StoredOperationHandle> jobRelatedHandles = readJobRelatedHandles(job);
     return jobRelatedHandles.size() > 0;
-  }
-
-  public TOperationHandle getHandleForJob(Job job) throws ItemNotFound {
-    List<StoredOperationHandle> jobRelatedHandles = readJobRelatedHandles(job);
-    if (jobRelatedHandles.size() == 0)
-      throw new ItemNotFound();
-    return jobRelatedHandles.get(0).toTOperationHandle();
   }
 }

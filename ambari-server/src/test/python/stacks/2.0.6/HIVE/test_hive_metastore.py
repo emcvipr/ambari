@@ -196,6 +196,17 @@ class TestHiveMetastore(RMFTestCase):
                               owner = 'hive',
                               group = 'hadoop',
                               )
+    self.assertResourceCalled('Directory', '/etc/security/limits.d',
+                              owner = 'root',
+                              group = 'root',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('File', '/etc/security/limits.d/hive.conf',
+                              content = Template('hive.conf.j2'),
+                              owner = 'root',
+                              group = 'root',
+                              mode = 0644,
+                              )
     self.assertResourceCalled('Execute', ('cp',
                                           '--remove-destination',
                                           '/usr/share/java/mysql-connector-java.jar',
@@ -203,6 +214,9 @@ class TestHiveMetastore(RMFTestCase):
                               path = ['/bin', '/usr/bin/'],
                               sudo = True,
                               )
+    self.assertResourceCalled('File', '/usr/lib/hive/lib//mysql-connector-java.jar',
+        mode = 0644,
+    )
     self.assertResourceCalled('File', '/usr/lib/ambari-agent/DBConnectionVerification.jar',
         content = DownloadSource('http://c6401.ambari.apache.org:8080/resources/DBConnectionVerification.jar'),
     )
@@ -285,6 +299,17 @@ class TestHiveMetastore(RMFTestCase):
                               owner = 'hive',
                               group = 'hadoop',
                               )
+    self.assertResourceCalled('Directory', '/etc/security/limits.d',
+                              owner = 'root',
+                              group = 'root',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('File', '/etc/security/limits.d/hive.conf',
+                              content = Template('hive.conf.j2'),
+                              owner = 'root',
+                              group = 'root',
+                              mode = 0644,
+                              )
     self.assertResourceCalled('Execute', ('cp',
                                           '--remove-destination',
                                           '/usr/share/java/mysql-connector-java.jar',
@@ -292,6 +317,9 @@ class TestHiveMetastore(RMFTestCase):
                               path = ['/bin', '/usr/bin/'],
                               sudo = True,
                               )
+    self.assertResourceCalled('File', '/usr/lib/hive/lib//mysql-connector-java.jar',
+        mode = 0644,
+    )
     self.assertResourceCalled('File', '/usr/lib/ambari-agent/DBConnectionVerification.jar',
         content = DownloadSource('http://c6401.ambari.apache.org:8080/resources/DBConnectionVerification.jar'),
     )

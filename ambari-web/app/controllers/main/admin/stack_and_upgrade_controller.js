@@ -74,6 +74,12 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
   wizardStorageProperties: ['upgradeId', 'upgradeVersion', 'currentVersion', 'isDowngrade'],
 
   /**
+   * mutable properties of Upgrade Task
+   * @type {Array}
+   */
+  taskDetailsProperties: ['status', 'stdout', 'stderr', 'error_log', 'host_name', 'output_log'],
+
+  /**
    * path to the mock json
    * @type {String}
    */
@@ -85,7 +91,7 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    */
   realRepoUrl: function () {
     return App.get('apiPrefix') + App.get('stackVersionURL') +
-      '/repository_versions?fields=*,operating_systems/*,operating_systems/repositories/*';
+      '/compatible_repository_versions?fields=*,operating_systems/*,operating_systems/repositories/*';
   }.property('App.stackVersionURL'),
 
   /**
@@ -139,7 +145,6 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
     this.loadUpgradeData(true).done(function() {
       self.loadStackVersionsToModel(true).done(function () {
         self.loadRepoVersionsToModel().done(function() {
-          self.set('requestInProgress', false);
           var currentVersion = App.StackVersion.find().findProperty('state', 'CURRENT');
           if (currentVersion) {
             self.set('currentVersion', {
@@ -184,6 +189,7 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    * @param data
    */
   loadUpgradeDataSuccessCallback: function (data) {
+    if (Em.isNone(data)) return;
     App.set('upgradeState', data.Upgrade.request_status);
     this.setDBProperty('upgradeState', data.Upgrade.request_status);
     if (data.upgrade_groups) {
@@ -198,10 +204,9 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
   updateUpgradeData: function (newData) {
     var oldData = this.get('upgradeData'),
       groupsMap = {},
-      itemsMap = {},
-      tasksMap = {};
+      itemsMap = {};
 
-    if (Em.isNone(oldData)) {
+    if (Em.isNone(oldData) || (newData.upgrade_groups.length !== oldData.upgradeGroups.length)) {
       this.initUpgradeData(newData);
     } else {
       //create entities maps
@@ -216,6 +221,7 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
       oldData.upgradeGroups.forEach(function (oldGroup) {
         oldGroup.set('status', groupsMap[oldGroup.get('group_id')].status);
         oldGroup.set('progress_percent', groupsMap[oldGroup.get('group_id')].progress_percent);
+        oldGroup.set('completed_task_count', groupsMap[oldGroup.get('group_id')].completed_task_count);
         oldGroup.upgradeItems.forEach(function (item) {
           item.set('status', itemsMap[item.get('stage_id')].status);
           item.set('progress_percent', itemsMap[item.get('stage_id')].progress_percent);
@@ -240,8 +246,7 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
       var upgradeItems = [];
       newGroup.upgrade_items.forEach(function (item) {
         var oldItem = App.upgradeEntity.create({type: 'ITEM'}, item.UpgradeItem);
-        var tasks = [];
-        oldItem.set('tasks', tasks);
+        oldItem.set('tasks', []);
         upgradeItems.pushObject(oldItem);
       });
       upgradeItems.reverse();
@@ -253,6 +258,54 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
       upgradeGroups: upgradeGroups,
       Upgrade: newData.Upgrade
     }));
+  },
+
+  /**
+   * request Upgrade Item and its tasks from server
+   * @return {$.ajax}
+   */
+  getUpgradeItem: function (item) {
+    return App.ajax.send({
+      name: 'admin.upgrade.upgrade_item',
+      sender: this,
+      data: {
+        upgradeId: item.get('request_id'),
+        groupId: item.get('group_id'),
+        stageId: item.get('stage_id')
+      },
+      success: 'getUpgradeItemSuccessCallback'
+    });
+  },
+
+  /**
+   * success callback of <code>getTasks</code>
+   * @param {object} data
+   */
+  getUpgradeItemSuccessCallback: function (data) {
+    this.get('upgradeData.upgradeGroups').forEach(function (group) {
+      if (group.get('group_id') === data.UpgradeItem.group_id) {
+        group.get('upgradeItems').forEach(function (item) {
+          if (item.get('stage_id') === data.UpgradeItem.stage_id) {
+            if (item.get('tasks.length')) {
+              item.set('isTasksLoaded', true);
+              data.tasks.forEach(function (task) {
+                var currentTask = item.get('tasks').findProperty('id', task.Tasks.id);
+                this.get('taskDetailsProperties').forEach(function (property) {
+                  currentTask.set(property, task.Tasks[property]);
+                }, this);
+              }, this);
+            } else {
+              var tasks = [];
+              data.tasks.forEach(function (task) {
+                tasks.pushObject(App.upgradeEntity.create({type: 'TASK'}, task.Tasks));
+              });
+              item.set('tasks', tasks);
+            }
+            item.set('isTasksLoaded', true);
+          }
+        }, this);
+      }
+    }, this);
   },
 
   /**
@@ -378,11 +431,13 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
     };
 
     if (App.get('supports.preUpgradeCheck')) {
+      this.set('requestInProgress', true);
       App.ajax.send({
         name: "admin.rolling_upgrade.pre_upgrade_check",
         sender: this,
         data: params,
-        success: "runPreUpgradeCheckSuccess"
+        success: "runPreUpgradeCheckSuccess",
+        error: "runPreUpgradeCheckError"
       });
     } else {
       this.upgrade(params);
@@ -399,6 +454,7 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    */
   runPreUpgradeCheckSuccess: function (data, opt, params) {
     if (data.items.someProperty('UpgradeChecks.status', "FAIL")) {
+      this.set('requestInProgress', false);
       var header = Em.I18n.t('popup.clusterCheck.Upgrade.header').format(params.label);
       var title = Em.I18n.t('popup.clusterCheck.Upgrade.title');
       var alert = Em.I18n.t('popup.clusterCheck.Upgrade.alert');
@@ -406,6 +462,10 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
     } else {
       this.upgrade(params);
     }
+  },
+
+  runPreUpgradeCheckError: function() {
+    this.set('requestInProgress', false);
   },
 
   /**
@@ -568,12 +628,16 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    * @method installStackVersionSuccess
    */
   installRepoVersionSuccess: function (data, opt, params) {
+    var version = App.RepositoryVersion.find(params.id);
     App.db.set('repoVersionInstall', 'id', [data.Requests.id]);
     App.clusterStatus.setClusterStatus({
       wizardControllerName: this.get('name'),
       localdb: App.db.data
     });
-    App.RepositoryVersion.find(params.id).set('defaultStatus', 'INSTALLING');
+    version.set('defaultStatus', 'INSTALLING');
+    if (version.get('stackVersion')) {
+      version.set('stackVersion.state', 'INSTALLING');
+    }
   },
 
   /**

@@ -39,7 +39,7 @@
                 <customCommand>
                     <name>STARTDEMOLDAP</name>
                     <commandScript>
-                        <script>scripts/demo_ldap.py</script>
+                        <script>scripts/knox_gateway.py</script>
                         <scriptType>PYTHON</scriptType>
                         <timeout>600</timeout>
                     </commandScript>
@@ -47,7 +47,7 @@
                 <customCommand>
                     <name>STOPDEMOLDAP</name>
                     <commandScript>
-                        <script>scripts/demo_ldap.py</script>
+                        <script>scripts/knox_gateway.py</script>
                         <scriptType>PYTHON</scriptType>
                         <timeout>600</timeout>
                     </commandScript>
@@ -57,7 +57,7 @@
       </components>
       <osSpecifics>
         <osSpecific>
-          <osFamily>redhat5,redhat6,suse11</osFamily>
+          <osFamily>redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>knox_2_2_*</name>
@@ -65,7 +65,7 @@
           </packages>
         </osSpecific>
         <osSpecific>
-          <osFamily>ubuntu12</osFamily>
+          <osFamily>debian7,ubuntu12,ubuntu14</osFamily>
           <packages>
             <package>
               <name>knox-2-2-.*</name>

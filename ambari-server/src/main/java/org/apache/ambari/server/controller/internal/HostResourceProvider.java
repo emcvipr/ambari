@@ -49,16 +49,18 @@ import org.apache.ambari.server.controller.spi.ResourceAlreadyExistsException;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
-import org.apache.ambari.server.orm.entities.BlueprintEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
 import org.apache.ambari.server.state.DesiredConfig;
 import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.state.MaintenanceState;
-import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.ServiceComponentHost;
-import org.apache.ambari.server.state.configgroup.ConfigGroup;
+import org.apache.ambari.server.state.stack.OsFamily;
+import org.apache.ambari.server.topology.InvalidTopologyException;
+import org.apache.ambari.server.topology.InvalidTopologyTemplateException;
+import org.apache.ambari.server.topology.TopologyManager;
+import org.apache.ambari.server.topology.TopologyRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,59 +72,70 @@ import com.google.inject.assistedinject.AssistedInject;
 /**
  * Resource provider for host resources.
  */
-public class HostResourceProvider extends BaseBlueprintProcessor {
+public class HostResourceProvider extends AbstractControllerResourceProvider {
 
   // ----- Property ID constants ---------------------------------------------
 
   // Hosts
-  protected static final String HOST_CLUSTER_NAME_PROPERTY_ID =
+  public static final String HOST_CLUSTER_NAME_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "cluster_name");
-  protected static final String HOST_NAME_PROPERTY_ID =
+  public static final String HOST_NAME_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "host_name");
-  protected static final String HOST_PUBLIC_NAME_PROPERTY_ID =
+  public static final String HOST_PUBLIC_NAME_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "public_host_name");
-  protected static final String HOST_IP_PROPERTY_ID =
+  public static final String HOST_IP_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "ip");
-  protected static final String HOST_TOTAL_MEM_PROPERTY_ID =
+  public static final String HOST_TOTAL_MEM_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "total_mem");
-  protected static final String HOST_CPU_COUNT_PROPERTY_ID =
+  public static final String HOST_CPU_COUNT_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "cpu_count");
-  protected static final String HOST_PHYSICAL_CPU_COUNT_PROPERTY_ID =
+  public static final String HOST_PHYSICAL_CPU_COUNT_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "ph_cpu_count");  
-  protected static final String HOST_OS_ARCH_PROPERTY_ID =
+  public static final String HOST_OS_ARCH_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "os_arch");
-  protected static final String HOST_OS_TYPE_PROPERTY_ID =
+  public static final String HOST_OS_TYPE_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "os_type");
-  protected static final String HOST_RACK_INFO_PROPERTY_ID =
+  public static final String HOST_OS_FAMILY_PROPERTY_ID =
+      PropertyHelper.getPropertyId("Hosts", "os_family");
+  public static final String HOST_RACK_INFO_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "rack_info");
-  protected static final String HOST_LAST_HEARTBEAT_TIME_PROPERTY_ID =
+  public static final String HOST_LAST_HEARTBEAT_TIME_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "last_heartbeat_time");
-  protected static final String HOST_LAST_REGISTRATION_TIME_PROPERTY_ID =
+  public static final String HOST_LAST_REGISTRATION_TIME_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "last_registration_time");
-  protected static final String HOST_DISK_INFO_PROPERTY_ID =
+  public static final String HOST_DISK_INFO_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "disk_info");
   
   
-  protected static final String HOST_HOST_STATUS_PROPERTY_ID =
+  public static final String HOST_HOST_STATUS_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "host_status");
-  protected static final String HOST_MAINTENANCE_STATE_PROPERTY_ID = 
+  public static final String HOST_MAINTENANCE_STATE_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "maintenance_state");
-  
-  protected static final String HOST_HOST_HEALTH_REPORT_PROPERTY_ID =
+
+  public static final String HOST_HOST_HEALTH_REPORT_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "host_health_report");
-  protected static final String HOST_STATE_PROPERTY_ID =
+  public static final String HOST_RECOVERY_REPORT_PROPERTY_ID =
+      PropertyHelper.getPropertyId("Hosts", "recovery_report");
+  public static final String HOST_RECOVERY_SUMMARY_PROPERTY_ID =
+      PropertyHelper.getPropertyId("Hosts", "recovery_summary");
+  public static final String HOST_STATE_PROPERTY_ID =
+
       PropertyHelper.getPropertyId("Hosts", "host_state");
-  protected static final String HOST_LAST_AGENT_ENV_PROPERTY_ID =
+  public static final String HOST_LAST_AGENT_ENV_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "last_agent_env");
-  protected static final String HOST_DESIRED_CONFIGS_PROPERTY_ID = 
+  public static final String HOST_DESIRED_CONFIGS_PROPERTY_ID =
       PropertyHelper.getPropertyId("Hosts", "desired_configs");
 
-  protected static final String BLUEPRINT_PROPERTY_ID =
+  public static final String BLUEPRINT_PROPERTY_ID =
       PropertyHelper.getPropertyId(null, "blueprint");
-  protected static final String HOSTGROUP_PROPERTY_ID =
+  public static final String HOSTGROUP_PROPERTY_ID =
       PropertyHelper.getPropertyId(null, "host_group");
-  protected static final String HOST_NAME_NO_CATEGORY_PROPERTY_ID =
+  public static final String HOST_NAME_NO_CATEGORY_PROPERTY_ID =
       PropertyHelper.getPropertyId(null, "host_name");
+  public static final String HOST_COUNT_PROPERTY_ID =
+      PropertyHelper.getPropertyId(null, "host_count");
+  public static final String HOST_PREDICATE_PROPERTY_ID =
+      PropertyHelper.getPropertyId(null, "host_predicate");
 
   private static Set<String> pkPropertyIds =
       new HashSet<String>(Arrays.asList(new String[]{
@@ -130,6 +143,12 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
 
   @Inject
   private MaintenanceStateHelper maintenanceStateHelper;
+
+  @Inject
+  private OsFamily osFamily;
+
+  @Inject
+  private static TopologyManager topologyManager;
 
   // ----- Constructors ----------------------------------------------------
 
@@ -158,7 +177,7 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
 
     RequestStatusResponse createResponse = null;
     if (isHostGroupRequest(request)) {
-      createResponse = addHostsUsingHostgroup(request);
+      createResponse = submitHostRequests(request);
     } else {
       createResources(new Command<Void>() {
         @Override
@@ -168,7 +187,6 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
         }
       });
     }
-
     notifyCreate(Resource.Type.Host, request);
 
     return getRequestStatus(createResponse);
@@ -224,6 +242,15 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
           response.getOsArch(), requestedIds);
       setResourceProperty(resource, HOST_OS_TYPE_PROPERTY_ID,
           response.getOsType(), requestedIds);
+
+      String hostOsFamily = osFamily.find(response.getOsType());
+      if (hostOsFamily == null) {
+        LOG.error("Can not find host OS family. For OS type = '{}' and host name = '{}'",
+            response.getOsType(), response.getHostname());
+      }
+      setResourceProperty(resource, HOST_OS_FAMILY_PROPERTY_ID,
+          hostOsFamily, requestedIds);
+
       setResourceProperty(resource, HOST_RACK_INFO_PROPERTY_ID,
           response.getRackInfo(), requestedIds);
       setResourceProperty(resource, HOST_LAST_HEARTBEAT_TIME_PROPERTY_ID,
@@ -236,6 +263,10 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
           response.getStatus(),requestedIds);
       setResourceProperty(resource, HOST_HOST_HEALTH_REPORT_PROPERTY_ID,
           response.getHealthStatus().getHealthReport(), requestedIds);
+      setResourceProperty(resource, HOST_RECOVERY_REPORT_PROPERTY_ID,
+          response.getRecoveryReport(), requestedIds);
+      setResourceProperty(resource, HOST_RECOVERY_SUMMARY_PROPERTY_ID,
+          response.getRecoverySummary(), requestedIds);
       setResourceProperty(resource, HOST_DISK_INFO_PROPERTY_ID,
           response.getDisksInfo(), requestedIds);
       setResourceProperty(resource, HOST_STATE_PROPERTY_ID,
@@ -305,6 +336,9 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
     baseUnsupported.remove(BLUEPRINT_PROPERTY_ID);
     baseUnsupported.remove(HOSTGROUP_PROPERTY_ID);
     baseUnsupported.remove(HOST_NAME_NO_CATEGORY_PROPERTY_ID);
+    //todo: constants
+    baseUnsupported.remove(HOST_COUNT_PROPERTY_ID);
+    baseUnsupported.remove(HOST_PREDICATE_PROPERTY_ID);
 
     return checkConfigPropertyIds(baseUnsupported, "Hosts");
   }
@@ -380,7 +414,7 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
    * @param request Request that must contain registered hosts, and optionally a cluster.
    * @throws AmbariException
    */
-  protected synchronized void createHosts(Request request)
+  public synchronized void createHosts(Request request)
       throws AmbariException {
 
     Set<Map<String, Object>> propertySet = request.getProperties();
@@ -507,144 +541,26 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
     }
   }
 
-
-  /**
-   * Add hosts based on a blueprint and hostgroup.  This will create the necessary resources and install/start all
-   * if the components on the hosts.
-   *
-   * @param request  add hosts request
-   * @return async request response
-   *
-   * @throws ResourceAlreadyExistsException  if an added host already exists in the cluster
-   * @throws SystemException                 in an unknown exception occurs
-   * @throws NoSuchParentResourceException   a parent resource doesnt exist
-   * @throws UnsupportedPropertyException    an unsupported property was specified for the request
-   */
-  private RequestStatusResponse addHostsUsingHostgroup(final Request request)
+  public RequestStatusResponse install(final String cluster, final String hostname)
       throws ResourceAlreadyExistsException,
       SystemException,
       NoSuchParentResourceException,
       UnsupportedPropertyException {
 
-    //todo: idempotency of request.  Need to define failure models ...
-    Set<Map<String, Object>> propertySet = request.getProperties();
-    if (propertySet == null || propertySet.isEmpty()) {
-      LOG.warn("Received a create host request with no associated property sets");
-      return null;
-    }
 
-    Set<String> addedHosts = new HashSet<String>();
-    // all hosts will have same cluster
-    String clusterName = null;
-    for (Map<String, Object> properties : propertySet) {
-      clusterName = (String) properties.get(HOST_CLUSTER_NAME_PROPERTY_ID);
-      String bpName = (String) properties.get(BLUEPRINT_PROPERTY_ID);
-      String hgName = (String) properties.get(HOSTGROUP_PROPERTY_ID);
-      String hostname = getHostNameFromProperties(properties);
-
-      addedHosts.add(hostname);
-
-      String configGroupName = getConfigurationGroupName(bpName, hgName);
-      BlueprintEntity blueprint = getExistingBlueprint(bpName);
-      Stack stack = parseStack(blueprint);
-      Map<String, HostGroupImpl> blueprintHostGroups = parseBlueprintHostGroups(blueprint, stack);
-      addKerberosClientIfNecessary(clusterName, blueprintHostGroups);
-      addHostToHostgroup(hgName, hostname, blueprintHostGroups);
-      createHostAndComponentResources(blueprintHostGroups, clusterName, this);
-      //todo: optimize: update once per hostgroup with added hosts
-      addHostToExistingConfigGroups(configGroupName, clusterName, hostname);
-    }
     return ((HostComponentResourceProvider) getResourceProvider(Resource.Type.HostComponent)).
-        installAndStart(clusterName, addedHosts);
+        install(cluster, hostname);
   }
 
-  /**
-   * Add the kerberos client to groups if kerberos is enabled for the cluster.
-   *
-   * @param clusterName  cluster name
-   * @param groups       host groups
-   *
-   * @throws NoSuchParentResourceException unable to get cluster instance
-   */
-  private void addKerberosClientIfNecessary(String clusterName, Map<String, HostGroupImpl> groups)
-      throws NoSuchParentResourceException {
+  public RequestStatusResponse start(final String cluster, final String hostname)
+      throws ResourceAlreadyExistsException,
+      SystemException,
+      NoSuchParentResourceException,
+      UnsupportedPropertyException {
 
-    //todo: logic would ideally be contained in the stack
-    Cluster cluster;
-    try {
-      cluster = getManagementController().getClusters().getCluster(clusterName);
-    } catch (AmbariException e) {
-      throw new NoSuchParentResourceException("Parent Cluster resource doesn't exist.  clusterName= " + clusterName);
-    }
-    if (cluster.getSecurityType() == SecurityType.KERBEROS) {
-      for (HostGroupImpl group : groups.values()) {
-        group.addComponent("KERBEROS_CLIENT");
-      }
-    }
+    return ((HostComponentResourceProvider) getResourceProvider(Resource.Type.HostComponent)).
+        start(cluster, hostname);
   }
-
-  /**
-   * Add the new host to an existing config group.
-   *
-   * @param configGroupName  name of the config group
-   * @param clusterName      cluster name
-   * @param hostName         host name
-   *
-   * @throws SystemException                an unknown exception occurred
-   * @throws UnsupportedPropertyException   an unsupported property was specified in the request
-   * @throws NoSuchParentResourceException  a parent resource doesn't exist
-   */
-  private void addHostToExistingConfigGroups(String configGroupName, String clusterName, String hostName)
-      throws SystemException,
-      UnsupportedPropertyException,
-      NoSuchParentResourceException {
-
-    Clusters clusters;
-    Cluster cluster;
-    try {
-      clusters = getManagementController().getClusters();
-      cluster = clusters.getCluster(clusterName);
-    } catch (AmbariException e) {
-      throw new IllegalArgumentException(
-          String.format("Attempt to add hosts to a non-existent cluster: '%s'", clusterName));
-    }
-    Map<Long, ConfigGroup> configGroups = cluster.getConfigGroups();
-    for (ConfigGroup group : configGroups.values()) {
-      if (group.getName().equals(configGroupName)) {
-        try {
-          group.addHost(clusters.getHost(hostName));
-          group.persist();
-        } catch (AmbariException e) {
-          // shouldn't occur, this host was just added to the cluster
-          throw new SystemException(String.format(
-              "Unable to obtain newly created host '%s' from cluster '%s'", hostName, clusterName));
-        }
-      }
-    }
-  }
-
-  /**
-   * Associate a host with a host group.
-   *
-   * @param hostGroupName        name of host group
-   * @param hostname             host name
-   * @param blueprintHostGroups  map of host group name to host group
-   *
-   * @throws IllegalArgumentException if the specified host group doesn't exist
-   */
-  private void addHostToHostgroup(String hostGroupName, String hostname, Map<String, HostGroupImpl> blueprintHostGroups)
-      throws IllegalArgumentException {
-
-    HostGroupImpl hostGroup = blueprintHostGroups.get(hostGroupName);
-    if (hostGroup == null) {
-      // this case should have been caught sooner
-      throw new IllegalArgumentException(String.format("Invalid host_group specified '%s'. " +
-          "All request host groups must have a corresponding host group in the specified blueprint", hostGroupName));
-    }
-
-    hostGroup.addHostInfo(hostname);
-  }
-
 
   protected Set<HostResponse> getHosts(Set<HostRequest> requests) throws AmbariException {
     Set<HostResponse> response = new HashSet<HostResponse>();
@@ -751,48 +667,54 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
             + ", request=" + request);
       }
 
-      Host h = clusters.getHost(request.getHostname());
+      Host host = clusters.getHost(request.getHostname());
+
+      String clusterName = request.getClusterName();
 
       try {
         // The below method call throws an exception when trying to create a duplicate mapping in the clusterhostmapping
         // table. This is done to detect duplicates during host create. In order to be robust, handle these gracefully.
-        clusters.mapHostToCluster(request.getHostname(), request.getClusterName());
+        clusters.mapHostToCluster(request.getHostname(), clusterName);
       } catch (DuplicateResourceException e) {
         // do nothing
       }
 
       if (null != request.getHostAttributes()) {
-        h.setHostAttributes(request.getHostAttributes());
+        host.setHostAttributes(request.getHostAttributes());
       }
 
-      if (null != request.getRackInfo()) {
-        h.setRackInfo(request.getRackInfo());
+      String  rackInfo        = host.getRackInfo();
+      String  requestRackInfo = request.getRackInfo();
+      boolean rackChange      = requestRackInfo != null && !requestRackInfo.equals(rackInfo);
+
+      if (rackChange) {
+        host.setRackInfo(requestRackInfo);
       }
 
       if (null != request.getPublicHostName()) {
-        h.setPublicHostName(request.getPublicHostName());
+        host.setPublicHostName(request.getPublicHostName());
       }
       
-      if (null != request.getClusterName() && null != request.getMaintenanceState()) {
-        Cluster c = clusters.getCluster(request.getClusterName());
+      if (null != clusterName && null != request.getMaintenanceState()) {
+        Cluster c = clusters.getCluster(clusterName);
         MaintenanceState newState = MaintenanceState.valueOf(request.getMaintenanceState());
-        MaintenanceState oldState = h.getMaintenanceState(c.getClusterId());
+        MaintenanceState oldState = host.getMaintenanceState(c.getClusterId());
         if (!newState.equals(oldState)) {
           if (newState.equals(MaintenanceState.IMPLIED_FROM_HOST)
               || newState.equals(MaintenanceState.IMPLIED_FROM_SERVICE)) {
             throw new IllegalArgumentException("Invalid arguments, can only set " +
               "maintenance state to one of " + EnumSet.of(MaintenanceState.OFF, MaintenanceState.ON));
           } else {
-            h.setMaintenanceState(c.getClusterId(), newState);
+            host.setMaintenanceState(c.getClusterId(), newState);
           }
         }
       }
 
       // Create configurations
-      if (null != request.getClusterName() && null != request.getDesiredConfigs()) {
-        Cluster c = clusters.getCluster(request.getClusterName());
+      if (null != clusterName && null != request.getDesiredConfigs()) {
+        Cluster c = clusters.getCluster(clusterName);
 
-        if (clusters.getHostsForCluster(request.getClusterName()).containsKey(h.getHostName())) {
+        if (clusters.getHostsForCluster(clusterName).containsKey(host.getHostName())) {
 
           for (ConfigurationRequest cr : request.getDesiredConfigs()) {
 
@@ -800,7 +722,7 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
               LOG.info(MessageFormat.format("Applying configuration with tag ''{0}'' to host ''{1}'' in cluster ''{2}''",
                   cr.getVersionTag(),
                   request.getHostname(),
-                  request.getClusterName()));
+                  clusterName));
 
               cr.setClusterName(c.getClusterName());
               controller.createConfiguration(cr);
@@ -809,12 +731,12 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
             Config baseConfig = c.getConfig(cr.getType(), cr.getVersionTag());
             if (null != baseConfig) {
               String authName = controller.getAuthName();
-              DesiredConfig oldConfig = h.getDesiredConfigs(c.getClusterId()).get(cr.getType());
+              DesiredConfig oldConfig = host.getDesiredConfigs(c.getClusterId()).get(cr.getType());
 
-              if (h.addDesiredConfig(c.getClusterId(), cr.isSelected(), authName,  baseConfig)) {
+              if (host.addDesiredConfig(c.getClusterId(), cr.isSelected(), authName,  baseConfig)) {
                 Logger logger = LoggerFactory.getLogger("configchange");
                 logger.info("cluster '" + c.getClusterName() + "', "
-                    + "host '" + h.getHostName() + "' "
+                    + "host '" + host.getHostName() + "' "
                     + "changed by: '" + authName + "'; "
                     + "type='" + baseConfig.getType() + "' "
                     + "version='" + baseConfig.getVersion() + "'"
@@ -826,8 +748,11 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
         }
       }
 
-      if (null != request.getClusterName() && !request.getClusterName().isEmpty()) {
-        clusters.getCluster(request.getClusterName()).recalculateAllClusterVersionStates();
+      if (clusterName != null && !clusterName.isEmpty()) {
+        clusters.getCluster(clusterName).recalculateAllClusterVersionStates();
+        if (rackChange) {
+          controller.registerRackChange(clusterName);
+        }
       }
 
       //todo: if attempt was made to update a property other than those
@@ -872,38 +797,16 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
 
           throw new AmbariException(reason.toString());
         }
-        okToRemove.add(hostRequest);
-
-      } else {
-        // check if host exists (throws exception if not found)
-        clusters.getHost(hostName);
-
-        // delete host outright
-        Set<Cluster> clusterSet = clusters.getClustersForHost(hostName);
-        if (0 != clusterSet.size()) {
-          StringBuilder reason = new StringBuilder("Cannot remove host ")
-              .append(hostName)
-              .append(".  It belongs to clusters: ");
-          int i = 0;
-          for (Cluster c : clusterSet) {
-            if ((i++) > 0) {
-              reason.append(", ");
-            }
-            reason.append(c.getClusterName());
-          }
-          throw new AmbariException(reason.toString());
-        }
-        okToRemove.add(hostRequest);
       }
+      okToRemove.add(hostRequest);
     }
 
     for (HostRequest hostRequest : okToRemove) {
+      // Assume the user also wants to delete it entirely, including all clusters.
+      clusters.deleteHost(hostRequest.getHostname());
+
       if (null != hostRequest.getClusterName()) {
-        clusters.unmapHostFromCluster(hostRequest.getHostname(),
-            hostRequest.getClusterName());
         clusters.getCluster(hostRequest.getClusterName()).recalculateAllClusterVersionStates();
-      } else {
-        clusters.deleteHost(hostRequest.getHostname());
       }
     }
   }
@@ -923,5 +826,32 @@ public class HostResourceProvider extends BaseBlueprintProcessor {
 
     return hostname != null ? hostname :
         (String) properties.get(HOST_NAME_NO_CATEGORY_PROPERTY_ID);
+  }
+
+  //todo: for api/v1/hosts we also end up here so we need to ensure proper 400 response
+  //todo: since a user shouldn't be posing to that endpoint
+  private RequestStatusResponse submitHostRequests(Request request) throws SystemException {
+    TopologyRequest requestRequest;
+    try {
+      requestRequest = new ScaleClusterRequest(request.getProperties());
+    } catch (InvalidTopologyTemplateException e) {
+      throw new IllegalArgumentException("Invalid Add Hosts Template: " + e, e);
+    }
+
+    try {
+      return topologyManager.scaleHosts(requestRequest);
+    } catch (InvalidTopologyException e) {
+      throw new IllegalArgumentException("Topology validation failed: " + e, e);
+    } catch (AmbariException e) {
+      //todo: handle non-system exceptions
+      e.printStackTrace();
+      //todo: for now just throw SystemException
+      throw new SystemException("Unable to add hosts", e);
+    }
+  }
+
+  //todo: proper static injection of topology manager
+  public static void setTopologyManager(TopologyManager topologyManager) {
+    HostResourceProvider.topologyManager = topologyManager;
   }
 }

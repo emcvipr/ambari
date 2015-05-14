@@ -65,7 +65,10 @@ App.serviceMetricsMapper = App.QuickDataMapper.create({
     name_node_rpc: 'nameNodeComponent.host_components[0].metrics.rpc.RpcQueueTime_avg_time',
     data_nodes_started: 'data_nodes_started',
     data_nodes_installed: 'data_nodes_installed',
-    data_nodes_total: 'data_nodes_total'
+    data_nodes_total: 'data_nodes_total',
+    nfs_gateways_started: 'nfs_gateways_started',
+    nfs_gateways_installed: 'nfs_gateways_installed',
+    nfs_gateways_total: 'nfs_gateways_total'
   },
   yarnConfig: {
     version: 'resourceManagerComponent.ServiceComponentInfo.Version',
@@ -109,7 +112,10 @@ App.serviceMetricsMapper = App.QuickDataMapper.create({
     heap_memory_max: 'masterComponent.ServiceComponentInfo.HeapMemoryMax',
     region_servers_started: 'region_servers_started',
     region_servers_installed: 'region_servers_installed',
-    region_servers_total: 'region_servers_total'
+    region_servers_total: 'region_servers_total',
+    phoenix_servers_started: 'phoenix_servers_started',
+    phoenix_servers_installed: 'phoenix_servers_installed',
+    phoenix_servers_total: 'phoenix_servers_total'
   },
   stormConfig: {
     total_tasks: 'restApiComponent.tasksTotal',
@@ -181,9 +187,8 @@ App.serviceMetricsMapper = App.QuickDataMapper.create({
           host_component.id = host_component.HostRoles.component_name + "_" + host_component.HostRoles.host_name;
           previousComponentStatuses[host_component.id] = host_component.HostRoles.state;
           previousComponentPassiveStates[host_component.id] = host_component.HostRoles.maintenance_state;
-          if (host_component.HostRoles.component_name == "HBASE_MASTER") {
-            this.config3.ha_status = 'metrics.hbase.master.IsActiveMaster';
-          }
+          this.config3.ha_status = host_component.HostRoles.component_name == "HBASE_MASTER" ?
+            'metrics.hbase.master.IsActiveMaster' : 'HostRoles.ha_state';
           var comp = this.parseIt(host_component, this.config3);
           comp.service_id = serviceName;
           hostComponents.push(comp);
@@ -359,7 +364,8 @@ App.serviceMetricsMapper = App.QuickDataMapper.create({
       STORM: [31],
       FALCON: [32],
       RANGER: [33],
-      SPARK: [34]
+      SPARK: [34],
+      ACCUMULO: [35]
     };
     if (quickLinks[item.ServiceInfo.service_name])
       finalJson.quick_links = quickLinks[item.ServiceInfo.service_name];

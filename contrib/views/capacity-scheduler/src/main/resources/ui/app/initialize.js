@@ -24,6 +24,16 @@ App.testMode = false;
 // adapters
 require('adapters');
 
+//serializers
+require('serializers');
+
+//store
+require('store');
+
+//helpers
+require('helpers/timeAgo');
+require('helpers/escapeAcl');
+
 //components
 require('components');
 

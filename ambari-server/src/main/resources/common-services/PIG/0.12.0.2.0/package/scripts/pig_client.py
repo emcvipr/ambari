@@ -20,12 +20,25 @@ Ambari Agent
 """
 
 import sys
+import os
 from resource_management import *
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from pig import pig
-
+from ambari_commons import OSConst
+from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 
 class PigClient(Script):
+  def configure(self, env):
+    import params
+    env.set_params(params)
+    pig()
 
+  def status(self, env):
+    raise ClientComponentHasNoStatus()
+
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class PigClientLinux(PigClient):
   def get_stack_to_component(self):
     return {"HDP": "hadoop-client"}
 
@@ -34,19 +47,21 @@ class PigClient(Script):
     env.set_params(params)
 
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
-      Execute(format("hdp-select set hadoop-client {version}"))
+      conf_select.select(params.stack_name, "hadoop", params.version)
+      hdp_select.select("hadoop-client", params.version)
 
   def install(self, env):
     self.install_packages(env)
     self.configure(env)
 
-  def configure(self, env):
-    import params
-    env.set_params(params)
-    pig()
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class PigClientWindows(PigClient):
 
-  def status(self, env):
-    raise ClientComponentHasNoStatus()
+  def install(self, env):
+    import params
+    if params.pig_home is None:
+      self.install_packages(env)
+    self.configure(env)
 
 if __name__ == "__main__":
   PigClient().execute()

@@ -19,28 +19,79 @@ limitations under the License.
 """
 import os
 
-from resource_management.core.resources import Directory
-from resource_management.core.resources import File
-from resource_management.core.resources.system import Execute
+from resource_management.core.resources.service import ServiceConfig
+from resource_management.core.resources.system import Directory, Execute, File
 from resource_management.core.source import DownloadSource
 from resource_management.core.source import InlineTemplate
 from resource_management.core.source import Template
-from resource_management.libraries.functions import format
-from resource_management.libraries.functions import compare_versions
+from resource_management.libraries.functions.format import format
+from resource_management.libraries.functions.version import compare_versions
 from resource_management.libraries.resources.xml_config import XmlConfig
+from resource_management.libraries.script.script import Script
 from resource_management.core.resources.packaging import Package
+from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
+from ambari_commons import OSConst
+from ambari_commons.inet_utils import download_file
 
+@OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
+def oozie(is_server=False):
+  import params
+
+  from status_params import oozie_server_win_service_name
+
+  XmlConfig("oozie-site.xml",
+            conf_dir=params.oozie_conf_dir,
+            configurations=params.config['configurations']['oozie-site'],
+            owner=params.oozie_user,
+            mode='f',
+            configuration_attributes=params.config['configuration_attributes']['oozie-site']
+  )
+
+  File(os.path.join(params.oozie_conf_dir, "oozie-env.cmd"),
+       owner=params.oozie_user,
+       content=InlineTemplate(params.oozie_env_cmd_template)
+  )
+
+  Directory(params.oozie_tmp_dir,
+            owner=params.oozie_user,
+            recursive = True,
+  )
+
+  if is_server:
+    # Manually overriding service logon user & password set by the installation package
+    ServiceConfig(oozie_server_win_service_name,
+                  action="change_user",
+                  username = params.oozie_user,
+                  password = Script.get_password(params.oozie_user))
+
+  download_file(os.path.join(params.config['hostLevelParams']['jdk_location'], "sqljdbc4.jar"),
+                      os.path.join(params.oozie_root, "extra_libs", "sqljdbc4.jar")
+  )
+  webapps_sqljdbc_path = os.path.join(params.oozie_home, "oozie-server", "webapps", "oozie", "WEB-INF", "lib", "sqljdbc4.jar")
+  if os.path.isfile(webapps_sqljdbc_path):
+    download_file(os.path.join(params.config['hostLevelParams']['jdk_location'], "sqljdbc4.jar"),
+                        webapps_sqljdbc_path
+    )
+  download_file(os.path.join(params.config['hostLevelParams']['jdk_location'], "sqljdbc4.jar"),
+                      os.path.join(params.oozie_home, "share", "lib", "oozie", "sqljdbc4.jar")
+  )
+  download_file(os.path.join(params.config['hostLevelParams']['jdk_location'], "sqljdbc4.jar"),
+                      os.path.join(params.oozie_home, "temp", "WEB-INF", "lib", "sqljdbc4.jar")
+  )
 
 # TODO: see if see can remove this
+@OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
 def oozie(is_server=False):
   import params
 
   if is_server:
-    params.HdfsDirectory(params.oozie_hdfs_user_dir,
-                         action="create",
+    params.HdfsResource(params.oozie_hdfs_user_dir,
+                         type="directory",
+                         action="create_on_execute",
                          owner=params.oozie_user,
                          mode=params.oozie_hdfs_user_mode
     )
+    params.HdfsResource(None, action="execute")
   Directory(params.conf_dir,
              recursive = True,
              owner = params.oozie_user,
@@ -128,7 +179,7 @@ def oozie_server_specific():
   
   File(params.pid_file,
     action="delete",
-    not_if="ls {pid_file} >/dev/null 2>&1 && !(ps `cat {pid_file}` >/dev/null 2>&1)"
+    not_if=format("ls {pid_file} >/dev/null 2>&1 && ps -p `cat {pid_file}` >/dev/null 2>&1")
   )
   
   oozie_server_directories = [format("{oozie_home}/{oozie_tmp_dir}"), params.oozie_pid_dir, params.oozie_log_dir, params.oozie_tmp_dir, params.oozie_data_dir, params.oozie_lib_dir, params.oozie_webapps_dir, params.oozie_webapps_conf_dir, params.oozie_server_dir]
@@ -143,18 +194,19 @@ def oozie_server_specific():
   Directory(params.oozie_libext_dir,
             recursive=True,
   )
-  
-  configure_cmds = []  
-  configure_cmds.append(('tar','-xvf',format('{oozie_home}/oozie-sharelib.tar.gz'),'-C',params.oozie_home))
-  configure_cmds.append(('cp', params.ext_js_path, params.oozie_libext_dir))
-  configure_cmds.append(('chown', format('{oozie_user}:{user_group}'), format('{oozie_libext_dir}/{ext_js_file}')))
-  configure_cmds.append(('chown', '-RL', format('{oozie_user}:{user_group}'), params.oozie_webapps_conf_dir))
-  
+
   no_op_test = format("ls {pid_file} >/dev/null 2>&1 && ps -p `cat {pid_file}` >/dev/null 2>&1")
-  Execute( configure_cmds,
-    not_if  = no_op_test,
-    sudo = True,
-  )
+  if not params.host_sys_prepped:
+    configure_cmds = []
+    configure_cmds.append(('tar','-xvf',format('{oozie_home}/oozie-sharelib.tar.gz'),'-C',params.oozie_home))
+    configure_cmds.append(('cp', params.ext_js_path, params.oozie_libext_dir))
+    configure_cmds.append(('chown', format('{oozie_user}:{user_group}'), format('{oozie_libext_dir}/{ext_js_file}')))
+    configure_cmds.append(('chown', '-RL', format('{oozie_user}:{user_group}'), params.oozie_webapps_conf_dir))
+
+    Execute( configure_cmds,
+      not_if  = no_op_test,
+      sudo = True,
+    )
 
   if params.jdbc_driver_name=="com.mysql.jdbc.Driver" or \
      params.jdbc_driver_name == "com.microsoft.sqlserver.jdbc.SQLServerDriver" or \
@@ -168,6 +220,11 @@ def oozie_server_specific():
             #creates=params.target, TODO: uncomment after ranger_hive_plugin will not provide jdbc
             path=["/bin", "/usr/bin/"],
             sudo = True)
+            
+    File ( params.target,
+      owner = params.oozie_user,
+      group = params.user_group
+    )
 
   #falcon el extension
   if params.has_falcon_host:
@@ -177,13 +234,13 @@ def oozie_server_specific():
     Execute(format('{sudo} chown {oozie_user}:{user_group} {oozie_libext_dir}/falcon-oozie-el-extension-*.jar'),
       not_if  = no_op_test,
     )
-  if params.lzo_enabled:
-    Package(params.lzo_packages_for_current_host)
+  if params.lzo_enabled and len(params.all_lzo_packages) > 0:
+    Package(params.all_lzo_packages)
     Execute(format('{sudo} cp {hadoop_lib_home}/hadoop-lzo*.jar {oozie_lib_dir}'),
       not_if  = no_op_test,
     )
 
-  Execute(format("cd {oozie_tmp_dir} && {oozie_setup_sh} prepare-war"),
+  Execute(format("cd {oozie_tmp_dir} && {oozie_setup_sh} prepare-war {oozie_secure}"),
     user = params.oozie_user,
     not_if  = no_op_test
   )
@@ -213,5 +270,6 @@ def oozie_server_specific():
         group = params.user_group,
         mode = 0664
     )
-  pass
-  
+  Execute(('chown', '-R', format("{oozie_user}:{user_group}"), params.oozie_server_dir), 
+          sudo=True
+  )

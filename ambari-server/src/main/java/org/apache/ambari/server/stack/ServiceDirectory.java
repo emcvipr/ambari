@@ -20,12 +20,15 @@ package org.apache.ambari.server.stack;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.state.ServiceInfo;
 import org.apache.ambari.server.state.stack.ServiceMetainfoXml;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.xml.bind.JAXBException;
 import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Encapsulates IO operations on a stack definition service directory.
@@ -34,7 +37,7 @@ public abstract class ServiceDirectory extends StackDefinitionDirectory {
   /**
    * metrics file
    */
-  private File metricsFile;
+  private Map<String, File> metricsFileMap = new HashMap<String, File>();
 
   /**
    * alerts file
@@ -42,9 +45,19 @@ public abstract class ServiceDirectory extends StackDefinitionDirectory {
   private File alertsFile;
 
   /**
+   * theme file
+   */
+  private File themeFile;
+
+  /**
    * kerberos descriptor file
    */
   private File kerberosDescriptorFile;
+
+  /**
+   * widgets descriptor file
+   */
+  private Map<String, File> widgetsDescriptorFileMap = new HashMap<String, File>();
 
   /**
    * package directory path
@@ -92,10 +105,6 @@ public abstract class ServiceDirectory extends StackDefinitionDirectory {
     super(servicePath);
     parsePath();
 
-    File mf = new File(directory.getAbsolutePath()
-        + File.separator + AmbariMetaInfo.SERVICE_METRIC_FILE_NAME);
-    metricsFile = mf.exists() ? mf : null;
-
     File af = new File(directory.getAbsolutePath()
         + File.separator + AmbariMetaInfo.SERVICE_ALERT_FILE_NAME);
     alertsFile = af.exists() ? af : null;
@@ -103,6 +112,21 @@ public abstract class ServiceDirectory extends StackDefinitionDirectory {
     File kdf = new File(directory.getAbsolutePath()
         + File.separator + AmbariMetaInfo.KERBEROS_DESCRIPTOR_FILE_NAME);
     kerberosDescriptorFile = kdf.exists() ? kdf : null;
+
+    if (metaInfoXml.getServices() != null) {
+      for (ServiceInfo serviceInfo : metaInfoXml.getServices()) {
+        File mf = new File(directory.getAbsolutePath()
+                + File.separator + serviceInfo.getMetricsFileName());
+        metricsFileMap.put(serviceInfo.getName(), mf.exists() ? mf : null);
+
+        File wdf = new File(directory.getAbsolutePath()
+                + File.separator + serviceInfo.getWidgetsFileName());
+        widgetsDescriptorFileMap.put(serviceInfo.getName(), wdf.exists() ? wdf : null);
+      }
+    }
+
+    File themeFile = new File(directory.getAbsolutePath() + File.separator + AmbariMetaInfo.SERVICE_THEME_FILE_NAME);
+    this.themeFile = themeFile.exists() ? themeFile : null;
   }
 
   /**
@@ -119,8 +143,8 @@ public abstract class ServiceDirectory extends StackDefinitionDirectory {
    *
    * @return metrics file
    */
-  public File getMetricsFile() {
-    return metricsFile;
+  public File getMetricsFile(String serviceName) {
+    return metricsFileMap.get(serviceName);
   }
 
   /**
@@ -133,12 +157,29 @@ public abstract class ServiceDirectory extends StackDefinitionDirectory {
   }
 
   /**
+   * Obtain theme file
+   * @return theme file
+   */
+  public File getThemeFile() {
+    return themeFile;
+  }
+
+  /**
    * Obtain the Kerberos Descriptor file.
    *
    * @return Kerberos Descriptor file
    */
   public File getKerberosDescriptorFile() {
     return kerberosDescriptorFile;
+  }
+
+  /**
+   * Obtain the Widgets Descriptor file.
+   *
+   * @return Widgets Descriptor file
+   */
+  public File getWidgetsDescriptorFile(String serviceName) {
+    return widgetsDescriptorFileMap.get(serviceName);
   }
 
   /**
@@ -178,4 +219,5 @@ public abstract class ServiceDirectory extends StackDefinitionDirectory {
       metaInfoXml.setSchemaVersion(getAbsolutePath().replace(f.getParentFile().getParentFile().getParent()+File.separator, ""));
     }
   }
+
 }

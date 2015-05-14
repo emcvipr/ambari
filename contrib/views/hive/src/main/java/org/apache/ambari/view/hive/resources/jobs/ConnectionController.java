@@ -18,45 +18,57 @@
 
 package org.apache.ambari.view.hive.resources.jobs;
 
-import org.apache.ambari.view.ViewContext;
 import org.apache.ambari.view.hive.client.Connection;
-import org.apache.ambari.view.hive.client.ConnectionPool;
 import org.apache.ambari.view.hive.client.HiveClientException;
+import org.apache.ambari.view.hive.utils.HiveClientFormattedException;
 import org.apache.ambari.view.hive.utils.ServiceFormattedException;
+import org.apache.commons.codec.binary.Hex;
 import org.apache.hive.service.cli.thrift.TOperationHandle;
+import org.apache.hive.service.cli.thrift.TSessionHandle;
 
-import java.util.HashMap;
-import java.util.Map;
 
 public class ConnectionController {
-  private ViewContext context;
-  private Connection connection;
   private OperationHandleControllerFactory operationHandleControllerFactory;
+  private Connection connection;
 
-  private ConnectionController(ViewContext context) {
-    this.context = context;
-    connection = ConnectionPool.getConnection(context);
-    operationHandleControllerFactory = OperationHandleControllerFactory.getInstance(context);
+  public ConnectionController(OperationHandleControllerFactory operationHandleControllerFactory, Connection connection) {
+    this.connection = connection;
+    this.operationHandleControllerFactory = operationHandleControllerFactory;
   }
 
-  private static Map<String, ConnectionController> viewSingletonObjects = new HashMap<String, ConnectionController>();
-  public static ConnectionController getInstance(ViewContext context) {
-    if (!viewSingletonObjects.containsKey(context.getInstanceName()))
-      viewSingletonObjects.put(context.getInstanceName(), new ConnectionController(context));
-    return viewSingletonObjects.get(context.getInstanceName());
+  public TSessionHandle getSessionByTag(String tag) throws HiveClientException {
+    return connection.getSessionByTag(tag);
   }
 
-  public void selectDatabase(String database) {
-    executeQuery("use " + database + ";");
+  public String openSession() {
+    try {
+      TSessionHandle sessionHandle = connection.openSession();
+      return getTagBySession(sessionHandle);
+    } catch (HiveClientException e) {
+      throw new HiveClientFormattedException(e);
+    }
   }
 
-  public OperationHandleController executeQuery(String cmd) {
+  public static String getTagBySession(TSessionHandle sessionHandle) {
+    return Hex.encodeHexString(sessionHandle.getSessionId().getGuid());
+  }
+
+  public void selectDatabase(TSessionHandle session, String database) {
+    try {
+      connection.executeSync(session, "use " + database + ";");
+    } catch (HiveClientException e) {
+      throw new HiveClientFormattedException(e);
+    }
+  }
+
+  public OperationHandleController executeQuery(TSessionHandle session, String cmd) {
     TOperationHandle operationHandle = null;
     try {
-      operationHandle = connection.executeAsync(cmd);
+      operationHandle = connection.executeAsync(session, cmd);
     } catch (HiveClientException e) {
-      throw new ServiceFormattedException(e.toString(), e);
+      throw new HiveClientFormattedException(e);
     }
-    return operationHandleControllerFactory.createControllerForHandle(operationHandle);
+    StoredOperationHandle storedOperationHandle = StoredOperationHandle.buildFromTOperationHandle(operationHandle);
+    return operationHandleControllerFactory.createControllerForHandle(storedOperationHandle);
   }
 }

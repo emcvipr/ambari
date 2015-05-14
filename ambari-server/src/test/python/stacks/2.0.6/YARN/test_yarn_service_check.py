@@ -18,61 +18,50 @@ See the License for the specific language governing permissions and
 limitations under the License.
 '''
 import os
+import re
 from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
 
+@patch("platform.linux_distribution", new = MagicMock(return_value="Linux"))
 @patch("sys.executable", new = '/usr/bin/python2.6')
 class TestServiceCheck(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "YARN/2.1.0.2.0/package"
   STACK_VERSION = "2.0.6"
 
-  def test_service_check_default(self):
+  @patch("re.search")
+  def test_service_check_default(self, re_search_mock):
+    m = MagicMock()
+    re_search_mock.return_value = m
+    m.group.return_value = "http://c6402.ambari.apache.org:8088/proxy/application_1429699682952_0010/"
 
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/service_check.py",
                           classname="ServiceCheck",
                           command="service_check",
                           config_file="default.json",
                           hdp_stack_version = self.STACK_VERSION,
-                          target = RMFTestCase.TARGET_COMMON_SERVICES
-    )
-    self.assertResourceCalled('File', '/tmp/validateYarnComponentStatus.py',
-                          content = StaticFile('validateYarnComponentStatus.py'),
-                          mode = 0755,
-    )
-    self.assertResourceCalled('Execute', '/usr/bin/python2.6 /tmp/validateYarnComponentStatus.py rm -p c6402.ambari.apache.org:8088 -s False',
-                          logoutput = True,
-                          path = ['/usr/sbin:/sbin:/usr/local/bin:/bin:/usr/bin'],
-                          tries = 3,
-                          user = 'ambari-qa',
-                          try_sleep = 5,
-    )
-    self.assertResourceCalled('Execute', 'yarn --config /etc/hadoop/conf node -list',
-                              path = ["/bin:/usr/bin:/usr/lib/hadoop-yarn/bin"],
-                              user = 'ambari-qa',
+                          target = RMFTestCase.TARGET_COMMON_SERVICES,
+                          checked_call_mocks = [(0, "some test text, appTrackingUrl=http:"
+                                "//c6402.ambari.apache.org:8088/proxy/application_1429885383763_0001/, some test text"),
+                                (0, "{ \"app\": {\"state\": \"FINISHED\",\"finalStatus\": \"SUCCEEDED\"}}")]
     )
     self.assertNoMoreResources()
 
-  def test_service_check_secured(self):
+
+  @patch("re.search")
+  def test_service_check_secured(self, re_search_mock):
+    m = MagicMock()
+    re_search_mock.return_value = m
+    m.group.return_value = "http://c6402.ambari.apache.org:8088/proxy/application_1429699682952_0010/"
+
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/service_check.py",
                           classname="ServiceCheck",
                           command="service_check",
                           config_file="secured.json",
                           hdp_stack_version = self.STACK_VERSION,
-                          target = RMFTestCase.TARGET_COMMON_SERVICES
+                          target = RMFTestCase.TARGET_COMMON_SERVICES,
+                          checked_call_mocks = [(0, "some test text, appTrackingUrl=http:"
+                               "//c6402.ambari.apache.org:8088/proxy/application_1429885383763_0001/, some test text"),
+                               (0, "{ \"app\": {\"state\": \"FINISHED\",\"finalStatus\": \"SUCCEEDED\"}}")]
     )
-    self.assertResourceCalled('File', '/tmp/validateYarnComponentStatus.py',
-                          content = StaticFile('validateYarnComponentStatus.py'),
-                          mode = 0755,
-    )
-    self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa@EXAMPLE.COM; /usr/bin/python2.6 /tmp/validateYarnComponentStatus.py rm -p c6402.ambari.apache.org:8088 -s False',
-                          logoutput = True,
-                          path = ['/usr/sbin:/sbin:/usr/local/bin:/bin:/usr/bin'],
-                          tries = 3,
-                          user = 'ambari-qa',
-                          try_sleep = 5,
-    )
-    self.assertResourceCalled('Execute', 'yarn --config /etc/hadoop/conf node -list',
-                          path = ["/bin:/usr/bin:/usr/lib/hadoop-yarn/bin"],
-                          user = 'ambari-qa',
-    )
+
     self.assertNoMoreResources()

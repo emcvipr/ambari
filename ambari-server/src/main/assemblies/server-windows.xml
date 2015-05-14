@@ -20,6 +20,7 @@
   <id>dist</id>
   <formats>
     <format>dir</format>
+    <format>zip</format>
   </formats>
   <includeBaseDirectory>false</includeBaseDirectory>
   <files>
@@ -30,6 +31,10 @@
     <file>
       <source>${project.build.directory}/DBConnectionVerification.jar</source>
       <outputDirectory>ambari-server-${project.version}/resources</outputDirectory>
+    </file>
+    <file>
+      <source>${project.build.directory}/bootstrap.zip</source>
+      <outputDirectory>/ambari-server-${project.version}/resources</outputDirectory>
     </file>
     <file>
       <source>${basedir}/conf/windows/ambari.properties</source>
@@ -57,11 +62,7 @@
     </file>
     <file>
       <source>${basedir}/src/main/python/bootstrap.py</source>
-      <outputDirectory>/ambari-server-${project.version}/bootstrap</outputDirectory>
-    </file>
-    <file>
-      <source>${basedir}/src/main/python/setupAgent.py</source>
-      <outputDirectory>/ambari-server-${project.version}/bootstrap</outputDirectory>
+      <outputDirectory>/ambari-server-${project.version}/sbin</outputDirectory>
     </file>
     <file>
       <source>${basedir}/src/main/windows/ambari-server.cmd</source>
@@ -75,14 +76,16 @@
       <source>${project.build.directory}/version</source>
       <outputDirectory>ambari-server-${project.version}/</outputDirectory>
     </file>
-    <file>
-      <source>${basedir}/src/main/package/msi/ambari-server.wxs</source>
-      <outputDirectory>../../</outputDirectory>
-      <filtered>true</filtered>
-    </file>
   </files>
   <fileSets>
     <!-- Distro files, readme, licenses, etc -->
+    <fileSet>
+      <directory>${basedir}/src/main/windows/psremoting/</directory>
+      <outputDirectory>/ambari-server-${project.version}/sbin</outputDirectory>
+      <includes>
+        <include>*.ps1</include>
+      </includes>
+    </fileSet>
     <fileSet>
       <directory>${basedir}/../ambari-admin/target</directory>
       <outputDirectory>/ambari-server-${project.version}/resources/views</outputDirectory>

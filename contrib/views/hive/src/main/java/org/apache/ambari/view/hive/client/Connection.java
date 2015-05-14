@@ -18,7 +18,11 @@
 
 package org.apache.ambari.view.hive.client;
 
+import org.apache.ambari.view.hive.utils.HiveClientFormattedException;
+import org.apache.commons.codec.binary.Hex;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.shims.ShimLoader;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hive.service.auth.HiveAuthFactory;
 import org.apache.hive.service.auth.KerberosSaslHelper;
 import org.apache.hive.service.auth.PlainSaslHelper;
@@ -35,6 +39,7 @@ import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslException;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -49,16 +54,20 @@ public class Connection {
   private Map<String, String> authParams;
 
   private TCLIService.Client client = null;
-  private TSessionHandle sessHandle = null;
+  private Map<String, TSessionHandle> sessHandles = null;
   private TProtocolVersion protocol = null;
   private TTransport transport;
 
   private DDLDelegator ddl;
+  private String username;
 
-  public Connection(String host, int port, Map<String, String> authParams) throws HiveClientException {
+  public Connection(String host, int port, Map<String, String> authParams, String username) throws HiveClientException {
     this.host = host;
     this.port = port;
     this.authParams = authParams;
+    this.username = username;
+
+    this.sessHandles = new HashMap<String, TSessionHandle>();
 
     openConnection();
     ddl = new DDLDelegator(this);
@@ -74,15 +83,15 @@ public class Connection {
       transport.open();
       client = new TCLIService.Client(new TBinaryProtocol(transport));
     } catch (TTransportException e) {
-      throw new HiveClientException("Could not establish connecton to "
+      throw new HiveClientException("H020 Could not establish connecton to "
           + host + ":" + port + ": " + e.toString(), e);
     }
     LOG.info("Hive connection opened");
-    openSession();
   }
 
   /**
    * Based on JDBC implementation of HiveConnection.createBinaryTransport
+   *
    * @return transport
    * @throws HiveClientException
    */
@@ -101,12 +110,17 @@ public class Connection {
             try {
               saslQOP = SaslQOP.fromString(authParams.get(Utils.HiveAuthenticationParams.AUTH_QOP));
             } catch (IllegalArgumentException e) {
-              throw new HiveClientException("Invalid " + Utils.HiveAuthenticationParams.AUTH_QOP +
+              throw new HiveClientException("H040 Invalid " + Utils.HiveAuthenticationParams.AUTH_QOP +
                   " parameter. " + e.getMessage(), e);
             }
           }
           saslProps.put(Sasl.QOP, saslQOP.toString());
           saslProps.put(Sasl.SERVER_AUTH, "true");
+
+          Configuration conf = new Configuration();
+          conf.set("hadoop.security.authentication", "kerberos");
+          UserGroupInformation.setConfiguration(conf);
+
           transport = KerberosSaslHelper.getKerberosTransport(
               authParams.get(Utils.HiveAuthenticationParams.AUTH_PRINCIPAL), host,
               HiveAuthFactory.getSocketTransport(host, port, 10000), saslProps,
@@ -119,7 +133,7 @@ public class Connection {
                 host, HiveAuthFactory.getSocketTransport(host, port, 10000), saslProps);
           } else {
             // we are using PLAIN Sasl connection with user/password
-            String userName = getAuthParamDefault(Utils.HiveAuthenticationParams.AUTH_USER, Utils.HiveAuthenticationParams.ANONYMOUS_USER);
+            String userName = getAuthParamDefault(Utils.HiveAuthenticationParams.AUTH_USER, getUsername());
             String passwd = getAuthParamDefault(Utils.HiveAuthenticationParams.AUTH_PASSWD, Utils.HiveAuthenticationParams.ANONYMOUS_USER);
             // Note: Thrift returns an SSL socket that is already bound to the specified host:port
             // Therefore an open called on this would be a no-op later
@@ -149,7 +163,7 @@ public class Connection {
         return HiveAuthFactory.getSocketTransport(host, port, 10000);
       }
     } catch (SaslException e) {
-      throw new HiveClientException("Could not create secure connection to "
+      throw new HiveClientException("H040 Could not create secure connection to "
           + host + ": " + e.getMessage(), e);
     }
     return transport;
@@ -168,7 +182,7 @@ public class Connection {
         tokenStr = ShimLoader.getHadoopShims().
             getTokenStrForm(HiveAuthFactory.HS2_CLIENT_TOKEN);
       } catch (IOException e) {
-        throw new HiveClientException("Error reading token ", e);
+        throw new HiveClientException("H050 Error reading token", e);
       }
     }
     return tokenStr;
@@ -180,8 +194,11 @@ public class Connection {
     return defaultValue;
   }
 
-  private synchronized void openSession() throws HiveClientException {
-    //It's possible to set proxy user configuration here
+  public synchronized TSessionHandle openSession() throws HiveClientException {
+    return openSession(null);
+  }
+
+  public synchronized TSessionHandle openSession(String forcedTag) throws HiveClientException {
     TOpenSessionResp openResp = new HiveCall<TOpenSessionResp>(this) {
       @Override
       public TOpenSessionResp body() throws HiveClientException {
@@ -189,46 +206,83 @@ public class Connection {
         try {
           return client.OpenSession(openReq);
         } catch (TException e) {
-          throw new HiveClientException("Unable to open Hive session", e);
+          throw new HiveClientException("H060 Unable to open Hive session", e);
         }
 
       }
     }.call();
-    Utils.verifySuccess(openResp.getStatus(), "Unable to open Hive session");
+    Utils.verifySuccess(openResp.getStatus(), "H070 Unable to open Hive session");
 
-    protocol = openResp.getServerProtocolVersion();
-    sessHandle = openResp.getSessionHandle();
+    if (protocol == null)
+      protocol = openResp.getServerProtocolVersion();
     LOG.info("Hive session opened");
+
+    TSessionHandle sessionHandle = openResp.getSessionHandle();
+    String tag;
+    if (forcedTag == null)
+      tag = Hex.encodeHexString(sessionHandle.getSessionId().getGuid());
+    else
+      tag = forcedTag;
+
+    sessHandles.put(tag, sessionHandle);
+
+    return sessionHandle;
   }
 
-  private synchronized void closeSession() throws HiveClientException {
+  public TSessionHandle getSessionByTag(String tag) throws HiveClientException {
+    TSessionHandle sessionHandle = sessHandles.get(tag);
+    if (sessionHandle == null) {
+      throw new HiveClientException("E030 Session with provided tag not found", null);
+    }
+    return sessionHandle;
+  }
+
+  public TSessionHandle getOrCreateSessionByTag(String tag) throws HiveClientException {
+    try {
+      return getSessionByTag(tag);
+    } catch (HiveClientException e) {
+      return openSession(tag);
+    }
+  }
+
+  public void invalidateSessionByTag(String tag) throws HiveClientException {
+    TSessionHandle sessionHandle = getSessionByTag(tag);
+    closeSession(sessionHandle);
+    sessHandles.remove(tag);
+  }
+
+  private synchronized void closeSession(TSessionHandle sessHandle) throws HiveClientException {
     if (sessHandle == null) return;
     TCloseSessionReq closeReq = new TCloseSessionReq(sessHandle);
-    //It's possible to set proxy user configuration here
     TCloseSessionResp closeResp = null;
     try {
       closeResp = client.CloseSession(closeReq);
-      Utils.verifySuccess(closeResp.getStatus(), "Unable to close Hive session");
+      Utils.verifySuccess(closeResp.getStatus(), "H080 Unable to close Hive session");
     } catch (TException e) {
-      throw new HiveClientException("Unable to close Hive session", e);
+      throw new HiveClientException("H090 Unable to close Hive session", e);
     }
-
-    sessHandle = null;
-    protocol = null;
     LOG.info("Hive session closed");
   }
 
   public synchronized void closeConnection() throws HiveClientException {
     if (client == null) return;
     try {
-      closeSession();
-    } catch (HiveClientException e) {
-      LOG.error("Unable to close Hive session: " + e.getMessage());
+
+      for(Iterator<Map.Entry<String, TSessionHandle>> it = sessHandles.entrySet().iterator(); it.hasNext(); ) {
+        Map.Entry<String, TSessionHandle> entry = it.next();
+        try {
+          closeSession(entry.getValue());
+        } catch (HiveClientException e) {
+          LOG.error("Unable to close Hive session: " + e.getMessage());
+        } finally {
+          it.remove();
+        }
+      }
+
     } finally {
       transport.close();
       transport = null;
       client = null;
-      sessHandle = null;
       protocol = null;
     }
     LOG.info("Connection to Hive closed");
@@ -241,52 +295,63 @@ public class Connection {
    * @return handle of operation
    * @throws HiveClientException
    */
-  public TOperationHandle execute(final String cmd, final boolean async) throws HiveClientException {
+  public TOperationHandle execute(final TSessionHandle session, final String cmd, final boolean async) throws HiveClientException {
     TOperationHandle handle = null;
-    for(final String oneCmd : cmd.split(";")) {
+
+    String[] commands = cmd.split(";");
+    for(int i=0; i<commands.length; i++) {
+      final String oneCmd = commands[i];
+      final boolean lastCommand = i == commands.length-1;
 
       TExecuteStatementResp execResp = new HiveCall<TExecuteStatementResp>(this) {
         @Override
         public TExecuteStatementResp body() throws HiveClientException {
 
           TExecuteStatementReq execReq = null;
-          execReq = new TExecuteStatementReq(getSessHandle(), oneCmd);
-          execReq.setRunAsync(async);
-          execReq.setConfOverlay(new HashMap<String, String>()); //maybe it's hive configuration? use it, Luke!
+          execReq = new TExecuteStatementReq(session, oneCmd);
+
+          // only last command should be asynchronous and return some results
+          // all previous commands are supposed to be set properties entries
+          if (lastCommand) {
+            execReq.setRunAsync(async);
+          } else {
+            execReq.setRunAsync(false);
+          }
+          execReq.setConfOverlay(new HashMap<String, String>());
           try {
             return client.ExecuteStatement(execReq);
           } catch (TException e) {
-            throw new HiveClientException("Unable to submit statement " + cmd, e);
+            throw new HiveClientException("H100 Unable to submit statement " + cmd, e);
           }
 
         }
       }.call();
 
-      Utils.verifySuccess(execResp.getStatus(), "Unable to submit statement " + cmd);
+      Utils.verifySuccess(execResp.getStatus(), "H110 Unable to submit statement");
       //TODO: check if status have results
       handle = execResp.getOperationHandle();
     }
     if (handle == null) {
-      throw new HiveClientException("Empty command given", null);
+      throw new HiveClientException("H120 Empty command given", null);
     }
     return handle;
   }
 
-  public TOperationHandle executeAsync(String cmd) throws HiveClientException {
-    return execute(cmd, true);
+  public TOperationHandle executeAsync(TSessionHandle session, String cmd) throws HiveClientException {
+    return execute(session, cmd, true);
   }
 
-  public TOperationHandle executeSync(String cmd) throws HiveClientException {
-    return execute(cmd, false);
+  public TOperationHandle executeSync(TSessionHandle session, String cmd) throws HiveClientException {
+    return execute(session, cmd, false);
   }
 
   public String getLogs(TOperationHandle handle) {
     LogsCursor results = new LogsCursor(this, handle);
     results.reset(); // we have to read from FIRST line, to get
-                     // logs from beginning on every call this function
+    // logs from beginning on every call this function
     List<String> logLineList = results.getValuesInColumn(0);
     StringBuilder log = new StringBuilder();
-    for(String line : logLineList) {
+    for (String line : logLineList) {
       log.append(line);
       log.append('\n');
     }
@@ -315,19 +380,11 @@ public class Connection {
         try {
           return client.GetOperationStatus(statusReq);
         } catch (TException e) {
-          throw new HiveClientException("Unable to fetch operation status", e);
+          throw new HiveClientException("H130 Unable to fetch operation status", e);
         }
 
       }
     }.call();
-//    transportLock.lock();
-//    try {
-//      return client.GetOperationStatus(statusReq);
-//    } catch (TException e) {
-//      throw new HiveClientException("Unable to fetch operation status", e);
-//    } finally {
-//      transportLock.unlock();
-//    }
   }
 
   /**
@@ -342,11 +399,11 @@ public class Connection {
         try {
           return client.CancelOperation(cancelReq);
         } catch (TException e) {
-          throw new HiveClientException("Unable to cancel operation", null);
+          throw new HiveClientException("H140 Unable to cancel operation", null);
         }
       }
     }.call();
-    Utils.verifySuccess(cancelResp.getStatus(), "Unable to cancel operation");
+    Utils.verifySuccess(cancelResp.getStatus(), "H150 Unable to cancel operation");
   }
 
   public int getPort() {
@@ -363,16 +420,6 @@ public class Connection {
 
   public void setHost(String host) {
     this.host = host;
-  }
-
-  public TSessionHandle getSessHandle() throws HiveClientException {
-    if (sessHandle == null)
-      openSession();
-    return sessHandle;
-  }
-
-  public void setSessHandle(TSessionHandle sessHandle) {
-    this.sessHandle = sessHandle;
   }
 
   public TCLIService.Client getClient() {
@@ -397,5 +444,13 @@ public class Connection {
 
   public void setAuthParams(Map<String, String> authParams) {
     this.authParams = authParams;
+  }
+
+  public String getUsername() {
+    return username;
+  }
+
+  public void setUsername(String username) {
+    this.username = username;
   }
 }

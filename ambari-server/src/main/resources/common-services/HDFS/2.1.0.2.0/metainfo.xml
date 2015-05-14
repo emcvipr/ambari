@@ -169,7 +169,7 @@
         </osSpecific>
         
         <osSpecific>
-          <osFamily>redhat5,redhat6,suse11</osFamily>
+          <osFamily>redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>snappy</name>
@@ -193,7 +193,7 @@
         </osSpecific>
         
         <osSpecific>
-          <osFamily>ubuntu12</osFamily>
+          <osFamily>debian7,ubuntu12,ubuntu14</osFamily>
           <packages>
             <package>
               <name>libsnappy1</name>
@@ -235,7 +235,10 @@
         <config-type>hadoop-policy</config-type>
         <config-type>hdfs-log4j</config-type>
         <config-type>ranger-hdfs-plugin-properties</config-type>
+        <config-type>ssl-client</config-type>
+        <config-type>ssl-server</config-type>
       </configuration-dependencies>
+      <restartRequiredAfterRackChange>true</restartRequiredAfterRackChange>
     </service>
   </services>
 </metainfo>

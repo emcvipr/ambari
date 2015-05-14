@@ -17,26 +17,15 @@
  */
 package org.apache.ambari.server.controller.internal;
 
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.StaticallyInject;
-import org.apache.ambari.server.checks.AbstractCheckDescriptor;
-import org.apache.ambari.server.checks.HostsHeartbeatCheck;
-import org.apache.ambari.server.checks.HostsMasterMaintenanceCheck;
-import org.apache.ambari.server.checks.HostsRepositoryVersionCheck;
-import org.apache.ambari.server.checks.SecondaryNamenodeDeletedCheck;
-import org.apache.ambari.server.checks.ServicesDecommissionCheck;
-import org.apache.ambari.server.checks.ServicesMaintenanceModeCheck;
-import org.apache.ambari.server.checks.ServicesMapReduceDistributedCacheCheck;
-import org.apache.ambari.server.checks.ServicesNamenodeHighAvailabilityCheck;
-import org.apache.ambari.server.checks.ServicesTezDistributedCacheCheck;
-import org.apache.ambari.server.checks.ServicesUpCheck;
-import org.apache.ambari.server.checks.ServicesYarnWorkPreservingCheck;
+import org.apache.ambari.server.checks.UpgradeCheckRegistry;
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.controller.PrereqCheckRequest;
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
@@ -48,10 +37,16 @@ import org.apache.ambari.server.controller.spi.Resource.Type;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
+import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.state.CheckHelper;
+import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.stack.PrerequisiteCheck;
 
+import com.google.common.collect.Sets;
 import com.google.inject.Inject;
+import com.google.inject.Provider;
 
 /**
  * Resource provider for pre-upgrade checks.
@@ -71,70 +66,26 @@ public class PreUpgradeCheckResourceProvider extends ReadOnlyResourceProvider {
   public static final String UPGRADE_CHECK_REPOSITORY_VERSION_PROPERTY_ID = PropertyHelper.getPropertyId("UpgradeChecks", "repository_version");
 
   @Inject
-  private static ServicesMaintenanceModeCheck servicesMaintenanceModeCheck;
-  @Inject
-  private static HostsMasterMaintenanceCheck hostsMasterMaintenanceCheck;
-  @Inject
-  private static HostsRepositoryVersionCheck hostsRepositoryVersionCheck;
-  @Inject
-  private static ServicesNamenodeHighAvailabilityCheck servicesNamenodeHighAvailabilityCheck;
-  @Inject
-  private static SecondaryNamenodeDeletedCheck secondaryNamenodeDeletedCheck;
-  @Inject
-  private static ServicesYarnWorkPreservingCheck servicesYarnWorkPreservingCheck;
-  @Inject
-  private static ServicesDecommissionCheck servicesDecommissionCheck;
-  @Inject
-  private static ServicesMapReduceDistributedCacheCheck servicesJobsDistributedCacheCheck;
-  @Inject
-  private static HostsHeartbeatCheck heartbeatCheck;
-  @Inject
-  private static ServicesUpCheck servicesUpCheck;
-  @Inject
-  private static ServicesTezDistributedCacheCheck servicesTezDistributedCacheCheck;
+  private static Provider<Clusters> clustersProvider;
 
-  /**
-   * List of the registered upgrade checks.  Make sure that if a check that
-   * depends on the result of another check comes earlier in the list.
-   * For example, MR2 and Tez distributed cache checks rely on NN-HA check passing.
-   */
-  @SuppressWarnings("serial")
-  private final List<AbstractCheckDescriptor> updateChecksRegistry = new ArrayList<AbstractCheckDescriptor>() {
-    {
-      add(hostsMasterMaintenanceCheck);
-      add(hostsRepositoryVersionCheck);
-      add(servicesMaintenanceModeCheck);
-      add(servicesNamenodeHighAvailabilityCheck);
-      add(secondaryNamenodeDeletedCheck);
-      add(servicesYarnWorkPreservingCheck);
-      add(servicesDecommissionCheck);
-      add(servicesJobsDistributedCacheCheck);
-      add(heartbeatCheck);
-      add(servicesUpCheck);
-      add(servicesTezDistributedCacheCheck);
-    }
-  };
+  @Inject
+  private static RepositoryVersionDAO repositoryVersionDAO;
 
-  @SuppressWarnings("serial")
-  private static Set<String> pkPropertyIds = new HashSet<String>() {
-    {
-      add(UPGRADE_CHECK_ID_PROPERTY_ID);
-    }
-  };
+  @Inject
+  private static UpgradeCheckRegistry upgradeCheckRegistry;
 
-  @SuppressWarnings("serial")
-  public static Set<String> propertyIds = new HashSet<String>() {
-    {
-      add(UPGRADE_CHECK_ID_PROPERTY_ID);
-      add(UPGRADE_CHECK_CHECK_PROPERTY_ID);
-      add(UPGRADE_CHECK_STATUS_PROPERTY_ID);
-      add(UPGRADE_CHECK_REASON_PROPERTY_ID);
-      add(UPGRADE_CHECK_FAILED_ON_PROPERTY_ID);
-      add(UPGRADE_CHECK_CHECK_TYPE_PROPERTY_ID);
-      add(UPGRADE_CHECK_CLUSTER_NAME_PROPERTY_ID);
-      add(UPGRADE_CHECK_REPOSITORY_VERSION_PROPERTY_ID);
-    }
-  };
+  private static Set<String> pkPropertyIds = Collections.singleton(UPGRADE_CHECK_ID_PROPERTY_ID);
+
+  public static Set<String> propertyIds = Sets.newHashSet(
+      UPGRADE_CHECK_ID_PROPERTY_ID,
+      UPGRADE_CHECK_CHECK_PROPERTY_ID,
+      UPGRADE_CHECK_STATUS_PROPERTY_ID,
+      UPGRADE_CHECK_REASON_PROPERTY_ID,
+      UPGRADE_CHECK_FAILED_ON_PROPERTY_ID,
+      UPGRADE_CHECK_CHECK_TYPE_PROPERTY_ID,
+      UPGRADE_CHECK_CLUSTER_NAME_PROPERTY_ID,
+      UPGRADE_CHECK_REPOSITORY_VERSION_PROPERTY_ID);
+
 
   @SuppressWarnings("serial")
   public static Map<Type, String> keyPropertyIds = new HashMap<Type, String>() {
@@ -166,11 +117,27 @@ public class PreUpgradeCheckResourceProvider extends ReadOnlyResourceProvider {
 
     for (Map<String, Object> propertyMap: propertyMaps) {
       final String clusterName = propertyMap.get(UPGRADE_CHECK_CLUSTER_NAME_PROPERTY_ID).toString();
-      final PrereqCheckRequest upgradeCheckRequest = new PrereqCheckRequest(clusterName);
-      if (propertyMap.containsKey(UPGRADE_CHECK_REPOSITORY_VERSION_PROPERTY_ID)) {
-        upgradeCheckRequest.setRepositoryVersion(propertyMap.get(UPGRADE_CHECK_REPOSITORY_VERSION_PROPERTY_ID).toString());
+      final Cluster cluster;
+
+      try {
+        cluster = clustersProvider.get().getCluster(clusterName);
+      } catch (AmbariException ambariException) {
+        throw new NoSuchResourceException(ambariException.getMessage());
       }
-      for (PrerequisiteCheck prerequisiteCheck : checkHelper.performChecks(upgradeCheckRequest, updateChecksRegistry)) {
+
+      final PrereqCheckRequest upgradeCheckRequest = new PrereqCheckRequest(clusterName);
+      upgradeCheckRequest.setSourceStackId(cluster.getCurrentStackVersion());
+
+      if (propertyMap.containsKey(UPGRADE_CHECK_REPOSITORY_VERSION_PROPERTY_ID)) {
+        String repositoryVersionId = propertyMap.get(UPGRADE_CHECK_REPOSITORY_VERSION_PROPERTY_ID).toString();
+        RepositoryVersionEntity repositoryVersionEntity = repositoryVersionDAO.findMaxByVersion(repositoryVersionId);
+
+        // set some required properties on the check request
+        upgradeCheckRequest.setRepositoryVersion(repositoryVersionId);
+        upgradeCheckRequest.setTargetStackId(repositoryVersionEntity.getStackId());
+      }
+
+      for (PrerequisiteCheck prerequisiteCheck : checkHelper.performChecks(upgradeCheckRequest, upgradeCheckRegistry.getUpgradeChecks())) {
         final Resource resource = new ResourceImpl(Resource.Type.PreUpgradeCheck);
         setResourceProperty(resource, UPGRADE_CHECK_ID_PROPERTY_ID, prerequisiteCheck.getId(), requestedIds);
         setResourceProperty(resource, UPGRADE_CHECK_CHECK_PROPERTY_ID, prerequisiteCheck.getDescription(), requestedIds);

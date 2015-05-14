@@ -30,6 +30,8 @@ from resource_management.libraries.functions import Direction
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions import compare_versions
 from resource_management.libraries.functions import format_hdp_stack_version
+from resource_management.core.resources import File
+from resource_management.core.source import DownloadSource
 
 BACKUP_TEMP_DIR = "oozie-upgrade-backup"
 BACKUP_CONF_ARCHIVE = "oozie-conf-backup.tar"
@@ -100,7 +102,7 @@ def prepare_libext_directory():
   """
   Creates /usr/hdp/current/oozie/libext-customer and recursively sets
   777 permissions on it and its parents.
-  :return:
+  Also, downloads jdbc driver and provides other staff
   """
   import params
 
@@ -119,7 +121,10 @@ def prepare_libext_directory():
   # /usr/hdp/current/hadoop-client ; we must use params.version directly
   # however, this only works when upgrading beyond 2.2.0.0; don't do this
   # for downgrade to 2.2.0.0 since hadoop-lzo will not be present
-  if params.upgrade_direction == Direction.UPGRADE or target_version_needs_compression_libraries:
+  # This can also be called during a Downgrade.
+  # When a version is Intalled, it is responsible for downloading the hadoop-lzo packages
+  # if lzo is enabled.
+  if params.lzo_enabled and (params.upgrade_direction == Direction.UPGRADE or target_version_needs_compression_libraries):
     hadoop_lzo_pattern = 'hadoop-lzo*.jar'
     hadoop_client_new_lib_dir = format("/usr/hdp/{version}/hadoop/lib")
 
@@ -132,9 +137,9 @@ def prepare_libext_directory():
     files_copied = False
     for file in files:
       if os.path.isfile(file):
-        files_copied = True
         Logger.info("Copying {0} to {1}".format(str(file), params.oozie_libext_customer_dir))
-        shutil.copy(file, params.oozie_libext_customer_dir)
+        shutil.copy2(file, params.oozie_libext_customer_dir)
+        files_copied = True
 
     if not files_copied:
       raise Fail("There are no files at {0} matching {1}".format(
@@ -146,7 +151,25 @@ def prepare_libext_directory():
     raise Fail("Unable to copy {0} because it does not exist".format(oozie_ext_zip_file))
 
   Logger.info("Copying {0} to {1}".format(oozie_ext_zip_file, params.oozie_libext_customer_dir))
-  shutil.copy(oozie_ext_zip_file, params.oozie_libext_customer_dir)
+  shutil.copy2(oozie_ext_zip_file, params.oozie_libext_customer_dir)
+
+  # Redownload jdbc driver to a new current location
+  if params.jdbc_driver_name=="com.mysql.jdbc.Driver" or \
+                  params.jdbc_driver_name == "com.microsoft.sqlserver.jdbc.SQLServerDriver" or \
+                  params.jdbc_driver_name=="oracle.jdbc.driver.OracleDriver":
+    File(params.downloaded_custom_connector,
+         content = DownloadSource(params.driver_curl_source),
+    )
+
+    Execute(('cp', '--remove-destination', params.downloaded_custom_connector, params.target),
+            #creates=params.target, TODO: uncomment after ranger_hive_plugin will not provide jdbc
+            path=["/bin", "/usr/bin/"],
+            sudo = True)
+
+    File ( params.target,
+           owner = params.oozie_user,
+           group = params.user_group
+    )
 
 
 def upgrade_oozie():
@@ -162,19 +185,23 @@ def upgrade_oozie():
     command = format("{kinit_path_local} -kt {oozie_keytab} {oozie_principal_with_host}")
     Execute(command, user=params.oozie_user)
 
-  # ensure that HDFS is prepared to receive the new sharelib
-  command = format("hdfs dfs -chown oozie:hadoop {oozie_hdfs_user_dir}/share")
-  Execute(command, user=params.oozie_user)
-
-  command = format("hdfs dfs -chmod -R 755 {oozie_hdfs_user_dir}/share")
-  Execute(command, user=params.oozie_user)
+  
+  params.HdfsResource(format("{oozie_hdfs_user_dir}/share"),
+                      action = "create_on_execute",
+                      type = "directory",
+                      owner = "oozie",
+                      group = "hadoop",
+                      mode = 0755,
+                      recursive_chmod = True
+  )
+  params.HdfsResource(None, action = "execute")
 
   # upgrade oozie DB
   command = format("{oozie_home}/bin/ooziedb.sh upgrade -run")
   Execute(command, user=params.oozie_user)
 
   # prepare the oozie WAR
-  command = format("{oozie_setup_sh} prepare-war -d {oozie_libext_customer_dir}")
+  command = format("{oozie_setup_sh} prepare-war {oozie_secure} -d {oozie_libext_customer_dir}")
   return_code, oozie_output = shell.call(command)
 
   if return_code != 0 or "New Oozie WAR file with added" not in oozie_output:

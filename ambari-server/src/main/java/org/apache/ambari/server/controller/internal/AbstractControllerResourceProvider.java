@@ -100,9 +100,9 @@ public abstract class AbstractControllerResourceProvider extends AbstractResourc
       case HostComponent:
         return resourceProviderFactory.getHostComponentResourceProvider(propertyIds, keyPropertyIds, managementController);
       case Configuration:
-        return new ConfigurationResourceProvider(propertyIds, keyPropertyIds, managementController);
+        return new ConfigurationResourceProvider(managementController);
       case ServiceConfigVersion:
-        return new ServiceConfigVersionResourceProvider(propertyIds, keyPropertyIds, managementController);
+        return new ServiceConfigVersionResourceProvider(managementController);
       case Action:
         return new ActionResourceProvider(propertyIds, keyPropertyIds, managementController);
       case Request:
@@ -129,6 +129,8 @@ public abstract class AbstractControllerResourceProvider extends AbstractResourc
         return new StackServiceComponentResourceProvider(propertyIds, keyPropertyIds, managementController);
       case StackConfiguration:
         return new StackConfigurationResourceProvider(propertyIds, keyPropertyIds, managementController);
+      case StackConfigurationDependency:
+        return new StackConfigurationDependencyResourceProvider(propertyIds, keyPropertyIds, managementController);
       case StackLevelConfiguration:
         return new StackLevelConfigurationResourceProvider(propertyIds, keyPropertyIds, managementController);
       case RootService:
@@ -153,8 +155,20 @@ public abstract class AbstractControllerResourceProvider extends AbstractResourc
         return new ClientConfigResourceProvider(propertyIds, keyPropertyIds, managementController);
       case RepositoryVersion:
         return resourceProviderFactory.getRepositoryVersionResourceProvider();
+      case CompatibleRepositoryVersion:
+        return new CompatibleRepositoryVersionResourceProvider(managementController);
       case StackArtifact:
         return new StackArtifactResourceProvider(managementController);
+      case Theme:
+        return new ThemeArtifactResourceProvider(managementController);
+      case ActiveWidgetLayout:
+        return new ActiveWidgetLayoutResourceProvider(managementController);
+      case WidgetLayout:
+        return new WidgetLayoutResourceProvider(managementController);
+      case Widget:
+        return new WidgetResourceProvider(managementController);
+      case HostKerberosIdentity:
+        return resourceProviderFactory.getHostKerberosIdentityResourceProvider(managementController);
 
       default:
         throw new IllegalArgumentException("Unknown type " + type);

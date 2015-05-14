@@ -95,6 +95,7 @@ public interface Resource {
     Repository,
     StackService,
     StackConfiguration,
+    StackConfigurationDependency,
     StackServiceComponent,
     StackServiceComponentDependency,
     DRFeed,
@@ -129,6 +130,7 @@ public interface Resource {
     LdapSyncEvent,
     UserPrivilege,
     RepositoryVersion,
+    CompatibleRepositoryVersion,
     ClusterStackVersion,
     HostStackVersion,
     Upgrade,
@@ -137,7 +139,12 @@ public interface Resource {
     PreUpgradeCheck,
     Stage,
     StackArtifact,
-    Artifact;
+    Artifact,
+    Widget,
+    WidgetLayout,
+    ActiveWidgetLayout,
+    Theme,
+    HostKerberosIdentity;
 
     /**
      * Get the {@link Type} that corresponds to this InternalType.
@@ -193,6 +200,7 @@ public interface Resource {
     public static final Type Repository = InternalType.Repository.getType();
     public static final Type StackService = InternalType.StackService.getType();
     public static final Type StackConfiguration = InternalType.StackConfiguration.getType();
+    public static final Type StackConfigurationDependency = InternalType.StackConfigurationDependency.getType();
     public static final Type StackServiceComponent = InternalType.StackServiceComponent.getType();
     public static final Type StackServiceComponentDependency = InternalType.StackServiceComponentDependency.getType();
     public static final Type DRFeed = InternalType.DRFeed.getType();
@@ -227,6 +235,7 @@ public interface Resource {
     public static final Type LdapSyncEvent = InternalType.LdapSyncEvent.getType();
     public static final Type UserPrivilege = InternalType.UserPrivilege.getType();
     public static final Type RepositoryVersion = InternalType.RepositoryVersion.getType();
+    public static final Type CompatibleRepositoryVersion = InternalType.CompatibleRepositoryVersion.getType();
     public static final Type ClusterStackVersion = InternalType.ClusterStackVersion.getType();
     public static final Type HostStackVersion = InternalType.HostStackVersion.getType();
     public static final Type Upgrade = InternalType.Upgrade.getType();
@@ -236,6 +245,11 @@ public interface Resource {
     public static final Type Stage = InternalType.Stage.getType();
     public static final Type StackArtifact = InternalType.StackArtifact.getType();
     public static final Type Artifact = InternalType.Artifact.getType();
+    public static final Type Theme = InternalType.Theme.getType();
+    public static final Type Widget = InternalType.Widget.getType();
+    public static final Type WidgetLayout = InternalType.WidgetLayout.getType();
+    public static final Type ActiveWidgetLayout = InternalType.ActiveWidgetLayout.getType();
+    public static final Type HostKerberosIdentity = InternalType.HostKerberosIdentity.getType();
 
     /**
      * The type name.

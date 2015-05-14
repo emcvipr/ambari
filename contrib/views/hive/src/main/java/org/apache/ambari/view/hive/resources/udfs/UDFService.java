@@ -18,13 +18,10 @@
 
 package org.apache.ambari.view.hive.resources.udfs;
 
-import com.google.inject.Inject;
 import org.apache.ambari.view.ViewResourceHandler;
 import org.apache.ambari.view.hive.BaseService;
 import org.apache.ambari.view.hive.persistence.utils.ItemNotFound;
 import org.apache.ambari.view.hive.persistence.utils.OnlyOwnersFilteringStrategy;
-import org.apache.ambari.view.hive.resources.PersonalCRUDResourceManager;
-import org.apache.ambari.view.hive.resources.resources.FileResourceItem;
 import org.apache.ambari.view.hive.resources.resources.FileResourceResourceManager;
 import org.apache.ambari.view.hive.utils.NotFoundFormattedException;
 import org.apache.ambari.view.hive.utils.ServiceFormattedException;
@@ -32,6 +29,7 @@ import org.json.simple.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.inject.Inject;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.*;
 import javax.ws.rs.core.Context;
@@ -61,14 +59,14 @@ public class UDFService extends BaseService {
 
   protected synchronized UDFResourceManager getResourceManager() {
     if (resourceManager == null) {
-      resourceManager = new UDFResourceManager(context);
+      resourceManager = new UDFResourceManager(getSharedObjectsFactory(), context);
     }
     return resourceManager;
   }
 
   protected synchronized FileResourceResourceManager getFileResourceResourceManager() {
     if (fileResourceResourceManager == null) {
-      fileResourceResourceManager = new FileResourceResourceManager(context);
+      fileResourceResourceManager = new FileResourceResourceManager(getSharedObjectsFactory(), context);
     }
     return fileResourceResourceManager;
   }
@@ -81,10 +79,9 @@ public class UDFService extends BaseService {
   @Produces(MediaType.APPLICATION_JSON)
   public Response getOne(@PathParam("id") String id) {
     try {
-      UDF UDF = null;
-      UDF = getResourceManager().read(Integer.valueOf(id));
+      UDF udf = getResourceManager().read(id);
       JSONObject object = new JSONObject();
-      object.put("udf", UDF);
+      object.put("udf", udf);
       return Response.ok(object).build();
     } catch (WebApplicationException ex) {
       throw ex;
@@ -102,7 +99,7 @@ public class UDFService extends BaseService {
   @Path("{id}")
   public Response delete(@PathParam("id") String id) {
     try {
-      getResourceManager().delete(Integer.valueOf(id));
+      getResourceManager().delete(id);
       return Response.status(204).build();
     } catch (WebApplicationException ex) {
       throw ex;
@@ -145,7 +142,7 @@ public class UDFService extends BaseService {
     try {
       if (request.udf.getFileResource() != null)
         getFileResourceResourceManager().read(request.udf.getFileResource());
-      getResourceManager().update(request.udf, Integer.valueOf(id));
+      getResourceManager().update(request.udf, id);
       return Response.status(204).build();
     } catch (WebApplicationException ex) {
       throw ex;

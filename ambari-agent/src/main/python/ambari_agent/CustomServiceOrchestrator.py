@@ -50,14 +50,17 @@ class CustomServiceOrchestrator():
 
   HOSTS_LIST_KEY = "all_hosts"
   PING_PORTS_KEY = "all_ping_ports"
+  RACKS_KEY = "all_racks"
+  IPV4_ADDRESSES_KEY = "all_ipv4_ips"
+
   AMBARI_SERVER_HOST = "ambari_server_host"
+  DONT_DEBUG_FAILURES_FOR_COMMANDS = [COMMAND_NAME_SECURITY_STATUS, COMMAND_NAME_STATUS]
 
   def __init__(self, config, controller):
     self.config = config
     self.tmp_dir = config.get('agent', 'prefix')
     self.exec_tmp_dir = config.get('agent', 'tmp_dir')
     self.file_cache = FileCache(config)
-    self.python_executor = PythonExecutor(self.tmp_dir, config)
     self.status_commands_stdout = os.path.join(self.tmp_dir,
                                                'status_command_stdout.txt')
     self.status_commands_stderr = os.path.join(self.tmp_dir,
@@ -92,8 +95,15 @@ class CustomServiceOrchestrator():
       else: 
         logger.warn("Unable to find pid by taskId = %s" % task_id)
 
+  def get_py_executor(self):
+    """
+    Wrapper for unit testing
+    :return:
+    """
+    return PythonExecutor(self.tmp_dir, self.config)
+
   def runCommand(self, command, tmpoutfile, tmperrfile, forced_command_name=None,
-                 override_output_files = True):
+                 override_output_files=True, retry=False):
     """
     forced_command_name may be specified manually. In this case, value, defined at
     command json, is ignored.
@@ -151,7 +161,7 @@ class CustomServiceOrchestrator():
         handle.on_background_command_started = self.map_task_to_process
         del command['__handle']
 
-      json_path = self.dump_command_to_json(command)
+      json_path = self.dump_command_to_json(command, retry)
       pre_hook_tuple = self.resolve_hook_script_path(hook_dir,
           self.PRE_HOOK_PREFIX, command_name, script_type)
       post_hook_tuple = self.resolve_hook_script_path(hook_dir,
@@ -168,12 +178,14 @@ class CustomServiceOrchestrator():
       if command.has_key('commandType') and command['commandType'] == ActionQueue.BACKGROUND_EXECUTION_COMMAND and len(filtered_py_file_list) > 1:
         raise AgentException("Background commands are supported without hooks only")
 
+      python_executor = self.get_py_executor()
       for py_file, current_base_dir in filtered_py_file_list:
+        log_info_on_failure = not command_name in self.DONT_DEBUG_FAILURES_FOR_COMMANDS
         script_params = [command_name, json_path, current_base_dir]
-        ret = self.python_executor.run_file(py_file, script_params,
+        ret = python_executor.run_file(py_file, script_params,
                                self.exec_tmp_dir, tmpoutfile, tmperrfile, timeout,
                                tmpstrucoutfile, logger_level, self.map_task_to_process,
-                               task_id, override_output_files, handle = handle)
+                               task_id, override_output_files, handle = handle, log_info_on_failure=log_info_on_failure)
         # Next run_file() invocations should always append to current output
         override_output_files = False
         if ret['exitcode'] != 0:
@@ -225,6 +237,7 @@ class CustomServiceOrchestrator():
     override_output_files=True # by default, we override status command output
     if logger.level == logging.DEBUG:
       override_output_files = False
+
     res = self.runCommand(command, self.status_commands_stdout,
                           self.status_commands_stderr, self.COMMAND_NAME_STATUS,
                           override_output_files=override_output_files)
@@ -262,7 +275,7 @@ class CustomServiceOrchestrator():
 
   def resolve_script_path(self, base_dir, script):
     """
-    Incapsulates logic of script location determination.
+    Encapsulates logic of script location determination.
     """
     path = os.path.join(base_dir, script)
     if not os.path.exists(path):
@@ -287,7 +300,7 @@ class CustomServiceOrchestrator():
     return hook_script_path, hook_base_dir
 
 
-  def dump_command_to_json(self, command):
+  def dump_command_to_json(self, command, retry=False):
     """
     Converts command to json file and returns file path
     """
@@ -300,14 +313,17 @@ class CustomServiceOrchestrator():
     command_type = command['commandType']
     from ActionQueue import ActionQueue  # To avoid cyclic dependency
     if command_type == ActionQueue.STATUS_COMMAND:
-      # These files are frequently created, thats why we don't
+      # These files are frequently created, that's why we don't
       # store them all, but only the latest one
       file_path = os.path.join(self.tmp_dir, "status_command.json")
     else:
       task_id = command['taskId']
-      if 'clusterHostInfo' in command and command['clusterHostInfo']:
+      if 'clusterHostInfo' in command and command['clusterHostInfo'] and not retry:
         command['clusterHostInfo'] = self.decompressClusterHostInfo(command['clusterHostInfo'])
       file_path = os.path.join(self.tmp_dir, "command-{0}.json".format(task_id))
+      if command_type == ActionQueue.AUTO_EXECUTION_COMMAND:
+        file_path = os.path.join(self.tmp_dir, "auto_command-{0}.json".format(task_id))
+
     # Json may contain passwords, that's why we need proper permissions
     if os.path.isfile(file_path):
       os.unlink(file_path)
@@ -322,6 +338,9 @@ class CustomServiceOrchestrator():
     #Pop info not related to host roles
     hostsList = info.pop(self.HOSTS_LIST_KEY)
     pingPorts = info.pop(self.PING_PORTS_KEY)
+    racks = info.pop(self.RACKS_KEY)
+    ipv4_addresses = info.pop(self.IPV4_ADDRESSES_KEY)
+
     ambariServerHost = info.pop(self.AMBARI_SERVER_HOST)
 
     decompressedMap = {}
@@ -334,6 +353,8 @@ class CustomServiceOrchestrator():
 
     #Convert from ['1:0-2,4', '42:3,5-7'] to [1,1,1,42,1,42,42,42]
     pingPorts = self.convertMappedRangeToList(pingPorts)
+    racks = self.convertMappedRangeToList(racks)
+    ipv4_addresses = self.convertMappedRangeToList(ipv4_addresses)
 
     #Convert all elements to str
     pingPorts = map(str, pingPorts)
@@ -342,6 +363,10 @@ class CustomServiceOrchestrator():
     decompressedMap[self.PING_PORTS_KEY] = pingPorts
     #Add hosts list to result
     decompressedMap[self.HOSTS_LIST_KEY] = hostsList
+    #Add racks list to result
+    decompressedMap[self.RACKS_KEY] = racks
+    #Add ips list to result
+    decompressedMap[self.IPV4_ADDRESSES_KEY] = ipv4_addresses
     #Add ambari-server host to result
     decompressedMap[self.AMBARI_SERVER_HOST] = ambariServerHost
 
@@ -397,13 +422,13 @@ class CustomServiceOrchestrator():
           end = int(rangeIndexes[1])
 
           for k in range(start, end + 1):
-            resultDict[k] = int(value)
+            resultDict[k] = value if not value.isdigit() else int(value)
 
 
         elif len(rangeIndexes) == 1:
           index = int(rangeIndexes[0])
 
-          resultDict[index] = int(value)
+          resultDict[index] = value if not value.isdigit() else int(value)
 
 
     resultList = dict(sorted(resultDict.items())).values()

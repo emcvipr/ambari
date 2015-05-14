@@ -38,7 +38,7 @@ class RhelSuseRepositoryProvider(Provider):
   def action_create(self):
     with Environment.get_instance_copy() as env:
       repo_file_name = self.resource.repo_file_name
-      repo_dir = repos_dirs[env.system.os_family]
+      repo_dir = get_repo_dir()
       repo_template = self.resource.repo_template
       new_content = Template(repo_template, repo_id=self.resource.repo_id, repo_file_name=self.resource.repo_file_name,
                              base_url=self.resource.base_url, mirror_list=self.resource.mirror_list)
@@ -52,22 +52,22 @@ class RhelSuseRepositoryProvider(Provider):
   def action_remove(self):
     with Environment.get_instance_copy() as env:
       repo_file_name = self.resource.repo_file_name
-      repo_dir = repos_dirs[env.system.os_family]
+      repo_dir = get_repo_dir()
 
       File(format("{repo_dir}/{repo_file_name}.repo"),
            action = "delete")
     
   
-repos_dirs = {
-  'redhat': '/etc/yum.repos.d',
-  'suse': '/etc/zypp/repos.d'
-}
-
+def get_repo_dir():
+  if OSCheck.is_redhat_family():
+    return '/etc/yum.repos.d'
+  elif OSCheck.is_suse_family():
+    return '/etc/zypp/repos.d'
 
 class UbuntuRepositoryProvider(Provider):
   package_type = "deb"
   repo_dir = "/etc/apt/sources.list.d"
-  update_cmd = ['apt-get', 'update', '-qq', '-o', 'Dir::Etc::sourcelist=sources.list.d/{repo_file_name}', '-o', 'APT::Get::List-Cleanup=0']
+  update_cmd = ['apt-get', 'update', '-qq', '-o', 'Dir::Etc::sourcelist=sources.list.d/{repo_file_name}', '-o', 'Dir::Etc::sourceparts=-', '-o', 'APT::Get::List-Cleanup=0']
   missing_pkey_regex = "The following signatures couldn't be verified because the public key is not available: NO_PUBKEY ([A-Z0-9]+)"
   add_pkey_cmd = "apt-key adv --recv-keys --keyserver keyserver.ubuntu.com {pkey}"
 

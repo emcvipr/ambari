@@ -23,7 +23,6 @@ Ambari Agent
 __all__ = ["non_blocking_call", "checked_call", "call", "quote_bash_args", "as_user", "as_sudo"]
 
 import os
-import pty
 import select
 import sys
 import logging
@@ -67,7 +66,13 @@ def log_function_call(function):
       ('logoutput' in kwargs and kwargs['logoutput']==None and Logger.logger.isEnabledFor(logging.DEBUG)) or \
       (not 'logoutput' in kwargs and not is_internal_call and Logger.logger.isEnabledFor(logging.DEBUG))
        
-    return function(command, **kwargs)
+    result = function(command, **kwargs)
+    
+    if quiet == False or (quiet == None and not is_internal_call):
+      log_msg = "{0} returned {1}".format(function.__name__, result)
+      Logger.info(log_msg)
+      
+    return result
     
   return inner
 
@@ -137,12 +142,13 @@ def _call(command, logoutput=None, throw_on_failure=True,
   for placeholder, replacement in PLACEHOLDERS_TO_STR.iteritems():
     command = command.replace(placeholder, replacement.format(env_str=env_str))
 
+  import pty
   master_fd, slave_fd = pty.openpty()
 
   # --noprofile is used to preserve PATH set for ambari-agent
   subprocess_command = ["/bin/bash","--login","--noprofile","-c", command]
   proc = subprocess.Popen(subprocess_command, bufsize=1, stdout=slave_fd, stderr=subprocess.STDOUT,
-                          cwd=cwd, env=env, shell=False,
+                          cwd=cwd, env=env, shell=False, close_fds=True,
                           preexec_fn=preexec_fn)
   
   if timeout:

@@ -33,6 +33,8 @@ import os
 import time
 import urllib2
 import urlparse
+from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
+from ambari_commons import OSConst
 
 
 class Source(object):
@@ -72,9 +74,18 @@ class StaticFile(Source):
       
     if not os.path.isfile(path) and not os.path.islink(path):
       raise Fail("{0} Source file {1} is not found".format(repr(self), path))
-    
+
+    return self.read_file(path)
+
+  @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
+  def read_file(self, path):
+    from resource_management.core import sudo
     return sudo.read_file(path)
-    
+
+  @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
+  def read_file(self, path):
+    with open(path, "rb") as fp:
+      return fp.read()
 
 
 try:
@@ -130,7 +141,7 @@ else:
       self.context.update(variables)
       
       rendered = self.template.render(self.context)
-      return rendered + "\n" if not rendered.endswith('\n') else rendered
+      return rendered
     
   class InlineTemplate(Template):
     def __init__(self, name, extra_imports=[], **kwargs):
@@ -178,9 +189,14 @@ class DownloadSource(Source):
         opener = urllib2.build_opener()
       
       req = urllib2.Request(self.url)
-      web_file = opener.open(req)
+      
+      try:
+        web_file = opener.open(req)
+      except urllib2.HTTPError as ex:
+        raise Fail("Failed to download file from {0} due to HTTP error: {1}".format(self.url, str(ex)))
+      
       content = web_file.read()
-
+      
       if self.cache:
         with open(filepath, 'w') as fp:
           fp.write(content)

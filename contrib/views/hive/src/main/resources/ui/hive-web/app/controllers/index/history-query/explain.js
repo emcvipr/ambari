@@ -39,34 +39,47 @@ export default Ember.ObjectController.extend({
     if (cachedExplain) {
       this.formatExplainResults(cachedExplain);
     } else {
-      this.getExplain();
+      this.getExplain(true);
     }
   }.observes('content'),
 
-  getExplain: function () {
+  getExplain: function (firstPage, rows) {
     var self = this;
     var url = this.container.lookup('adapter:application').buildURL();
-    url += '/' + constants.namingConventions.jobs + '/' + this.get('content.id') + '/results?first=true';
+    url += '/' + constants.namingConventions.jobs + '/' + this.get('content.id') + '/results';
+
+    if (firstPage) {
+      url += '?first=true';
+    }
 
     Ember.$.getJSON(url).then(function (data) {
-      var explainSet = self.get('cachedExplains').pushObject(Ember.Object.create({
-        id: self.get('content.id'),
-        explain: data
-      }));
+      var explainSet;
 
-      self.set('content.explain', explainSet);
+      //if rows from a previous page read exist, prepend them
+      if (rows) {
+        data.rows.unshiftObjects(rows);
+      }
 
-      self.formatExplainResults(explainSet);
+      if (!data.hasNext) {
+        explainSet = self.get('cachedExplains').pushObject(Ember.Object.create({
+          id: self.get('content.id'),
+          explain: data
+        }));
+
+        self.set('content.explain', explainSet);
+
+        self.formatExplainResults(explainSet);
+      } else {
+        self.getExplain(false, data.rows);
+      }
     });
   },
 
   formatExplainResults: function (explainSet) {
     var formatted = [],
-        orderedNodes = [],
         currentNode,
         currentNodeWhitespace,
         previousNode,
-        formattedExplain = [],
         getLeadingWhitespacesCount = function (str) {
           return str.replace(utils.regexes.whitespaces, '$1').length;
         };
@@ -82,7 +95,7 @@ export default Ember.ObjectController.extend({
                       text: str,
                       parentNode: null,
                       contents: []
-                    }
+                    };
                   });
 
     for (var i = 0; i < explainSet.length; i++) {

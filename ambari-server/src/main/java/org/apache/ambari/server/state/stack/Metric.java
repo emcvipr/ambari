@@ -21,14 +21,19 @@ public class Metric {
   private String metric = null;
   private boolean pointInTime = false;
   private boolean temporal = false;
+  private boolean amsHostMetric = false;
+  private String unit = "unitless";
 
   public Metric() {
   }
 
-  public Metric(String metric, boolean pointInTime, boolean temporal) {
+  public Metric(String metric, boolean pointInTime, boolean temporal,
+                boolean amsHostMetric, String unit) {
     this.metric = metric;
     this.pointInTime = pointInTime;
     this.temporal = temporal;
+    this.amsHostMetric = amsHostMetric;
+    this.unit = unit;
   }
 
   public String getName() {
@@ -43,4 +48,14 @@ public class Metric {
     return temporal;
   }
 
+  /**
+   * Indicates whether this hostcomponent metric is a host metric for AMS.
+   */
+  public boolean isAmsHostMetric() {
+    return amsHostMetric;
+  }
+
+  public String getUnit() {
+    return unit;
+  }
 }

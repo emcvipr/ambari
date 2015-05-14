@@ -21,10 +21,12 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.ambari.server.notifications.Notification;
 import org.apache.ambari.server.notifications.NotificationDispatcher;
 import org.apache.ambari.server.notifications.Recipient;
+import org.apache.ambari.server.notifications.TargetConfigurationResult;
 import org.apache.ambari.server.state.alert.TargetType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,8 +51,6 @@ import org.snmp4j.smi.UdpAddress;
 import org.snmp4j.smi.VariableBinding;
 import org.snmp4j.transport.DefaultUdpTransportMapping;
 import org.snmp4j.util.DefaultPDUFactory;
-
-import java.util.Map;
 
 import com.google.inject.Singleton;
 
@@ -104,6 +104,14 @@ public class SNMPDispatcher implements NotificationDispatcher {
    * {@inheritDoc}
    */
   @Override
+  public boolean isNotificationContentGenerationRequired() {
+    return true;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
   public void dispatch(Notification notification) {
     LOG.info("Sending SNMP trap: {}", notification.Subject);
     try {
@@ -124,7 +132,7 @@ public class SNMPDispatcher implements NotificationDispatcher {
    * {@inheritDoc}
    */
   @Override
-  public ConfigValidationResult validateTargetConfig(Map<String, Object> properties) {
+  public TargetConfigurationResult validateTargetConfig(Map<String, Object> properties) {
     Map<String, String> stringValuesConfig = new HashMap<String, String>(properties.size());
     for (Map.Entry<String, Object> propertyEntry : properties.entrySet()) {
       stringValuesConfig.put(propertyEntry.getKey(), propertyEntry.getValue().toString());
@@ -155,9 +163,9 @@ public class SNMPDispatcher implements NotificationDispatcher {
           break;
       }
     } catch (InvalidSnmpConfigurationException ex) {
-      return ConfigValidationResult.invalid(ex.getMessage());
+      return TargetConfigurationResult.invalid(ex.getMessage());
     }
-    return ConfigValidationResult.valid();
+    return TargetConfigurationResult.valid();
   }
 
   /**

@@ -24,45 +24,58 @@ App.QueuesController = Ember.ArrayController.extend({
   sortProperties: ['name'],
   sortAscending: true,
   actions:{
-    goToQueue:function (queue) {
-      this.transitionToRoute('queue',queue)
+    loadTagged:function (tag) {
+      this.transitionToRoute('queue','root').then(function() {
+         this.store.fetchTagged(App.Queue,tag);
+       }.bind(this));
     },
     askPath:function () {
       this.set('isWaitingPath',true);
     },
     addQ:function (parentPath,name) {
-      if (!parentPath || this.get('hasNewQueue')) {
+      if (!parentPath || this.get('hasNewQueue') || !this.store.hasRecordForId('queue',parentPath.toLowerCase())) {
         return;
       }
       name = name || '';
-      var newQueue = this.store.createRecord('queue',{
-        name:name,
-        parentPath: parentPath,
-        depth: parentPath.split('.').length,
-        isNewQueue:true
-      });
-      this.set('newQueue',newQueue);
-      if (name) {
-        this.send('goToQueue',newQueue);
-        this.send('createQ',newQueue);
+      var newQueue,
+          existed = this.get('store.deletedQueues').findBy('path',parentPath+'.'+name);
+
+      if (existed) {
+        newQueue = this.store.createFromDeleted(existed);
       } else {
-        this.send('goToQueue',newQueue);
+        newQueue = this.store.createRecord('queue', {
+          name:name,
+          parentPath: parentPath,
+          depth: parentPath.split('.').length,
+          isNewQueue:true
+        });
+        this.set('newQueue',newQueue);
+      }
+
+      if (name) {
+        this.get('store').saveAndUpdateQueue(newQueue,existed)
+          .then(Em.run.bind(this,'transitionToRoute','queue'))
+          .then(Em.run.bind(this,'set','newQueue',null));
+      } else {
+        this.transitionToRoute('queue',newQueue);
       }
     },
-    createQ:function (record) {
-      record.save().then(Em.run.bind(this,this.set,'newQueue',null));
+    downloadConfig: function (format) {
+      var config =  this.get('store').buildConfig(format);
+      return this.fileSaver.save(config, "application/json", 'scheduler_config_' + moment() + '.' + format);
+    },
+    createQ:function (record,updates) {
+      this.get('store').saveAndUpdateQueue(record, updates);
     },
     delQ:function (record) {
-      if (record.get('isNew')) {
-        this.set('newQueue',null);
-      }
-      if (!record.get('isNewQueue')) {
-        this.set('hasDeletedQueues',true);
-      }
       if (record.isCurrent) {
-        this.transitionToRoute('queue',record.get('parentPath'));
+        this.transitionToRoute('queue',record.get('parentPath').toLowerCase())
+          .then(Em.run.schedule('afterRender', function () {
+            record.get('store').recurceRemoveQueue(record);
+          }));
+      } else {
+        record.destroyRecord();
       }
-      this.store.deleteRecord(record);
     },
     saveConfig:function (mark) {
       if (mark == 'restart') {
@@ -70,33 +83,163 @@ App.QueuesController = Ember.ArrayController.extend({
       } else if (mark == 'refresh') {
         this.get('store').markForRefresh();
       }
+      var collectedLabels = this.get('model').reduce(function (prev,q) {
+        return prev.pushObjects(q.get('labels.content'));
+      },[]);
 
-      var hadDeletedQueues = this.get('hasDeletedQueues'),
-          scheduler = this.get('scheduler').save(),
+      var scheduler = this.get('scheduler').save(),
           model = this.get('model').save(),
-          all = Em.RSVP.Promise.all([model,scheduler]);
+          labels = DS.ManyArray.create({content:collectedLabels}).save();
 
-      all.catch(Em.run.bind(this,this.saveError,hadDeletedQueues));
+      Em.RSVP.Promise.all([labels,model,scheduler]).then(
+        Em.run.bind(this,'saveSuccess'),
+        Em.run.bind(this,'saveError')
+      );
 
-      this.set('hasDeletedQueues',false);
     },
     clearAlert:function () {
       this.set('alertMessage',null);
     }
   },
 
+  /**
+   * User admin status.
+   * @type {Boolean}
+   */
+  isOperator:false,
+
+  /**
+   * Inverted isOperator value.
+   * @type {Boolean}
+   */
+  isNotOperator:cmp.not('isOperator'),
+
+  /**
+   * Flag to show input for adding queue.
+   * @type {Boolean}
+   */
+  isWaitingPath:false,
+
+  /**
+   * Property for error message which may appear when saving queue.
+   * @type {Object}
+   */
   alertMessage:null,
-  saveError:function (hadDeletedQueues,error) {
-    this.set('hasDeletedQueues',hadDeletedQueues);
+
+  /**
+   * Temporary filed for new queue
+   * @type {App.Queue}
+   */
+  newQueue:null,
+
+  /**
+   * True if newQueue is not empty.
+   * @type {Boolean}
+   */
+  hasNewQueue: cmp.bool('newQueue'),
+
+  /**
+   * Current configuration version tag.
+   * @type {[type]}
+   */
+  current_tag: cmp.alias('store.current_tag'),
+
+  /**
+   * Scheduler record
+   * @type {App.Scheduler}
+   */
+  scheduler:null,
+
+  /**
+   * Collection of modified fields in Scheduler.
+   * @type {Object} - { [fileldName] : {Boolean} }
+   */
+  schedulerDirtyFilelds:{},
+
+
+  configNote: cmp.alias('store.configNote'),
+
+  tags:function () {
+    return this.store.find('tag');
+  }.property('store.current_tag'),
+
+  sortedTags: cmp.sort('tags', function(a, b){
+    return (+a.id > +b.id)?(+a.id < +b.id)?0:-1:1;
+  }),
+
+  saveSuccess:function () {
+    this.set('store.deletedQueues',[]);
+  },
+
+  saveError:function (error) {
     var response = JSON.parse(error.responseText);
     this.set('alertMessage',response);
   },
 
-  isOperator:false,
-  isNotOperator:cmp.not('isOperator'),
+  propertyBecomeDirty:function (controller,property) {
+    var schedProp = property.split('.').objectAt(1);
+    this.set('schedulerDirtyFilelds.' + schedProp, this.get('scheduler').changedAttributes().hasOwnProperty(schedProp));
+  },
 
-  isWaitingPath:false,
-  
+  dirtyObserver:function () {
+    this.get('scheduler.constructor.transformedAttributes.keys.list').forEach(function(item) {
+      this.addObserver('scheduler.' + item,this,'propertyBecomeDirty');
+    }.bind(this));
+  }.observes('scheduler'),
+
+
+  trackNewQueue:function () {
+    var newQueue = this.get('newQueue'), props;
+    if (Em.isEmpty(newQueue)) {
+      return;
+    }
+
+    props = newQueue.getProperties('name','parentPath');
+
+    newQueue.setProperties({
+      name: props.name.replace(/\s/g, ''),
+      path: props.parentPath+'.'+props.name,
+      id: (props.parentPath+'.'+props.name).toLowerCase()
+    });
+
+  }.observes('newQueue.name'),
+
+  /**
+   * Marks each queue in leaf with 'overCapacity' if sum if their capacity values is greater then 100.
+   * @method capacityControl
+   */
+  capacityControl: function() {
+    var pathes = this.get('content').getEach('parentPath').uniq();
+    pathes.forEach(function (path) {
+      var leaf = this.get('content').filterBy('parentPath',path),
+      total = leaf.reduce(function (prev, queue) {
+          return +queue.get('capacity') + prev;
+        },0);
+
+      leaf.setEach('overCapacity',total>100);
+    }.bind(this));
+  }.observes('content.length','content.@each.capacity'),
+
+
+
+  // TRACKING OF RESTART REQUIREMENT
+
+  /**
+   * check if RM needs restart
+   * @type {bool}
+   */
+  needRestart: Em.computed.alias('hasDeletedQueues'),
+
+  /**
+   * True if some queue of desired configs was removed.
+   * @type {Boolean}
+   */
+  hasDeletedQueues: Em.computed.alias('store.hasDeletedQueues'),
+
+
+
+  // TRACKING OF REFRESH REQUIREMENT
+
   /**
    * check if RM needs refresh
    * @type {bool}
@@ -104,34 +247,59 @@ App.QueuesController = Ember.ArrayController.extend({
   needRefresh: cmp.and('needRefreshProps','noNeedRestart'),
 
   /**
-   * props for 'needRefresh'
+   * Inverted needRestart value.
+   * @type {Boolean}
    */
-  dirtyQueues: cmp.filterBy('content', 'isDirty', true),
-  dirtyScheduler: cmp.bool('scheduler.isDirty'),
-  newQueues: cmp.filterBy('content', 'isNewQueue', true),
+  noNeedRestart: cmp.not('needRestart'),
+
+  /**
+   * Check properties for refresh requirement
+   * @type {Boolean}
+   */
+  needRefreshProps: cmp.any('hasChanges', 'hasNewQueues','dirtyScheduler'),
+
+  /**
+   * List of modified queues.
+   * @type {Array}
+   */
+  dirtyQueues:function () {
+    return this.get('content').filter(function (q) {
+      return q.get('isAnyDirty');
+    });
+  }.property('content.@each.isAnyDirty'),
+
+  /**
+   * True if dirtyQueues is not empty.
+   * @type {Boolean}
+   */
   hasChanges: cmp.notEmpty('dirtyQueues.[]'),
+
+  /**
+   * List of new queues.
+   * @type {Array}
+   */
+  newQueues: cmp.filterBy('content', 'isNewQueue', true),
+
+  /**
+   * True if newQueues is not empty.
+   * @type {Boolean}
+   */
   hasNewQueues: cmp.notEmpty('newQueues.[]'),
 
-  needRefreshProps: cmp.any('hasChanges', 'hasNewQueues','dirtyScheduler'),
-  noNeedRestart: cmp.not('needRestart'),
-  
   /**
-   * check if RM needs restart 
+   * True if scheduler is modified.
+   * @type {[type]}
+   */
+  dirtyScheduler: cmp.bool('scheduler.isDirty'),
+
+
+   // TRACKING OF PRESERVATION POSSIBILITY
+
+  /**
+   * check there is some changes for save
    * @type {bool}
    */
-  needRestart: cmp.any('hasDeletedQueues', 'hasRenamedQueues'),
-  
-  /**
-   * props for 'needRestart'
-   */
-  hasDeletedQueues:false,
-  hasRenamedQueues: cmp.notEmpty('renamedQueues.[]'),
-  renamedQueues:function () {
-    return this.content.filter(function(queue){
-      var attr = queue.changedAttributes();
-      return attr.hasOwnProperty('name') && !queue.get('isNewQueue');
-    });
-  }.property('content.@each.name'),
+  needSave: cmp.any('needRestart', 'needRefresh'),
 
   /**
    * check if can save configs
@@ -140,43 +308,42 @@ App.QueuesController = Ember.ArrayController.extend({
   canNotSave: cmp.any('hasOverCapacity', 'hasUncompetedAddings','hasNotValid','isNotOperator'),
 
   /**
-   * props for canNotSave
+   * List of not valid queues.
+   * @type {Array}
    */
   notValid:cmp.filterBy('content','isValid',false),
-  overCapacityQ:cmp.filterBy('content','overCapacity',true),
-  uncompetedAddings:cmp.filterBy('content', 'isNew', true),
-  hasNotValid:cmp.notEmpty('notValid.[]'),
-  hasOverCapacity:cmp.notEmpty('overCapacityQ.[]'),
-  hasUncompetedAddings:cmp.notEmpty('uncompetedAddings.[]'),
 
   /**
-   * check there is some changes for save
-   * @type {bool}
+   * True if notValid is not empty.
+   * @type {Boolean}
    */
-  needSave: cmp.any('needRestart', 'needRefresh'),
+  hasNotValid:cmp.notEmpty('notValid.[]'),
 
-  newQueue:null,
-  hasNewQueue: cmp.bool('newQueue'),
-  trackNewQueue:function () {
-    var newQueue = this.get('newQueue');
-    if (Em.isEmpty(newQueue)){
-      return;
-    }
-    var name = newQueue.get('name');
-    var parentPath = newQueue.get('parentPath');
-
-    this.get('newQueue').setProperties({
-      name:name.replace(/\s/g, ''),
-      path:parentPath+'.'+name,
-      id:(parentPath+'.'+name).dasherize()
+  /**
+   * List of queues with excess of capacity
+   * @type {Array}
+   */
+  overCapacityQ:function () {
+    return this.get('content').filter(function (q) {
+      return q.get('overCapacity');
     });
+  }.property('content.@each.overCapacity'),
 
-  }.observes('newQueue.name'),
+  /**
+   * True if overCapacityQ is not empty.
+   * @type {Boolean}
+   */
+  hasOverCapacity:cmp.notEmpty('overCapacityQ.[]'),
 
-  configNote:function (arg,val) {
-    if (arguments.length > 1) {
-      this.set('store.configNote',val);
-    }
-    return this.get('store.configNote');
-  }.property('store.configNote')
+  /**
+   * List of queues with incompete adding process
+   * @type {[type]}
+   */
+  uncompetedAddings:cmp.filterBy('content', 'isNew', true),
+
+  /**
+   * True if uncompetedAddings is not empty.
+   * @type {Boolean}
+   */
+  hasUncompetedAddings:cmp.notEmpty('uncompetedAddings.[]')
 });

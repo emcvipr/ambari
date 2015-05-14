@@ -22,15 +22,21 @@ package org.apache.ambari.server.controller;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.ambari.server.state.PropertyDependencyInfo;
+import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.state.PropertyInfo.PropertyType;
+import org.apache.ambari.server.state.ValueAttributesInfo;
 
 public class StackLevelConfigurationResponse extends StackConfigurationResponse {
   public StackLevelConfigurationResponse(String propertyName,
-      String propertyValue, String propertyDescription, String type,
+      String propertyValue, String propertyDescription, String propertyDisplayName, String type,
       Boolean isRequired, Set<PropertyType> propertyTypes,
-      Map<String, String> propertyAttributes) {
-    super(propertyName, propertyValue, propertyDescription, type, isRequired,
-        propertyTypes, propertyAttributes);
+      Map<String, String> propertyAttributes,
+      ValueAttributesInfo propertyValueAttributes,
+      Set<PropertyDependencyInfo> dependsOnProperties) {
+    super(propertyName, propertyValue, propertyDescription, propertyDisplayName, type, isRequired,
+        propertyTypes, propertyAttributes, propertyValueAttributes,
+        dependsOnProperties);
   }
   
   public StackLevelConfigurationResponse(String propertyName, String propertyValue, String propertyDescription,

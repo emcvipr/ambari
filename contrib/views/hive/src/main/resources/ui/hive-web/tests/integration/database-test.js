@@ -58,7 +58,7 @@ test('Expanding a database will retrieve the first page of tables for that datab
     click(targetDB);
 
     andThen(function () {
-      equal(find('.fa-th').length, 3);
+      equal(find('.fa-table').length, 3);
     });
   });
 });
@@ -74,13 +74,11 @@ test('Expanding a table will retrieve the first page of columns for that table.'
     click(targetDB);
 
     andThen(function () {
-      var targetTable = find('.fa-th').first();
+      var targetTable = find('.fa-table').first();
 
       click(targetTable);
 
       andThen(function () {
-        console.log(find('.columns'));
-
         equal(find('.columns').length, 1, 'Columns container was loaded.');
         equal(find('.columns strong').length, 3, '3 columns were loaded for selected table.');
       });

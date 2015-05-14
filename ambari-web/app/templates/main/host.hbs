@@ -64,6 +64,7 @@
         <th> </th>
         <th> </th>
         {{view view.parentView.ipSort}}
+        {{view view.parentView.rackSort}}
         {{view view.parentView.cpuSort}}
         {{view view.parentView.memorySort}}
         {{view view.parentView.diskUsageSort}}
@@ -80,6 +81,7 @@
         <th> </th>
         <th> </th>
         <th>{{view view.ipFilterView}}</th>
+        <th>{{view view.rackFilterView}}</th>
         <th>{{view view.cpuFilterView}}</th>
         <th>{{view view.ramFilterView}}</th>
         <th> </th>
@@ -122,6 +124,9 @@
               <span rel="ComponentsTooltip" {{bindAttr data-original-title="view.componentsInPassiveStateMessage" class="host.componentsInPassiveStateCount:icon-medkit"}}></span>
           </td>
           <td class="host-ip">{{host.ip}}</td>
+          <td rel="UsageTooltip" {{bindAttr title="host.rack"}} class="rack-id">
+            {{host.rack}}
+          </td>
           <td class="cores-formatted">{{host.coresFormatted}}</td>
           <td class="memory-formatted">{{host.memoryFormatted}}</td>
 
@@ -133,28 +138,20 @@
 
           <td class="load-avg">{{host.loadAvg}}</td>
           <td {{bindAttr class="App.supports.stackUpgrade::hidden App.stackVersionsAvailable::hidden view.hasSingleVersion:not-active-link :host-table-versions"}}>
-            <a href="#" class="expander black" {{action toggleVersions target="view"}}>
-              {{#unless view.hasSingleVersion}}
-                <span {{bindAttr class="view.isVersionsCollapsed:icon-caret-right:icon-caret-down"}}></span>
-              {{/unless}}
+            <a href="#" class="black" {{action displayVersions target="view"}}>
               {{view.currentVersion}}
             </a>
-            <div {{bindAttr class="view.isVersionsCollapsed:noDisplay:display :stack-versions :collapsed-list"}}>
-              {{{view.versionlabels}}}
-            </div>
           </td>
-          <td class="host-table-components">
-            <a href="#" class="expander" {{action toggleComponents target="view"}}> <span {{bindAttr class="view.isComponentsCollapsed:icon-caret-right:icon-caret-down"}}></span>
-              {{view.content.hostComponents.length}} {{pluralize view.content.hostComponents.length singular="t:common.component" plural="t:common.components"}}</a>
-            <div {{bindAttr class="view.isComponentsCollapsed:noDisplay:display :host-components :collapsed-list"}}>
-              {{{view.labels}}}
-            </div>
+          <td {{bindAttr class="view.hasNoComponents:not-active-link :host-table-components"}}>
+            <a href="#" class="black" {{action displayComponents target="view"}}>
+              {{view.content.hostComponents.length}} {{pluralize view.content.hostComponents.length singular="t:common.component" plural="t:common.components"}}
+            </a>
           </td>
         {{/view}}
       {{/each}}
     {{else}}
       <tr>
-        <td class="first"> </td>
+        <td class="first"></td>
         <td {{bindAttr colspan="view.colspan"}}>
           {{t hosts.table.noHosts}}
         </td>
@@ -163,7 +160,7 @@
     </tbody>
   </table>
 
-  <div {{bindAttr class="view.filteringComplete:hidden :hosts-overlay"}}>
+  <div {{bindAttr class="view.filteringComplete:hidden :table-overlay"}}>
     <div class="spinner"></div>
   </div>
 
@@ -193,4 +190,3 @@
     </div>
   </div>
 </div>
-

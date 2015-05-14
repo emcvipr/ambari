@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 
+var misc = require('utils/misc');
 var App = require('app');
 
 App.WizardRoute = Em.Route.extend({
@@ -210,7 +211,7 @@ App.Router = Em.Router.extend({
     var controller = this.get('loginController');
     var loginName = controller.get('loginName').toLowerCase();
     controller.set('loginName', loginName);
-    var hash = window.btoa(loginName + ":" + controller.get('password'));
+    var hash = misc.utf8ToB64(loginName + ":" + controller.get('password'));
     var usr = '';
 
     if (App.get('testMode')) {
@@ -243,7 +244,7 @@ App.Router = Em.Router.extend({
   loginSuccessCallback: function(data, opt, params) {
     console.log('login success');
     App.usersMapper.map({"items": [data]});
-    this.setUserLoggedIn(params.loginName);
+    this.setUserLoggedIn(decodeURIComponent(params.loginName));
     App.router.get('mainViewsController').loadAmbariViews();
     App.ajax.send({
       name: 'router.login.clusters',
@@ -299,16 +300,20 @@ App.Router = Em.Router.extend({
           var clusterName = clustersData.items[0].Clusters.cluster_name;
           var clusterPermissions = privileges.filterProperty('PrivilegeInfo.cluster_name', clusterName).mapProperty('PrivilegeInfo.permission_name');
           if (clusterPermissions.contains('CLUSTER.OPERATE')) {
-            App.set('isAdmin', true);
-            App.set('isOperator', true);
+            App.setProperties({
+              isAdmin: true,
+              isOperator: true
+            });
             transitionToApp = true;
           } else if (clusterPermissions.contains('CLUSTER.READ')) {
             transitionToApp = true;
           }
         }
       }
+      App.set('isPermissionDataLoaded', true);
       if (transitionToApp) {
-        if (!Em.isNone(router.get('preferedPath'))) {
+        if (!Em.isNone(router.get('preferedPath')) && 
+            router.get('preferedPath') != "#/login") {
           window.location = router.get('preferedPath');
           router.set('preferedPath', null);
         } else {
@@ -377,15 +382,18 @@ App.Router = Em.Router.extend({
 
   logOff: function (context) {
     $('title').text(Em.I18n.t('app.name'));
-    var hash = window.btoa(this.get('loginController.loginName') + ":" + this.get('loginController.password'));
+    var hash = misc.utf8ToB64(this.get('loginController.loginName') + ":" + this.get('loginController.password'));
 
     App.router.get('mainController').stopPolling();
     // App.db.cleanUp() must be called before router.clearAllSteps().
     // otherwise, this.set('installerController.currentStep, 0) would have no effect
     // since it's a computed property but we are not setting it as a dependent of App.db.
     App.db.cleanUp();
-    App.set('isAdmin', false);
-    App.set('isOperator', false);
+    App.setProperties({
+      isAdmin: false,
+      isOperator: false,
+      isPermissionDataLoaded: false
+    });
     this.set('loggedIn', false);
     this.clearAllSteps();
     console.log("Log off: " + App.router.getClusterName());
@@ -435,6 +443,7 @@ App.Router = Em.Router.extend({
         if (user.operator) {
           App.set('isOperator', true);
         }
+        App.set('isPermissionDataLoaded', true);
       }
     }
   },

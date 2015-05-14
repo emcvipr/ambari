@@ -20,36 +20,22 @@ Ambari Agent
 """
 
 from resource_management import *
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 from resource_management.libraries.functions.security_commons import build_expectations, \
   cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties,\
   FILE_TYPE_XML
 from resource_management.libraries.functions.format import format
-
 from yarn import yarn
 from service import service
+from ambari_commons import OSConst
+from ambari_commons.os_family_impl import OsFamilyImpl
+
 
 class ApplicationTimelineServer(Script):
-
-  def get_stack_to_component(self):
-    return {"HDP": "hadoop-yarn-timelineserver"}
-
   def install(self, env):
     self.install_packages(env)
-    #self.configure(env)
-
-  def configure(self, env):
-    import params
-    env.set_params(params)
-    yarn(name='apptimelineserver')
-
-  def pre_rolling_restart(self, env):
-    Logger.info("Executing Rolling Upgrade pre-restart")
-    import params
-    env.set_params(params)
-
-    if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
-      Execute(format("hdp-select set hadoop-yarn-timelineserver {version}"))
 
   def start(self, env, rolling_restart=False):
     import params
@@ -61,6 +47,32 @@ class ApplicationTimelineServer(Script):
     import params
     env.set_params(params)
     service('timelineserver', action='stop')
+
+  def configure(self, env):
+    import params
+    env.set_params(params)
+    yarn(name='apptimelineserver')
+
+
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class ApplicationTimelineServerWindows(ApplicationTimelineServer):
+  def status(self, env):
+    service('timelineserver', action='status')
+
+
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class ApplicationTimelineServerDefault(ApplicationTimelineServer):
+  def get_stack_to_component(self):
+    return {"HDP": "hadoop-yarn-timelineserver"}
+
+  def pre_rolling_restart(self, env):
+    Logger.info("Executing Rolling Upgrade pre-restart")
+    import params
+    env.set_params(params)
+
+    if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
+      conf_select.select(params.stack_name, "hadoop", params.version)
+      hdp_select.select("hadoop-yarn-timelineserver", params.version)
 
   def status(self, env):
     import status_params

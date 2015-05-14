@@ -26,6 +26,8 @@ import java.util.Map;
  */
 public interface Config {
 
+  void setStackId(StackId stackId);
+
   /**
    * @return Config Type
    */
@@ -35,6 +37,13 @@ public interface Config {
    * @return Version Tag this config instance is mapped to
    */
   public String getTag();
+
+  /**
+   * Gets the stack that this configuration belongs to.
+   *
+   * @return the stack (not {@code null).
+   */
+  public StackId getStackId();
 
   /**
    *
@@ -93,9 +102,15 @@ public interface Config {
    * @param properties Property keys to be deleted
    */
   public void deleteProperties(List<String> properties);
-  
+
   /**
    * Persist the configuration.
    */
   public void persist();
+
+  /**
+   * Persist the configuration, optionally creating a new config entity.
+   */
+  public void persist(boolean newConfig);
+
 }

@@ -19,25 +19,65 @@
 App.KerberosWizardStep7Controller = App.KerberosProgressPageController.extend({
   name: 'kerberosWizardStep7Controller',
   clusterDeployState: 'KERBEROS_DEPLOY',
-  commands: ['startServices'],
+  isSingleRequestPage: true,
+  request: {},
+  commands: [],
+  contextForPollingRequest: Em.I18n.t('requestInfo.kerberizeCluster'),
 
-  startServices: function () {
-    App.ajax.send({
-      name: 'common.services.update',
-      sender: this,
-      data: {
-        "context": "Start services",
-        "ServiceInfo": {
-          "state": "STARTED"
-        },
-        urlParams: "params/run_smoke_test=true"
-      },
-      success: 'startPolling',
-      error: 'onTaskError'
-    });
+  /**
+   * Define whether show Back button
+   * @type {Boolean}
+   */
+  isBackButtonDisabled: true,
+
+  /**
+   * Start cluster kerberization. On retry just unkerberize and kerbrize cluster.
+   * @param {bool} isRetry
+   */
+  setRequest: function (isRetry) {
+    var self = this;
+    var kerberizeRequest = {
+      name: 'KERBERIZE_CLUSTER',
+      ajaxName: 'admin.kerberize.cluster',
+      ajaxData: {
+        data: {
+          Clusters: {
+            security_type: "KERBEROS"
+          }
+        }
+      }
+    };
+    if (isRetry) {
+      // on retry we have to unkerberize cluster
+      this.unkerberizeCluster().always(function() {
+        // clear current request object before start of kerberize process
+        self.set('request', kerberizeRequest);
+        self.clearStage();
+        self.loadStep();
+      });
+    } else {
+      this.set('request', kerberizeRequest);
+    }
   },
 
-  isSubmitDisabled: function () {
-    return !["COMPLETED", "FAILED"].contains(this.get('status'));
-  }.property('status')
+  retry: function () {
+    this.set('showRetry', false);
+    this.get('tasks').setEach('status', 'PENDING');
+    App.router.send('retry');
+  },
+
+
+  /**
+   * Enable or disable previous steps according to tasks statuses
+   */
+  enableDisablePreviousSteps: function () {
+    var wizardController = App.router.get(this.get('content.controllerName'));
+    if (this.get('tasks').someProperty('status', 'FAILED')) {
+      wizardController.enableStep(4);
+      this.set('isBackButtonDisabled', false);
+    } else {
+      wizardController.setLowerStepsDisable(6);
+      this.set('isBackButtonDisabled', true);
+    }
+  }.observes('tasks.@each.status')
 });

@@ -114,6 +114,15 @@ App.UpdateController = Em.Controller.extend({
   }),
 
   /**
+   * Pagination query-parameters for unhealthy alerts request
+   * @type {{from: Number, page_size: Number}}
+   */
+  queryParamsForUnhealthyAlertInstances: {
+    from: 0,
+    page_size: 10
+  },
+
+  /**
    * map describes relations between updater function and table
    */
   tableUpdaterMap: {
@@ -159,7 +168,7 @@ App.UpdateController = Em.Controller.extend({
     var testUrl = '/data/hosts/HDP2/hosts.json',
       self = this,
       hostDetailsFilter = '';
-    var realUrl = '/hosts?<parameters>fields=Hosts/host_name,Hosts/maintenance_state,Hosts/public_host_name,Hosts/cpu_count,Hosts/ph_cpu_count,' +
+    var realUrl = '/hosts?<parameters>fields=Hosts/rack_info,Hosts/host_name,Hosts/maintenance_state,Hosts/public_host_name,Hosts/cpu_count,Hosts/ph_cpu_count,' +
       'alerts_summary,Hosts/host_status,Hosts/last_heartbeat_time,Hosts/ip,host_components/HostRoles/state,host_components/HostRoles/maintenance_state,' +
       'host_components/HostRoles/stale_configs,host_components/HostRoles/service_name,host_components/HostRoles/desired_admin_state,' +
         'metrics/disk,metrics/load/load_one,Hosts/total_mem<hostAuxiliaryInfo><stackVersions>&minimal_response=true';
@@ -398,6 +407,7 @@ App.UpdateController = Em.Controller.extend({
     };
     App.HttpClient.get(servicesUrl, App.serviceMetricsMapper, {
       complete: function () {
+        App.set('router.mainServiceItemController.isServicesInfoLoaded', App.get('router.clusterController.isLoaded'));
         callback();
       }
     });
@@ -450,7 +460,7 @@ App.UpdateController = Em.Controller.extend({
   updateComponentsState: function (callback) {
     var testUrl = '/data/services/HDP2/components_state.json';
     var realUrl = '/components/?ServiceComponentInfo/category.in(SLAVE,CLIENT)&fields=ServiceComponentInfo/service_name,' +
-      'ServiceComponentInfo/category,ServiceComponentInfo/installed_count,ServiceComponentInfo/started_count,ServiceComponentInfo/total_count&minimal_response=true';
+      'ServiceComponentInfo/category,ServiceComponentInfo/installed_count,ServiceComponentInfo/started_count,ServiceComponentInfo/total_count,host_components/HostRoles/host_name&minimal_response=true';
     var url = this.getUrl(testUrl, realUrl);
 
     App.HttpClient.get(url, App.componentsStateMapper, {
@@ -469,7 +479,8 @@ App.UpdateController = Em.Controller.extend({
 
   updateUnhealthyAlertInstances: function (callback) {
     var testUrl = '/data/alerts/alert_instances.json';
-    var realUrl = '/alerts?fields=*&Alert/state.in(CRITICAL,WARNING)&Alert/maintenance_state.in(OFF)';
+    var queryParams = this.get('queryParamsForUnhealthyAlertInstances');
+    var realUrl = '/alerts?fields=*&Alert/state.in(CRITICAL,WARNING)&Alert/maintenance_state.in(OFF)&from=' + queryParams.from + '&page_size=' + queryParams.page_size;
     var url = this.getUrl(testUrl, realUrl);
 
     App.HttpClient.get(url, App.alertInstanceMapper, {

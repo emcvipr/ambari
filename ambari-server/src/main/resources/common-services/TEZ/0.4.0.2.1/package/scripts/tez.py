@@ -20,18 +20,19 @@ Ambari Agent
 """
 
 from resource_management import *
+from ambari_commons import OSConst
+from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 
+@OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
 def tez():
   import params
 
-  Directory(params.config_dir_prefix,
-            mode=0755
-  )
+  Directory(params.tez_etc_dir, mode=0755)
+
   Directory(params.config_dir,
             owner = params.tez_user,
             group = params.user_group,
-            recursive = True
-  )
+            recursive = True)
 
   XmlConfig( "tez-site.xml",
              conf_dir = params.config_dir,
@@ -39,23 +40,21 @@ def tez():
              configuration_attributes=params.config['configuration_attributes']['tez-site'],
              owner = params.tez_user,
              group = params.user_group,
-             mode = 0664
-  )
+             mode = 0664)
 
   File(format("{config_dir}/tez-env.sh"),
        owner=params.tez_user,
-       content=InlineTemplate(params.tez_env_sh_template)
-  )
+       content=InlineTemplate(params.tez_env_sh_template))
 
 
-def tez_TemplateConfig(name):
+@OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
+def tez():
   import params
-
-  if not isinstance(name, list):
-    name = [name]
-
-  for x in name:
-    TemplateConfig(format("{config_dir}/{x}"),
-                   owner = params.tez_user
-    )
+  XmlConfig("tez-site.xml",
+             conf_dir=params.tez_conf_dir,
+             configurations=params.config['configurations']['tez-site'],
+             owner=params.tez_user,
+             mode="f",
+             configuration_attributes=params.config['configuration_attributes']['tez-site']
+  )
 

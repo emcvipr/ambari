@@ -18,6 +18,14 @@
 
 var App = require('app');
 
+var delay = (function(){
+  var timer = 0;
+  return function(callback, ms){
+    clearTimeout (timer);
+    timer = setTimeout(callback, ms);
+  };
+})();
+
 /**
  * Abstract view for config fields.
  * Add popover support to control
@@ -30,6 +38,7 @@ App.ServiceConfigPopoverSupport = Ember.Mixin.create({
   serviceConfig: null,
   attributeBindings:['readOnly'],
   isPopoverEnabled: true,
+  popoverPlacement: 'right',
 
   didInsertElement: function () {
     $('body').tooltip({
@@ -44,7 +53,7 @@ App.ServiceConfigPopoverSupport = Ember.Mixin.create({
           (this.get('serviceConfig.displayName') == this.get('serviceConfig.name')) ? '' : this.get('serviceConfig.name')
         ),
         content: this.get('serviceConfig.description'),
-        placement: 'right',
+        placement: this.get('popoverPlacement'),
         trigger: 'hover'
       });
     }
@@ -59,16 +68,83 @@ App.ServiceConfigPopoverSupport = Ember.Mixin.create({
   }.property('serviceConfig.isEditable')
 });
 
+App.SupportsDependentConfigs = Ember.Mixin.create({
+
+  /**
+   * do not apply recommended value if user change value by himself.
+   */
+  keyUp: function() {
+    if (App.get('isClusterSupportsEnhancedConfigs')) {
+      this.get('controller').removeCurrentFromDependentList(this.get('serviceConfig') || this.get('config'));
+    }
+  },
+
+  /**
+   * method send request to check if some of dependent configs was changes
+   * and in case there was changes shows popup with info about changed configs
+   *
+   * @param {App.ServiceConfigProperty} config
+   * @returns {$.Deferred}
+   */
+  sendRequestRorDependentConfigs: function(config) {
+    if (App.get('isClusterSupportsEnhancedConfigs') && ['mainServiceInfoConfigsController','wizardStep7Controller'].contains(this.get('controller.name'))) {
+      var name = config.get('name');
+      var controller = this.get('controller');
+      var type = App.config.getConfigTagFromFileName(config.get('filename'));
+      var p = App.StackConfigProperty.find(name + '_' + type);
+      if (p && p.get('propertyDependedBy.length') > 0) {
+        return controller.getRecommendationsForDependencies([{
+          "type": type,
+          "name": name
+        }], false, function() {
+          controller.removeCurrentFromDependentList(config);
+        });
+      } else {
+        controller.removeCurrentFromDependentList(config);
+      }
+    }
+
+    return $.Deferred().resolve().promise();
+  },
+
+  /**
+   * Restore values for dependent configs by parent config info.
+   * NOTE: If dependent config inherited from multiply configs its
+   * value will be restored only when all parent configs are being restored.
+   *
+   * @param {App.ServiceConfigProperty} parentConfig
+   */
+  restoreDependentConfigs: function(parentConfig) {
+    var controller = this.get('controller');
+    var dependentConfigs = controller.get('_dependentConfigValues');
+    if (controller.updateDependentConfigs) {
+      controller.updateDependentConfigs();
+      controller.set('_dependentConfigValues', dependentConfigs.reject(function(item) {
+        if (item.parentConfigs.contains(parentConfig.get('name'))) {
+          if (item.parentConfigs.length > 1) {
+            item.parentConfigs.removeObject(parentConfig.get('name'));
+          } else {
+            return true;
+          }
+        }
+        return false;
+      }));
+    }
+  }
+
+});
+
 /**
- * mixin set class that serve as unique element identificator,
+ * mixin set class that serve as unique element identifier,
  * id not used in order to avoid collision with ember ids
  */
 App.ServiceConfigCalculateId = Ember.Mixin.create({
   idClass: Ember.computed(function () {
-    var label = Em.get(this, 'serviceConfig.name') ? Em.get(this, 'serviceConfig.name').toLowerCase().replace(/\./g, '-') : '',
-        fileName = Em.get(this, 'serviceConfig.filename') ? Em.get(this, 'serviceConfig.filename').toLowerCase().replace(/\./g, '-') : '',
-        group = Em.get(this, 'serviceConfig.group.name') || 'default';
-        isOrigin = Em.get(this, 'serviceConfig.compareConfigs.length') > 0 ? '-origin' : '';
+    var config = this.get('config') && this.get('config.widget') ? this.get('config') : this.get('serviceConfig') || {};
+    var label = Em.get(config, 'name') ? Em.get(config, 'name').toLowerCase().replace(/\./g, '-') : '',
+        fileName = Em.get(config, 'filename') ? Em.get(config, 'filename').toLowerCase().replace(/\./g, '-') : '',
+        group = Em.get(config, 'group.name') || 'default',
+        isOrigin = Em.getWithDefault(config, 'compareConfigs.length', 0) > 0 ? '-origin' : '';
     return 'service-config-' + label + '-' + fileName + '-' + group + isOrigin;
   }),
   classNameBindings: 'idClass'
@@ -78,7 +154,7 @@ App.ServiceConfigCalculateId = Ember.Mixin.create({
  * Default input control
  * @type {*}
  */
-App.ServiceConfigTextField = Ember.TextField.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, {
+App.ServiceConfigTextField = Ember.TextField.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, App.SupportsDependentConfigs, {
 
   valueBinding: 'serviceConfig.value',
   classNameBindings: 'textFieldClassName',
@@ -88,15 +164,22 @@ App.ServiceConfigTextField = Ember.TextField.extend(App.ServiceConfigPopoverSupp
     if (event.keyCode == 13) {
       return false;
     }
+    var self = this;
+    delay(function(){
+      self.sendRequestRorDependentConfigs(self.get('serviceConfig'));
+    }, 500);
   },
   //Set editDone true for last edited config text field parameter
-  focusOut: function (event) {
+  focusOut: function () {
+    this.sendRequestRorDependentConfigs(this.get('serviceConfig'));
     this.get('serviceConfig').set("editDone", true);
   },
   //Set editDone false for all current category config text field parameter
-  focusIn: function (event) {
+  focusIn: function () {
     if (!this.get('serviceConfig.isOverridden') && !this.get('serviceConfig.isComparison')) {
-      this.get("parentView.categoryConfigsAll").setEach("editDone", false);
+      if (this.get('parentView.categoryConfigsAll')) {
+        this.get("parentView.categoryConfigsAll").setEach("editDone", false);
+      }
     }
   },
 
@@ -116,10 +199,22 @@ App.ServiceConfigTextField = Ember.TextField.extend(App.ServiceConfigPopoverSupp
  * Customized input control with Units type specified
  * @type {Em.View}
  */
-App.ServiceConfigTextFieldWithUnit = Ember.View.extend(App.ServiceConfigPopoverSupport, {
+App.ServiceConfigTextFieldWithUnit = Ember.View.extend(App.ServiceConfigPopoverSupport, App.SupportsDependentConfigs, {
   valueBinding: 'serviceConfig.value',
   classNames: ['input-append', 'with-unit'],
   placeholderBinding: 'serviceConfig.defaultValue',
+
+  //Set editDone true for last edited config text field parameter
+  focusOut: function () {
+    this.sendRequestRorDependentConfigs(this.get('serviceConfig'));
+  },
+
+  keyPress: function (event) {
+    var self = this;
+    delay(function(){
+      self.sendRequestRorDependentConfigs(self.get('serviceConfig'));
+    }, 500);
+  },
 
   templateName: require('templates/wizard/controls_service_config_textfield_with_unit')
 });
@@ -171,18 +266,31 @@ App.ServiceConfigPasswordField = Ember.TextField.extend({
  * Textarea control
  * @type {*}
  */
-App.ServiceConfigTextArea = Ember.TextArea.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, {
+App.ServiceConfigTextArea = Ember.TextArea.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, App.SupportsDependentConfigs, {
+
+  focusOut: function () {
+    this.sendRequestRorDependentConfigs(this.get('serviceConfig'));
+  },
+
+  keyPress: function (event) {
+    var self = this;
+    delay(function(){
+      self.sendRequestRorDependentConfigs(self.get('serviceConfig'));
+    }, 500);
+  },
 
   valueBinding: 'serviceConfig.value',
   rows: 4,
-  classNames: ['span9', 'directories']
+  classNames: ['directories'],
+  classNameBindings: ['widthClass'],
+  widthClass: 'span9'
 });
 
 /**
  * Textarea control for content type
  * @type {*}
  */
-App.ServiceConfigTextAreaContent = Ember.TextArea.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, {
+App.ServiceConfigTextAreaContent = Ember.TextArea.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, App.SupportsDependentConfigs, {
 
   valueBinding: 'serviceConfig.value',
   rows: 20,
@@ -201,7 +309,7 @@ App.ServiceConfigBigTextArea = App.ServiceConfigTextArea.extend(App.ServiceConfi
  * Checkbox control
  * @type {*}
  */
-App.ServiceConfigCheckbox = Ember.Checkbox.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, {
+App.ServiceConfigCheckbox = Ember.Checkbox.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, App.SupportsDependentConfigs, {
 
   allowedPairs: {
     'trueFalse': ["true", "false"],
@@ -251,6 +359,7 @@ App.ServiceConfigCheckbox = Ember.Checkbox.extend(App.ServiceConfigPopoverSuppor
     if (this.isNotAppropriateValue()){
       this.set('serviceConfig.value', this.get(this.get('checked') + 'Value'));
       this.get('serviceConfig').set("editDone", true);
+      this.sendRequestRorDependentConfigs(this.get('serviceConfig'));
     }
   }.observes('checked'),
 
@@ -303,25 +412,40 @@ App.ServiceConfigCheckboxWithDependencies = App.ServiceConfigCheckbox.extend({
   }
 });
 
-App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, {
+App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, App.SupportsDependentConfigs, {
   templateName: require('templates/wizard/controls_service_config_radio_buttons'),
 
   didInsertElement: function () {
     // on page render, automatically populate JDBC URLs only for default database settings
     // so as to not lose the user's customizations on these fields
     if (['addServiceController', 'installerController'].contains(this.get('controller.wizardController.name'))) {
-      if (/^New\s\w+\sDatabase$/.test(this.get('serviceConfig.value')) || this.dontUseHandleDbConnection.contains(this.get('serviceConfig.name'))) {
+      if (/^New\s\w+\sDatabase$/.test(this.get('serviceConfig.value')) ||
+        this.get('dontUseHandleDbConnection').contains(this.get('serviceConfig.name')) ||
+        this.get('serviceConfig.serviceName') === 'RANGER') {
         this.onOptionsChange();
       } else {
+        if (App.get('isHadoopWindowsStack') && /SQL\sauthentication/.test(this.get('serviceConfig.value'))) {
+          this.onOptionsChange();
+        }
         this.handleDBConnectionProperty();
       }
     }
   },
 
   /**
-   * properties with these names don'use handleDBConnectionProperty mathod
+   * properties with these names don'use handleDBConnectionProperty method
    */
-  dontUseHandleDbConnection: ['DB_FLAVOR', 'authentication_method'],
+  dontUseHandleDbConnection: function () {
+    var version = App.get('currentStackVersion').match(/(\d+)[\.,]?(\d+)?/),
+      majorVersion = version?version[1]: 0,
+      minorVersion = version? version[2]: 0;
+    // functionality added in HDP 2.3
+    // remove DB_FLAVOR so it can handle DB Connection checks
+    if (App.get('currentStackName') == 'HDP' && majorVersion >= 2  && minorVersion>= 3) {
+      return ['authentication_method'];
+    }
+    return ['DB_FLAVOR', 'authentication_method'];
+  }.property(),
 
   configs: function () {
     if (this.get('controller.name') == 'mainServiceInfoConfigsController') return this.get('categoryConfigsAll');
@@ -449,6 +573,50 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
               isRequired: isNotExistingMySQLServer
             });
             break;
+          case 'RANGER':
+            var mysqlUrl = 'jdbc:mysql://{0}/{1}',
+              sqlCommand = 'mysql',
+              sqlConnectorJARValue = '/usr/share/java/mysql-connector-java.jar',
+              sqlCommandInvoker = categoryConfigsAll.findProperty('name','SQL_COMMAND_INVOKER'),
+              sqlConnectorJAR = this.get('parentView.serviceConfigs').findProperty('name', 'SQL_CONNECTOR_JAR'),
+              dbFlavor = this.get('serviceConfig.value'),
+              databasesTypes = /MYSQL|POSTGRES|ORACLE|MSSQL/gi,
+              currentDBFlavor = dbFlavor.match(databasesTypes).length?dbFlavor.match(databasesTypes)[0]:'';
+
+            switch (currentDBFlavor.toUpperCase()) {
+              case 'ORACLE':
+                connectionUrlValue = oracleUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = oracleUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'oracle.jdbc.driver.OracleDriver';
+                sqlCommand = 'sqlplus';
+                sqlConnectorJARValue = '/usr/share/java/ojdbc6.jar';
+                break;
+              case 'MYSQL':
+                connectionUrlValue = mysqlUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = mysqlUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'com.mysql.jdbc.Driver';
+                sqlConnectorJARValue = '/usr/share/java/mysql-connector-java.jar';
+                break;
+              case 'POSTGRES':
+                connectionUrlValue = postgresUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = postgresUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'org.postgresql.Driver';
+                sqlCommand = 'psql';
+                sqlConnectorJARValue = '/usr/share/java/postgresql.jar';
+                break;
+              case 'MSSQL':
+                connectionUrlValue = mssqlUrl.format(hostName, databaseName);
+                connectionUrlDefaultValue = mssqlUrl.format(hostNameDefault, databaseNameDefault);
+                dbClassValue = 'com.microsoft.sqlserver.jdbc.SQLServerDriver';
+                sqlCommand = 'sqlcmd';
+                sqlConnectorJARValue = '/usr/share/java/sqljdbc4.jar';
+                break;
+            }
+            this.get('categoryConfigsAll').findProperty('name', 'db_host').set('value', this.get('hostNameProperty.value'));
+            sqlConnectorJAR.set('value',sqlConnectorJARValue);
+            sqlConnectorJAR.set('defaultValue',sqlConnectorJARValue);
+            sqlCommandInvoker.set('value', sqlCommand);
+            break;
         }
         connectionUrl.set('value', connectionUrlValue);
         connectionUrl.set('defaultValue', connectionUrlDefaultValue);
@@ -460,14 +628,14 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
   nameBinding: 'serviceConfig.radioName',
 
   databaseNameProperty: function () {
-    switch (this.get('serviceConfig.serviceName')) {
-      case 'HIVE':
-        return this.get('categoryConfigsAll').findProperty('name', 'ambari.hive.db.schema.name');
-      case 'OOZIE':
-        return this.get('categoryConfigsAll').findProperty('name', 'oozie.db.schema.name');
-      default:
-        return null;
-    }
+    var databaseNameConfig = {
+      'HIVE': 'ambari.hive.db.schema.name',
+      'OOZIE':'oozie.db.schema.name',
+      'RANGER': 'db_name'
+    };
+    return Object.keys(databaseNameConfig).contains(this.get('serviceConfig.serviceName'))?
+      this.get('categoryConfigsAll').findProperty('name', databaseNameConfig[this.get('serviceConfig.serviceName')]):
+      null;
   }.property('serviceConfig.serviceName'),
 
   databaseName: function () {
@@ -532,6 +700,33 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
       } else {
         returnValue = this.get('categoryConfigsAll').findProperty('name', 'oozie_hostname');
       }
+    } else if (this.get('serviceConfig.serviceName') === 'RANGER') {
+      if (value) {
+        var databasesTypes = /MYSQL|POSTGRES|ORACLE|MSSQL/gi,
+          currentDBFlavor = value.match(databasesTypes),
+          dbHost = this.get('categoryConfigsAll').findProperty('name', 'db_host'),
+          hostnameConfig = {
+            'MYSQL': 'ranger_mysql_host',
+            'ORACLE': 'ranger_oracle_host',
+            'POSTGRES': 'ranger_postgres_host',
+            'MSSQL': 'ranger_mssql_host'
+          };
+        if (currentDBFlavor) {
+          hostname = this.get('categoryConfigsAll').findProperty('name', hostnameConfig[currentDBFlavor[0].toUpperCase()]);
+        }
+        if (hostname) {
+          if (!hostname.value) {
+            hostname.set('value', this.get('categoryConfigsAll').findProperty('name', 'db_host').get('value'));
+          }
+          Em.set(hostname, 'isUserProperty', false);
+          if (dbHost) {
+            dbHost.set('value', hostname.value);
+          }
+          returnValue = hostname;
+        } else {
+          returnValue = this.get('categoryConfigsAll').findProperty('name', 'db_host');
+        }
+      }
     }
     return returnValue;
   }.property('serviceConfig.serviceName', 'serviceConfig.value'),
@@ -541,19 +736,21 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
   }.property('hostNameProperty.value'),
 
   connectionUrl: function () {
-    if (this.get('serviceConfig.serviceName') === 'HIVE') {
-      return this.get('categoryConfigsAll').findProperty('name', 'javax.jdo.option.ConnectionURL');
-    } else {
-      return this.get('categoryConfigsAll').findProperty('name', 'oozie.service.JPAService.jdbc.url');
-    }
+    var connectionUrlConfig = {
+      'HIVE': 'javax.jdo.option.ConnectionURL',
+      'OOZIE':'oozie.service.JPAService.jdbc.url',
+      'RANGER': 'ranger_jdbc_connection_url'
+    };
+    return this.get('categoryConfigsAll').findProperty('name', connectionUrlConfig[this.get('serviceConfig.serviceName')]);
   }.property('serviceConfig.serviceName'),
 
   dbClass: function () {
-    if (this.get('serviceConfig.serviceName') === 'HIVE') {
-      return this.get('categoryConfigsAll').findProperty('name', 'javax.jdo.option.ConnectionDriverName');
-    } else {
-      return this.get('categoryConfigsAll').findProperty('name', 'oozie.service.JPAService.jdbc.driver');
-    }
+    var dbClassConfig = {
+      'HIVE': 'javax.jdo.option.ConnectionDriverName',
+      'OOZIE':'oozie.service.JPAService.jdbc.driver',
+      'RANGER': 'ranger_jdbc_driver'
+    };
+    return this.get('categoryConfigsAll').findProperty('name', dbClassConfig[this.get('serviceConfig.serviceName')]);
   }.property('serviceConfig.serviceName'),
 
   /**
@@ -565,30 +762,36 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
    * @method handleDBConnectionProperty
    **/
   handleDBConnectionProperty: function() {
-    if (this.dontUseHandleDbConnection.contains(this.get('serviceConfig.name')))
+    if (this.get('dontUseHandleDbConnection').contains(this.get('serviceConfig.name'))) {
       return;
-    var handledProperties = ['oozie_database', 'hive_database'];
+    }
+    var handledProperties = ['oozie_database', 'hive_database', 'DB_FLAVOR'];
     var currentValue = this.get('serviceConfig.value');
-    var databases = /MySQL|PostgreSQL|Oracle|Derby|MSSQL/gi;
+    var databases = /MySQL|PostgreSQL|Postgres|Oracle|Derby|MSSQL/gi;
     var currentDB = currentValue.match(databases)[0];
-    var databasesTypes = /MySQL|PostgreS|Oracle|Derby|MSSQL/gi;
+    var databasesTypes = /MySQL|Postgres|Oracle|Derby|MSSQL/gi;
     var currentDBType = currentValue.match(databasesTypes)[0];
-    var existingDatabase = /existing/gi.test(currentValue);
+    var checkDatabase = /existing/gi.test(currentValue);
     // db connection check button show up if existed db selected
     var propertyAppendTo1 = this.get('categoryConfigsAll').findProperty('displayName', 'Database URL');
-    if (currentDB && existingDatabase) {
-      if (handledProperties.contains(this.get('serviceConfig.name'))) {
-        if (propertyAppendTo1) propertyAppendTo1.set('additionalView', App.CheckDBConnectionView.extend({databaseName: currentDB}));
-      }
-    } else {
-      propertyAppendTo1.set('additionalView', null);
-    }
     // warning msg under database type radio buttons, to warn the user to setup jdbc driver if existed db selected
     var propertyHive = this.get('categoryConfigsAll').findProperty('displayName', 'Hive Database');
     var propertyOozie = this.get('categoryConfigsAll').findProperty('displayName', 'Oozie Database');
     var propertyAppendTo2 = propertyHive ? propertyHive : propertyOozie;
-    if (currentDB && existingDatabase) {
+    // RANGER specific
+    if (this.get('serviceConfig.serviceName') === 'RANGER') {
+      propertyAppendTo1 = this.get('categoryConfigsAll').findProperty('name', 'db_name');
+      propertyAppendTo2 = this.get('categoryConfigsAll').findProperty('name', 'DB_FLAVOR');
+      // check for all db types when installing Ranger - not only for existing ones
+      checkDatabase = true;
+    }
+    propertyAppendTo1.set('additionalView', null);
+    propertyAppendTo2.set('additionalView', null);
+    if (currentDB && checkDatabase) {
       if (handledProperties.contains(this.get('serviceConfig.name'))) {
+        if (propertyAppendTo1) {
+          propertyAppendTo1.set('additionalView', App.CheckDBConnectionView.extend({databaseName: currentDB}));
+        }
         if (propertyAppendTo2) {
           propertyAppendTo2.set('additionalView', Ember.View.extend({
             template: Ember.Handlebars.compile('<div class="alert">{{{view.message}}}</div>'),
@@ -597,6 +800,7 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
         }
       }
     } else {
+      propertyAppendTo1.set('additionalView', null);
       propertyAppendTo2.set('additionalView', null);
     }
   }.observes('serviceConfig.value'),
@@ -638,7 +842,7 @@ App.ServiceConfigRadioButton = Ember.Checkbox.extend({
         components.forEach(function (_component) {
           if (_component.foreignKeys) {
             _component.foreignKeys.forEach(function (_componentName) {
-              if (this.get('parentView.parentView.serviceConfigs').someProperty('name', _componentName)) {
+              if (this.get('parentView.parentView.serviceConfigs') && this.get('parentView.parentView.serviceConfigs').someProperty('name', _componentName)) {
                 var component = this.get('parentView.parentView.serviceConfigs').findProperty('name', _componentName);
                 component.set('isVisible', _component.displayName === this.get('value'));
               }
@@ -655,7 +859,7 @@ App.ServiceConfigRadioButton = Ember.Checkbox.extend({
   }.property('parentView.serviceConfig.isEditable')
 });
 
-App.ServiceConfigComboBox = Ember.Select.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, {
+App.ServiceConfigComboBox = Ember.Select.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, App.SupportsDependentConfigs, {
   contentBinding: 'serviceConfig.options',
   selectionBinding: 'serviceConfig.value',
   placeholderBinding: 'serviceConfig.defaultValue',
@@ -699,7 +903,7 @@ App.ServiceConfigMasterHostView = Ember.View.extend(App.ServiceConfigHostPopover
 
 /**
  * text field property view that enables possibility
- * for check connectio
+ * for check connection
  * @type {*}
  */
 App.checkConnectionView = App.ServiceConfigTextField.extend({
@@ -991,6 +1195,8 @@ App.CheckDBConnectionView = Ember.View.extend({
       return this.get('parentView.service.serviceName').toLowerCase() + '_hostname';
     } else if (this.get('parentView.service.serviceName') === 'KERBEROS') {
       return 'kdc_host';
+    } else if (this.get('parentView.service.serviceName') === 'RANGER') {
+      return '{0}_{1}_host'.format(this.get('parentView.service.serviceName').toLowerCase(), this.get('databaseName').toLowerCase());
     }
     return '{0}_existing_{1}_host'.format(this.get('parentView.service.serviceName').toLowerCase(), this.get('databaseName').toLowerCase());
   }.property('databaseName'),
@@ -1001,20 +1207,21 @@ App.CheckDBConnectionView = Ember.View.extend({
   /** @property {object} requiredProperties - properties that necessary for database connection **/
   requiredProperties: function() {
     var propertiesMap = {
-      OOZIE: ['oozie.db.schema.name','oozie.service.JPAService.jdbc.username','oozie.service.JPAService.jdbc.password','oozie.service.JPAService.jdbc.driver','oozie.service.JPAService.jdbc.url'],
-      HIVE: ['ambari.hive.db.schema.name','javax.jdo.option.ConnectionUserName','javax.jdo.option.ConnectionPassword','javax.jdo.option.ConnectionDriverName','javax.jdo.option.ConnectionURL'],
-      KERBEROS: ['kdc_host']
+      OOZIE: ['oozie.db.schema.name', 'oozie.service.JPAService.jdbc.username', 'oozie.service.JPAService.jdbc.password', 'oozie.service.JPAService.jdbc.driver', 'oozie.service.JPAService.jdbc.url'],
+      HIVE: ['ambari.hive.db.schema.name', 'javax.jdo.option.ConnectionUserName', 'javax.jdo.option.ConnectionPassword', 'javax.jdo.option.ConnectionDriverName', 'javax.jdo.option.ConnectionURL'],
+      KERBEROS: ['kdc_host'],
+      RANGER: ['db_root_user', 'db_root_password', 'db_name', 'ranger_jdbc_connection_url', 'ranger_jdbc_driver']
     };
     return propertiesMap[this.get('parentView.service.serviceName')];
   }.property(),
   /** @property {Object} propertiesPattern - check pattern according to type of connection properties **/
   propertiesPattern: function() {
     var patterns = {
-      db_connection_url: /jdbc\.url|connectionurl|kdc_host/ig
+      db_connection_url: /jdbc\.url|connection_url|connectionurl|kdc_host/ig
     };
     if (this.get('parentView.service.serviceName') != "KERBEROS") {
-      patterns.user_name = /(username|dblogin)$/ig;
-      patterns.user_passwd = /(dbpassword|password)$/ig;
+      patterns.user_name = /(username|dblogin|root_user)$/ig;
+      patterns.user_passwd = /(dbpassword|password|root_password)$/ig;
     }
     return patterns;
   }.property('parentView.service.serviceName'),
@@ -1024,7 +1231,8 @@ App.CheckDBConnectionView = Ember.View.extend({
       'OOZIE': 'oozie_ambari_host',
       'HDFS': 'hadoop_host',
       'HIVE': 'hive_ambari_host',
-      'KERBEROS': 'kdc_host'
+      'KERBEROS': 'kdc_host',
+      'RANGER': 'rangerserver_host'
     };
     return this.get('parentView.categoryConfigsAll').findProperty('name', serviceMasterMap[this.get('parentView.service.serviceName')]).get('value');
   }.property('parentView.service.serviceName', 'parentView.categoryConfigsAll.@each.value'),
@@ -1033,6 +1241,17 @@ App.CheckDBConnectionView = Ember.View.extend({
     var propObj = {};
     for (var key in this.get('propertiesPattern')) {
       propObj[key] = this.getConnectionProperty(this.get('propertiesPattern')[key]);
+    }
+
+    if (this.get('parentView.service.serviceName') === 'RANGER') {
+      var dbFlavor = this.get('parentView.categoryConfigsAll').findProperty('name','DB_FLAVOR').get('value'),
+        databasesTypes = /MYSQL|POSTGRES|ORACLE|MSSQL/gi,
+        dbType = dbFlavor.match(databasesTypes)?dbFlavor.match(databasesTypes)[0].toLowerCase():'';
+
+      if (dbType==='oracle') {
+        // fixes oracle SYSDBA issue
+        propObj['user_name'] = "\'%@ as sysdba\'".fmt(propObj['user_name']);
+      }
     }
     return propObj;
   }.property('parentView.categoryConfigsAll.@each.value'),
@@ -1060,7 +1279,7 @@ App.CheckDBConnectionView = Ember.View.extend({
         content: Em.I18n.t('installer.controls.checkConnection.popover').format(name),
         placement: 'right',
         trigger: 'hover'
-    });
+      });
     }
     this.handlePropertiesValidation();
     this.getAmbariProperties();
@@ -1087,10 +1306,10 @@ App.CheckDBConnectionView = Ember.View.extend({
     this.set('isValidationPassed', isValid);
   }.observes('parentView.categoryConfigsAll.@each.isValid', 'parentView.categoryConfigsAll.@each.value', 'databaseName'),
 
-  getConnectionProperty: function(regexp, isGetName) {
-    var _this = this;
-    var propertyName = _this.get('requiredProperties').filter(function(item) {
-      return regexp.test(item);
+   getConnectionProperty: function(regexp, isGetName) {
+   var _this = this;
+      var propertyName = _this.get('requiredProperties').filter(function(item) {
+    return regexp.test(item);
     })[0];
     return (isGetName) ? propertyName : _this.get('parentView.categoryConfigsAll').findProperty('name', propertyName).get('value');
   },
@@ -1352,18 +1571,63 @@ App.CheckDBConnectionView = Ember.View.extend({
 });
 
 /**
- *
+ * View with input field used to repo-version URLs
  * @type {*}
  */
 App.BaseUrlTextField = Ember.TextField.extend({
 
+  layout: Ember.Handlebars.compile('<div class="pull-left">{{yield}}</div> {{#if view.valueWasChanged}}<div class="pull-right"><a class="btn-small" {{action "restoreValue" target="view"}}><i class="icon-undo"></i></a></div>{{/if}}'),
+
+  /**
+   * Binding in the template
+   * @type {App.RepositoryVersion}
+   */
+  repository: null,
+
+  /**
+   * @type {string}
+   */
   valueBinding: 'repository.baseUrl',
 
-  keyUp: function (event) {
+  /**
+   * @type {string}
+   */
+  defaultValue: '',
+
+  /**
+   * Determines if user have put some new value
+   * @type {boolean}
+   */
+  valueWasChanged: false,
+
+  didInsertElement: function () {
+    this.set('defaultValue', this.get('value'));
+    this.addObserver('value', this, this.valueWasChangedObs);
+  },
+
+  valueWasChangedObs: function () {
+    var value = this.get('value'),
+      defaultValue = this.get('defaultValue');
+    this.set('valueWasChanged', value !== defaultValue);
+  },
+
+  /**
+   * Restore value and unset error-flag
+   * @method restoreValue
+   */
+  restoreValue: function () {
+    this.set('value', this.get('defaultValue'));
+    this.keyUp();
+  },
+
+  /**
+   * Remove error-highlight after user puts some new value
+   * @method keyUp
+   */
+  keyUp: function () {
     if (Em.get(this, 'repository.hasError')) {
       Em.set(this, 'repository.hasError', false);
     }
   }
 
 });
-

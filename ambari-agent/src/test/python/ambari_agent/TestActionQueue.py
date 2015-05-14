@@ -35,9 +35,10 @@ from ambari_agent.CustomServiceOrchestrator import CustomServiceOrchestrator
 from ambari_agent.PythonExecutor import PythonExecutor
 from ambari_agent.CommandStatusDict import CommandStatusDict
 from ambari_agent.ActualConfigHandler import ActualConfigHandler
+from ambari_agent.RecoveryManager import RecoveryManager
 from FileCache import FileCache
 from ambari_commons import OSCheck
-from only_for_platform import only_for_platform, get_platform, PLATFORM_LINUX, PLATFORM_WINDOWS
+from only_for_platform import only_for_platform, get_platform, not_for_platform, PLATFORM_LINUX, PLATFORM_WINDOWS
 
 if get_platform() != PLATFORM_WINDOWS:
   os_distro_value = ('Suse','11','Final')
@@ -57,6 +58,19 @@ class TestActionQueue(TestCase):
     'commandType': 'EXECUTION_COMMAND',
     'role': u'DATANODE',
     'roleCommand': u'INSTALL',
+    'commandId': '1-1',
+    'taskId': 3,
+    'clusterName': u'cc',
+    'serviceName': u'HDFS',
+    'hostLevelParams': {},
+    'configurations':{'global' : {}},
+    'configurationTags':{'global' : { 'tag': 'v1' }}
+  }
+
+  datanode_auto_start_command = {
+    'commandType': 'AUTO_EXECUTION_COMMAND',
+    'role': u'DATANODE',
+    'roleCommand': u'START',
     'commandId': '1-1',
     'taskId': 3,
     'clusterName': u'cc',
@@ -162,6 +176,28 @@ class TestActionQueue(TestCase):
     'hostLevelParams': {}
   }
 
+  retryable_command = {
+    'commandType': 'EXECUTION_COMMAND',
+    'role': 'NAMENODE',
+    'roleCommand': 'INSTALL',
+    'commandId': '1-1',
+    'taskId': 19,
+    'clusterName': 'c1',
+    'serviceName': 'HDFS',
+    'configurations':{'global' : {}},
+    'configurationTags':{'global' : { 'tag': 'v123' }},
+    'commandParams' :  {
+      'script_type' : 'PYTHON',
+      'script' : 'script.py',
+      'command_timeout' : '600',
+      'jdk_location' : '.',
+      'service_package_folder' : '.',
+      'command_retry_enabled' : 'true',
+      'command_retry_max_attempt_count' : '3'
+    },
+    'hostLevelParams' : {}
+  }
+
   background_command = {
     'commandType': 'BACKGROUND_EXECUTION_COMMAND',
     'role': 'NAMENODE',
@@ -205,14 +241,17 @@ class TestActionQueue(TestCase):
   }
 
 
+  @patch.object(AmbariConfig, "get_parallel_exec_option")
   @patch.object(ActionQueue, "process_command")
   @patch.object(Queue, "get")
   @patch.object(CustomServiceOrchestrator, "__init__")
   def test_ActionQueueStartStop(self, CustomServiceOrchestrator_mock,
-                                get_mock, process_command_mock):
+                                get_mock, process_command_mock, get_parallel_exec_option_mock):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
     config = MagicMock()
+    get_parallel_exec_option_mock.return_value = 0
+    config.get_parallel_exec_option = get_parallel_exec_option_mock
     actionQueue = ActionQueue(config, dummy_controller)
     actionQueue.start()
     time.sleep(0.1)
@@ -285,6 +324,85 @@ class TestActionQueue(TestCase):
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch("__builtin__.open")
   @patch.object(ActionQueue, "status_update_callback")
+  def test_auto_execute_command(self, status_update_callback_mock, open_mock):
+    # Make file read calls visible
+    def open_side_effect(file, mode):
+      if mode == 'r':
+        file_mock = MagicMock()
+        file_mock.read.return_value = "Read from " + str(file)
+        return file_mock
+      else:
+        return self.original_open(file, mode)
+    open_mock.side_effect = open_side_effect
+
+    config = AmbariConfig()
+    tempdir = tempfile.gettempdir()
+    config.set('agent', 'prefix', tempdir)
+    config.set('agent', 'cache_dir', "/var/lib/ambari-agent/cache")
+    config.set('agent', 'tolerate_download_failures', "true")
+    dummy_controller = MagicMock()
+    dummy_controller.recovery_manager = RecoveryManager()
+    dummy_controller.recovery_manager.update_config(5, 5, 1, 11, True, False)
+
+    actionQueue = ActionQueue(config, dummy_controller)
+    unfreeze_flag = threading.Event()
+    python_execution_result_dict = {
+      'stdout': 'out',
+      'stderr': 'stderr',
+      'structuredOut' : ''
+    }
+
+    def side_effect(command, tmpoutfile, tmperrfile, override_output_files=True, retry=False):
+      unfreeze_flag.wait()
+      return python_execution_result_dict
+    def patched_aq_execute_command(command):
+      # We have to perform patching for separate thread in the same thread
+      with patch.object(CustomServiceOrchestrator, "runCommand") as runCommand_mock:
+        runCommand_mock.side_effect = side_effect
+        actionQueue.process_command(command)
+
+    python_execution_result_dict['status'] = 'COMPLETE'
+    python_execution_result_dict['exitcode'] = 0
+    self.assertFalse(actionQueue.tasks_in_progress_or_pending())
+    # We call method in a separate thread
+    execution_thread = Thread(target = patched_aq_execute_command ,
+                              args = (self.datanode_auto_start_command, ))
+    execution_thread.start()
+    #  check in progress report
+    # wait until ready
+    while True:
+      time.sleep(0.1)
+      if actionQueue.tasks_in_progress_or_pending():
+        break
+    # Continue command execution
+    unfreeze_flag.set()
+    # wait until ready
+    while actionQueue.tasks_in_progress_or_pending():
+      time.sleep(0.1)
+      report = actionQueue.result()
+
+    self.assertEqual(len(report['reports']), 0)
+
+    ## Test failed execution
+    python_execution_result_dict['status'] = 'FAILED'
+    python_execution_result_dict['exitcode'] = 13
+    # We call method in a separate thread
+    execution_thread = Thread(target = patched_aq_execute_command ,
+                              args = (self.datanode_auto_start_command, ))
+    execution_thread.start()
+    unfreeze_flag.set()
+    #  check in progress report
+    # wait until ready
+    report = actionQueue.result()
+    while actionQueue.tasks_in_progress_or_pending():
+      time.sleep(0.1)
+      report = actionQueue.result()
+
+    self.assertEqual(len(report['reports']), 0)
+
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch("__builtin__.open")
+  @patch.object(ActionQueue, "status_update_callback")
   def test_execute_command(self, status_update_callback_mock, open_mock):
     # Make file read calls visible
     def open_side_effect(file, mode):
@@ -309,7 +427,8 @@ class TestActionQueue(TestCase):
       'stderr': 'stderr',
       'structuredOut' : ''
       }
-    def side_effect(command, tmpoutfile, tmperrfile):
+
+    def side_effect(command, tmpoutfile, tmperrfile, override_output_files=True, retry=False):
       unfreeze_flag.wait()
       return python_execution_result_dict
     def patched_aq_execute_command(command):
@@ -344,7 +463,9 @@ class TestActionQueue(TestCase):
                 'taskId': 3,
                 'exitCode': 777}
     self.assertEqual(report['reports'][0], expected)
-    # Continue command execution
+    self.assertTrue(actionQueue.tasks_in_progress_or_pending())
+
+  # Continue command execution
     unfreeze_flag.set()
     # wait until ready
     while report['reports'][0]['status'] == 'IN_PROGRESS':
@@ -457,7 +578,7 @@ class TestActionQueue(TestCase):
     }
     cso_runCommand_mock.return_value = custom_service_orchestrator_execution_result_dict
 
-    config = AmbariConfig().getConfig()
+    config = AmbariConfig()
     tempdir = tempfile.gettempdir()
     config.set('agent', 'prefix', tempdir)
     config.set('agent', 'cache_dir', "/var/lib/ambari-agent/cache")
@@ -499,7 +620,7 @@ class TestActionQueue(TestCase):
     }
     cso_runCommand_mock.return_value = custom_service_orchestrator_execution_result_dict
 
-    config = AmbariConfig().getConfig()
+    config = AmbariConfig()
     tempdir = tempfile.gettempdir()
     config.set('agent', 'prefix', tempdir)
     config.set('agent', 'cache_dir', "/var/lib/ambari-agent/cache")
@@ -540,9 +661,11 @@ class TestActionQueue(TestCase):
                                   status_update_callback):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
-    actionQueue = ActionQueue(AmbariConfig().getConfig(), dummy_controller)
+    actionQueue = ActionQueue(AmbariConfig(), dummy_controller)
 
     build_mock.return_value = {'dummy report': '' }
+
+    dummy_controller.recovery_manager = RecoveryManager()
 
     requestComponentStatus_mock.reset_mock()
     requestComponentStatus_mock.return_value = {'exitcode': 0 }
@@ -574,7 +697,7 @@ class TestActionQueue(TestCase):
                                   status_update_callback):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
-    actionQueue = ActionQueue(AmbariConfig().getConfig(), dummy_controller)
+    actionQueue = ActionQueue(AmbariConfig(), dummy_controller)
 
 
     requestComponentStatus_mock.reset_mock()
@@ -594,14 +717,42 @@ class TestActionQueue(TestCase):
     self.assertEqual(len(report['componentStatus']), 1)
     self.assertTrue(report['componentStatus'][0].has_key('alerts'))
 
+  @patch.object(AmbariConfig, "get_parallel_exec_option")
   @patch.object(ActionQueue, "process_command")
   @patch.object(Queue, "get")
   @patch.object(CustomServiceOrchestrator, "__init__")
   def test_reset_queue(self, CustomServiceOrchestrator_mock,
-                                get_mock, process_command_mock):
+                                get_mock, process_command_mock, gpeo_mock):
+    CustomServiceOrchestrator_mock.return_value = None
+    dummy_controller = MagicMock()
+    dummy_controller.recovery_manager = RecoveryManager()
+    config = MagicMock()
+    gpeo_mock.return_value = 0
+    config.get_parallel_exec_option = gpeo_mock
+    actionQueue = ActionQueue(config, dummy_controller)
+    actionQueue.start()
+    actionQueue.put([self.datanode_install_command, self.hbase_install_command])
+    self.assertEqual(2, actionQueue.commandQueue.qsize())
+    self.assertTrue(actionQueue.tasks_in_progress_or_pending())
+    actionQueue.reset()
+    self.assertTrue(actionQueue.commandQueue.empty())
+    self.assertFalse(actionQueue.tasks_in_progress_or_pending())
+    time.sleep(0.1)
+    actionQueue.stop()
+    actionQueue.join()
+    self.assertEqual(actionQueue.stopped(), True, 'Action queue is not stopped.')
+
+  @patch.object(AmbariConfig, "get_parallel_exec_option")
+  @patch.object(ActionQueue, "process_command")
+  @patch.object(Queue, "get")
+  @patch.object(CustomServiceOrchestrator, "__init__")
+  def test_cancel(self, CustomServiceOrchestrator_mock,
+                       get_mock, process_command_mock, gpeo_mock):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
     config = MagicMock()
+    gpeo_mock.return_value = 0
+    config.get_parallel_exec_option = gpeo_mock
     actionQueue = ActionQueue(config, dummy_controller)
     actionQueue.start()
     actionQueue.put([self.datanode_install_command, self.hbase_install_command])
@@ -613,24 +764,129 @@ class TestActionQueue(TestCase):
     actionQueue.join()
     self.assertEqual(actionQueue.stopped(), True, 'Action queue is not stopped.')
 
+  @patch.object(AmbariConfig, "get_parallel_exec_option")
   @patch.object(ActionQueue, "process_command")
-  @patch.object(Queue, "get")
   @patch.object(CustomServiceOrchestrator, "__init__")
-  def test_cancel(self, CustomServiceOrchestrator_mock,
-                       get_mock, process_command_mock):
+  def test_parallel_exec(self, CustomServiceOrchestrator_mock,
+                         process_command_mock, gpeo_mock):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
     config = MagicMock()
+    gpeo_mock.return_value = 1
+    config.get_parallel_exec_option = gpeo_mock
     actionQueue = ActionQueue(config, dummy_controller)
-    actionQueue.start()
     actionQueue.put([self.datanode_install_command, self.hbase_install_command])
     self.assertEqual(2, actionQueue.commandQueue.qsize())
-    actionQueue.reset()
-    self.assertTrue(actionQueue.commandQueue.empty())
-    time.sleep(0.1)
+    actionQueue.start()
+    time.sleep(1)
     actionQueue.stop()
     actionQueue.join()
     self.assertEqual(actionQueue.stopped(), True, 'Action queue is not stopped.')
+    self.assertEqual(2, process_command_mock.call_count)
+    process_command_mock.assert_any_calls([call(self.datanode_install_command), call(self.hbase_install_command)])
+
+
+  @patch("time.sleep")
+  @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
+  @patch.object(StackVersionsFileHandler, "read_stack_version")
+  @patch.object(CustomServiceOrchestrator, "__init__")
+  def test_execute_retryable_command(self, CustomServiceOrchestrator_mock,
+                                     read_stack_version_mock, sleep_mock
+  ):
+    CustomServiceOrchestrator_mock.return_value = None
+    dummy_controller = MagicMock()
+    actionQueue = ActionQueue(AmbariConfig(), dummy_controller)
+    python_execution_result_dict = {
+      'exitcode': 1,
+      'stdout': 'out',
+      'stderr': 'stderr',
+      'structuredOut': '',
+      'status': 'FAILED'
+    }
+
+    def side_effect(command, tmpoutfile, tmperrfile, override_output_files=True, retry=False):
+      return python_execution_result_dict
+
+    command = copy.deepcopy(self.retryable_command)
+    with patch.object(CustomServiceOrchestrator, "runCommand") as runCommand_mock:
+      runCommand_mock.side_effect = side_effect
+      actionQueue.execute_command(command)
+
+    #assert that python executor start
+    self.assertTrue(runCommand_mock.called)
+    self.assertEqual(3, runCommand_mock.call_count)
+    self.assertEqual(2, sleep_mock.call_count)
+    sleep_mock.assert_has_calls([call(2), call(4)], False)
+    runCommand_mock.assert_has_calls([
+      call(command, '/tmp/ambari-agent/output-19.txt', '/tmp/ambari-agent/errors-19.txt', override_output_files=True, retry=False),
+      call(command, '/tmp/ambari-agent/output-19.txt', '/tmp/ambari-agent/errors-19.txt', override_output_files=False, retry=True),
+      call(command, '/tmp/ambari-agent/output-19.txt', '/tmp/ambari-agent/errors-19.txt', override_output_files=False, retry=True)])
+
+
+  #retryable_command
+  @patch("time.sleep")
+  @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
+  @patch.object(StackVersionsFileHandler, "read_stack_version")
+  @patch.object(CustomServiceOrchestrator, "__init__")
+  def test_execute_retryable_command_fail_and_succeed(self, CustomServiceOrchestrator_mock,
+                                                      read_stack_version_mock, sleep_mock
+  ):
+    CustomServiceOrchestrator_mock.return_value = None
+    dummy_controller = MagicMock()
+    actionQueue = ActionQueue(AmbariConfig(), dummy_controller)
+    execution_result_fail_dict = {
+      'exitcode': 1,
+      'stdout': 'out',
+      'stderr': 'stderr',
+      'structuredOut': '',
+      'status': 'FAILED'
+    }
+    execution_result_succ_dict = {
+      'exitcode': 0,
+      'stdout': 'out',
+      'stderr': 'stderr',
+      'structuredOut': '',
+      'status': 'COMPLETED'
+    }
+
+    command = copy.deepcopy(self.retryable_command)
+    with patch.object(CustomServiceOrchestrator, "runCommand") as runCommand_mock:
+      runCommand_mock.side_effect = [execution_result_fail_dict, execution_result_succ_dict]
+      actionQueue.execute_command(command)
+
+    #assert that python executor start
+    self.assertTrue(runCommand_mock.called)
+    self.assertEqual(2, runCommand_mock.call_count)
+    self.assertEqual(1, sleep_mock.call_count)
+    sleep_mock.assert_any_call(2)
+
+  @patch("time.sleep")
+  @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
+  @patch.object(StackVersionsFileHandler, "read_stack_version")
+  @patch.object(CustomServiceOrchestrator, "__init__")
+  def test_execute_retryable_command_succeed(self, CustomServiceOrchestrator_mock,
+                                             read_stack_version_mock, sleep_mock
+  ):
+    CustomServiceOrchestrator_mock.return_value = None
+    dummy_controller = MagicMock()
+    actionQueue = ActionQueue(AmbariConfig(), dummy_controller)
+    execution_result_succ_dict = {
+      'exitcode': 0,
+      'stdout': 'out',
+      'stderr': 'stderr',
+      'structuredOut': '',
+      'status': 'COMPLETED'
+    }
+
+    command = copy.deepcopy(self.retryable_command)
+    with patch.object(CustomServiceOrchestrator, "runCommand") as runCommand_mock:
+      runCommand_mock.side_effect = [execution_result_succ_dict]
+      actionQueue.execute_command(command)
+
+    #assert that python executor start
+    self.assertTrue(runCommand_mock.called)
+    self.assertFalse(sleep_mock.called)
+    self.assertEqual(1, runCommand_mock.call_count)
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(StackVersionsFileHandler, "read_stack_version")
@@ -645,7 +901,7 @@ class TestActionQueue(TestCase):
                                                          'stderr' : 'err-13'}
     
     dummy_controller = MagicMock()
-    actionQueue = ActionQueue(AmbariConfig().getConfig(), dummy_controller)
+    actionQueue = ActionQueue(AmbariConfig(), dummy_controller)
 
     execute_command = copy.deepcopy(self.background_command)
     actionQueue.put([execute_command])
@@ -661,40 +917,45 @@ class TestActionQueue(TestCase):
     report = actionQueue.result()
     self.assertEqual(len(report['reports']),1)
 
-  @only_for_platform(PLATFORM_LINUX)
+  @not_for_platform(PLATFORM_WINDOWS)
+  @patch.object(CustomServiceOrchestrator, "get_py_executor")
   @patch.object(CustomServiceOrchestrator, "resolve_script_path")
   @patch.object(StackVersionsFileHandler, "read_stack_version")
-  def test_execute_python_executor(self, read_stack_version_mock, resolve_script_path_mock):
+  def test_execute_python_executor(self, read_stack_version_mock, resolve_script_path_mock,
+                                   get_py_executor_mock):
     
     dummy_controller = MagicMock()
-    cfg = AmbariConfig().getConfig()
+    cfg = AmbariConfig()
     cfg.set('agent', 'tolerate_download_failures', 'true')
     cfg.set('agent', 'prefix', '.')
     cfg.set('agent', 'cache_dir', 'background_tasks')
     
     actionQueue = ActionQueue(cfg, dummy_controller)
-    patch_output_file(actionQueue.customServiceOrchestrator.python_executor)
+    pyex = PythonExecutor(actionQueue.customServiceOrchestrator.tmp_dir, actionQueue.customServiceOrchestrator.config)
+    patch_output_file(pyex)
+    get_py_executor_mock.return_value = pyex
     actionQueue.customServiceOrchestrator.dump_command_to_json = MagicMock()
    
     result = {}
     lock = threading.RLock()
     complete_done = threading.Condition(lock)
     
-    def command_complete_w(process_condenced_result, handle):
+    def command_complete_w(process_condensed_result, handle):
       with lock:
-        result['command_complete'] = {'condenced_result' : copy.copy(process_condenced_result), 
+        result['command_complete'] = {'condensed_result' : copy.copy(process_condensed_result),
                                       'handle' : copy.copy(handle),
                                       'command_status' : actionQueue.commandStatuses.get_command_status(handle.command['taskId'])
                                       }
         complete_done.notifyAll()
-    
-    actionQueue.on_background_command_complete_callback = wraped(actionQueue.on_background_command_complete_callback,None, command_complete_w)
+
+    actionQueue.on_background_command_complete_callback = wraped(actionQueue.on_background_command_complete_callback,
+                                                                 None, command_complete_w)
     actionQueue.put([self.background_command])
     actionQueue.processBackgroundQueueSafeEmpty();
     actionQueue.processStatusCommandQueueSafeEmpty();
     
     with lock:
-      complete_done.wait(.1)
+      complete_done.wait(0.1)
       
       finished_status = result['command_complete']['command_status']
       self.assertEqual(finished_status['status'], ActionQueue.COMPLETED_STATUS)

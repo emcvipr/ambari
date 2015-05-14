@@ -22,15 +22,43 @@ import Ember from 'ember';
 
 export default Ember.Object.create({
   isInteger: function (x) {
-    return (x^0) === x;
+    return !isNaN(x);
   },
 
-  isDate: function(date) {
+  isDate: function (date) {
     return moment(date).isValid();
   },
 
   regexes: {
     allUppercase: /^[^a-z]*$/,
-    whitespaces: /^(\s*).*$/
+    whitespaces: /^(\s*).*$/,
+    digits: /^\d+$/,
+    name: /\w+/ig,
+    dotPath: /[a-z.]+/i,
+    setSetting: /^set\s+[\w-.]+(\s+|\s?)=(\s+|\s?)[\w-.]+(\s+|\s?);/gim
+  },
+
+  validationValues: {
+    bool: [
+      Ember.Object.create({ value: 'true' }),
+      Ember.Object.create({ value: 'false' })
+    ],
+
+    execEngine: [
+      Ember.Object.create({ value: 'tez' }),
+      Ember.Object.create({ value: 'mr' })
+    ]
+  },
+
+  insensitiveCompare: function (sourceString) {
+    var args = Array.prototype.slice.call(arguments, 1);
+
+    if (!sourceString) {
+      return;
+    }
+
+    return args.find(function (arg) {
+      return sourceString.match(new RegExp('^' + arg + '$', 'i'));
+    });
   }
 });

@@ -18,6 +18,7 @@
 
 package org.apache.ambari.server.serveraction.kerberos;
 
+import org.apache.ambari.server.security.SecurePasswordHelper;
 import org.apache.ambari.server.utils.ShellCommandUtil;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.directory.server.kerberos.shared.crypto.encryption.KerberosKeyFactory;
@@ -34,12 +35,12 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,13 +52,6 @@ import java.util.Set;
  */
 public abstract class KerberosOperationHandler {
   private final static Logger LOG = LoggerFactory.getLogger(KerberosOperationHandler.class);
-
-  private final static SecureRandom SECURE_RANDOM = new SecureRandom();
-
-  /**
-   * The number of characters to generate for a secure password
-   */
-  protected final static int SECURE_PASSWORD_LENGTH = 18;
 
   /**
    * Kerberos-env configuration property name: ldap_url
@@ -80,10 +74,24 @@ public abstract class KerberosOperationHandler {
   public final static String KERBEROS_ENV_ENCRYPTION_TYPES = "encryption_types";
 
   /**
-   * The set of available characters to use when generating a secure password
+   * Kerberos-env configuration property name: kdc_host
    */
-  private final static char[] SECURE_PASSWORD_CHARS =
-      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890?.!$%^*()-_+=~".toCharArray();
+  public final static String KERBEROS_ENV_KDC_HOST = "kdc_host";
+
+  /**
+   * Kerberos-env configuration property name: admin_server_host
+   */
+  public final static String KERBEROS_ENV_ADMIN_SERVER_HOST = "admin_server_host";
+
+  /**
+   * Kerberos-env configuration property name: executable_search_paths
+   */
+  public final static String KERBEROS_ENV_EXECUTABLE_SEARCH_PATHS = "executable_search_paths";
+
+  /**
+   * An array of String values declaring the default (ordered) list of path to search for executables
+   */
+  private static final String[] DEFAULT_EXECUTABLE_SEARCH_PATHS = {"/usr/bin", "/usr/kerberos/bin", "/usr/sbin", "/usr/lib/mit/bin", "/usr/lib/mit/sbin"};
 
   /**
    * A Map of MIT KDC Encryption types to EncryptionType values.
@@ -182,43 +190,11 @@ public abstract class KerberosOperationHandler {
   private boolean open = false;
 
   /**
-   * Create a secure (random) password using a secure random number generator and a set of (reasonable)
-   * characters.
-   *
-   * @return a String containing the new password
+   * An array of String indicating an ordered list of filesystem paths to use to search for executables
+   * needed to perform Kerberos-related operations. For example, kadmin
    */
-  public String createSecurePassword() {
-    return createSecurePassword(SECURE_PASSWORD_LENGTH);
-  }
+  private String[] executableSearchPaths = null;
 
-  /**
-   * Create a secure (random) password using a secure random number generator and a set of (reasonable)
-   * characters.
-   *
-   * @param length an integer value declaring the length of the password to create,
-   *               if <1, a default will be used.
-   * @return a String containing the new password
-   */
-  public String createSecurePassword(int length) {
-    StringBuilder passwordBuilder;
-
-    // If the supplied length is less than 1 use the default value.
-    if (length < 1) {
-      length = SECURE_PASSWORD_LENGTH;
-    }
-
-    // Create a new StringBuilder and ensure its capacity is set for the length of the password to
-    // be generated
-    passwordBuilder = new StringBuilder(length);
-
-    // For each character to be added to the password, (securely) generate a random number to pull
-    // a random character from the character array
-    for (int i = 0; i < length; i++) {
-      passwordBuilder.append(SECURE_PASSWORD_CHARS[SECURE_RANDOM.nextInt(SECURE_PASSWORD_CHARS.length)]);
-    }
-
-    return passwordBuilder.toString();
-  }
 
   /**
    * Prepares and creates resources to be used by this KerberosOperationHandler.
@@ -317,94 +293,185 @@ public abstract class KerberosOperationHandler {
   }
 
   /**
-   * Create or append to a keytab file using the specified principal and password.
+   * Create a keytab using the specified principal and password.
    *
-   * @param principal  a String containing the principal to test
-   * @param password   a String containing the password to use when creating the principal
-   * @param keytabFile a File containing the absolute path to the keytab file
-   * @return true if the keytab file was successfully created; false otherwise
+   * @param principal a String containing the principal to test
+   * @param password  a String containing the password to use when creating the principal
+   * @param keyNumber a Integer indicating the key number for the keytab entries
+   * @return the created Keytab
    * @throws KerberosOperationException
    */
-  public boolean createKeytabFile(String principal, String password, Integer keyNumber, File keytabFile)
+  protected Keytab createKeytab(String principal, String password, Integer keyNumber)
       throws KerberosOperationException {
-    boolean success = false;
 
     if ((principal == null) || principal.isEmpty()) {
       throw new KerberosOperationException("Failed to create keytab file, missing principal");
-    } else if (password == null) {
+    }
+
+    if (password == null) {
       throw new KerberosOperationException(String.format("Failed to create keytab file for %s, missing password", principal));
-    } else if (keytabFile == null) {
-      throw new KerberosOperationException(String.format("Failed to create keytab file for %s, missing file path", principal));
-    } else {
-      Keytab keytab;
-      Set<EncryptionType> ciphers = new HashSet<EncryptionType>(keyEncryptionTypes);
-      List<KeytabEntry> keytabEntries = new ArrayList<KeytabEntry>();
+    }
 
-      if (keytabFile.exists() && keytabFile.canRead() && (keytabFile.length() > 0)) {
-        // If the keytab file already exists, read it in and append the new keytabs to it so that
-        // potentially important data is not lost
-        try {
-          keytab = Keytab.read(keytabFile);
-        } catch (IOException e) {
-          // There was an issue reading in the existing keytab file... we might loose some keytabs
-          // but that is unlikely...
-          keytab = new Keytab();
+    Set<EncryptionType> ciphers = new HashSet<EncryptionType>(keyEncryptionTypes);
+    List<KeytabEntry> keytabEntries = new ArrayList<KeytabEntry>();
+    Keytab keytab = new Keytab();
+
+
+    if (!ciphers.isEmpty()) {
+      // Create a set of keys and relevant keytab entries
+      Map<EncryptionType, EncryptionKey> keys = KerberosKeyFactory.getKerberosKeys(principal, password, ciphers);
+
+      if (keys != null) {
+        byte keyVersion = (keyNumber == null) ? 0 : keyNumber.byteValue();
+        KerberosTime timestamp = new KerberosTime();
+
+        for (EncryptionKey encryptionKey : keys.values()) {
+          keytabEntries.add(new KeytabEntry(principal, 1, timestamp, keyVersion, encryptionKey));
         }
 
-        // In case there were any existing keytab entries, add them to the new entries list so
-        // they are not lost.  While at it, remove ciphers that already exist for the given principal
-        // so duplicate entries aren't added to the file.
-        List<KeytabEntry> existingEntries = keytab.getEntries();
-        if ((existingEntries != null) && !existingEntries.isEmpty()) {
-
-          for (KeytabEntry entry : existingEntries) {
-            // Remove ciphers that will cause duplicate entries
-            if (principal.equals(entry.getPrincipalName())) {
-              ciphers.remove(entry.getKey().getKeyType());
-            }
-
-            keytabEntries.add(entry);
-          }
-        }
-      } else {
-        keytab = new Keytab();
-      }
-
-      if (ciphers.isEmpty()) {
-        // There are no new keys to create
-        success = true;
-      } else {
-        // Create a set of keys and relevant keytab entries
-        Map<EncryptionType, EncryptionKey> keys = KerberosKeyFactory.getKerberosKeys(principal, password, ciphers);
-
-        if (keys != null) {
-          byte keyVersion = (keyNumber == null) ? 0 : keyNumber.byteValue();
-          KerberosTime timestamp = new KerberosTime();
-
-          for (EncryptionKey encryptionKey : keys.values()) {
-            keytabEntries.add(new KeytabEntry(principal, 1, timestamp, keyVersion, encryptionKey));
-          }
-
-          keytab.setEntries(keytabEntries);
-
-          try {
-            keytab.write(keytabFile);
-            success = true;
-          } catch (IOException e) {
-            String message = String.format("Failed to export keytab file for %s", principal);
-            LOG.error(message, e);
-
-            if (!keytabFile.delete()) {
-              keytabFile.deleteOnExit();
-            }
-
-            throw new KerberosOperationException(message, e);
-          }
-        }
+        keytab.setEntries(keytabEntries);
       }
     }
 
-    return success;
+    return keytab;
+  }
+
+  /**
+   * Create or append to a keytab file using keytab data from another keytab file.
+   * <p/>
+   * If the destination keytab file contains keytab data, that data will be merged with the new data
+   * to create a composite set of keytab entries.
+   *
+   * @param sourceKeytabFile      a File containing the absolute path to the file with the keytab data to store
+   * @param destinationKeytabFile a File containing the absolute path to where the keytab data is to be stored
+   * @return true if the keytab file was successfully created; false otherwise
+   * @throws KerberosOperationException
+   * @see #createKeytabFile(org.apache.directory.server.kerberos.shared.keytab.Keytab, java.io.File)
+   */
+  protected boolean createKeytabFile(File sourceKeytabFile, File destinationKeytabFile)
+      throws KerberosOperationException {
+    return createKeytabFile(readKeytabFile(sourceKeytabFile), destinationKeytabFile);
+  }
+
+  /**
+   * Create or append to a keytab file using the specified principal and password.
+   * <p/>
+   * If the destination keytab file contains keytab data, that data will be merged with the new data
+   * to create a composite set of keytab entries.
+   *
+   * @param principal             a String containing the principal to test
+   * @param password              a String containing the password to use when creating the principal
+   * @param keyNumber             an Integer declaring the relevant key number to use for the keytabs entries
+   * @param destinationKeytabFile a File containing the absolute path to where the keytab data is to be stored
+   * @return true if the keytab file was successfully created; false otherwise
+   * @throws KerberosOperationException
+   * @see #createKeytabFile(org.apache.directory.server.kerberos.shared.keytab.Keytab, java.io.File)
+   */
+  protected boolean createKeytabFile(String principal, String password, Integer keyNumber, File destinationKeytabFile)
+      throws KerberosOperationException {
+    return createKeytabFile(createKeytab(principal, password, keyNumber), destinationKeytabFile);
+  }
+
+  /**
+   * Create or append to a keytab file using the specified Keytab
+   * <p/>
+   * If the destination keytab file contains keytab data, that data will be merged with the new data
+   * to create a composite set of keytab entries.
+   *
+   * @param keytab                the Keytab containing the data to add to the keytab file
+   * @param destinationKeytabFile a File containing the absolute path to where the keytab data is to be stored
+   * @return true if the keytab file was successfully created; false otherwise
+   * @throws KerberosOperationException
+   */
+  protected boolean createKeytabFile(Keytab keytab, File destinationKeytabFile)
+      throws KerberosOperationException {
+
+    if (destinationKeytabFile == null) {
+      throw new KerberosOperationException("The destination file path is null");
+    }
+
+    try {
+      mergeKeytabs(readKeytabFile(destinationKeytabFile), keytab).write(destinationKeytabFile);
+      return true;
+    } catch (IOException e) {
+      String message = "Failed to export keytab file";
+      LOG.error(message, e);
+
+      if (!destinationKeytabFile.delete()) {
+        destinationKeytabFile.deleteOnExit();
+      }
+
+      throw new KerberosOperationException(message, e);
+    }
+  }
+
+  /**
+   * Merge the keytab data from one keytab with the keytab data from a different keytab.
+   * <p/>
+   * If similar key entries exist for the same principal, the updated values will be used
+   *
+   * @param keytab  a Keytab with the base keytab data
+   * @param updates a Keytab containing the updated keytab data
+   * @return a Keytab with the merged data
+   */
+  protected Keytab mergeKeytabs(Keytab keytab, Keytab updates) {
+    List<KeytabEntry> keytabEntries = (keytab == null)
+        ? Collections.<KeytabEntry>emptyList()
+        : new ArrayList<KeytabEntry>(keytab.getEntries());
+    List<KeytabEntry> updateEntries = (updates == null)
+        ? Collections.<KeytabEntry>emptyList()
+        : new ArrayList<KeytabEntry>(updates.getEntries());
+    List<KeytabEntry> mergedEntries = new ArrayList<KeytabEntry>();
+
+    if (keytabEntries.isEmpty()) {
+      mergedEntries.addAll(updateEntries);
+    } else if (updateEntries.isEmpty()) {
+      mergedEntries.addAll(keytabEntries);
+    } else {
+      Iterator<KeytabEntry> iterator = keytabEntries.iterator();
+
+      while (iterator.hasNext()) {
+        KeytabEntry keytabEntry = iterator.next();
+
+        for (KeytabEntry entry : updateEntries) {
+          if (entry.getPrincipalName().equals(keytabEntry.getPrincipalName()) &&
+              entry.getKey().getKeyType().equals(keytabEntry.getKey().getKeyType())) {
+            iterator.remove();
+            break;
+          }
+        }
+      }
+
+      mergedEntries.addAll(keytabEntries);
+      mergedEntries.addAll(updateEntries);
+    }
+
+    Keytab mergedKeytab = new Keytab();
+    mergedKeytab.setEntries(mergedEntries);
+    return mergedKeytab;
+  }
+
+  /**
+   * Reads a file containing keytab data into a new Keytab
+   *
+   * @param file A File containing the path to the file from which to read keytab data
+   * @return a Keytab or null if the file was not readable
+   */
+  protected Keytab readKeytabFile(File file) {
+    Keytab keytab;
+
+    if (file.exists() && file.canRead() && (file.length() > 0)) {
+      try {
+        keytab = Keytab.read(file);
+      } catch (IOException e) {
+        // There was an issue reading in the existing keytab file... quietly assume no data
+        keytab = null;
+      }
+    } else {
+      keytab = null;
+    }
+
+    return keytab;
   }
 
   public KerberosCredential getAdministratorCredentials() {
@@ -484,6 +551,62 @@ public abstract class KerberosOperationHandler {
             ? DEFAULT_CIPHERS
             : keyEncryptionTypes
     );
+  }
+
+
+  /**
+   * Gets the ordered array of search paths used to find Kerberos-related executables.
+   *
+   * @return an array of String values indicating an order list of filesystem paths to search
+   */
+  public String[] getExecutableSearchPaths() {
+    return executableSearchPaths;
+  }
+
+  /**
+   * Sets the ordered array of search paths used to find Kerberos-related executables.
+   * <p/>
+   * If null, a default set of paths will be assumed when searching:
+   * <ul>
+   * <li>/usr/bin</li>
+   * <li>/usr/kerberos/bin</li>
+   * <li>/usr/sbin</li>
+   * <li>/usr/lib/mit/bin</li>
+   * <li>/usr/lib/mit/sbin</li>
+   * </ul>
+   *
+   * @param executableSearchPaths an array of String values indicating an ordered list of filesystem paths to search
+   */
+  public void setExecutableSearchPaths(String[] executableSearchPaths) {
+    this.executableSearchPaths = executableSearchPaths;
+  }
+
+  /**
+   * Sets the ordered array of search paths used to find Kerberos-related executables.
+   * <p/>
+   * If null, a default set of paths will be assumed when searching:
+   * <ul>
+   * <li>/usr/bin</li>
+   * <li>/usr/kerberos/bin</li>
+   * <li>/usr/sbin</li>
+   * </ul>
+   *
+   * @param delimitedExecutableSearchPaths a String containing a comma-delimited (ordered) list of filesystem paths to search
+   */
+  public void setExecutableSearchPaths(String delimitedExecutableSearchPaths) {
+    List<String> searchPaths = null;
+
+    if (delimitedExecutableSearchPaths != null) {
+      searchPaths = new ArrayList<String>();
+      for (String path : delimitedExecutableSearchPaths.split(",")) {
+        path = path.trim();
+        if (!path.isEmpty()) {
+          searchPaths.add(path);
+        }
+      }
+    }
+
+    setExecutableSearchPaths((searchPaths == null) ? null : searchPaths.toArray(new String[searchPaths.size()]));
   }
 
   /**
@@ -674,5 +797,35 @@ public abstract class KerberosOperationHandler {
 
       return builder.toString();
     }
+  }
+
+  /**
+   * Given the name of an executable, searches the configured executable search path for an executable
+   * file with that name.
+   *
+   * @param executable a String declaring the name of the executable to find within the search path
+   * @return the absolute path of the found execute or the name of the executable if not found
+   * within the search path
+   * @see #setExecutableSearchPaths(String)
+   * @see #setExecutableSearchPaths(String[])
+   */
+  protected String getExecutable(String executable) {
+    String[] searchPaths = getExecutableSearchPaths();
+    String executablePath = null;
+
+    if (searchPaths == null) {
+      searchPaths = DEFAULT_EXECUTABLE_SEARCH_PATHS;
+    }
+
+    for (String searchPath : searchPaths) {
+      File executableFile = new File(searchPath, executable);
+
+      if (executableFile.canExecute()) {
+        executablePath = executableFile.getAbsolutePath();
+        break;
+      }
+    }
+
+    return (executablePath == null) ? executable : executablePath;
   }
 }

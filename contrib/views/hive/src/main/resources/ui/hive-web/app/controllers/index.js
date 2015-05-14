@@ -18,6 +18,7 @@
 
 import Ember from 'ember';
 import constants from 'hive/utils/constants';
+import utils from 'hive/utils/functions';
 
 export default Ember.Controller.extend({
   needs: [ constants.namingConventions.openQueries,
@@ -26,7 +27,10 @@ export default Ember.Controller.extend({
            constants.namingConventions.jobLogs,
            constants.namingConventions.jobResults,
            constants.namingConventions.jobExplain,
-           constants.namingConventions.settings
+           constants.namingConventions.settings,
+           constants.namingConventions.visualExplain,
+           constants.namingConventions.tezUI,
+           constants.namingConventions.jobProgress,
   ],
 
   openQueries: Ember.computed.alias('controllers.' + constants.namingConventions.openQueries),
@@ -36,6 +40,9 @@ export default Ember.Controller.extend({
   results: Ember.computed.alias('controllers.' + constants.namingConventions.jobResults),
   explain: Ember.computed.alias('controllers.' + constants.namingConventions.jobExplain),
   settings: Ember.computed.alias('controllers.' + constants.namingConventions.settings),
+  visualExplain: Ember.computed.alias('controllers.' + constants.namingConventions.visualExplain),
+  tezUI: Ember.computed.alias('controllers.' + constants.namingConventions.tezUI),
+  jobProgress: Ember.computed.alias('controllers.' + constants.namingConventions.jobProgress),
 
   canExecute: function () {
     var isModelRunning = this.get('model.isRunning');
@@ -75,16 +82,17 @@ export default Ember.Controller.extend({
     currentParams.setObjects(updatedParams);
   }.observes('openQueries.currentQuery.fileContent'),
 
-  _executeQuery: function (shouldExplain) {
+  _executeQuery: function (shouldExplain, shouldGetVisualExplain) {
     var queryId,
-        self = this,
         query,
         finalQuery,
         job,
+        defer = Ember.RSVP.defer(),
         originalModel = this.get('model');
 
     job = this.store.createRecord(constants.namingConventions.job, {
       title: originalModel.get('title'),
+      sessionTag: originalModel.get('sessionTag'),
       dataBase: this.get('databases.selectedDatabase.name')
     });
 
@@ -101,13 +109,53 @@ export default Ember.Controller.extend({
 
     query = this.get('openQueries').getQueryForModel(originalModel);
 
-    finalQuery = this.buildQuery(query, shouldExplain);
+    query = this.buildQuery(query, shouldExplain, shouldGetVisualExplain);
+
+    // for now we won't support multiple queries
+    // buildQuery will return false it multiple queries
+    // are selected
+    if (!query) {
+      originalModel.set('isRunning', false);
+      defer.reject({
+        responseJSON: {
+          message: 'Running multiple queries is not supported.'
+        }
+      });
+
+      return defer.promise;
+    }
+
+    finalQuery = query;
     finalQuery = this.bindQueryParams(finalQuery);
     finalQuery = this.prependQuerySettings(finalQuery);
 
     job.set('forcedContent', finalQuery);
 
+    if (shouldGetVisualExplain) {
+      return this.getVisualExplainJson(job, originalModel);
+    }
+
     return this.saveQuery(job, originalModel);
+  },
+
+  getVisualExplainJson: function (job, originalModel) {
+    var self = this;
+    var defer = Ember.RSVP.defer();
+
+    job.save().then(function () {
+      self.get('results').getResultsJson(job).then(function (json) {
+        defer.resolve(json);
+        originalModel.set('isRunning', undefined);
+      }, function (err) {
+        defer.reject(err);
+        originalModel.set('isRunning', undefined);
+      });
+    }, function (err) {
+      defer.reject(err);
+        originalModel.set('isRunning', undefined);
+    });
+
+    return defer.promise;
   },
 
   saveQuery: function (job, originalModel) {
@@ -140,46 +188,66 @@ export default Ember.Controller.extend({
   },
 
   prependQuerySettings: function (query) {
-    var settings = this.get('settings').getSettingsString();
+    var validSettings = this.get('settings').getCurrentValidSettings();
+    var regex = new RegExp(utils.regexes.setSetting);
+    var existingSettings = query.match(regex);
 
-    if (settings.length) {
-      return settings + "\n\n" + query;
+    //clear previously added settings
+    if (existingSettings) {
+      existingSettings.forEach(function (setting) {
+        query = query.replace(setting, '');
+      });
+    }
+
+    query = query.trim();
+
+    //update with the current settings
+    if (validSettings) {
+      query = '\n' + query;
+
+      validSettings.forEach(function (setting) {
+        query = setting + '\n' + query;
+      });
     }
 
     return query;
   },
 
-  buildQuery: function (query, shouldExplain) {
+  buildQuery: function (query, shouldExplain, shouldGetVisualExplain) {
     var selections = this.get('openQueries.highlightedText'),
         isQuerySelected = selections && selections[0] !== "",
-        queryComponents = this.extractComponents(query.get('fileContent')),
+        queryContent = query ? query.get('fileContent') : '',
+        queryComponents = this.extractComponents(queryContent),
         finalQuery = '',
-        queries;
+        queries = null;
 
     if (isQuerySelected) {
-      queries = selections.map(function (s) {
-        return s.replace(";", "");
-      });
-    } else {
-      queries = queryComponents.queryString.split(';');
-      queries = queries.filter(Boolean);
+      queryComponents.queryString = selections.join('');
     }
 
-    queries = queries.map(function (query) {
-      var explainIndex = query.indexOf(constants.namingConventions.explainPrefix);
+    queries = queryComponents.queryString.split(';');
+    queries = queries.map(function (s) {
+      return s.trim();
+    });
+    queries = queries.filter(Boolean);
 
+    // return false if multiple queries are selected
+    // @FIXME: Remove this to support multiple queries
+    // if (queries.length > 1) {
+    //   return false;
+    // }
+
+    queries = queries.map(function (query) {
       if (shouldExplain) {
-        if (query.indexOf(constants.namingConventions.explainPrefix) === -1) {
+        query = query.replace(/explain|formatted/gi, '').trim();
+
+        if (shouldGetVisualExplain) {
+          return constants.namingConventions.explainFormattedPrefix + query;
+        } else {
           return constants.namingConventions.explainPrefix + query;
         }
-
-        return query;
       } else {
-        if (query.indexOf(constants.namingConventions.explainPrefix) > -1) {
-          return query.replace(constants.namingConventions.explainPrefix, '');
-        }
-
-        return query;
+        return query.replace(/explain|formatted/gi, '').trim();
       }
     });
 
@@ -192,6 +260,7 @@ export default Ember.Controller.extend({
     }
 
     finalQuery += queries.join(";");
+    finalQuery += ";";
     return finalQuery;
   },
 
@@ -213,7 +282,7 @@ export default Ember.Controller.extend({
     this._super();
 
     // initialize queryParams with an empty array
-    this.set('queryParams', Ember.ArrayProxy.create({ content: Ember.A([]) }))
+    this.set('queryParams', Ember.ArrayProxy.create({ content: Ember.A([]) }));
 
     this.set('queryProcessTabs', Ember.ArrayProxy.create({ content: Ember.A([
       Ember.Object.create({
@@ -232,20 +301,27 @@ export default Ember.Controller.extend({
   },
 
   displayJobTabs: function () {
-    return this.get('content.constructor.typeKey') === constants.namingConventions.job;
+    return this.get('content.constructor.typeKey') === constants.namingConventions.job &&
+           utils.isInteger(this.get('content.id'));
   }.property('content'),
 
   modelChanged: function () {
     var self = this;
     var content = this.get('content');
     var openQueries = this.get('openQueries');
+    var database = this.get('databases').findBy('name', this.get('content.dataBase'));
+
+    if (database) {
+      this.set('databases.selectedDatabase', database);
+    }
 
     //update open queries list when current query model changes
     openQueries.update(content).then(function (isExplainedQuery) {
       var newId = content.get('id');
       var tab = openQueries.getTabForModel(content);
 
-      if (content.get('constructor.typeKey') === constants.namingConventions.job) {
+      //if not an ATS job
+      if (content.get('constructor.typeKey') === constants.namingConventions.job && utils.isInteger(newId)) {
         self.get('queryProcessTabs').forEach(function (queryTab) {
           queryTab.set('id', newId);
         });
@@ -264,12 +340,16 @@ export default Ember.Controller.extend({
     });
   }.observes('content'),
 
+  selectedDatabaseChanged: function () {
+    this.set('content.dataBase', this.get('databases.selectedDatabase.name'));
+  }.observes('databases.selectedDatabase'),
+
   csvUrl: function () {
     if (this.get('content.constructor.typeKey') !== constants.namingConventions.job) {
       return;
     }
 
-    if (this.get('content.status') !== constants.statuses.finished) {
+    if (!utils.insensitiveCompare(this.get('content.status'), constants.statuses.succeeded)) {
       return;
     }
 
@@ -285,7 +365,7 @@ export default Ember.Controller.extend({
     var tabs = this.get('queryProcessTabs');
     var isResultsTabVisible = tabs.findBy('path', constants.namingConventions.subroutes.jobResults).get('visible');
 
-    if (this.get('content.status') === constants.statuses.finished && isResultsTabVisible) {
+    if (utils.insensitiveCompare(this.get('content.status'), constants.statuses.succeeded) && isResultsTabVisible) {
       items.push({
         title: Ember.I18n.t('buttons.saveHdfs'),
         action: 'saveToHDFS'
@@ -295,7 +375,7 @@ export default Ember.Controller.extend({
         items.push(
           Ember.Object.create({
             title: Ember.I18n.t('buttons.saveCsv'),
-            href: this.get('csvUrl')
+            action: 'downloadAsCSV'
           })
         );
       }
@@ -320,7 +400,7 @@ export default Ember.Controller.extend({
   saveToHDFS: function () {
     var job = this.get('content');
 
-    if (job.get('status') !== constants.statuses.finished) {
+    if (!utils.insensitiveCompare(job.get('status'), constants.statuses.succeeded)) {
       return;
     }
 
@@ -336,7 +416,7 @@ export default Ember.Controller.extend({
     }).then(function (response) {
       self.pollSaveToHDFS(response);
     }, function (response) {
-      self.send('addAlert', constants.alerts.error, response.message, "alerts.errors.save.results");
+      self.notify.error(response.responseJSON.message, response.responseJSON.trace);
     });
   },
 
@@ -347,13 +427,13 @@ export default Ember.Controller.extend({
 
     Ember.run.later(function () {
       Ember.$.getJSON(url).then(function (response) {
-        if (response.status !== constants.results.statuses.terminated) {
+        if (!utils.insensitiveCompare(response.status, constants.results.statuses.terminated)) {
           self.pollSaveToHDFS(response);
         } else {
           self.set('content.isRunning', false);
         }
       }, function (response) {
-        self.send('addAlert', constants.alerts.error, response.message, "alerts.errors.save.results");
+        self.notify.error(response.responseJSON.message, response.responseJSON.trace);
       });
     }, 2000);
   },
@@ -372,8 +452,27 @@ export default Ember.Controller.extend({
       this.saveToHDFS();
     },
 
+    downloadAsCSV: function () {
+      var self = this,
+          defer = Ember.RSVP.defer();
+
+      this.send('openModal', 'modal-save', {
+        heading: "modals.download.csv",
+        text: this.get('content.title'),
+        defer: defer
+      });
+
+      defer.promise.then(function (text) {
+        // download file ...
+        var urlString = "%@/?fileName=%@.csv";
+        var url = self.get('csvUrl');
+        url = urlString.fmt(url, text);
+        window.open(url);
+      });
+    },
+
     insertUdf: function (item) {
-      var query = this.get('openQueries').getQueryForModel(this.get('model'));
+      var query = this.get('openQueries.currentQuery');
 
       var queryString = query.get('fileContent');
 
@@ -404,14 +503,17 @@ export default Ember.Controller.extend({
     addQuery: (function () {
       var idCounter = 0;
 
-      return function () {
+      return function (workSheetName) {
         var model = this.store.createRecord(constants.namingConventions.savedQuery, {
           dataBase: this.get('databases.selectedDatabase.name'),
-          title: 'New Query',
-          type: constants.namingConventions.savedQuery,
+          title: workSheetName ? workSheetName : Ember.I18n.t('titles.query.tab'),
           queryFile: '',
           id: 'fixture_' + idCounter
         });
+
+        if (idCounter && !workSheetName) {
+          model.set('title', model.get('title') + ' (' + idCounter + ')');
+        }
 
         idCounter++;
 
@@ -420,24 +522,37 @@ export default Ember.Controller.extend({
     }()),
 
     saveQuery: function () {
-      var self = this,
-          wasNew = this.get('model.isNew'),
-          defer = Ember.RSVP.defer();
+      //case 1. Save a new query from a new query tab -> route changes to new id
+      //case 2. Save a new query from an existing query tab -> route changes to new id
+      //case 3. Save a new query from a job tab -> route doesn't change
+      //case 4. Update an existing query tab. -> route doesn't change
 
-      this.send('openModal', 'modal-save', {
-        heading: "modals.save.heading",
+      var self = this,
+          defer = Ember.RSVP.defer(),
+          currentQuery = this.get('openQueries.currentQuery');
+
+      this.set('model.dataBase', this.get('databases.selectedDatabase.name'));
+
+      this.send('openModal', 'modal-save-query', {
+        heading: 'modals.save.heading',
+        message: 'modals.save.overwrite',
         text: this.get('content.title'),
+        content: this.get('content'),
         defer: defer
       });
 
-      defer.promise.then(function (text) {
-        self.get('content').set('title', text);
+      defer.promise.then(function (result) {
+        currentQuery.set('fileContent', self.prependQuerySettings(currentQuery.get('fileContent')));
 
-        self.get('openQueries').save(self.get('content')).then(function () {
-          if (wasNew) {
-            self.transitionToRoute(constants.namingConventions.subroutes.savedQuery, self.get('model.id'));
-          }
-        });
+        if (result.get('overwrite')) {
+          self.get('openQueries').save(self.get('content'), null, true, result.get('text'));
+        } else {
+          self.get('openQueries').save(self.get('content'), null, false, result.get('text')).then(function (newId) {
+            if (self.get('model.constructor.typeKey') !== constants.namingConventions.job) {
+              self.transitionToRoute(constants.namingConventions.subroutes.savedQuery, newId);
+            }
+          });
+        }
       });
     },
 
@@ -446,7 +561,7 @@ export default Ember.Controller.extend({
       var subroute;
 
       this._executeQuery().then(function (job) {
-        if (job.get('status') !== constants.statuses.finished) {
+        if (job.get('status') !== constants.statuses.succeeded) {
           subroute = constants.namingConventions.subroutes.jobLogs;
         } else {
           subroute = constants.namingConventions.subroutes.jobResults;
@@ -456,7 +571,8 @@ export default Ember.Controller.extend({
 
         self.transitionToRoute(constants.namingConventions.subroutes.historyQuery, job.get('id'));
       }, function (err) {
-        self.send('addAlert', constants.alerts.error, err.responseText, "alerts.errors.save.query");
+        var errorBody = err.responseJSON.trace ? err.responseJSON.trace : false;
+        self.notify.error(err.responseJSON.message, errorBody);
       });
     },
 
@@ -468,7 +584,7 @@ export default Ember.Controller.extend({
 
         self.transitionToRoute(constants.namingConventions.subroutes.historyQuery, job.get('id'));
       }, function (err) {
-        self.send('addAlert', constants.alerts.error, err.responseText, "alerts.errors.save.query");
+        this.notify.error(err.responseJSON.message, err.responseJSON.trace);
       });
     }
   }

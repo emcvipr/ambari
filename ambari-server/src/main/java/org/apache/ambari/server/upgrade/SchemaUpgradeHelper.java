@@ -26,6 +26,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.configuration.Configuration;
@@ -126,7 +128,6 @@ public class SchemaUpgradeHelper {
    */
   protected List<UpgradeCatalog> getUpgradePath(String sourceVersion,
                                                        String targetVersion) throws AmbariException {
-
     List<UpgradeCatalog> upgradeCatalogs = new ArrayList<UpgradeCatalog>();
     List<UpgradeCatalog> candidateCatalogs = new ArrayList<UpgradeCatalog>(allUpgradeCatalogs);
 
@@ -173,6 +174,7 @@ public class SchemaUpgradeHelper {
       catalogBinder.addBinding().to(UpgradeCatalog161.class);
       catalogBinder.addBinding().to(UpgradeCatalog170.class);
       catalogBinder.addBinding().to(UpgradeCatalog200.class);
+      catalogBinder.addBinding().to(UpgradeCatalog210.class);
     }
   }
 
@@ -191,6 +193,21 @@ public class SchemaUpgradeHelper {
     }
   }
 
+  public void executePreDMLUpdates(List<UpgradeCatalog> upgradeCatalogs) throws AmbariException {
+    LOG.info("Executing Pre-DML changes.");
+
+    if (upgradeCatalogs != null && !upgradeCatalogs.isEmpty()) {
+      for (UpgradeCatalog upgradeCatalog : upgradeCatalogs) {
+        try {
+          upgradeCatalog.preUpgradeData();
+        } catch (Exception e) {
+          LOG.error("Upgrade failed. ", e);
+          throw new AmbariException(e.getMessage(), e);
+        }
+      }
+    }
+  }
+
   public void executeDMLUpdates(List<UpgradeCatalog> upgradeCatalogs) throws AmbariException {
     LOG.info("Executing DML changes.");
 
@@ -198,6 +215,23 @@ public class SchemaUpgradeHelper {
       for (UpgradeCatalog upgradeCatalog : upgradeCatalogs) {
         try {
           upgradeCatalog.upgradeData();
+        } catch (Exception e) {
+          LOG.error("Upgrade failed. ", e);
+          throw new AmbariException(e.getMessage(), e);
+        }
+      }
+    }
+  }
+
+  public void executeOnPostUpgrade(List<UpgradeCatalog> upgradeCatalogs)
+      throws AmbariException {
+    LOG.info("Finalizing catalog upgrade.");
+
+    if (upgradeCatalogs != null && !upgradeCatalogs.isEmpty()) {
+      for (UpgradeCatalog upgradeCatalog : upgradeCatalogs) {
+        try {
+          upgradeCatalog.onPostUpgrade();
+          ;
         } catch (Exception e) {
           LOG.error("Upgrade failed. ", e);
           throw new AmbariException(e.getMessage(), e);
@@ -246,7 +280,11 @@ public class SchemaUpgradeHelper {
 
       schemaUpgradeHelper.startPersistenceService();
 
+      schemaUpgradeHelper.executePreDMLUpdates(upgradeCatalogs);
+
       schemaUpgradeHelper.executeDMLUpdates(upgradeCatalogs);
+
+      schemaUpgradeHelper.executeOnPostUpgrade(upgradeCatalogs);
 
       schemaUpgradeHelper.resetUIState();
 
@@ -255,7 +293,7 @@ public class SchemaUpgradeHelper {
       schemaUpgradeHelper.stopPersistenceService();
     } catch (Throwable e) {
       if (e instanceof AmbariException) {
-        LOG.error("Exception occured during upgrade, failed", e);
+        LOG.error("Exception occurred during upgrade, failed", e);
         throw (AmbariException)e;
       }else{
         LOG.error("Unexpected error, upgrade failed", e);

@@ -32,8 +32,8 @@ import junit.framework.Assert;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
-import org.apache.ambari.server.agent.ExecutionCommand;
 import org.apache.ambari.server.agent.AgentCommand.AgentCommandType;
+import org.apache.ambari.server.agent.ExecutionCommand;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.state.Cluster;
@@ -41,6 +41,7 @@ import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
 import org.apache.ambari.server.state.ConfigFactory;
 import org.apache.ambari.server.state.ConfigHelper;
+import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostStartEvent;
 import org.apache.ambari.server.utils.StageUtils;
 import org.codehaus.jettison.json.JSONException;
@@ -91,6 +92,7 @@ public class ExecutionCommandWrapperTest {
   private static Clusters clusters;
   private static ConfigFactory configFactory;
   private static ConfigHelper configHelper;
+  private static StageFactory stageFactory;
 
   @BeforeClass
   public static void setup() throws AmbariException {
@@ -98,11 +100,12 @@ public class ExecutionCommandWrapperTest {
     injector.getInstance(GuiceJpaInitializer.class);
     configHelper = injector.getInstance(ConfigHelper.class);
     configFactory = injector.getInstance(ConfigFactory.class);
+    stageFactory = injector.getInstance(StageFactory.class);
     
     clusters = injector.getInstance(Clusters.class);
     clusters.addHost(HOST1);
     clusters.getHost(HOST1).persist();
-    clusters.addCluster(CLUSTER1);
+    clusters.addCluster(CLUSTER1, new StackId("HDP-0.1"));
     
     Cluster cluster1 = clusters.getCluster(CLUSTER1);
     
@@ -155,7 +158,7 @@ public class ExecutionCommandWrapperTest {
   
   private static void createTask(ActionDBAccessor db, long requestId, long stageId, String hostName, String clusterName) throws AmbariException {
     
-    Stage s = new Stage(requestId, "/var/log", clusterName, 1L, "execution command wrapper test", "clusterHostInfo", "commandParamsStage", "hostParamsStage");
+    Stage s = stageFactory.createNew(requestId, "/var/log", clusterName, 1L, "execution command wrapper test", "clusterHostInfo", "commandParamsStage", "hostParamsStage");
     s.setStageId(stageId);
     s.addHostRoleExecutionCommand(hostName, Role.NAMENODE,
         RoleCommand.START,

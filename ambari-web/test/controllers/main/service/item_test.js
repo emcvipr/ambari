@@ -407,6 +407,46 @@ describe('App.MainServiceItemController', function () {
     });
 
     describe("modal messages", function() {
+      
+      beforeEach(function () {
+        sinon.stub(App.StackService, 'find').returns([
+          Em.Object.create({
+            serviceName: 'HDFS',
+            displayName: 'HDFS',
+            isInstalled: true,
+            isSelected: true,
+            requiredServices:["ZOOKEEPER"] 
+          }),
+          Em.Object.create({
+            serviceName: 'HIVE',
+            displayName: 'Hive',
+            isInstalled: true,
+            isSelected: true
+          }),
+          Em.Object.create({
+            serviceName: 'HBASE',
+            displayName: 'HBase',
+            isInstalled: true,
+            isSelected: true,
+            requiredServices:["HDFS", "ZOOKEEPER"]
+          }),
+          Em.Object.create({
+            serviceName: 'YARN',
+            displayName: 'YARN',
+            isInstalled: true,
+            isSelected: true,
+            requiredServices:["HDFS"]
+          }),
+          Em.Object.create({
+            serviceName: 'SPARK',
+            displayName: 'Spark',
+            isInstalled: true,
+            isSelected: true,
+            requiredServices:["HIVE"]
+          })
+        ]);
+      });
+      
       it ("should confirm stop if serviceHealth is INSTALLED", function() {
         mainServiceItemController.startStopPopup(event, "INSTALLED");
         expect(Em.I18n.t.calledWith('services.service.stop.confirmMsg')).to.be.ok;
@@ -417,6 +457,42 @@ describe('App.MainServiceItemController', function () {
         mainServiceItemController.startStopPopup(event, "");
         expect(Em.I18n.t.calledWith('services.service.start.confirmMsg')).to.be.ok;
         expect(Em.I18n.t.calledWith('services.service.start.confirmButton')).to.be.ok;
+      });
+      
+      it ("should not display a dependent list if it is to start a service", function() {
+        var mainServiceItemController = App.MainServiceItemController.create(
+            {content: {serviceName: "HDFS", passiveState:'OFF'}});
+        mainServiceItemController.startStopPopup(event, "");
+        expect(Em.I18n.t.calledWith('services.service.stop.warningMsg.dependent.services')).to.not.be.ok;
+      });
+      
+      it ("should display dependent list if other services depend on the one to be stopped", function() {
+        var mainServiceItemController = App.MainServiceItemController.create(
+            {content: {serviceName: "HDFS", passiveState:'OFF'}});
+        mainServiceItemController.startStopPopup(event, "INSTALLED");
+        expect(Em.I18n.t.calledWith('services.service.stop.warningMsg.turnOnMM')).to.be.ok;
+        expect(Em.I18n.t.calledWith('services.service.stop.warningMsg.dependent.services')).to.be.ok;
+        
+        var dependencies = Em.I18n.t('services.service.stop.warningMsg.dependent.services').format("HDFS", "HBase,YARN")
+        var msg = Em.I18n.t('services.service.stop.warningMsg.turnOnMM').format("HDFS");
+        var fullMsg = mainServiceItemController.addAdditionalWarningMessage("INSTALLED", msg, "HDFS");
+        expect(fullMsg).to.be.equal(msg + " " + dependencies);
+      });
+
+      it ("should display the dependent service if another service depends on the one to be stopped", function() {
+        var mainServiceItemController = App.MainServiceItemController.create(
+            {content: {serviceName: "HIVE", passiveState:'OFF'}});
+        mainServiceItemController.startStopPopup(event, "INSTALLED");
+        expect(Em.I18n.t.calledWith('services.service.stop.warningMsg.dependent.services')).to.be.ok;
+        
+        var dependencies = Em.I18n.t('services.service.stop.warningMsg.dependent.services').format("HIVE", "Spark")
+        var msg = Em.I18n.t('services.service.stop.warningMsg.turnOnMM').format("HIVE");
+        var fullMsg = mainServiceItemController.addAdditionalWarningMessage("INSTALLED", msg, "HIVE");
+        expect(fullMsg).to.be.equal(msg + " " + dependencies);
+      });
+      
+      afterEach(function () {
+        App.StackService.find.restore();
       });
     });
   });
@@ -572,6 +648,16 @@ describe('App.MainServiceItemController', function () {
   });
 
   describe("#runSmokeTestPrimary", function () {
+    beforeEach(function () {
+      sinon.stub(App, 'get').withArgs('clusterName').returns('myCluster');
+      sinon.spy($, 'ajax');
+    });
+
+    afterEach(function () {
+      App.get.restore();
+      $.ajax.restore();
+    });
+
     var tests = [
       {
         data: {
@@ -584,8 +670,25 @@ describe('App.MainServiceItemController', function () {
           "command" : "HDFS_SERVICE_CHECK"
         },
         "Requests/resource_filters": [{"service_name" : "HDFS"}]
+      },
+      {
+        data: {
+          'serviceName': "KERBEROS",
+          'displayName': "Kerberos",
+          'query': "test"
+        },
+        "RequestInfo": {
+          "context": "Kerberos Service Check",
+          "command" : "KERBEROS_SERVICE_CHECK",
+          "operation_level": {
+            "level": "CLUSTER",
+            "cluster_name": "myCluster"
+          }
+        },
+        "Requests/resource_filters": [{"service_name" : "KERBEROS"}]
       }
     ];
+
     tests.forEach(function (test) {
 
       var mainServiceItemController = App.MainServiceItemController.create({content: {serviceName: test.data.serviceName,
@@ -593,21 +696,16 @@ describe('App.MainServiceItemController', function () {
       beforeEach(function () {
         mainServiceItemController.set("runSmokeTestErrorCallBack", Em.K);
         mainServiceItemController.set("runSmokeTestSuccessCallBack", Em.K);
-        sinon.spy($, 'ajax');
       });
 
-      afterEach(function () {
-        $.ajax.restore();
-      });
-
-      it('send request to run smoke test', function () {
-
+      it('send request to run smoke test for ' + test.data.serviceName, function () {
         mainServiceItemController.runSmokeTestPrimary(test.data.query);
         expect($.ajax.calledOnce).to.equal(true);
 
         expect(JSON.parse($.ajax.args[0][0].data).RequestInfo.context).to.equal(test.RequestInfo.context);
         expect(JSON.parse($.ajax.args[0][0].data).RequestInfo.command).to.equal(test.RequestInfo.command);
         expect(JSON.parse($.ajax.args[0][0].data)["Requests/resource_filters"][0].serviceName).to.equal(test["Requests/resource_filters"][0].serviceName);
+        expect(JSON.parse($.ajax.args[0][0].data).RequestInfo.operation_level).to.be.deep.equal(test.RequestInfo.operation_level);
       });
     });
   });

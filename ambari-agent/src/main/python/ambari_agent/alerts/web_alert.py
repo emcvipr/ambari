@@ -22,6 +22,10 @@ import logging
 import time
 import subprocess
 import os
+import urllib2
+from urllib2 import HTTPError
+import uuid
+
 from  tempfile import gettempdir
 from alerts.base_alert import BaseAlert
 from collections import namedtuple
@@ -44,10 +48,13 @@ except ImportError:
 
 logger = logging.getLogger()
 
-CURL_CONNECTION_TIMEOUT = '20'
+CONNECTION_TIMEOUT = 10.0
+CURL_CONNECTION_TIMEOUT = "10"
+
+WebResponse = namedtuple('WebResponse', 'status_code time_millis error_msg')
 
 class WebAlert(BaseAlert):
-  
+
   def __init__(self, alert_meta, alert_source_meta, config):
     super(WebAlert, self).__init__(alert_meta, alert_source_meta)
     
@@ -71,6 +78,10 @@ class WebAlert(BaseAlert):
       self.get_name(), alert_uri.uri, str(alert_uri.is_ssl_enabled)))
 
     url = self._build_web_query(alert_uri)
+
+    # substitute 0.0.0.0 in url with actual fqdn
+    url = url.replace('0.0.0.0', self.host_name)
+
     web_response = self._make_web_request(url)
     status_code = web_response.status_code
     time_seconds = web_response.time_millis / 1000
@@ -78,11 +89,13 @@ class WebAlert(BaseAlert):
 
     if status_code == 0:
       return (self.RESULT_CRITICAL, [status_code, url, time_seconds, error_message])
-    
+
+    # anything that's less than 400 is OK
     if status_code < 400:
       return (self.RESULT_OK, [status_code, url, time_seconds])
-    
-    return (self.RESULT_WARNING, [status_code, url, time_seconds])
+
+    # everything else is WARNING
+    return (self.RESULT_WARNING, [status_code, url, time_seconds, error_message])
 
 
   def _build_web_query(self, alert_uri):
@@ -115,9 +128,11 @@ class WebAlert(BaseAlert):
     scheme = 'http'
     if alert_uri.is_ssl_enabled is True:
       scheme = 'https'
+
     if OSCheck.is_windows_family():
       # on windows 0.0.0.0 is invalid address to connect but on linux it resolved to 127.0.0.1
       host = resolve_address(host)
+
     return "{0}://{1}:{2}".format(scheme, host, str(port))
 
 
@@ -125,12 +140,10 @@ class WebAlert(BaseAlert):
     """
     Makes an http(s) request to a web resource and returns the http code. If
     there was an error making the request, return 0 for the status code.
-    """    
-    WebResponse = namedtuple('WebResponse', 'status_code time_millis error_msg')
-    
-    time_millis = 0
-    
+    """
+    error_msg = None
     try:
+      response_code = 0
       kerberos_keytab = None
       kerberos_principal = None
 
@@ -157,42 +170,99 @@ class WebAlert(BaseAlert):
         ccache_file_path = "{0}{1}web_alert_cc_{2}".format(tmp_dir, os.sep, ccache_file_name)
         kerberos_env = {'KRB5CCNAME': ccache_file_path}
 
+        # Get the configured Kerberos executables search paths, if any
+        kerberos_executable_search_paths = self._get_configuration_value('{{kerberos-env/executable_search_paths}}')
+
         # If there are no tickets in the cache or they are expired, perform a kinit, else use what
         # is in the cache
-        klist_path_local = get_klist_path()
+        klist_path_local = get_klist_path(kerberos_executable_search_paths)
 
         if os.system("{0} -s {1}".format(klist_path_local, ccache_file_path)) != 0:
-          kinit_path_local = get_kinit_path()
-          logger.debug("[Alert][{0}] Enabling Kerberos authentication via GSSAPI using ccache at {1}."
-                       .format(self.get_name(), ccache_file_path))
-          os.system("{0} -l 5m -c {1} -kt {2} {3} > /dev/null".format(kinit_path_local, ccache_file_path, kerberos_keytab, kerberos_principal))
+          kinit_path_local = get_kinit_path(kerberos_executable_search_paths)
+          logger.debug("[Alert][{0}] Enabling Kerberos authentication via GSSAPI using ccache at {1}.".format(
+            self.get_name(), ccache_file_path))
+
+          os.system("{0} -l 5m -c {1} -kt {2} {3} > /dev/null".format(
+            kinit_path_local, ccache_file_path, kerberos_keytab,
+            kerberos_principal))
         else:
-          logger.debug("[Alert][{0}] Kerberos authentication via GSSAPI already enabled using ccache at {1}."
-                       .format(self.get_name(), ccache_file_path))
+          logger.debug("[Alert][{0}] Kerberos authentication via GSSAPI already enabled using ccache at {1}.".format(
+            self.get_name(), ccache_file_path))
+
+        # check if cookies dir exists, if not then create it
+        tmp_dir = self.config.get('agent', 'tmp_dir')
+        cookies_dir = os.path.join(tmp_dir, "cookies")
+
+        if not os.path.exists(cookies_dir):
+          os.makedirs(cookies_dir)
+
+        cookie_file_name = str(uuid.uuid4())
+        cookie_file = os.path.join(cookies_dir, cookie_file_name)
+
+        start_time = time.time()
+
+        try:
+          curl = subprocess.Popen(['curl', '--negotiate', '-u', ':', '-b', cookie_file, '-c', cookie_file, '-sL', '-w',
+            '%{http_code}', url, '--connect-timeout', CURL_CONNECTION_TIMEOUT,
+            '-o', '/dev/null'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=kerberos_env)
+
+          curl_stdout, curl_stderr = curl.communicate()
+        finally:
+          if os.path.isfile(cookie_file):
+            os.remove(cookie_file)
+
+        # empty quotes evaluates to false
+        if curl_stderr:
+          error_msg = curl_stderr
+
+        # empty quotes evaluates to false
+        if curl_stdout:
+          response_code = int(curl_stdout)
+
+        time_millis = time.time() - start_time
       else:
-        kerberos_env = None
+        # kerberos is not involved; use urllib2
+        response_code, time_millis, error_msg = self._make_web_request_urllib(url)
 
-      # substitute 0.0.0.0 in url with actual fqdn
-      url = url.replace('0.0.0.0', self.host_name)
-      start_time = time.time()
-      curl = subprocess.Popen(['curl', '--negotiate', '-u', ':', '-sL', '-w',
-        '%{http_code}', url, '--connect-timeout', CURL_CONNECTION_TIMEOUT,
-        '-o', '/dev/null'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=kerberos_env)
+      return WebResponse(status_code=response_code, time_millis=time_millis,
+        error_msg=error_msg)
 
-      out, err = curl.communicate()
-
-      if err != '':
-        raise Exception(err)
-
-      response_code = int(out)
-      time_millis = time.time() - start_time
-    except Exception, exc:
+    except Exception, exception:
       if logger.isEnabledFor(logging.DEBUG):
         logger.exception("[Alert][{0}] Unable to make a web request.".format(self.get_name()))
 
-      return WebResponse(status_code=0, time_millis=0, error_msg=str(exc))
+      return WebResponse(status_code=0, time_millis=0, error_msg=str(exception))
 
-    return WebResponse(status_code=response_code, time_millis=time_millis, error_msg=None)
+
+  def _make_web_request_urllib(self, url):
+    """
+    Make a web request using urllib2. This function does not handle exceptions.
+    :param url: the URL to request
+    :return: a tuple of the response code and the total time in ms
+    """
+    response = None
+    error_message = None
+
+    start_time = time.time()
+
+    try:
+      response = urllib2.urlopen(url, timeout=CONNECTION_TIMEOUT)
+      response_code = response.getcode()
+      time_millis = time.time() - start_time
+
+      return response_code, time_millis, error_message
+    except HTTPError, httpError:
+      time_millis = time.time() - start_time
+      error_message = str(httpError)
+
+      return httpError.code, time_millis, error_message
+    finally:
+      if response is not None:
+        try:
+          response.close()
+        except Exception, exception:
+          if logger.isEnabledFor(logging.DEBUG):
+            logger.exception("[Alert][{0}] Unable to close socket connection".format(self.get_name()))
 
 
   def _get_reporting_text(self, state):

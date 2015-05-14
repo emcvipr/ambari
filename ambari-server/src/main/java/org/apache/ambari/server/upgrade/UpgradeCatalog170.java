@@ -18,30 +18,9 @@
 
 package org.apache.ambari.server.upgrade;
 
-import java.lang.reflect.Type;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-
-import javax.persistence.EntityManager;
-import javax.persistence.TypedQuery;
-import javax.persistence.criteria.CriteriaBuilder;
-import javax.persistence.criteria.CriteriaQuery;
-import javax.persistence.criteria.Expression;
-import javax.persistence.criteria.Predicate;
-import javax.persistence.criteria.Root;
-
+import com.google.common.reflect.TypeToken;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.configuration.Configuration.DatabaseType;
@@ -51,6 +30,7 @@ import org.apache.ambari.server.orm.dao.ClusterDAO;
 import org.apache.ambari.server.orm.dao.ClusterServiceDAO;
 import org.apache.ambari.server.orm.dao.ConfigGroupConfigMappingDAO;
 import org.apache.ambari.server.orm.dao.DaoUtils;
+import org.apache.ambari.server.orm.dao.HostDAO;
 import org.apache.ambari.server.orm.dao.HostRoleCommandDAO;
 import org.apache.ambari.server.orm.dao.KeyValueDAO;
 import org.apache.ambari.server.orm.dao.PermissionDAO;
@@ -72,6 +52,7 @@ import org.apache.ambari.server.orm.entities.ClusterServiceEntityPK;
 import org.apache.ambari.server.orm.entities.ConfigGroupConfigMappingEntity;
 import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntity;
 import org.apache.ambari.server.orm.entities.HostComponentStateEntity;
+import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.HostRoleCommandEntity;
 import org.apache.ambari.server.orm.entities.HostRoleCommandEntity_;
 import org.apache.ambari.server.orm.entities.KeyValueEntity;
@@ -85,6 +66,7 @@ import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntity;
 import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntityPK;
 import org.apache.ambari.server.orm.entities.ServiceDesiredStateEntity;
 import org.apache.ambari.server.orm.entities.ServiceDesiredStateEntityPK;
+import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.orm.entities.UserEntity;
 import org.apache.ambari.server.orm.entities.ViewEntity;
 import org.apache.ambari.server.orm.entities.ViewInstanceEntity;
@@ -92,6 +74,7 @@ import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
 import org.apache.ambari.server.state.ConfigHelper;
+import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.State;
 import org.apache.ambari.server.state.alert.Scope;
 import org.apache.ambari.server.utils.StageUtils;
@@ -99,9 +82,28 @@ import org.apache.ambari.server.view.ViewRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.reflect.TypeToken;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
+import javax.persistence.EntityManager;
+import javax.persistence.TypedQuery;
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.CriteriaQuery;
+import javax.persistence.criteria.Expression;
+import javax.persistence.criteria.Predicate;
+import javax.persistence.criteria.Root;
+import java.lang.reflect.Type;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
 
 /**
  * Upgrade catalog for version 1.7.0.
@@ -126,12 +128,14 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
   public static final String JOBS_VIEW_INSTANCE_NAME = "JOBS_1";
   public static final String SHOW_JOBS_FOR_NON_ADMIN_KEY = "showJobsForNonAdmin";
   public static final String JOBS_VIEW_INSTANCE_LABEL = "Jobs";
-  public static final String CLUSTER_STATE_STACK_HDP_2_1 = "{\"stackName\":\"HDP\",\"stackVersion\":\"2.1\"}";
   public static final String YARN_TIMELINE_SERVICE_WEBAPP_ADDRESS_PROPERTY = "yarn.timeline-service.webapp.address";
   public static final String YARN_RESOURCEMANAGER_WEBAPP_ADDRESS_PROPERTY = "yarn.resourcemanager.webapp.address";
   public static final String YARN_SITE = "yarn-site";
   public static final String YARN_ATS_URL_PROPERTY = "yarn.ats.url";
   public static final String YARN_RESOURCEMANAGER_URL_PROPERTY = "yarn.resourcemanager.url";
+
+  public static final StackId CLUSTER_STATE_STACK_HDP_2_1 = new StackId("HDP",
+      "2.1");
 
   //SourceVersion is only for book-keeping purpos
   @Override
@@ -253,12 +257,10 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
 
     dbAccessor.insertRow("adminprivilege", new String[]{"privilege_id", "permission_id", "resource_id", "principal_id"}, new String[]{"1", "1", "1", "1"}, true);
 
-    if (databaseType == DatabaseType.ORACLE) {
-      dbAccessor.executeQuery("ALTER TABLE clusterconfig ADD config_attributes CLOB NULL");
-    } else {
-      DBColumnInfo clusterConfigAttributesColumn = new DBColumnInfo(
-          "config_attributes", String.class, 32000, null, true);
-      dbAccessor.addColumn("clusterconfig", clusterConfigAttributesColumn);
+    String [] configAttributesTableNames = {"clusterconfig", "hostgroup_configuration", "blueprint_configuration"};
+
+    for(String tableName : configAttributesTableNames) {
+      addConfigAttributesColumn(tableName);
     }
 
     // Add columns
@@ -492,11 +494,29 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
   }
 
   /**
+   * @param tableName
+   * @throws SQLException
+   */
+  private void addConfigAttributesColumn(String tableName) throws SQLException {
+    final DatabaseType databaseType = configuration.getDatabaseType();
+    if (databaseType == DatabaseType.ORACLE) {
+      dbAccessor.executeQuery("ALTER TABLE " + tableName + " ADD config_attributes CLOB NULL");
+    } else {
+      DBColumnInfo clusterConfigAttributesColumn = new DBColumnInfo(
+          "config_attributes", Character[].class, null, null, true);
+      dbAccessor.addColumn(tableName, clusterConfigAttributesColumn);
+    }
+  }
+
+  /**
    * Note that you can't use dbAccessor.renameColumn(...) here as the column name is a reserved word and
    * thus requires custom approach for every database type.
    */
   private void renameSequenceValueColumnName() throws AmbariException, SQLException {
     final DatabaseType databaseType = configuration.getDatabaseType();
+    if (dbAccessor.tableHasColumn("ambari_sequences", "sequence_value")) {
+      return;
+    }
     if (databaseType == DatabaseType.MYSQL) {
       dbAccessor.executeQuery("ALTER TABLE ambari_sequences CHANGE value sequence_value DECIMAL(38) NOT NULL");
     } else if (databaseType == DatabaseType.DERBY) {
@@ -574,6 +594,13 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
 
 
   // ----- UpgradeCatalog ----------------------------------------------------
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public void executePreDMLUpdates() {
+    ;
+  }
 
   @Override
   protected void executeDMLUpdates() throws AmbariException, SQLException {
@@ -714,6 +741,7 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
     ClusterServiceDAO clusterServiceDAO = injector.getInstance(ClusterServiceDAO.class);
     ServiceDesiredStateDAO serviceDesiredStateDAO = injector.getInstance(ServiceDesiredStateDAO.class);
     ServiceComponentDesiredStateDAO serviceComponentDesiredStateDAO = injector.getInstance(ServiceComponentDesiredStateDAO.class);
+    HostDAO hostDAO = injector.getInstance(HostDAO.class);
 
     List<ClusterEntity> clusterEntities = clusterDAO.findAll();
     for (final ClusterEntity clusterEntity : clusterEntities) {
@@ -748,7 +776,7 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
       serviceComponentDesiredStateEntity.setServiceName(serviceName);
       serviceComponentDesiredStateEntity.setComponentName(serviceComponentDesiredStateEntityToDelete.getComponentName());
       serviceComponentDesiredStateEntity.setClusterId(clusterEntity.getClusterId());
-      serviceComponentDesiredStateEntity.setDesiredStackVersion(serviceComponentDesiredStateEntityToDelete.getDesiredStackVersion());
+      serviceComponentDesiredStateEntity.setDesiredStack(serviceComponentDesiredStateEntityToDelete.getDesiredStack());
       serviceComponentDesiredStateEntity.setDesiredState(serviceComponentDesiredStateEntityToDelete.getDesiredState());
       serviceComponentDesiredStateEntity.setClusterServiceEntity(clusterServiceEntity);
 
@@ -760,9 +788,8 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
         HostComponentDesiredStateEntity hostComponentDesiredStateEntity = new HostComponentDesiredStateEntity();
         hostComponentDesiredStateEntity.setClusterId(clusterEntity.getClusterId());
         hostComponentDesiredStateEntity.setComponentName(hcDesiredStateEntityToBeDeleted.getComponentName());
-        hostComponentDesiredStateEntity.setDesiredStackVersion(hcDesiredStateEntityToBeDeleted.getDesiredStackVersion());
+        hostComponentDesiredStateEntity.setDesiredStack(hcDesiredStateEntityToBeDeleted.getDesiredStack());
         hostComponentDesiredStateEntity.setDesiredState(hcDesiredStateEntityToBeDeleted.getDesiredState());
-        hostComponentDesiredStateEntity.setHostName(hcDesiredStateEntityToBeDeleted.getHostName());
         hostComponentDesiredStateEntity.setHostEntity(hcDesiredStateEntityToBeDeleted.getHostEntity());
         hostComponentDesiredStateEntity.setAdminState(hcDesiredStateEntityToBeDeleted.getAdminState());
         hostComponentDesiredStateEntity.setMaintenanceState(hcDesiredStateEntityToBeDeleted.getMaintenanceState());
@@ -775,12 +802,16 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
 
       while (hostComponentStateIterator.hasNext()) {
         HostComponentStateEntity hcStateToBeDeleted = hostComponentStateIterator.next();
+        HostEntity hostToBeDeleted = hostDAO.findByName(hcStateToBeDeleted.getHostName());
+        if (hostToBeDeleted == null) {
+          continue;
+        }
+
         HostComponentStateEntity hostComponentStateEntity = new HostComponentStateEntity();
         hostComponentStateEntity.setClusterId(clusterEntity.getClusterId());
         hostComponentStateEntity.setComponentName(hcStateToBeDeleted.getComponentName());
-        hostComponentStateEntity.setCurrentStackVersion(hcStateToBeDeleted.getCurrentStackVersion());
+        hostComponentStateEntity.setCurrentStack(hcStateToBeDeleted.getCurrentStack());
         hostComponentStateEntity.setCurrentState(hcStateToBeDeleted.getCurrentState());
-        hostComponentStateEntity.setHostName(hcStateToBeDeleted.getHostName());
         hostComponentStateEntity.setHostEntity(hcStateToBeDeleted.getHostEntity());
         hostComponentStateEntity.setServiceName(serviceName);
         hostComponentStateEntity.setServiceComponentDesiredStateEntity(serviceComponentDesiredStateEntity);
@@ -813,6 +844,8 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
 
     for (ConfigGroupConfigMappingEntity entity : configGroupsWithGlobalConfigs) {
       String configData = entity.getClusterConfigEntity().getData();
+      StackEntity stackEntity = entity.getClusterConfigEntity().getStack();
+
       Map<String, String> properties = StageUtils.getGson().fromJson(configData, type);
       Cluster cluster = ambariManagementController.getClusters().getClusterById(entity.getClusterId());
       HashMap<String, HashMap<String, String>> configs = new HashMap<String, HashMap<String, String>>();
@@ -821,15 +854,17 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
         Set<String> configTypes = configHelper.findConfigTypesByPropertyName(cluster.getCurrentStackVersion(),
                 property.getKey(), cluster.getClusterName());
         // i'm not sure, but i hope that every service property is unique
-        String configType = configTypes.iterator().next();
+        if (configTypes != null && configTypes.size() > 0) {
+          String configType = configTypes.iterator().next();
 
-        if (configs.containsKey(configType)) {
-          HashMap<String, String> config = configs.get(configType);
-          config.put(property.getKey(), property.getValue());
-        } else {
-          HashMap<String, String> config = new HashMap<String, String>();
-          config.put(property.getKey(), property.getValue());
-          configs.put(configType, config);
+          if (configs.containsKey(configType)) {
+            HashMap<String, String> config = configs.get(configType);
+            config.put(property.getKey(), property.getValue());
+          } else {
+            HashMap<String, String> config = new HashMap<String, String>();
+            config.put(property.getKey(), property.getValue());
+            configs.put(configType, config);
+          }
         }
       }
 
@@ -850,8 +885,9 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
         clusterConfigEntity.setTag(tag);
         clusterConfigEntity.setTimestamp(new Date().getTime());
         clusterConfigEntity.setData(StageUtils.getGson().toJson(config.getValue()));
-        clusterDAO.createConfig(clusterConfigEntity);
+        clusterConfigEntity.setStack(stackEntity);
 
+        clusterDAO.createConfig(clusterConfigEntity);
 
         ConfigGroupConfigMappingEntity configGroupConfigMappingEntity = new ConfigGroupConfigMappingEntity();
         configGroupConfigMappingEntity.setTimestamp(System.currentTimeMillis());
@@ -1384,8 +1420,14 @@ public class UpgradeCatalog170 extends AbstractUpgradeCatalog {
     List<ClusterEntity> clusters = clusterDAO.findAll();
     if (!clusters.isEmpty()) {
       ClusterEntity currentCluster = clusters.get(0);
-      String currentStackVersion = currentCluster.getClusterStateEntity().getCurrentStackVersion();
-      if (CLUSTER_STATE_STACK_HDP_2_1.equals(currentStackVersion)) {
+      StackEntity currentStack = currentCluster.getClusterStateEntity().getCurrentStack();
+
+      boolean isStackHdp21 = CLUSTER_STATE_STACK_HDP_2_1.getStackName().equals(
+          currentStack.getStackName())
+          && CLUSTER_STATE_STACK_HDP_2_1.getStackVersion().equals(
+              currentStack.getStackVersion());
+
+      if (isStackHdp21) {
         ViewRegistry.initInstance(viewRegistry);
         viewRegistry.readViewArchives(VIEW_NAME_REG_EXP);
         ViewEntity jobsView = viewDAO.findByCommonName(JOBS_VIEW_NAME);

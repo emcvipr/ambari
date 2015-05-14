@@ -162,6 +162,10 @@ public class ResourceInstanceFactoryImpl implements ResourceInstanceFactory {
         resourceDefinition = new StackConfigurationResourceDefinition();
         break;
 
+      case StackConfigurationDependency:
+        resourceDefinition = new StackConfigurationDependencyResourceDefinition();
+        break;
+
       case OperatingSystem:
         resourceDefinition = new OperatingSystemResourceDefinition();
         break;
@@ -309,6 +313,12 @@ public class ResourceInstanceFactoryImpl implements ResourceInstanceFactory {
         resourceDefinition = new RepositoryVersionResourceDefinition();
         break;
 
+      case CompatibleRepositoryVersion:
+        resourceDefinition = new SimpleResourceDefinition(Resource.Type.CompatibleRepositoryVersion,
+            "compatible_repository_version", "compatible_repository_versions",
+            Resource.Type.OperatingSystem);
+        break;
+
       case HostStackVersion:
         resourceDefinition = new ComponentStackVersionResourceDefinition(Resource.Type.HostStackVersion);
         break;
@@ -356,6 +366,26 @@ public class ResourceInstanceFactoryImpl implements ResourceInstanceFactory {
 
       case Artifact:
         resourceDefinition = new SimpleResourceDefinition(Resource.Type.Artifact, "artifact", "artifacts");
+        break;
+
+      case Theme:
+        resourceDefinition = new SimpleResourceDefinition(Resource.Type.Theme, "theme", "themes");
+        break;
+
+      case Widget:
+        resourceDefinition = new WidgetResourceDefinition();
+        break;
+
+      case WidgetLayout:
+        resourceDefinition = new WidgetLayoutResourceDefinition();
+        break;
+
+      case ActiveWidgetLayout:
+        resourceDefinition = new ActiveWidgetLayoutResourceDefinition();
+        break;
+
+      case HostKerberosIdentity:
+        resourceDefinition = new HostKerberosIdentityResourceDefinition();
         break;
 
       default:

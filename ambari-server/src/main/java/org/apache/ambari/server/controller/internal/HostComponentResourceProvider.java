@@ -29,8 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.google.inject.Inject;
-import com.google.inject.Injector;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.configuration.ComponentSSLConfiguration;
 import org.apache.ambari.server.controller.AmbariManagementController;
@@ -41,7 +39,6 @@ import org.apache.ambari.server.controller.ServiceComponentHostResponse;
 import org.apache.ambari.server.controller.predicate.AndPredicate;
 import org.apache.ambari.server.controller.predicate.EqualsPredicate;
 import org.apache.ambari.server.controller.predicate.NotPredicate;
-import org.apache.ambari.server.controller.predicate.OrPredicate;
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
 import org.apache.ambari.server.controller.spi.NoSuchResourceException;
 import org.apache.ambari.server.controller.spi.Predicate;
@@ -53,9 +50,8 @@ import org.apache.ambari.server.controller.spi.ResourceAlreadyExistsException;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
-
-import com.google.inject.assistedinject.Assisted;
-import com.google.inject.assistedinject.AssistedInject;
+import org.apache.ambari.server.orm.dao.HostVersionDAO;
+import org.apache.ambari.server.orm.entities.HostVersionEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.MaintenanceState;
@@ -67,6 +63,11 @@ import org.apache.ambari.server.state.fsm.InvalidStateTransitionException;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostDisableEvent;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostRestoreEvent;
 import org.apache.commons.lang.StringUtils;
+
+import com.google.inject.Inject;
+import com.google.inject.Injector;
+import com.google.inject.assistedinject.Assisted;
+import com.google.inject.assistedinject.AssistedInject;
 
 /**
  * Resource provider for host component resources.
@@ -100,6 +101,9 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
       = PropertyHelper.getPropertyId("HostRoles", "desired_admin_state");
   protected static final String HOST_COMPONENT_MAINTENANCE_STATE_PROPERTY_ID
       = "HostRoles/maintenance_state";
+  protected static final String HOST_COMPONENT_HDP_VERSION
+      = PropertyHelper.getPropertyId("HostRoles", "hdp_version");
+  protected static final String HOST_COMPONENT_UPGRADE_STATE = "HostRoles/upgrade_state";
 
   //Component name mappings
   private final Map<String, PropertyProvider> HOST_COMPONENT_PROPERTIES_PROVIDER = new HashMap<String, PropertyProvider>();
@@ -121,6 +125,9 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
    */
   @Inject
   private MaintenanceStateHelper maintenanceStateHelper;
+
+  @Inject
+  private HostVersionDAO hostVersionDAO;
 
   // ----- Constructors ----------------------------------------------------
 
@@ -163,7 +170,7 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
 
     final Set<ServiceComponentHostRequest> requests = new HashSet<ServiceComponentHostRequest>();
     for (Map<String, Object> propertyMap : request.getProperties()) {
-      requests.add(getRequest(propertyMap));
+      requests.add(changeRequest(propertyMap));
     }
 
     createResources(new Command<Void>() {
@@ -189,6 +196,25 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
       requests.add(getRequest(propertyMap));
     }
 
+    return findResources(request, predicate, requests);
+  }
+
+  private Set<Resource> getResourcesForUpdate(Request request, Predicate predicate)
+    throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
+
+    final Set<ServiceComponentHostRequest> requests = new HashSet<ServiceComponentHostRequest>();
+
+    for (Map<String, Object> propertyMap : getPropertyMaps(predicate)) {
+      requests.add(changeRequest(propertyMap));
+    }
+
+    return findResources(request, predicate, requests);
+  }
+
+
+  private Set<Resource> findResources(Request request, final Predicate predicate,
+                                      final Set<ServiceComponentHostRequest> requests)
+          throws SystemException, NoSuchResourceException, NoSuchParentResourceException {
     Set<Resource> resources = new HashSet<Resource>();
     Set<String> requestedIds = getRequestPropertyIds(request, predicate);
     // We always need host_name for sch
@@ -204,34 +230,43 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
     for (ServiceComponentHostResponse response : responses) {
       Resource resource = new ResourceImpl(Resource.Type.HostComponent);
       setResourceProperty(resource, HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID,
-          response.getClusterName(), requestedIds);
+              response.getClusterName(), requestedIds);
       setResourceProperty(resource, HOST_COMPONENT_SERVICE_NAME_PROPERTY_ID,
-          response.getServiceName(), requestedIds);
+              response.getServiceName(), requestedIds);
       setResourceProperty(resource, HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID,
-          response.getComponentName(), requestedIds);
+              response.getComponentName(), requestedIds);
       setResourceProperty(resource, HOST_COMPONENT_HOST_NAME_PROPERTY_ID,
-          response.getHostname(), requestedIds);
+              response.getHostname(), requestedIds);
       setResourceProperty(resource, HOST_COMPONENT_STATE_PROPERTY_ID,
-          response.getLiveState(), requestedIds);
+              response.getLiveState(), requestedIds);
       setResourceProperty(resource, HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID,
-          response.getDesiredState(), requestedIds);
+              response.getDesiredState(), requestedIds);
       setResourceProperty(resource, HOST_COMPONENT_STACK_ID_PROPERTY_ID,
-          response.getStackVersion(), requestedIds);
+              response.getStackVersion(), requestedIds);
       setResourceProperty(resource, HOST_COMPONENT_DESIRED_STACK_ID_PROPERTY_ID,
-          response.getDesiredStackVersion(), requestedIds);
+              response.getDesiredStackVersion(), requestedIds);
       setResourceProperty(resource, HOST_COMPONENT_ACTUAL_CONFIGS_PROPERTY_ID,
-          response.getActualConfigs(), requestedIds);
+              response.getActualConfigs(), requestedIds);
       setResourceProperty(resource, HOST_COMPONENT_STALE_CONFIGS_PROPERTY_ID,
-          response.isStaleConfig(), requestedIds);
-      
+              response.isStaleConfig(), requestedIds);
+      setResourceProperty(resource, HOST_COMPONENT_UPGRADE_STATE,
+              response.getUpgradeState(), requestedIds);
+
+      HostVersionEntity versionEntity = hostVersionDAO.
+              findByHostAndStateCurrent(response.getClusterName(), response.getHostname());
+      if (versionEntity != null) {
+        setResourceProperty(resource, HOST_COMPONENT_HDP_VERSION,
+                versionEntity.getRepositoryVersion().getDisplayName(), requestedIds);
+      }
+
       if (response.getAdminState() != null) {
         setResourceProperty(resource, HOST_COMPONENT_DESIRED_ADMIN_STATE_PROPERTY_ID,
-            response.getAdminState(), requestedIds);
+                response.getAdminState(), requestedIds);
       }
-      
+
       if (null != response.getMaintenanceState()) {
         setResourceProperty(resource, HOST_COMPONENT_MAINTENANCE_STATE_PROPERTY_ID,
-            response.getMaintenanceState(), requestedIds);
+                response.getMaintenanceState(), requestedIds);
       }
 
       String componentName = (String) resource.getPropertyValue(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID);
@@ -276,7 +311,7 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
       throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
     final Set<ServiceComponentHostRequest> requests = new HashSet<ServiceComponentHostRequest>();
     for (Map<String, Object> propertyMap : getPropertyMaps(predicate)) {
-      requests.add(getRequest(propertyMap));
+      requests.add(changeRequest(propertyMap));
     }
     RequestStatusResponse response = modifyResources(new Command<RequestStatusResponse>() {
       @Override
@@ -310,35 +345,58 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
     return unsupportedProperties;
   }
 
-  RequestStatusResponse installAndStart(String cluster, Collection<String> hosts) throws  SystemException,
+  public RequestStatusResponse install(String cluster, String hostname) throws  SystemException,
       UnsupportedPropertyException, NoSuchParentResourceException {
 
-    final RequestStageContainer requestStages;
+    RequestStageContainer requestStages;
+    //for (String host : hosts) {
+
     Map<String, Object> installProperties = new HashMap<String, Object>();
 
-    installProperties.put(HOST_COMPONENT_STATE_PROPERTY_ID, "INSTALLED");
+    installProperties.put(HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID, "INSTALLED");
     Map<String, String> requestInfo = new HashMap<String, String>();
-    requestInfo.put("context", "Install and start components on added hosts");
+    requestInfo.put("context", String.format("Install components on host %s", hostname));
     Request installRequest = PropertyHelper.getUpdateRequest(installProperties, requestInfo);
-
-    Collection<EqualsPredicate> hostPredicates = new ArrayList<EqualsPredicate>();
-    for (String host : hosts) {
-      hostPredicates.add(new EqualsPredicate<String>(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, host));
-    }
 
     Predicate statePredicate = new EqualsPredicate<String>(HOST_COMPONENT_STATE_PROPERTY_ID, "INIT");
     Predicate clusterPredicate = new EqualsPredicate<String>(HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID, cluster);
-    Predicate hostPredicate = new OrPredicate(hostPredicates.toArray(new Predicate[hostPredicates.size()]));
+    // single host
+    Predicate hostPredicate = new EqualsPredicate<String>(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, hostname);
+    //Predicate hostPredicate = new OrPredicate(hostPredicates.toArray(new Predicate[hostPredicates.size()]));
     Predicate hostAndStatePredicate = new AndPredicate(statePredicate, hostPredicate);
     Predicate installPredicate = new AndPredicate(hostAndStatePredicate, clusterPredicate);
 
     try {
-      LOG.info("Installing all components on added hosts");
+      LOG.info("Installing all components on host: " + hostname);
       requestStages = doUpdateResources(null, installRequest, installPredicate, true);
       notifyUpdate(Resource.Type.HostComponent, installRequest, installPredicate);
+      try {
+        requestStages.persist();
+      } catch (AmbariException e) {
+        throw new SystemException(e.getMessage(), e);
+      }
+    } catch (NoSuchResourceException e) {
+      // shouldn't encounter this exception here
+      throw new SystemException("An unexpected exception occurred while processing install hosts",  e);
+      }
 
+    return requestStages.getRequestStatusResponse();
+  }
+
+  public RequestStatusResponse start(String cluster, String hostName) throws  SystemException,
+      UnsupportedPropertyException, NoSuchParentResourceException {
+
+    Map<String, String> requestInfo = new HashMap<String, String>();
+    requestInfo.put("context", String.format("Start components on host %s", hostName));
+
+    Predicate clusterPredicate = new EqualsPredicate<String>(HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID, cluster);
+    Predicate hostPredicate = new EqualsPredicate<String>(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, hostName);
+    //Predicate hostPredicate = new OrPredicate(hostPredicates.toArray(new Predicate[hostPredicates.size()]));
+
+    RequestStageContainer requestStages;
+    try {
       Map<String, Object> startProperties = new HashMap<String, Object>();
-      startProperties.put(HOST_COMPONENT_STATE_PROPERTY_ID, "STARTED");
+      startProperties.put(HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID, "STARTED");
       Request startRequest = PropertyHelper.getUpdateRequest(startProperties, requestInfo);
       // Important to query against desired_state as this has been updated when install stage was created
       // If I query against state, then the getRequest compares predicate prop against desired_state and then when the predicate
@@ -347,24 +405,23 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
       Predicate installedStatePredicate = new EqualsPredicate<String>(HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID, "INSTALLED");
       Predicate notClientPredicate = new NotPredicate(new ClientComponentPredicate());
       Predicate clusterAndClientPredicate = new AndPredicate(clusterPredicate, notClientPredicate);
-      hostAndStatePredicate = new AndPredicate(installedStatePredicate, hostPredicate);
+      Predicate hostAndStatePredicate = new AndPredicate(installedStatePredicate, hostPredicate);
       Predicate startPredicate = new AndPredicate(clusterAndClientPredicate, hostAndStatePredicate);
 
-      LOG.info("Starting all non-client components on added hosts");
-      //todo: if a host in in state HEARTBEAT_LOST, no stage will be created, so if this occurs during INSTALL
-      //todo: then no INSTALL stage will exist which will result in invalid state transition INIT->STARTED
-      doUpdateResources(requestStages, startRequest, startPredicate, true);
+      LOG.info("Starting all non-client components on host: " + hostName);
+      requestStages = doUpdateResources(null, startRequest, startPredicate, true);
       notifyUpdate(Resource.Type.HostComponent, startRequest, startPredicate);
       try {
         requestStages.persist();
       } catch (AmbariException e) {
         throw new SystemException(e.getMessage(), e);
       }
-      return requestStages.getRequestStatusResponse();
     } catch (NoSuchResourceException e) {
       // shouldn't encounter this exception here
-      throw new SystemException("An unexpected exception occurred while processing add hosts",  e);
+      throw new SystemException("An unexpected exception occurred while processing start hosts",  e);
     }
+
+    return requestStages.getRequestStatusResponse();
   }
 
 
@@ -420,8 +477,8 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
 
       logRequestInfo("Received a updateHostComponent request", request);
 
-      if((clusterName == null || clusterName.isEmpty()) 
-              && (request.getClusterName() != null 
+      if((clusterName == null || clusterName.isEmpty())
+              && (request.getClusterName() != null
               && !request.getClusterName().isEmpty())) {
         clusterNames.add(request.getClusterName());
       }
@@ -573,19 +630,55 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
         (String) properties.get(HOST_COMPONENT_SERVICE_NAME_PROPERTY_ID),
         (String) properties.get(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID),
         (String) properties.get(HOST_COMPONENT_HOST_NAME_PROPERTY_ID),
-        (String) properties.get(HOST_COMPONENT_STATE_PROPERTY_ID));
-    serviceComponentHostRequest.setDesiredStackId(
-        (String) properties.get(HOST_COMPONENT_STACK_ID_PROPERTY_ID));
+        (String) properties.get(HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID));
+    serviceComponentHostRequest.setState((String) properties.get(HOST_COMPONENT_STATE_PROPERTY_ID));
+    serviceComponentHostRequest.setDesiredStackId((String) properties.get(HOST_COMPONENT_STACK_ID_PROPERTY_ID));
     if (properties.get(HOST_COMPONENT_STALE_CONFIGS_PROPERTY_ID) != null) {
       serviceComponentHostRequest.setStaleConfig(
           properties.get(HOST_COMPONENT_STALE_CONFIGS_PROPERTY_ID).toString().toLowerCase());
     }
-    
+
     if (properties.get(HOST_COMPONENT_DESIRED_ADMIN_STATE_PROPERTY_ID) != null) {
       serviceComponentHostRequest.setAdminState(
           properties.get(HOST_COMPONENT_DESIRED_ADMIN_STATE_PROPERTY_ID).toString());
     }
-    
+
+    Object o = properties.get(HOST_COMPONENT_MAINTENANCE_STATE_PROPERTY_ID);
+    if (null != o) {
+      serviceComponentHostRequest.setMaintenanceState (o.toString());
+    }
+
+    return serviceComponentHostRequest;
+  }
+
+  /**
+   * Put changes to component request object from a map of property values.
+   *
+   * @param properties the predicate
+   * @return the component request object
+   */
+  private ServiceComponentHostRequest changeRequest(Map<String, Object> properties) {
+    ServiceComponentHostRequest serviceComponentHostRequest = new ServiceComponentHostRequest(
+            (String) properties.get(HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID),
+            (String) properties.get(HOST_COMPONENT_SERVICE_NAME_PROPERTY_ID),
+            (String) properties.get(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID),
+            (String) properties.get(HOST_COMPONENT_HOST_NAME_PROPERTY_ID),
+            (String) properties.get(HOST_COMPONENT_STATE_PROPERTY_ID));
+    if (properties.get(HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID) != null) {
+      serviceComponentHostRequest.setDesiredState((String)properties.get(HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID));
+    }
+    serviceComponentHostRequest.setDesiredStackId(
+            (String) properties.get(HOST_COMPONENT_STACK_ID_PROPERTY_ID));
+    if (properties.get(HOST_COMPONENT_STALE_CONFIGS_PROPERTY_ID) != null) {
+      serviceComponentHostRequest.setStaleConfig(
+              properties.get(HOST_COMPONENT_STALE_CONFIGS_PROPERTY_ID).toString().toLowerCase());
+    }
+
+    if (properties.get(HOST_COMPONENT_DESIRED_ADMIN_STATE_PROPERTY_ID) != null) {
+      serviceComponentHostRequest.setAdminState(
+              properties.get(HOST_COMPONENT_DESIRED_ADMIN_STATE_PROPERTY_ID).toString());
+    }
+
     Object o = properties.get(HOST_COMPONENT_MAINTENANCE_STATE_PROPERTY_ID);
     if (null != o) {
       serviceComponentHostRequest.setMaintenanceState (o.toString());
@@ -623,7 +716,8 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
 
     Request queryRequest = PropertyHelper.getReadRequest(queryIds);
     // will take care of 404 exception
-    Set<Resource> matchingResources = getResources(queryRequest, predicate);
+
+    Set<Resource> matchingResources = getResourcesForUpdate(queryRequest, predicate);
 
     for (Resource queryResource : matchingResources) {
       //todo: predicate evaluation was removed for BUG-28737 and the removal of this breaks
@@ -641,19 +735,39 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
         if (request.getProperties() != null && request.getProperties().size() != 0) {
           updateRequestProperties.putAll(request.getProperties().iterator().next());
         }
-        requests.add(getRequest(updateRequestProperties));
+        requests.add(changeRequest(updateRequestProperties));
       }
     }
 
     RequestStageContainer requestStages = modifyResources(new Command<RequestStageContainer>() {
       @Override
       public RequestStageContainer invoke() throws AmbariException {
-        return updateHostComponents(stages, requests, request.getRequestInfoProperties(),
-            runSmokeTest);
+        RequestStageContainer stageContainer = null;
+        int retriesRemaining = 100;
+        do {
+          try {
+            stageContainer = updateHostComponents(stages, requests, request.getRequestInfoProperties(),
+                runSmokeTest);
+          } catch (Exception e) {
+            LOG.info("Caught an exception while updating host components, retrying : " + e);
+            if (--retriesRemaining == 0) {
+              e.printStackTrace();
+              throw new RuntimeException("Update Host request submission failed: " + e, e);
+            } else {
+              try {
+                Thread.sleep(250);
+              } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Update Host request submission failed: " + e, e);
+              }
+            }
+          }
+        } while (stageContainer == null);
+
+        return stageContainer;
       }
     });
     notifyUpdate(Resource.Type.HostComponent, request, predicate);
-
     return requestStages;
   }
 
@@ -672,13 +786,15 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
    */
   private boolean isValidStateTransition(RequestStageContainer stages, State startState,
                                          State desiredState, ServiceComponentHost host) {
-
-    if (stages != null) {
-      State projectedState = stages.getProjectedState(host.getHostName(), host.getServiceComponentName());
-      startState = projectedState == null ? startState : projectedState;
-    }
-
-    return State.isValidStateTransition(startState, desiredState);
+    //todo: After separating install and start, the install stage is no longer included in the passed in request stage container
+    //todo: so we need to re-evaluate this getting projected state from topology manager
+    return true;
+//    if (stages != null) {
+//      State projectedState = stages.getProjectedState(host.getHostName(), host.getServiceComponentName());
+//      startState = projectedState == null ? startState : projectedState;
+//    }
+//
+//    return State.isValidStateTransition(startState, desiredState);
   }
 
   /**

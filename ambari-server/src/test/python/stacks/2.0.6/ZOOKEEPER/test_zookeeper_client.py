@@ -17,10 +17,12 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 '''
+import json
 from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
 
 @patch("os.path.exists", new = MagicMock(return_value=True))
+@patch("platform.linux_distribution", new = MagicMock(return_value="Linux"))
 class TestZookeeperClient(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "ZOOKEEPER/3.4.5.2.0/package"
   STACK_VERSION = "2.0.6"
@@ -48,11 +50,13 @@ class TestZookeeperClient(RMFTestCase):
       owner = 'zookeeper',
       content = Template('zoo.cfg.j2'),
       group = 'hadoop',
+      mode = None,
     )
     self.assertResourceCalled('File', '/etc/zookeeper/conf/configuration.xsl',
       owner = 'zookeeper',
       content = Template('configuration.xsl.j2'),
       group = 'hadoop',
+      mode = None,
     )
     self.assertResourceCalled('Directory', '/var/run/zookeeper',
       owner = 'zookeeper',
@@ -106,11 +110,13 @@ class TestZookeeperClient(RMFTestCase):
       owner = 'zookeeper',
       content = Template('zoo.cfg.j2'),
       group = 'hadoop',
+      mode = None,
     )
     self.assertResourceCalled('File', '/etc/zookeeper/conf/configuration.xsl',
       owner = 'zookeeper',
       content = Template('configuration.xsl.j2'),
       group = 'hadoop',
+      mode = None,
     )
     self.assertResourceCalled('Directory', '/var/run/zookeeper',
       owner = 'zookeeper',
@@ -139,9 +145,60 @@ class TestZookeeperClient(RMFTestCase):
       owner = 'zookeeper',
       content = Template('zookeeper_client_jaas.conf.j2'),
       group = 'hadoop',
+      mode = None,
     )
     self.assertResourceCalled('File', '/etc/zookeeper/conf/zoo_sample.cfg',
       owner = 'zookeeper',
       group = 'hadoop',
     )
+    self.assertNoMoreResources()
+
+
+  def test_pre_rolling_restart(self):
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.2.1.0-3242'
+    json_content['commandParams']['version'] = version
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/zookeeper_client.py",
+                       classname = "ZookeeperClient",
+                       command = "pre_rolling_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
+    self.assertResourceCalled('Execute',
+                              'hdp-select set zookeeper-client %s' % version)
+    self.assertNoMoreResources()
+
+  @patch("resource_management.core.shell.call")
+  def test_pre_rolling_restart_23(self, call_mock):
+    call_mock.side_effects = [(0, None), (0, None)]
+
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.3.0.0-3242'
+    json_content['commandParams']['version'] = version
+
+    mocks_dict = {}
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/zookeeper_client.py",
+                       classname = "ZookeeperClient",
+                       command = "pre_rolling_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES,
+                       call_mocks = [(0, None), (0, None)],
+                       mocks_dict = mocks_dict)
+
+    self.assertResourceCalled('Execute',
+                              'hdp-select set zookeeper-client %s' % version)
+
+    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(
+      "conf-select create-conf-dir --package zookeeper --stack-version 2.3.0.0-3242 --conf-version 0",
+       mocks_dict['call'].call_args_list[0][0][0])
+    self.assertEquals(
+      "conf-select set-conf-dir --package zookeeper --stack-version 2.3.0.0-3242 --conf-version 0",
+       mocks_dict['call'].call_args_list[1][0][0])
+
     self.assertNoMoreResources()

@@ -198,7 +198,7 @@ describe('MainHostController', function () {
         }];
       });
     });
-    
+
     afterEach(function() {
       App.db.getFilterConditions.restore();
       hostController.getRegExp.restore();

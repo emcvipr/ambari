@@ -70,10 +70,12 @@ import org.apache.ambari.server.actionmanager.ActionDBAccessor;
 import org.apache.ambari.server.actionmanager.ActionDBAccessorImpl;
 import org.apache.ambari.server.actionmanager.ActionManager;
 import org.apache.ambari.server.actionmanager.HostRoleCommand;
+import org.apache.ambari.server.actionmanager.HostRoleCommandFactory;
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.actionmanager.Request;
 import org.apache.ambari.server.actionmanager.RequestFactory;
 import org.apache.ambari.server.actionmanager.Stage;
+import org.apache.ambari.server.actionmanager.StageFactory;
 import org.apache.ambari.server.agent.HostStatus.Status;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.configuration.Configuration;
@@ -82,10 +84,10 @@ import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.OrmTestHelper;
-import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
-import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
-import org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile;
-import org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFileBuilder;
+import org.apache.ambari.server.orm.dao.*;
+import org.apache.ambari.server.orm.entities.*;
+import org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileWriter;
+import org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileWriterFactory;
 import org.apache.ambari.server.serveraction.kerberos.KerberosServerAction;
 import org.apache.ambari.server.state.Alert;
 import org.apache.ambari.server.state.AlertState;
@@ -105,6 +107,7 @@ import org.apache.ambari.server.state.fsm.InvalidStateTransitionException;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostInstallEvent;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostStartEvent;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostUpgradeEvent;
+import org.apache.ambari.server.utils.EventBusSynchronizer;
 import org.apache.ambari.server.utils.StageUtils;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -132,14 +135,37 @@ public class TestHeartbeatHandler {
   long requestId = 23;
   long stageId = 31;
 
+  private final static StackId HDP_22_STACK = new StackId("HDP", "2.2.0");
+
   @Inject
   AmbariMetaInfo metaInfo;
+
   @Inject
   Configuration config;
+
   @Inject
   ActionDBAccessor actionDBAccessor;
+
   @Inject
   OrmTestHelper helper;
+
+  @Inject
+  ResourceTypeDAO resourceTypeDAO;
+
+  @Inject
+  StackDAO stackDAO;
+
+  @Inject
+  ClusterDAO clusterDAO;
+
+  @Inject
+  HostDAO hostDAO;
+
+  @Inject
+  StageFactory stageFactory;
+
+  @Inject
+  HostRoleCommandFactory hostRoleCommandFactory;
 
   private UnitOfWork unitOfWork;
 
@@ -149,11 +175,22 @@ public class TestHeartbeatHandler {
 
   @Before
   public void setup() throws Exception {
-    injector = Guice.createInjector(new InMemoryDefaultTestModule());
+    InMemoryDefaultTestModule module = new InMemoryDefaultTestModule(){
+
+      @Override
+      protected void configure() {
+        getProperties().put("recovery.type", "FULL");
+        getProperties().put("recovery.lifetime_max_count", "10");
+        getProperties().put("recovery.max_count", "4");
+        getProperties().put("recovery.window_in_minutes", "23");
+        getProperties().put("recovery.retry_interval", "2");
+        super.configure();
+      }
+    };
+    injector = Guice.createInjector(module);
     injector.getInstance(GuiceJpaInitializer.class);
     clusters = injector.getInstance(Clusters.class);
     injector.injectMembers(this);
-    metaInfo.init();
     log.debug("Using server os type=" + config.getServerOsType());
     unitOfWork = injector.getInstance(UnitOfWork.class);
   }
@@ -212,12 +249,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testHeartbeatWithConfigs() throws Exception {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -261,7 +292,9 @@ public class TestHeartbeatHandler {
     reports.add(cr);
     hb.setReports(reports);
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    HostEntity host1 = hostDAO.findByName(DummyHostname1);
+    Assert.assertNotNull(host1);
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -283,12 +316,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testRestartRequiredAfterInstallClient() throws Exception {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(HDFS_CLIENT).persist();
@@ -327,7 +354,7 @@ public class TestHeartbeatHandler {
     reports.add(cr);
     hb.setReports(reports);
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
         Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -351,12 +378,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testHeartbeatCustomCommandWithConfigs() throws Exception {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -416,7 +437,7 @@ public class TestHeartbeatHandler {
     reports.add(crn);
     hb.setReports(reports);
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
       Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -441,12 +462,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testHeartbeatCustomStartStop() throws Exception {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -504,7 +519,7 @@ public class TestHeartbeatHandler {
 
     assertTrue(serviceComponentHost1.isRestartRequired());
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -531,12 +546,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testStatusHeartbeat() throws Exception {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -585,7 +594,7 @@ public class TestHeartbeatHandler {
     componentStatuses.add(componentStatus2);
     hb.setComponentStatus(componentStatuses);
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -613,12 +622,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testStatusHeartbeatWithAnnotation() throws Exception {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -636,7 +639,7 @@ public class TestHeartbeatHandler {
     ArrayList<ComponentStatus> componentStatuses = new ArrayList<ComponentStatus>();
     hb.setComponentStatus(componentStatuses);
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -671,12 +674,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testLiveStatusUpdateAfterStopFailed() throws Exception {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -727,7 +724,7 @@ public class TestHeartbeatHandler {
 
     hb.setComponentStatus(componentStatuses);
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -751,7 +748,10 @@ public class TestHeartbeatHandler {
     injector.injectMembers(this);
     clusters.addHost(DummyHostname1);
     clusters.getHost(DummyHostname1).persist();
-    clusters.addCluster(DummyCluster);
+
+    StackId dummyStackId = new StackId(DummyStackId);
+    clusters.addCluster(DummyCluster, dummyStackId);
+
     ActionDBAccessor db = injector.getInstance(ActionDBAccessorImpl.class);
     ActionManager am = new ActionManager(5000, 1200000, new ActionQueue(), clusters, db,
         new HostsMap((String) null), unitOfWork, injector.getInstance(RequestFactory.class), null, null);
@@ -789,7 +789,7 @@ public class TestHeartbeatHandler {
   }
 
   private void populateActionDB(ActionDBAccessor db, String DummyHostname1) throws AmbariException {
-    Stage s = new Stage(requestId, "/a/b", DummyCluster, 1L, "heartbeat handler test",
+    Stage s = stageFactory.createNew(requestId, "/a/b", DummyCluster, 1L, "heartbeat handler test",
       "clusterHostInfo", "commandParamsStage", "hostParamsStage");
     s.setStageId(stageId);
     String filename = null;
@@ -832,6 +832,44 @@ public class TestHeartbeatHandler {
     assertTrue(hostObject.getLastRegistrationTime() != 0);
     assertEquals(hostObject.getLastHeartbeatTime(),
         hostObject.getLastRegistrationTime());
+  }
+
+  @Test
+  public void testRegistrationRecoveryConfig() throws AmbariException,
+      InvalidStateTransitionException {
+    ActionManager am = getMockActionManager();
+    replay(am);
+    Clusters fsm = clusters;
+    HeartBeatHandler handler = new HeartBeatHandler(fsm, new ActionQueue(), am,
+                                                    injector);
+    clusters.addHost(DummyHostname1);
+    Host hostObject = clusters.getHost(DummyHostname1);
+    hostObject.setIPv4("ipv4");
+    hostObject.setIPv6("ipv6");
+
+    Register reg = new Register();
+    HostInfo hi = new HostInfo();
+    hi.setHostName(DummyHostname1);
+    hi.setOS(DummyOsType);
+    reg.setHostname(DummyHostname1);
+    reg.setCurrentPingPort(DummyCurrentPingPort);
+    reg.setHardwareProfile(hi);
+    reg.setAgentVersion(metaInfo.getServerVersion());
+    reg.setPrefix(Configuration.PREFIX_DIR);
+    RegistrationResponse rr = handler.handleRegistration(reg);
+    RecoveryConfig rc = rr.getRecoveryConfig();
+    assertEquals(rc.getMaxCount(), "4");
+    assertEquals(rc.getType(), "FULL");
+    assertEquals(rc.getMaxLifetimeCount(), "10");
+    assertEquals(rc.getRetryGap(), "2");
+    assertEquals(rc.getWindowInMinutes(), "23");
+
+    rc = RecoveryConfig.getRecoveryConfig(new Configuration());
+    assertEquals(rc.getMaxCount(), "6");
+    assertEquals(rc.getType(), "DEFAULT");
+    assertEquals(rc.getMaxLifetimeCount(), "12");
+    assertEquals(rc.getRetryGap(), "5");
+    assertEquals(rc.getWindowInMinutes(), "60");
   }
 
   @Test
@@ -1091,12 +1129,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testTaskInProgressHandling() throws AmbariException, InvalidStateTransitionException {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -1134,7 +1166,7 @@ public class TestHeartbeatHandler {
     hb.setReports(reports);
     hb.setComponentStatus(new ArrayList<ComponentStatus>());
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, RoleCommand.INSTALL);
 
     ActionManager am = getMockActionManager();
@@ -1154,12 +1186,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testOPFailedEventForAbortedTask() throws AmbariException, InvalidStateTransitionException {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -1175,7 +1201,7 @@ public class TestHeartbeatHandler {
       getServiceComponent(DATANODE).getServiceComponentHost(DummyHostname1);
     serviceComponentHost1.setState(State.INSTALLING);
 
-    Stage s = new Stage(1, "/a/b", "cluster1", 1L, "action manager test",
+    Stage s = stageFactory.createNew(1, "/a/b", "cluster1", 1L, "action manager test",
       "clusterHostInfo", "commandParamsStage", "hostParamsStage");
     s.setStageId(1);
     s.addHostRoleExecutionCommand(DummyHostname1, Role.DATANODE, RoleCommand.INSTALL,
@@ -1210,7 +1236,7 @@ public class TestHeartbeatHandler {
     hb.setReports(reports);
     hb.setComponentStatus(new ArrayList<ComponentStatus>());
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -1239,12 +1265,6 @@ public class TestHeartbeatHandler {
   public void testCommandReportOnHeartbeatUpdatedState()
       throws AmbariException, InvalidStateTransitionException {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>() {{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -1278,7 +1298,7 @@ public class TestHeartbeatHandler {
     hb.setReports(reports);
     hb.setComponentStatus(new ArrayList<ComponentStatus>());
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -1363,12 +1383,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testUpgradeSpecificHandling() throws AmbariException, InvalidStateTransitionException {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>() {{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -1402,7 +1416,7 @@ public class TestHeartbeatHandler {
     hb.setReports(reports);
     hb.setComponentStatus(new ArrayList<ComponentStatus>());
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -1461,14 +1475,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testStatusHeartbeatWithVersion() throws Exception {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
-
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -1486,14 +1492,14 @@ public class TestHeartbeatHandler {
         getServiceComponent(HDFS_CLIENT).getServiceComponentHost(DummyHostname1);
 
     StackId stack130 = new StackId("HDP-1.3.0");
-    StackId stack122 = new StackId("HDP-1.2.2");
+    StackId stack120 = new StackId("HDP-1.2.0");
 
     serviceComponentHost1.setState(State.INSTALLED);
     serviceComponentHost2.setState(State.STARTED);
     serviceComponentHost3.setState(State.STARTED);
     serviceComponentHost1.setStackVersion(stack130);
-    serviceComponentHost2.setStackVersion(stack122);
-    serviceComponentHost3.setStackVersion(stack122);
+    serviceComponentHost2.setStackVersion(stack120);
+    serviceComponentHost3.setStackVersion(stack120);
 
     HeartBeat hb = new HeartBeat();
     hb.setTimestamp(System.currentTimeMillis());
@@ -1528,7 +1534,7 @@ public class TestHeartbeatHandler {
     assertEquals("Matching value " + serviceComponentHost1.getStackVersion(),
         stack130, serviceComponentHost1.getStackVersion());
     assertEquals("Matching value " + serviceComponentHost2.getStackVersion(),
-        stack122, serviceComponentHost2.getStackVersion());
+        stack120, serviceComponentHost2.getStackVersion());
     assertEquals("Matching value " + serviceComponentHost3.getStackVersion(),
         stack130, serviceComponentHost3.getStackVersion());
     assertTrue(hb.getAgentEnv().getHostHealth().getServerTimeStampAtReporting() >= hb.getTimestamp());
@@ -1538,14 +1544,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testComponentUpgradeCompleteReport() throws AmbariException, InvalidStateTransitionException {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
-
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -1561,14 +1559,14 @@ public class TestHeartbeatHandler {
             getServiceComponent(NAMENODE).getServiceComponentHost(DummyHostname1);
 
     StackId stack130 = new StackId("HDP-1.3.0");
-    StackId stack122 = new StackId("HDP-1.2.2");
+    StackId stack120 = new StackId("HDP-1.2.0");
 
     serviceComponentHost1.setState(State.UPGRADING);
     serviceComponentHost2.setState(State.INSTALLING);
 
-    serviceComponentHost1.setStackVersion(stack122);
+    serviceComponentHost1.setStackVersion(stack120);
     serviceComponentHost1.setDesiredStackVersion(stack130);
-    serviceComponentHost2.setStackVersion(stack122);
+    serviceComponentHost2.setStackVersion(stack120);
 
     HeartBeat hb = new HeartBeat();
     hb.setTimestamp(System.currentTimeMillis());
@@ -1604,7 +1602,7 @@ public class TestHeartbeatHandler {
     hb.setReports(reports);
 
     ActionQueue aq = new ActionQueue();
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -1621,21 +1619,13 @@ public class TestHeartbeatHandler {
             serviceComponentHost1.getDesiredStackVersion(),
             stack130, serviceComponentHost1.getStackVersion());
     assertEquals("Stack version for SCH should not change ",
-            stack122, serviceComponentHost2.getStackVersion());
+            stack120, serviceComponentHost2.getStackVersion());
   }
 
   @Test
   @SuppressWarnings("unchecked")
   public void testComponentUpgradeInProgressReport() throws AmbariException, InvalidStateTransitionException {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
-
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -1651,14 +1641,14 @@ public class TestHeartbeatHandler {
             getServiceComponent(NAMENODE).getServiceComponentHost(DummyHostname1);
 
     StackId stack130 = new StackId("HDP-1.3.0");
-    StackId stack122 = new StackId("HDP-1.2.2");
+    StackId stack120 = new StackId("HDP-1.2.0");
 
     serviceComponentHost1.setState(State.UPGRADING);
     serviceComponentHost2.setState(State.INSTALLING);
 
-    serviceComponentHost1.setStackVersion(stack122);
+    serviceComponentHost1.setStackVersion(stack120);
     serviceComponentHost1.setDesiredStackVersion(stack130);
-    serviceComponentHost2.setStackVersion(stack122);
+    serviceComponentHost2.setStackVersion(stack120);
 
     HeartBeat hb = new HeartBeat();
     hb.setTimestamp(System.currentTimeMillis());
@@ -1694,7 +1684,7 @@ public class TestHeartbeatHandler {
     hb.setReports(reports);
 
     ActionQueue aq = new ActionQueue();
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -1720,14 +1710,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testComponentUpgradeFailReport() throws AmbariException, InvalidStateTransitionException {
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>(){{
-      add(DummyHostname1);
-    }};
-
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
-
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -1743,17 +1725,17 @@ public class TestHeartbeatHandler {
             getServiceComponent(NAMENODE).getServiceComponentHost(DummyHostname1);
 
     StackId stack130 = new StackId("HDP-1.3.0");
-    StackId stack122 = new StackId("HDP-1.2.2");
+    StackId stack120 = new StackId("HDP-1.2.0");
 
     serviceComponentHost1.setState(State.UPGRADING);
     serviceComponentHost2.setState(State.INSTALLING);
 
-    serviceComponentHost1.setStackVersion(stack122);
+    serviceComponentHost1.setStackVersion(stack120);
     serviceComponentHost1.setDesiredStackVersion(stack130);
-    serviceComponentHost2.setStackVersion(stack122);
+    serviceComponentHost2.setStackVersion(stack120);
 
-    Stage s = new Stage(requestId, "/a/b", "cluster1", 1L, "action manager test",
-      "clusterHostInfo", "commandParamsStage", "hostParamsStage");
+    Stage s = stageFactory.createNew(requestId, "/a/b", "cluster1", 1L, "action manager test",
+        "clusterHostInfo", "commandParamsStage", "hostParamsStage");
     s.setStageId(stageId);
     s.addHostRoleExecutionCommand(DummyHostname1, Role.DATANODE, RoleCommand.UPGRADE,
       new ServiceComponentHostUpgradeEvent(Role.DATANODE.toString(),
@@ -1817,7 +1799,7 @@ public class TestHeartbeatHandler {
     hb.setReports(reports);
 
     ActionQueue aq = new ActionQueue();
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -1835,21 +1817,21 @@ public class TestHeartbeatHandler {
     assertEquals("State of SCH should change after fail report",
             State.INSTALL_FAILED, serviceComponentHost2.getState());
     assertEquals("Stack version of SCH should not change after fail report",
-            stack122, serviceComponentHost1.getStackVersion());
+            stack120, serviceComponentHost1.getStackVersion());
     assertEquals("Stack version of SCH should not change after fail report",
             stack130, serviceComponentHost1.getDesiredStackVersion());
     assertEquals("Stack version of SCH should not change after fail report",
             State.INSTALL_FAILED, serviceComponentHost2.getState());
   }
 
+
   @Test
   @SuppressWarnings("unchecked")
-  public void testProcessStatusReports() throws Exception {
+  public void testRecoveryStatusReports() throws Exception {
     Clusters fsm = clusters;
 
     Cluster cluster = getDummyCluster();
     Host hostObject = clusters.getHost(DummyHostname1);
-    clusters.mapHostToCluster(hostObject.getHostName(), cluster.getClusterName());
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -1861,7 +1843,89 @@ public class TestHeartbeatHandler {
 
     ActionQueue aq = new ActionQueue();
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1, Role.DATANODE, null, null);
+    ActionManager am = getMockActionManager();
+    expect(am.getTasks(anyObject(List.class))).andReturn(
+        new ArrayList<HostRoleCommand>() {{
+          add(command);
+          add(command);
+        }}).anyTimes();
+    replay(am);
+    HeartBeatHandler handler = new HeartBeatHandler(fsm, aq, am, injector);
+
+    Register reg = new Register();
+    HostInfo hi = new HostInfo();
+    hi.setHostName(DummyHostname1);
+    hi.setOS(DummyOs);
+    hi.setOSRelease(DummyOSRelease);
+    reg.setHostname(DummyHostname1);
+    reg.setHardwareProfile(hi);
+    reg.setAgentVersion(metaInfo.getServerVersion());
+    handler.handleRegistration(reg);
+
+    hostObject.setState(HostState.UNHEALTHY);
+
+    aq.enqueue(DummyHostname1, new StatusCommand());
+
+    //All components are up
+    HeartBeat hb1 = new HeartBeat();
+    hb1.setResponseId(0);
+    hb1.setNodeStatus(new HostStatus(Status.HEALTHY, DummyHostStatus));
+    hb1.setHostname(DummyHostname1);
+    RecoveryReport rr = new RecoveryReport();
+    rr.setSummary("RECOVERABLE");
+    List<ComponentRecoveryReport> compRecReports = new ArrayList<ComponentRecoveryReport>();
+    ComponentRecoveryReport compRecReport = new ComponentRecoveryReport();
+    compRecReport.setLimitReached(Boolean.FALSE);
+    compRecReport.setName("DATANODE");
+    compRecReport.setNumAttempts(2);
+    compRecReports.add(compRecReport);
+    rr.setComponentReports(compRecReports);
+    hb1.setRecoveryReport(rr);
+    handler.handleHeartBeat(hb1);
+    assertEquals("RECOVERABLE", hostObject.getRecoveryReport().getSummary());
+    assertEquals(1, hostObject.getRecoveryReport().getComponentReports().size());
+    assertEquals(2, hostObject.getRecoveryReport().getComponentReports().get(0).getNumAttempts());
+
+    HeartBeat hb2 = new HeartBeat();
+    hb2.setResponseId(1);
+    hb2.setNodeStatus(new HostStatus(Status.HEALTHY, DummyHostStatus));
+    hb2.setHostname(DummyHostname1);
+    rr = new RecoveryReport();
+    rr.setSummary("UNRECOVERABLE");
+    compRecReports = new ArrayList<ComponentRecoveryReport>();
+    compRecReport = new ComponentRecoveryReport();
+    compRecReport.setLimitReached(Boolean.TRUE);
+    compRecReport.setName("DATANODE");
+    compRecReport.setNumAttempts(5);
+    compRecReports.add(compRecReport);
+    rr.setComponentReports(compRecReports);
+    hb2.setRecoveryReport(rr);
+    handler.handleHeartBeat(hb2);
+    assertEquals("UNRECOVERABLE", hostObject.getRecoveryReport().getSummary());
+    assertEquals(1, hostObject.getRecoveryReport().getComponentReports().size());
+    assertEquals(5, hostObject.getRecoveryReport().getComponentReports().get(0).getNumAttempts());
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testProcessStatusReports() throws Exception {
+    Clusters fsm = clusters;
+
+    Cluster cluster = getDummyCluster();
+    Host hostObject = clusters.getHost(DummyHostname1);
+    Service hdfs = cluster.addService(HDFS);
+    hdfs.persist();
+    hdfs.addServiceComponent(DATANODE).persist();
+    hdfs.getServiceComponent(DATANODE).addServiceComponentHost(DummyHostname1).persist();
+    hdfs.addServiceComponent(NAMENODE).persist();
+    hdfs.getServiceComponent(NAMENODE).addServiceComponentHost(DummyHostname1).persist();
+    hdfs.getServiceComponent(NAMENODE).getServiceComponentHost(DummyHostname1).setState(State.STARTED);
+    hdfs.getServiceComponent(DATANODE).getServiceComponentHost(DummyHostname1).setState(State.STARTED);
+
+    ActionQueue aq = new ActionQueue();
+
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
     ActionManager am = getMockActionManager();
     expect(am.getTasks(anyObject(List.class))).andReturn(
@@ -2083,7 +2147,7 @@ public class TestHeartbeatHandler {
 
     ActionQueue aq = new ActionQueue();
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -2200,23 +2264,58 @@ public class TestHeartbeatHandler {
 
   private Cluster getDummyCluster()
       throws AmbariException {
-    clusters.addHost(DummyHostname1);
-    clusters.getHost(DummyHostname1).setOsType(DummyOsType);
+    StackEntity stackEntity = stackDAO.find(HDP_22_STACK.getStackName(), HDP_22_STACK.getStackVersion());
+    org.junit.Assert.assertNotNull(stackEntity);
+
+    // Create the cluster
+    ResourceTypeEntity resourceTypeEntity = new ResourceTypeEntity();
+    resourceTypeEntity.setId(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE);
+    resourceTypeEntity.setName(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE_NAME);
+    resourceTypeEntity = resourceTypeDAO.merge(resourceTypeEntity);
+
+    ResourceEntity resourceEntity = new ResourceEntity();
+    resourceEntity.setResourceType(resourceTypeEntity);
+
+    ClusterEntity clusterEntity = new ClusterEntity();
+    clusterEntity.setClusterName(DummyCluster);
+    clusterEntity.setClusterInfo("test_cluster_info1");
+    clusterEntity.setResource(resourceEntity);
+    clusterEntity.setDesiredStack(stackEntity);
+
+    clusterDAO.create(clusterEntity);
+    
+    StackId stackId = new StackId(DummyStackId);
+    
+    Cluster cluster = clusters.getCluster(DummyCluster);
+    
+    cluster.setDesiredStackVersion(stackId);
+    cluster.setCurrentStackVersion(stackId);
+    helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
+    cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
+        RepositoryVersionState.UPGRADING);
+
+    Set<String> hostNames = new HashSet<String>(){{
+      add(DummyHostname1);
+    }};
 
     Map<String, String> hostAttributes = new HashMap<String, String>();
     hostAttributes.put("os_family", "redhat");
     hostAttributes.put("os_release_version", "6.3");
-    clusters.getHost(DummyHostname1).setHostAttributes(hostAttributes);
 
-    clusters.getHost(DummyHostname1).persist();
-    clusters.addCluster(DummyCluster);
+    List<HostEntity> hostEntities = new ArrayList<HostEntity>();
+    for(String hostName : hostNames) {
+      clusters.addHost(hostName);
+      Host host = clusters.getHost(hostName);
+      host.setHostAttributes(hostAttributes);
+      host.persist();
 
-    Cluster cluster = clusters.getCluster(DummyCluster);
-    StackId stackId = new StackId(DummyStackId);
-    cluster.setDesiredStackVersion(stackId);
-    cluster.setCurrentStackVersion(stackId);
-    helper.getOrCreateRepositoryVersion(stackId.getStackId(), stackId.getStackVersion());
-    cluster.createClusterVersion(stackId.getStackId(), stackId.getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
+      HostEntity hostEntity = hostDAO.findByName(hostName);
+      Assert.assertNotNull(hostEntity);
+      hostEntities.add(hostEntity);
+    }
+    clusterEntity.setHostEntities(hostEntities);
+    clusters.mapHostsToCluster(hostNames, DummyCluster);
+
     return cluster;
   }
 
@@ -2224,8 +2323,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testCommandStatusProcesses() throws Exception {
     Cluster cluster = getDummyCluster();
-    Host hostObject = clusters.getHost(DummyHostname1);
-    clusters.mapHostToCluster(hostObject.getHostName(), cluster.getClusterName());
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -2268,7 +2365,7 @@ public class TestHeartbeatHandler {
     componentStatuses.add(componentStatus1);
     hb.setComponentStatus(componentStatuses);
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -2307,8 +2404,6 @@ public class TestHeartbeatHandler {
   @SuppressWarnings("unchecked")
   public void testCommandStatusProcesses_empty() throws Exception {
     Cluster cluster = getDummyCluster();
-    Host hostObject = clusters.getHost(DummyHostname1);
-    clusters.mapHostToCluster(hostObject.getHostName(), cluster.getClusterName());
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
     hdfs.addServiceComponent(DATANODE).persist();
@@ -2335,7 +2430,7 @@ public class TestHeartbeatHandler {
     componentStatuses.add(componentStatus1);
     hb.setComponentStatus(componentStatuses);
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
             Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -2368,15 +2463,6 @@ public class TestHeartbeatHandler {
     replay(am);
 
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>() {
-      {
-        add(DummyHostname1);
-      }
-    };
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
-
     Clusters fsm = clusters;
     Host hostObject = clusters.getHost(DummyHostname1);
     hostObject.setIPv4("ipv4");
@@ -2424,8 +2510,11 @@ public class TestHeartbeatHandler {
 
   @Test
   public void testInstallPackagesWithVersion() throws Exception {
+    // required since this test method checks the DAO result of handling a
+    // heartbeat which performs some async tasks
+    EventBusSynchronizer.synchronizeAmbariEventPublisher(injector);
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
         Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -2434,14 +2523,6 @@ public class TestHeartbeatHandler {
     replay(am);
 
     Cluster cluster = getDummyCluster();
-
-    @SuppressWarnings("serial")
-    Set<String> hostNames = new HashSet<String>() {{
-      add(DummyHostname1);
-    }};
-    clusters.mapHostsToCluster(hostNames, DummyCluster);
-
-
     HeartBeatHandler handler = getHeartBeatHandler(am, new ActionQueue());
     HeartBeat hb = new HeartBeat();
 
@@ -2469,17 +2550,18 @@ public class TestHeartbeatHandler {
     hb.setHostname(DummyHostname1);
     hb.setComponentStatus(new ArrayList<ComponentStatus>());
 
+    StackId stackId = new StackId("HDP", "0.1");
 
     RepositoryVersionDAO dao = injector.getInstance(RepositoryVersionDAO.class);
-    RepositoryVersionEntity entity = dao.findByStackAndVersion("HDP-0.1", "0.1");
+    RepositoryVersionEntity entity = dao.findByStackAndVersion(stackId, "0.1");
     Assert.assertNotNull(entity);
 
     handler.handleHeartBeat(hb);
 
-    entity = dao.findByStackAndVersion("HDP-0.1", "0.1");
+    entity = dao.findByStackAndVersion(stackId, "0.1");
     Assert.assertNull(entity);
 
-    entity = dao.findByStackAndVersion("HDP-0.1", "2.2.1.0-2222");
+    entity = dao.findByStackAndVersion(stackId, "2.2.1.0-2222");
     Assert.assertNotNull(entity);
   }
 
@@ -2494,17 +2576,15 @@ public class TestHeartbeatHandler {
 
     properties = kcp.get(0);
     Assert.assertNotNull(properties);
-    Assert.assertEquals("c6403.ambari.apache.org", properties.get(KerberosActionDataFile.HOSTNAME));
-    Assert.assertEquals("HDFS", properties.get(KerberosActionDataFile.SERVICE));
-    Assert.assertEquals("DATANODE", properties.get(KerberosActionDataFile.COMPONENT));
-    Assert.assertEquals("dn/_HOST@_REALM", properties.get(KerberosActionDataFile.PRINCIPAL));
-    Assert.assertEquals("hdfs-site/dfs.namenode.kerberos.principal", properties.get(KerberosActionDataFile.PRINCIPAL_CONFIGURATION));
-    Assert.assertEquals("/etc/security/keytabs/dn.service.keytab", properties.get(KerberosActionDataFile.KEYTAB_FILE_PATH));
-    Assert.assertEquals("hdfs", properties.get(KerberosActionDataFile.KEYTAB_FILE_OWNER_NAME));
-    Assert.assertEquals("r", properties.get(KerberosActionDataFile.KEYTAB_FILE_OWNER_ACCESS));
-    Assert.assertEquals("hadoop", properties.get(KerberosActionDataFile.KEYTAB_FILE_GROUP_NAME));
-    Assert.assertEquals("", properties.get(KerberosActionDataFile.KEYTAB_FILE_GROUP_ACCESS));
-    Assert.assertEquals("hdfs-site/dfs.namenode.keytab.file", properties.get(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION));
+    Assert.assertEquals("c6403.ambari.apache.org", properties.get(KerberosIdentityDataFileWriter.HOSTNAME));
+    Assert.assertEquals("HDFS", properties.get(KerberosIdentityDataFileWriter.SERVICE));
+    Assert.assertEquals("DATANODE", properties.get(KerberosIdentityDataFileWriter.COMPONENT));
+    Assert.assertEquals("dn/_HOST@_REALM", properties.get(KerberosIdentityDataFileWriter.PRINCIPAL));
+    Assert.assertEquals("/etc/security/keytabs/dn.service.keytab", properties.get(KerberosIdentityDataFileWriter.KEYTAB_FILE_PATH));
+    Assert.assertEquals("hdfs", properties.get(KerberosIdentityDataFileWriter.KEYTAB_FILE_OWNER_NAME));
+    Assert.assertEquals("r", properties.get(KerberosIdentityDataFileWriter.KEYTAB_FILE_OWNER_ACCESS));
+    Assert.assertEquals("hadoop", properties.get(KerberosIdentityDataFileWriter.KEYTAB_FILE_GROUP_NAME));
+    Assert.assertEquals("", properties.get(KerberosIdentityDataFileWriter.KEYTAB_FILE_GROUP_ACCESS));
 
     Assert.assertEquals(Base64.encodeBase64String("hello".getBytes()), kcp.get(0).get(KerberosServerAction.KEYTAB_CONTENT_BASE64));
 
@@ -2516,17 +2596,15 @@ public class TestHeartbeatHandler {
 
     properties = kcp.get(0);
     Assert.assertNotNull(properties);
-    Assert.assertEquals("c6403.ambari.apache.org", properties.get(KerberosActionDataFile.HOSTNAME));
-    Assert.assertEquals("HDFS", properties.get(KerberosActionDataFile.SERVICE));
-    Assert.assertEquals("DATANODE", properties.get(KerberosActionDataFile.COMPONENT));
-    Assert.assertEquals("dn/_HOST@_REALM", properties.get(KerberosActionDataFile.PRINCIPAL));
-    Assert.assertFalse(properties.containsKey(KerberosActionDataFile.PRINCIPAL_CONFIGURATION));
-    Assert.assertEquals("/etc/security/keytabs/dn.service.keytab", properties.get(KerberosActionDataFile.KEYTAB_FILE_PATH));
-    Assert.assertFalse(properties.containsKey(KerberosActionDataFile.KEYTAB_FILE_OWNER_NAME));
-    Assert.assertFalse(properties.containsKey(KerberosActionDataFile.KEYTAB_FILE_OWNER_ACCESS));
-    Assert.assertFalse(properties.containsKey(KerberosActionDataFile.KEYTAB_FILE_GROUP_NAME));
-    Assert.assertFalse(properties.containsKey(KerberosActionDataFile.KEYTAB_FILE_GROUP_ACCESS));
-    Assert.assertFalse(properties.containsKey(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION));
+    Assert.assertEquals("c6403.ambari.apache.org", properties.get(KerberosIdentityDataFileWriter.HOSTNAME));
+    Assert.assertEquals("HDFS", properties.get(KerberosIdentityDataFileWriter.SERVICE));
+    Assert.assertEquals("DATANODE", properties.get(KerberosIdentityDataFileWriter.COMPONENT));
+    Assert.assertEquals("dn/_HOST@_REALM", properties.get(KerberosIdentityDataFileWriter.PRINCIPAL));
+    Assert.assertEquals("/etc/security/keytabs/dn.service.keytab", properties.get(KerberosIdentityDataFileWriter.KEYTAB_FILE_PATH));
+    Assert.assertFalse(properties.containsKey(KerberosIdentityDataFileWriter.KEYTAB_FILE_OWNER_NAME));
+    Assert.assertFalse(properties.containsKey(KerberosIdentityDataFileWriter.KEYTAB_FILE_OWNER_ACCESS));
+    Assert.assertFalse(properties.containsKey(KerberosIdentityDataFileWriter.KEYTAB_FILE_GROUP_NAME));
+    Assert.assertFalse(properties.containsKey(KerberosIdentityDataFileWriter.KEYTAB_FILE_GROUP_ACCESS));
     Assert.assertFalse(properties.containsKey(KerberosServerAction.KEYTAB_CONTENT_BASE64));
   }
 
@@ -2557,7 +2635,7 @@ public class TestHeartbeatHandler {
 
     ActionQueue aq = new ActionQueue();
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
         Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -2588,7 +2666,7 @@ public class TestHeartbeatHandler {
 
     ActionQueue aq = new ActionQueue();
 
-    final HostRoleCommand command = new HostRoleCommand(DummyHostname1,
+    final HostRoleCommand command = hostRoleCommandFactory.create(DummyHostname1,
         Role.DATANODE, null, null);
 
     ActionManager am = getMockActionManager();
@@ -2606,22 +2684,23 @@ public class TestHeartbeatHandler {
 
   private File createTestKeytabData() throws Exception {
     File dataDirectory = temporaryFolder.newFolder();
-    File indexFile = new File(dataDirectory, KerberosActionDataFile.DATA_FILE_NAME);
-    KerberosActionDataFileBuilder kerberosActionDataFileBuilder = new KerberosActionDataFileBuilder(indexFile);
+    File identityDataFile = new File(dataDirectory, KerberosIdentityDataFileWriter.DATA_FILE_NAME);
+    KerberosIdentityDataFileWriter kerberosIdentityDataFileWriter = injector.getInstance(KerberosIdentityDataFileWriterFactory.class).createKerberosIdentityDataFileWriter(identityDataFile);
     File hostDirectory = new File(dataDirectory, "c6403.ambari.apache.org");
 
     File keytabFile;
-    if(hostDirectory.mkdirs())
+    if(hostDirectory.mkdirs()) {
       keytabFile = new File(hostDirectory, DigestUtils.sha1Hex("/etc/security/keytabs/dn.service.keytab"));
-    else
+    } else {
       throw new Exception("Failed to create " + hostDirectory.getAbsolutePath());
+    }
 
-    kerberosActionDataFileBuilder.addRecord("c6403.ambari.apache.org", "HDFS", "DATANODE",
-        "dn/_HOST@_REALM", "service", "hdfs-site/dfs.namenode.kerberos.principal",
+    kerberosIdentityDataFileWriter.writeRecord("c6403.ambari.apache.org", "HDFS", "DATANODE",
+        "dn/_HOST@_REALM", "service",
         "/etc/security/keytabs/dn.service.keytab",
-        "hdfs", "r", "hadoop", "", "hdfs-site/dfs.namenode.keytab.file");
+        "hdfs", "r", "hadoop", "", "false");
 
-    kerberosActionDataFileBuilder.close();
+    kerberosIdentityDataFileWriter.close();
 
     // Ensure the host directory exists...
     FileWriter fw = new FileWriter(keytabFile);

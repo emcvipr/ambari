@@ -39,7 +39,6 @@ import javax.persistence.TableGenerator;
   table = "ambari_sequences", pkColumnName = "sequence_name", valueColumnName = "sequence_value"
   , pkColumnValue = "operation_level_id_seq"
   , initialValue = 1
-  , allocationSize = 1
 )
 public class RequestOperationLevelEntity {
 
@@ -79,9 +78,9 @@ public class RequestOperationLevelEntity {
   @Basic
   private String hostComponentName;
 
-  @Column(name = "host_name")
+  @Column(name = "host_id", nullable=true, insertable=true, updatable=true) // Notice that allowed to be null
   @Basic
-  private String hostName;
+  private Long hostId;
 
   public String getLevel() {
     return level;
@@ -115,12 +114,12 @@ public class RequestOperationLevelEntity {
     this.hostComponentName = hostComponentName;
   }
 
-  public String getHostName() {
-    return hostName;
+  public Long getHostId() {
+    return hostId;
   }
 
-  public void setHostName(String hostName) {
-    this.hostName = hostName;
+  public void setHostId(Long hostId) {
+    this.hostId = hostId;
   }
 
   public Long getRequestId() {

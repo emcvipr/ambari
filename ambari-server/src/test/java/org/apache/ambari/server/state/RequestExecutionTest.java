@@ -17,11 +17,12 @@
  */
 package org.apache.ambari.server.state;
 
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
-import com.google.inject.persist.Transactional;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+
 import junit.framework.Assert;
+
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.controller.RequestScheduleResponse;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
@@ -40,9 +41,10 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
+import com.google.inject.persist.Transactional;
 
 public class RequestExecutionTest {
   private Injector injector;
@@ -62,11 +64,9 @@ public class RequestExecutionTest {
     requestExecutionFactory = injector.getInstance(RequestExecutionFactory.class);
     requestScheduleDAO = injector.getInstance(RequestScheduleDAO.class);
 
-    metaInfo.init();
     clusterName = "foo";
-    clusters.addCluster(clusterName);
+    clusters.addCluster(clusterName, new StackId("HDP-0.1"));
     cluster = clusters.getCluster(clusterName);
-    cluster.setDesiredStackVersion(new StackId("HDP-0.1"));
     Assert.assertNotNull(cluster);
     clusters.addHost("h1");
     clusters.addHost("h2");

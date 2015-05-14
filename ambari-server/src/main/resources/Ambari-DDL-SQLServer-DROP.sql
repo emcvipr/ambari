@@ -99,6 +99,10 @@ IF OBJECT_ID('confgroupclusterconfigmapping', 'U') IS NOT NULL DROP TABLE confgr
 GO
 IF OBJECT_ID('configgroup', 'U') IS NOT NULL DROP TABLE configgroup
 GO
+IF OBJECT_ID('kerberos_principal_host', 'U') IS NOT NULL DROP TABLE kerberos_principal_host
+GO
+IF OBJECT_ID('kerberos_principal', 'U') IS NOT NULL DROP TABLE kerberos_principal
+GO
 IF OBJECT_ID('ambari_sequences', 'U') IS NOT NULL DROP TABLE ambari_sequences
 GO
 IF OBJECT_ID('metainfo', 'U') IS NOT NULL DROP TABLE metainfo
@@ -143,6 +147,8 @@ IF OBJECT_ID('request', 'U') IS NOT NULL DROP TABLE request
 GO
 IF OBJECT_ID('requestschedule', 'U') IS NOT NULL DROP TABLE requestschedule
 GO
+IF OBJECT_ID('serviceconfighosts', 'U') IS NOT NULL DROP TABLE serviceconfighosts
+GO
 IF OBJECT_ID('hoststate', 'U') IS NOT NULL DROP TABLE hoststate
 GO
 IF OBJECT_ID('hostcomponentdesiredstate', 'U') IS NOT NULL DROP TABLE hostcomponentdesiredstate
@@ -181,8 +187,6 @@ IF OBJECT_ID('alert_history', 'U') IS NOT NULL DROP TABLE alert_history
 GO
 IF OBJECT_ID('alert_definition', 'U') IS NOT NULL DROP TABLE alert_definition
 GO
-IF OBJECT_ID('serviceconfighosts', 'U') IS NOT NULL DROP TABLE serviceconfighosts
-GO
 IF OBJECT_ID('serviceconfigmapping', 'U') IS NOT NULL DROP TABLE serviceconfigmapping
 GO
 IF OBJECT_ID('serviceconfig', 'U') IS NOT NULL DROP TABLE serviceconfig
@@ -207,5 +211,13 @@ IF OBJECT_ID('adminprincipaltype', 'U') IS NOT NULL DROP TABLE adminprincipaltyp
 GO
 IF OBJECT_ID('repo_version', 'U') IS NOT NULL DROP TABLE repo_version
 GO
+IF OBJECT_ID('widget_layout_user_widget', 'U') IS NOT NULL DROP TABLE widget_layout_user_widget
+GO
+IF OBJECT_ID('widget_layout', 'U') IS NOT NULL DROP TABLE widget_layout
+GO
+IF OBJECT_ID('widget', 'U') IS NOT NULL DROP TABLE widget
+GO
 IF OBJECT_ID('artifact', 'U') IS NOT NULL DROP TABLE artifact
+GO
+IF OBJECT_ID('stack', 'U') IS NOT NULL DROP TABLE stack
 GO

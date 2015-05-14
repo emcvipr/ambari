@@ -55,16 +55,23 @@ import org.apache.ambari.server.actionmanager.HostRoleCommandFactory;
 import org.apache.ambari.server.actionmanager.HostRoleCommandFactoryImpl;
 import org.apache.ambari.server.actionmanager.RequestFactory;
 import org.apache.ambari.server.actionmanager.StageFactory;
+import org.apache.ambari.server.actionmanager.StageFactoryImpl;
+import org.apache.ambari.server.checks.AbstractCheckDescriptor;
+import org.apache.ambari.server.checks.UpgradeCheckRegistry;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.configuration.Configuration.ConnectionPoolType;
 import org.apache.ambari.server.configuration.Configuration.DatabaseType;
 import org.apache.ambari.server.controller.internal.ComponentResourceProvider;
 import org.apache.ambari.server.controller.internal.HostComponentResourceProvider;
+import org.apache.ambari.server.controller.internal.HostKerberosIdentityResourceProvider;
 import org.apache.ambari.server.controller.internal.HostResourceProvider;
 import org.apache.ambari.server.controller.internal.MemberResourceProvider;
 import org.apache.ambari.server.controller.internal.RepositoryVersionResourceProvider;
 import org.apache.ambari.server.controller.internal.ServiceResourceProvider;
 import org.apache.ambari.server.controller.spi.ResourceProvider;
+import org.apache.ambari.server.controller.utilities.DatabaseChecker;
+import org.apache.ambari.server.notifications.DispatchFactory;
+import org.apache.ambari.server.notifications.NotificationDispatcher;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.DBAccessorImpl;
 import org.apache.ambari.server.orm.PersistenceType;
@@ -73,6 +80,9 @@ import org.apache.ambari.server.scheduler.ExecutionSchedulerImpl;
 import org.apache.ambari.server.security.SecurityHelper;
 import org.apache.ambari.server.security.SecurityHelperImpl;
 import org.apache.ambari.server.serveraction.kerberos.KerberosOperationHandlerFactory;
+import org.apache.ambari.server.stack.StackManagerFactory;
+import org.apache.ambari.server.stageplanner.RoleGraphFactory;
+import org.apache.ambari.server.stageplanner.RoleGraphFactoryImpl;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
@@ -102,6 +112,7 @@ import org.apache.ambari.server.state.scheduler.RequestExecutionFactory;
 import org.apache.ambari.server.state.scheduler.RequestExecutionImpl;
 import org.apache.ambari.server.state.stack.OsFamily;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostImpl;
+import org.apache.ambari.server.topology.BlueprintFactory;
 import org.apache.ambari.server.view.ViewInstanceHandlerList;
 import org.eclipse.jetty.server.SessionIdManager;
 import org.eclipse.jetty.server.SessionManager;
@@ -112,6 +123,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
+import org.springframework.core.type.filter.AssignableTypeFilter;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.crypto.password.StandardPasswordEncoder;
 import org.springframework.util.ClassUtils;
@@ -134,6 +146,7 @@ import com.mchange.v2.c3p0.ComboPooledDataSource;
  */
 public class ControllerModule extends AbstractModule {
   private static Logger LOG = LoggerFactory.getLogger(ControllerModule.class);
+  private static final String AMBARI_PACKAGE = "org.apache.ambari.server";
 
   private final Configuration configuration;
   private final OsFamily os_family;
@@ -281,6 +294,7 @@ public class ControllerModule extends AbstractModule {
         setTargetBeanName("springSecurityFilterChain");
       }
     });
+
     bind(Gson.class).annotatedWith(Names.named("prettyGson")).toInstance(prettyGson);
 
     install(buildJpaPersistModule());
@@ -291,7 +305,7 @@ public class ControllerModule extends AbstractModule {
     bind(Clusters.class).to(ClustersImpl.class);
     bind(AmbariCustomCommandExecutionHelper.class);
     bind(ActionDBAccessor.class).to(ActionDBAccessorImpl.class);
-    bindConstant().annotatedWith(Names.named("schedulerSleeptime")).to(10000L);
+    bindConstant().annotatedWith(Names.named("schedulerSleeptime")).to(1000L);
 
     // This time is added to summary timeout time of all tasks in stage
     // So it's an "additional time", given to stage to finish execution before
@@ -306,16 +320,19 @@ public class ControllerModule extends AbstractModule {
     bindConstant().annotatedWith(Names.named("executionCommandCacheSize")).
         to(configuration.getExecutionCommandsCacheSize());
 
-    bind(AmbariManagementController.class)
-        .to(AmbariManagementControllerImpl.class);
+    bind(AmbariManagementController.class).to(
+        AmbariManagementControllerImpl.class);
     bind(AbstractRootServiceResponseFactory.class).to(RootServiceResponseFactory.class);
     bind(ExecutionScheduler.class).to(ExecutionSchedulerImpl.class);
     bind(DBAccessor.class).to(DBAccessorImpl.class);
     bind(ViewInstanceHandlerList.class).to(AmbariHandlerList.class);
 
     requestStaticInjection(ExecutionCommandWrapper.class);
+    requestStaticInjection(DatabaseChecker.class);
 
     bindByAnnotation(null);
+    bindNotificationDispatchers();
+    registerUpgradeChecks();
   }
 
 
@@ -356,6 +373,10 @@ public class ControllerModule extends AbstractModule {
     return jpaPersistModule;
   }
 
+  /**
+   * Bind classes to their Factories, which can be built on-the-fly.
+   * Often, will also have to edit AgentResourceTest.java
+   */
   private void installFactories() {
     install(new FactoryModuleBuilder().implement(
         Cluster.class, ClusterImpl.class).build(ClusterFactory.class));
@@ -364,7 +385,6 @@ public class ControllerModule extends AbstractModule {
     install(new FactoryModuleBuilder().implement(
         Service.class, ServiceImpl.class).build(ServiceFactory.class));
 
-
     install(new FactoryModuleBuilder()
         .implement(ResourceProvider.class, Names.named("host"), HostResourceProvider.class)
         .implement(ResourceProvider.class, Names.named("hostComponent"), HostComponentResourceProvider.class)
@@ -372,8 +392,8 @@ public class ControllerModule extends AbstractModule {
         .implement(ResourceProvider.class, Names.named("component"), ComponentResourceProvider.class)
         .implement(ResourceProvider.class, Names.named("member"), MemberResourceProvider.class)
         .implement(ResourceProvider.class, Names.named("repositoryVersion"), RepositoryVersionResourceProvider.class)
+        .implement(ResourceProvider.class, Names.named("hostKerberosIdentity"), HostKerberosIdentityResourceProvider.class)
         .build(ResourceProviderFactory.class));
-
 
     install(new FactoryModuleBuilder().implement(
         ServiceComponent.class, ServiceComponentImpl.class).build(
@@ -387,11 +407,15 @@ public class ControllerModule extends AbstractModule {
         ConfigGroup.class, ConfigGroupImpl.class).build(ConfigGroupFactory.class));
     install(new FactoryModuleBuilder().implement(RequestExecution.class,
         RequestExecutionImpl.class).build(RequestExecutionFactory.class));
-    install(new FactoryModuleBuilder().build(StageFactory.class));
+
+    bind(StageFactory.class).to(StageFactoryImpl.class);
+    bind(RoleGraphFactory.class).to(RoleGraphFactoryImpl.class);
     install(new FactoryModuleBuilder().build(RequestFactory.class));
+    install(new FactoryModuleBuilder().build(StackManagerFactory.class));
 
     bind(HostRoleCommandFactory.class).to(HostRoleCommandFactoryImpl.class);
     bind(SecurityHelper.class).toInstance(SecurityHelperImpl.getInstance());
+    bind(BlueprintFactory.class);
   }
 
   /**
@@ -431,7 +455,7 @@ public class ControllerModule extends AbstractModule {
         scanner.addIncludeFilter(new AnnotationTypeFilter(cls));
       }
 
-      beanDefinitions = scanner.findCandidateComponents("org.apache.ambari.server");
+      beanDefinitions = scanner.findCandidateComponents(AMBARI_PACKAGE);
     }
 
     if (null == beanDefinitions || beanDefinitions.size() == 0) {
@@ -487,5 +511,102 @@ public class ControllerModule extends AbstractModule {
     bind(ServiceManager.class).toInstance(manager);
 
     return beanDefinitions;
+  }
+
+  /**
+   * Searches for all instances of {@link NotificationDispatcher} on the
+   * classpath and registers each as a singleton with the
+   * {@link DispatchFactory}.
+   */
+  @SuppressWarnings("unchecked")
+  private void bindNotificationDispatchers() {
+    ClassPathScanningCandidateComponentProvider scanner =
+        new ClassPathScanningCandidateComponentProvider(false);
+
+    // make the factory a singleton
+    DispatchFactory dispatchFactory = DispatchFactory.getInstance();
+    bind(DispatchFactory.class).toInstance(dispatchFactory);
+
+    // match all implementations of the dispatcher interface
+    AssignableTypeFilter filter = new AssignableTypeFilter(
+        NotificationDispatcher.class);
+
+    scanner.addIncludeFilter(filter);
+
+    Set<BeanDefinition> beanDefinitions = scanner.findCandidateComponents(
+        "org.apache.ambari.server.notifications.dispatchers");
+
+    // no dispatchers is a problem
+    if (null == beanDefinitions || beanDefinitions.size() == 0) {
+      LOG.error("No instances of {} found to register", NotificationDispatcher.class);
+      return;
+    }
+
+    // for every discovered dispatcher, singleton-ize them and register with
+    // the dispatch factory
+    for (BeanDefinition beanDefinition : beanDefinitions) {
+      String className = beanDefinition.getBeanClassName();
+      Class<?> clazz = ClassUtils.resolveClassName(className,
+          ClassUtils.getDefaultClassLoader());
+
+      try {
+        NotificationDispatcher dispatcher = (NotificationDispatcher) clazz.newInstance();
+        dispatchFactory.register(dispatcher.getType(), dispatcher);
+        bind((Class<NotificationDispatcher>) clazz).toInstance(dispatcher);
+
+        LOG.info("Binding and registering notification dispatcher {}", clazz);
+      } catch (Exception exception) {
+        LOG.error("Unable to bind and register notification dispatcher {}",
+            clazz, exception);
+      }
+    }
+  }
+
+  /**
+   * Searches for all instances of {@link AbstractCheckDescriptor} on the
+   * classpath and registers each as a singleton with the
+   * {@link UpgradeCheckRegistry}.
+   */
+  @SuppressWarnings("unchecked")
+  private void registerUpgradeChecks() {
+    ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(
+        false);
+
+    // make the registry a singleton
+    UpgradeCheckRegistry registry = new UpgradeCheckRegistry();
+    bind(UpgradeCheckRegistry.class).toInstance(registry);
+
+    // match all implementations of the base check class
+    AssignableTypeFilter filter = new AssignableTypeFilter(AbstractCheckDescriptor.class);
+    scanner.addIncludeFilter(filter);
+
+    Set<BeanDefinition> beanDefinitions = scanner.findCandidateComponents(AMBARI_PACKAGE);
+
+    // no dispatchers is a problem
+    if (null == beanDefinitions || beanDefinitions.size() == 0) {
+      LOG.error("No instances of {} found to register", AbstractCheckDescriptor.class);
+      return;
+    }
+
+    // for every discovered check, singleton-ize them and register with the
+    // registry
+    for (BeanDefinition beanDefinition : beanDefinitions) {
+      String className = beanDefinition.getBeanClassName();
+      Class<?> clazz = ClassUtils.resolveClassName(className, ClassUtils.getDefaultClassLoader());
+
+      try {
+        AbstractCheckDescriptor upgradeCheck = (AbstractCheckDescriptor) clazz.newInstance();
+        bind((Class<AbstractCheckDescriptor>) clazz).toInstance(upgradeCheck);
+        registry.register(upgradeCheck);
+      } catch (Exception exception) {
+        LOG.error("Unable to bind and register upgrade check {}", clazz, exception);
+      }
+    }
+
+    // log the order of the pre-upgrade checks
+    List<AbstractCheckDescriptor> upgradeChecks = registry.getUpgradeChecks();
+    for (AbstractCheckDescriptor upgradeCheck : upgradeChecks) {
+      LOG.error("Registered pre-upgrade check {}", upgradeCheck.getClass());
+    }
   }
 }

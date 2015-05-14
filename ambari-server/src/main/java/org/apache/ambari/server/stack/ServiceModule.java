@@ -18,6 +18,7 @@
 
 package org.apache.ambari.server.stack;
 
+import java.io.File;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -32,6 +33,7 @@ import org.apache.ambari.server.state.ComponentInfo;
 import org.apache.ambari.server.state.CustomCommandDefinition;
 import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.state.ServiceInfo;
+import org.apache.ambari.server.state.ThemeInfo;
 
 /**
  * Service module which provides all functionality related to parsing and fully
@@ -61,6 +63,11 @@ public class ServiceModule extends BaseModule<ServiceModule, ServiceInfo> implem
       new HashMap<String, ComponentModule>();
 
   /**
+   * Map of themes, single value currently
+   */
+  private Map<String, ThemeModule> themeModules = new HashMap<String, ThemeModule>();
+
+  /**
    * Encapsulates IO operations on service directory
    */
   private ServiceDirectory serviceDirectory;
@@ -73,8 +80,8 @@ public class ServiceModule extends BaseModule<ServiceModule, ServiceInfo> implem
   /**
    * validity flag
    */
-  protected boolean valid = true;  
-  
+  protected boolean valid = true;
+
   /**
    * Constructor.
    *
@@ -101,14 +108,16 @@ public class ServiceModule extends BaseModule<ServiceModule, ServiceInfo> implem
     this.serviceDirectory = serviceDirectory;
     this.isCommonService = isCommonService;
 
-    serviceInfo.setMetricsFile(serviceDirectory.getMetricsFile());
+    serviceInfo.setMetricsFile(serviceDirectory.getMetricsFile(serviceInfo.getName()));
     serviceInfo.setAlertsFile(serviceDirectory.getAlertsFile());
     serviceInfo.setKerberosDescriptorFile(serviceDirectory.getKerberosDescriptorFile());
+    serviceInfo.setWidgetsDescriptorFile(serviceDirectory.getWidgetsDescriptorFile(serviceInfo.getName()));
     serviceInfo.setSchemaVersion(AmbariMetaInfo.SCHEMA_VERSION_2);
     serviceInfo.setServicePackageFolder(serviceDirectory.getPackageDir());
 
     populateComponentModules();
     populateConfigurationModules();
+    populateThemeModules();
   }
 
   @Override
@@ -142,6 +151,9 @@ public class ServiceModule extends BaseModule<ServiceModule, ServiceInfo> implem
     if (serviceInfo.isRestartRequiredAfterChange() == null) {
       serviceInfo.setRestartRequiredAfterChange(parent.isRestartRequiredAfterChange());
     }
+    if (serviceInfo.isRestartRequiredAfterRackChange() == null) {
+      serviceInfo.setRestartRequiredAfterRackChange(parent.isRestartRequiredAfterRackChange());
+    }
     if (serviceInfo.isMonitoringService() == null) {
       serviceInfo.setMonitoringService(parent.isMonitoringService());
     }
@@ -163,11 +175,18 @@ public class ServiceModule extends BaseModule<ServiceModule, ServiceInfo> implem
     if (serviceInfo.getKerberosDescriptorFile() == null) {
       serviceInfo.setKerberosDescriptorFile(parent.getKerberosDescriptorFile());
     }
+    if (serviceInfo.getThemesMap().isEmpty()) {
+      serviceInfo.setThemesMap(parent.getThemesMap());
+    }
+    if (serviceInfo.getWidgetsDescriptorFile() == null) {
+      serviceInfo.setWidgetsDescriptorFile(parent.getWidgetsDescriptorFile());
+    }
 
     mergeCustomCommands(parent.getCustomCommands(), serviceInfo.getCustomCommands());
     mergeConfigDependencies(parent);
     mergeComponents(parentModule, allStacks, commonServices);
     mergeConfigurations(parentModule, allStacks, commonServices);
+    mergeThemes(parentModule, allStacks, commonServices);
     mergeExcludedConfigTypes(parent);
   }
 
@@ -273,6 +292,45 @@ public class ServiceModule extends BaseModule<ServiceModule, ServiceInfo> implem
     }
   }
 
+  private void populateThemeModules() {
+
+    if (serviceInfo.getThemesDir() == null) {
+      serviceInfo.setThemesDir(AmbariMetaInfo.SERVICE_THEMES_FOLDER_NAME);
+    }
+
+    String themesDir = serviceDirectory.getAbsolutePath() + File.separator + serviceInfo.getThemesDir();
+
+    if (serviceInfo.getThemes() != null) {
+      for (ThemeInfo themeInfo : serviceInfo.getThemes()) {
+        File themeFile = new File(themesDir + File.separator + themeInfo.getFileName());
+        ThemeModule module = new ThemeModule(themeFile, themeInfo);
+        themeModules.put(module.getId(), module);
+      }
+    }
+
+    //lets not fail if theme contain errors
+  }
+
+  /**
+   * Merge theme modules.
+   */
+  private void mergeThemes(ServiceModule parent, Map<String, StackModule> allStacks,
+                           Map<String, ServiceModule> commonServices) throws AmbariException {
+    Collection<ThemeModule> mergedModules = mergeChildModules(allStacks, commonServices, themeModules, parent.themeModules);
+
+    for (ThemeModule mergedModule : mergedModules) {
+      themeModules.put(mergedModule.getId(), mergedModule);
+      ThemeInfo moduleInfo = mergedModule.getModuleInfo();
+      if (!moduleInfo.isDeleted()) {
+        serviceInfo.getThemesMap().put(moduleInfo.getFileName(), moduleInfo);
+      } else {
+        serviceInfo.getThemesMap().remove(moduleInfo.getFileName());
+      }
+
+    }
+
+  }
+
   /**
    * Merge excluded configs types with parent.  Child values override parent values.
    *
@@ -356,7 +414,7 @@ public class ServiceModule extends BaseModule<ServiceModule, ServiceInfo> implem
     serviceInfo.getComponents().clear();
     Collection<ComponentModule> mergedModules = mergeChildModules(
         allStacks, commonServices, componentModules, parent.componentModules);
-
+    componentModules.clear();
     for (ComponentModule module : mergedModules) {
       componentModules.put(module.getId(), module);
       serviceInfo.getComponents().add(module.getModuleInfo());

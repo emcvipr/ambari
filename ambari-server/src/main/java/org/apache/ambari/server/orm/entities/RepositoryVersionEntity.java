@@ -17,17 +17,22 @@
  */
 package org.apache.ambari.server.orm.entities;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
+import javax.persistence.CascadeType;
 import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
+import javax.persistence.JoinColumn;
 import javax.persistence.Lob;
 import javax.persistence.NamedQueries;
 import javax.persistence.NamedQuery;
+import javax.persistence.OneToMany;
+import javax.persistence.OneToOne;
 import javax.persistence.Table;
 import javax.persistence.TableGenerator;
 import javax.persistence.UniqueConstraint;
@@ -52,13 +57,13 @@ import com.google.inject.Provider;
     pkColumnName = "sequence_name",
     valueColumnName = "sequence_value",
     pkColumnValue = "repo_version_id_seq",
-    initialValue = 0,
-    allocationSize = 1
+    initialValue = 0
     )
 @NamedQueries({
-  @NamedQuery(name = "repositoryVersionByDisplayName", query = "SELECT repoversion FROM RepositoryVersionEntity repoversion WHERE repoversion.displayName=:displayname"),
-  @NamedQuery(name = "repositoryVersionByStackVersion", query = "SELECT repoversion FROM RepositoryVersionEntity repoversion WHERE repoversion.stack=:stack AND repoversion.version=:version"),
-  @NamedQuery(name = "repositoryVersionByStack", query = "SELECT repoversion FROM RepositoryVersionEntity repoversion WHERE repoversion.stack=:stack")
+    @NamedQuery(name = "repositoryVersionByDisplayName", query = "SELECT repoversion FROM RepositoryVersionEntity repoversion WHERE repoversion.displayName=:displayname"),
+    @NamedQuery(name = "repositoryVersionByStackVersion", query = "SELECT repoversion FROM RepositoryVersionEntity repoversion WHERE repoversion.stack.stackName=:stackName AND repoversion.stack.stackVersion=:stackVersion AND repoversion.version=:version"),
+    @NamedQuery(name = "repositoryVersionByStack", query = "SELECT repoversion FROM RepositoryVersionEntity repoversion WHERE repoversion.stack.stackName=:stackName AND repoversion.stack.stackVersion=:stackVersion"),
+    @NamedQuery(name = "repositoryVersionByVersion", query = "SELECT repoversion FROM RepositoryVersionEntity repoversion WHERE repoversion.version=:version")
 })
 @StaticallyInject
 public class RepositoryVersionEntity {
@@ -73,8 +78,12 @@ public class RepositoryVersionEntity {
   @GeneratedValue(strategy = GenerationType.TABLE, generator = "repository_version_id_generator")
   private Long id;
 
-  @Column(name = "stack")
-  private String stack;
+  /**
+   * Unidirectional one-to-one association to {@link StackEntity}
+   */
+  @OneToOne
+  @JoinColumn(name = "stack_id", unique = false, nullable = false, insertable = true, updatable = true)
+  private StackEntity stack;
 
   @Column(name = "version")
   private String version;
@@ -89,13 +98,20 @@ public class RepositoryVersionEntity {
   @Column(name = "repositories")
   private String operatingSystems;
 
+  @OneToMany(cascade = CascadeType.REMOVE, mappedBy = "repositoryVersion")
+  private Collection<ClusterVersionEntity> clusterVersionEntities;
+
+  @OneToMany(cascade = CascadeType.REMOVE, mappedBy = "repositoryVersion")
+  private Collection<HostVersionEntity> hostVersionEntities;
+
   // ----- RepositoryVersionEntity -------------------------------------------------------
 
   public RepositoryVersionEntity() {
 
   }
 
-  public RepositoryVersionEntity(String stack, String version, String displayName, String upgradePackage, String operatingSystems) {
+  public RepositoryVersionEntity(StackEntity stack, String version,
+      String displayName, String upgradePackage, String operatingSystems) {
     this.stack = stack;
     this.version = version;
     this.displayName = displayName;
@@ -111,11 +127,22 @@ public class RepositoryVersionEntity {
     this.id = id;
   }
 
-  public String getStack() {
+  /**
+   * Gets the repository version's stack.
+   *
+   * @return the stack.
+   */
+  public StackEntity getStack() {
     return stack;
   }
 
-  public void setStack(String stack) {
+  /**
+   * Sets the repository version's stack.
+   *
+   * @param stack
+   *          the stack to set for the repo version (not {@code null}).
+   */
+  public void setStack(StackEntity stack) {
     this.stack = stack;
   }
 
@@ -148,7 +175,7 @@ public class RepositoryVersionEntity {
   }
 
   public void setOperatingSystems(String repositories) {
-    this.operatingSystems = repositories;
+    operatingSystems = repositories;
   }
 
   /**
@@ -169,26 +196,50 @@ public class RepositoryVersionEntity {
   }
 
   public String getStackName() {
-    return new StackId(stack).getStackName();
+    return getStackId().getStackName();
   }
 
   public String getStackVersion() {
-    return new StackId(stack).getStackVersion();
+    return getStackId().getStackVersion();
+  }
+
+  public StackId getStackId() {
+    if (null == stack) {
+      return null;
+    }
+
+    return new StackId(stack.getStackName(), stack.getStackVersion());
   }
 
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (o == null || getClass() != o.getClass()) return false;
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
 
     RepositoryVersionEntity that = (RepositoryVersionEntity) o;
 
-    if (id != null ? !id.equals(that.id) : that.id != null) return false;
-    if (stack != null ? !stack.equals(that.stack) : that.stack != null) return false;
-    if (version != null ? !version.equals(that.version) : that.version != null) return false;
-    if (displayName != null ? !displayName.equals(that.displayName) : that.displayName != null) return false;
-    if (upgradePackage != null ? !upgradePackage.equals(that.upgradePackage) : that.upgradePackage != null) return false;
-    if (operatingSystems != null ? !operatingSystems.equals(that.operatingSystems) : that.operatingSystems != null) return false;
+    if (id != null ? !id.equals(that.id) : that.id != null) {
+      return false;
+    }
+    if (stack != null ? !stack.equals(that.stack) : that.stack != null) {
+      return false;
+    }
+    if (version != null ? !version.equals(that.version) : that.version != null) {
+      return false;
+    }
+    if (displayName != null ? !displayName.equals(that.displayName) : that.displayName != null) {
+      return false;
+    }
+    if (upgradePackage != null ? !upgradePackage.equals(that.upgradePackage) : that.upgradePackage != null) {
+      return false;
+    }
+    if (operatingSystems != null ? !operatingSystems.equals(that.operatingSystems) : that.operatingSystems != null) {
+      return false;
+    }
 
     return true;
   }

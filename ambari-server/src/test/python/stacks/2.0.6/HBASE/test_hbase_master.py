@@ -17,9 +17,11 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 '''
+import json
 from mock.mock import MagicMock, patch
 from stacks.utils.RMFTestCase import *
 
+@patch("platform.linux_distribution", new = MagicMock(return_value="Linux"))
 @patch("os.path.exists", new = MagicMock(return_value=True))
 class TestHBaseMaster(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "HBASE/0.96.0.2.0/package"
@@ -278,36 +280,42 @@ class TestHBaseMaster(RMFTestCase):
                               owner='hbase',
                               content='log4jproperties\nline2'
     )
-    self.assertResourceCalled('HdfsDirectory', 'hdfs://c6401.ambari.apache.org:8020/apps/hbase/data',
-                              security_enabled = False,
-                              keytab = UnknownConfigurationMock(),
-                              conf_dir = '/etc/hadoop/conf',
-                              hdfs_user = 'hdfs',
-                              kinit_path_local = "/usr/bin/kinit",
-                              owner = 'hbase',
-                              bin_dir = '/usr/bin',
-                              action = ['create_delayed'],
-                              )
-    self.assertResourceCalled('HdfsDirectory', '/apps/hbase/staging',
-                              security_enabled = False,
-                              keytab = UnknownConfigurationMock(),
-                              conf_dir = '/etc/hadoop/conf',
-                              hdfs_user = 'hdfs',
-                              kinit_path_local = "/usr/bin/kinit",
-                              mode = 0711,
-                              owner = 'hbase',
-                              bin_dir = '/usr/bin',
-                              action = ['create_delayed'],
-                              )
-    self.assertResourceCalled('HdfsDirectory', None,
-                              security_enabled = False,
-                              keytab = UnknownConfigurationMock(),
-                              conf_dir = '/etc/hadoop/conf',
-                              hdfs_user = 'hdfs',
-                              kinit_path_local = "/usr/bin/kinit",
-                              bin_dir = '/usr/bin',
-                              action = ['create'],
-                              )
+
+    self.assertResourceCalled('HdfsResource', 'hdfs://c6401.ambari.apache.org:8020/apps/hbase/data',
+        security_enabled = False,
+        hadoop_bin_dir = '/usr/bin',
+        keytab = UnknownConfigurationMock(),
+        
+        kinit_path_local = '/usr/bin/kinit',
+        user = 'hdfs',
+        owner = 'hbase',
+        hadoop_conf_dir = '/etc/hadoop/conf',
+        type = 'directory',
+        action = ['create_on_execute'],
+    )
+    self.assertResourceCalled('HdfsResource', '/apps/hbase/staging',
+        security_enabled = False,
+        hadoop_conf_dir = '/etc/hadoop/conf',
+        keytab = UnknownConfigurationMock(),
+        
+        kinit_path_local = '/usr/bin/kinit',
+        user = 'hdfs',
+        owner = 'hbase',
+        hadoop_bin_dir = '/usr/bin',
+        type = 'directory',
+        action = ['create_on_execute'],
+        mode = 0711,
+    )
+    self.assertResourceCalled('HdfsResource', None,
+        security_enabled = False,
+        hadoop_bin_dir = '/usr/bin',
+        keytab = UnknownConfigurationMock(),
+        
+        kinit_path_local = '/usr/bin/kinit',
+        user = 'hdfs',
+        action = ['execute'],
+        hadoop_conf_dir = '/etc/hadoop/conf',
+    )
 
   def assert_configure_secured(self):
     self.assertResourceCalled('Directory', '/etc/hbase',
@@ -399,36 +407,41 @@ class TestHBaseMaster(RMFTestCase):
                               owner='hbase',
                               content='log4jproperties\nline2'
     )
-    self.assertResourceCalled('HdfsDirectory', 'hdfs://c6401.ambari.apache.org:8020/apps/hbase/data',
-                              security_enabled = True,
-                              keytab = '/etc/security/keytabs/hdfs.headless.keytab',
-                              conf_dir = '/etc/hadoop/conf',
-                              hdfs_user = 'hdfs',
-                              kinit_path_local = '/usr/bin/kinit',
-                              owner = 'hbase',
-                              bin_dir = '/usr/bin',
-                              action = ['create_delayed'],
-                              )
-    self.assertResourceCalled('HdfsDirectory', '/apps/hbase/staging',
-                              security_enabled = True,
-                              keytab = '/etc/security/keytabs/hdfs.headless.keytab',
-                              conf_dir = '/etc/hadoop/conf',
-                              hdfs_user = 'hdfs',
-                              kinit_path_local = '/usr/bin/kinit',
-                              mode = 0711,
-                              owner = 'hbase',
-                              bin_dir = '/usr/bin',
-                              action = ['create_delayed'],
-                              )
-    self.assertResourceCalled('HdfsDirectory', None,
-                              security_enabled = True,
-                              keytab = '/etc/security/keytabs/hdfs.headless.keytab',
-                              conf_dir = '/etc/hadoop/conf',
-                              hdfs_user = 'hdfs',
-                              kinit_path_local = '/usr/bin/kinit',
-                              bin_dir = '/usr/bin',
-                              action = ['create'],
-                              )
+    self.assertResourceCalled('HdfsResource', 'hdfs://c6401.ambari.apache.org:8020/apps/hbase/data',
+        security_enabled = True,
+        hadoop_bin_dir = '/usr/bin',
+        keytab = '/etc/security/keytabs/hdfs.headless.keytab',
+        
+        kinit_path_local = '/usr/bin/kinit',
+        user = 'hdfs',
+        owner = 'hbase',
+        hadoop_conf_dir = '/etc/hadoop/conf',
+        type = 'directory',
+        action = ['create_on_execute'],
+    )
+    self.assertResourceCalled('HdfsResource', '/apps/hbase/staging',
+        security_enabled = True,
+        hadoop_conf_dir = '/etc/hadoop/conf',
+        keytab = '/etc/security/keytabs/hdfs.headless.keytab',
+        
+        kinit_path_local = '/usr/bin/kinit',
+        user = 'hdfs',
+        owner = 'hbase',
+        hadoop_bin_dir = '/usr/bin',
+        type = 'directory',
+        action = ['create_on_execute'],
+        mode = 0711,
+    )
+    self.assertResourceCalled('HdfsResource', None,
+        security_enabled = True,
+        hadoop_bin_dir = '/usr/bin',
+        keytab = '/etc/security/keytabs/hdfs.headless.keytab',
+        
+        kinit_path_local = '/usr/bin/kinit',
+        user = 'hdfs',
+        action = ['execute'],
+        hadoop_conf_dir = '/etc/hadoop/conf',
+    )
 
   def test_start_default_22(self):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hbase_master.py",
@@ -441,7 +454,7 @@ class TestHBaseMaster(RMFTestCase):
     self.assertResourceCalled('Directory', '/etc/hbase',
       mode = 0755)
 
-    self.assertResourceCalled('Directory', '/etc/hbase/conf',
+    self.assertResourceCalled('Directory', '/usr/hdp/current/hbase-master/conf',
       owner = 'hbase',
       group = 'hadoop',
       recursive = True)
@@ -467,45 +480,47 @@ class TestHBaseMaster(RMFTestCase):
     self.assertResourceCalled('XmlConfig', 'hbase-site.xml',
       owner = 'hbase',
       group = 'hadoop',
-      conf_dir = '/etc/hbase/conf',
+      conf_dir = '/usr/hdp/current/hbase-master/conf',
       configurations = self.getConfig()['configurations']['hbase-site'],
       configuration_attributes = self.getConfig()['configuration_attributes']['hbase-site'])
+
     self.assertResourceCalled('XmlConfig', 'core-site.xml',
       owner = 'hbase',
       group = 'hadoop',
-      conf_dir = '/etc/hbase/conf',
+      conf_dir = '/usr/hdp/current/hbase-master/conf',
       configurations = self.getConfig()['configurations']['core-site'],
       configuration_attributes = self.getConfig()['configuration_attributes']['core-site'])
+
     self.assertResourceCalled('XmlConfig', 'hdfs-site.xml',
       owner = 'hbase',
       group = 'hadoop',
-      conf_dir = '/etc/hbase/conf',
+      conf_dir = '/usr/hdp/current/hbase-master/conf',
       configurations = self.getConfig()['configurations']['hdfs-site'],
       configuration_attributes = self.getConfig()['configuration_attributes']['hdfs-site'])
 
     self.assertResourceCalled('XmlConfig', 'hdfs-site.xml',
                               owner = 'hdfs',
                               group = 'hadoop',
-                              conf_dir = '/etc/hadoop/conf',
+                              conf_dir = '/usr/hdp/current/hadoop-client/conf',
                               configurations = self.getConfig()['configurations']['hdfs-site'],
                               configuration_attributes = self.getConfig()['configuration_attributes']['hdfs-site'])
 
     self.assertResourceCalled('XmlConfig', 'hbase-policy.xml',
       owner = 'hbase',
       group = 'hadoop',
-      conf_dir = '/etc/hbase/conf',
+      conf_dir = '/usr/hdp/current/hbase-master/conf',
       configurations = self.getConfig()['configurations']['hbase-policy'],
       configuration_attributes = self.getConfig()['configuration_attributes']['hbase-policy'])
 
-    self.assertResourceCalled('File', '/etc/hbase/conf/hbase-env.sh',
+    self.assertResourceCalled('File', '/usr/hdp/current/hbase-master/conf/hbase-env.sh',
       owner = 'hbase',
       content = InlineTemplate(self.getConfig()['configurations']['hbase-env']['content']))
 
-    self.assertResourceCalled('TemplateConfig', '/etc/hbase/conf/hadoop-metrics2-hbase.properties',
+    self.assertResourceCalled('TemplateConfig', '/usr/hdp/current/hbase-master/conf/hadoop-metrics2-hbase.properties',
       owner = 'hbase',
       template_tag = 'GANGLIA-MASTER')
 
-    self.assertResourceCalled('TemplateConfig', '/etc/hbase/conf/regionservers',
+    self.assertResourceCalled('TemplateConfig', '/usr/hdp/current/hbase-master/conf/regionservers',
       owner = 'hbase',
       template_tag = None)
 
@@ -518,43 +533,46 @@ class TestHBaseMaster(RMFTestCase):
       recursive = True)
 
     self.assertResourceCalled('File',
-                              '/etc/hbase/conf/log4j.properties',
+                              '/usr/hdp/current/hbase-master/conf/log4j.properties',
                               mode=0644,
                               group='hadoop',
                               owner='hbase',
                               content='log4jproperties\nline2')
 
-    self.assertResourceCalled('HdfsDirectory', 'hdfs://nn1/apps/hbase/data',
-                              security_enabled = False,
-                              keytab = UnknownConfigurationMock(),
-                              conf_dir = '/etc/hadoop/conf',
-                              hdfs_user = 'hdfs',
-                              kinit_path_local = "/usr/bin/kinit",
-                              owner = 'hbase',
-                              bin_dir = '/usr/hdp/current/hadoop-client/bin',
-                              action = ['create_delayed'])
+    self.assertResourceCalled('HdfsResource', 'hdfs://nn1/apps/hbase/data',
+        security_enabled = False,
+        hadoop_bin_dir = '/usr/hdp/current/hadoop-client/bin',
+        keytab = UnknownConfigurationMock(),
+        kinit_path_local = '/usr/bin/kinit',
+        user = 'hdfs',
+        owner = 'hbase',
+        hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
+        type = 'directory',
+        action = ['create_on_execute'],
+    )
+    self.assertResourceCalled('HdfsResource', '/apps/hbase/staging',
+        security_enabled = False,
+        hadoop_bin_dir = '/usr/hdp/current/hadoop-client/bin',
+        keytab = UnknownConfigurationMock(),
+        kinit_path_local = '/usr/bin/kinit',
+        user = 'hdfs',
+        owner = 'hbase',
+        hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
+        type = 'directory',
+        action = ['create_on_execute'],
+        mode = 0711,
+    )
+    self.assertResourceCalled('HdfsResource', None,
+        security_enabled = False,
+        hadoop_bin_dir = '/usr/hdp/current/hadoop-client/bin',
+        keytab = UnknownConfigurationMock(),
+        kinit_path_local = '/usr/bin/kinit',
+        user = 'hdfs',
+        action = ['execute'],
+        hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
+    )
 
-    self.assertResourceCalled('HdfsDirectory', '/apps/hbase/staging',
-                              security_enabled = False,
-                              keytab = UnknownConfigurationMock(),
-                              conf_dir = '/etc/hadoop/conf',
-                              hdfs_user = 'hdfs',
-                              kinit_path_local = "/usr/bin/kinit",
-                              mode = 0711,
-                              owner = 'hbase',
-                              bin_dir = '/usr/hdp/current/hadoop-client/bin',
-                              action = ['create_delayed'])
-
-    self.assertResourceCalled('HdfsDirectory', None,
-                              security_enabled = False,
-                              keytab = UnknownConfigurationMock(),
-                              conf_dir = '/etc/hadoop/conf',
-                              hdfs_user = 'hdfs',
-                              kinit_path_local = "/usr/bin/kinit",
-                              bin_dir = '/usr/hdp/current/hadoop-client/bin',
-                              action = ['create'])
-
-    self.assertResourceCalled('Execute', '/usr/hdp/current/hbase-master/bin/hbase-daemon.sh --config /etc/hbase/conf start master',
+    self.assertResourceCalled('Execute', '/usr/hdp/current/hbase-master/bin/hbase-daemon.sh --config /usr/hdp/current/hbase-master/conf start master',
       not_if = 'ls /var/run/hbase/hbase-hbase-master.pid >/dev/null 2>&1 && ps -p `cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1',
       user = 'hbase')
 
@@ -674,3 +692,57 @@ class TestHBaseMaster(RMFTestCase):
       user = 'hbase')
   
     self.assertNoMoreResources()
+
+  @patch("resource_management.core.shell.call")
+  def test_pre_rolling_restart(self, call_mock):
+    call_mock.side_effects = [(0, None), (0, None)]
+
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.2.1.0-3242'
+    json_content['commandParams']['version'] = version
+    
+    mocks_dict = {}
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hbase_master.py",
+                       classname = "HbaseMaster",
+                       command = "pre_rolling_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES,
+                       mocks_dict = mocks_dict)
+    self.assertResourceCalled('Execute',
+                              'hdp-select set hbase-master %s' % version,)
+    self.assertFalse(call_mock.called)
+    self.assertNoMoreResources()
+
+  @patch("resource_management.core.shell.call")
+  def test_upgrade_23(self, call_mock):
+    call_mock.side_effects = [(0, None), (0, None)]
+
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.3.0.0-1234'
+    json_content['commandParams']['version'] = version
+
+    mocks_dict = {}
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hbase_master.py",
+                       classname = "HbaseMaster",
+                       command = "pre_rolling_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES,
+                       call_mocks = [(0, None), (0, None), (0, None), (0, None)],
+                       mocks_dict = mocks_dict)
+
+    self.assertResourceCalled('Execute', 'hdp-select set hbase-master %s' % version)
+
+    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(
+      "conf-select create-conf-dir --package hbase --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[0][0][0])
+    self.assertEquals(
+      "conf-select set-conf-dir --package hbase --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[1][0][0])
+

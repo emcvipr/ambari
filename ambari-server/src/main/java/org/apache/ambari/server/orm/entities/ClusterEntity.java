@@ -65,7 +65,6 @@ import org.apache.ambari.server.state.State;
     table = "ambari_sequences", pkColumnName = "sequence_name", valueColumnName = "sequence_value"
     , pkColumnValue = "cluster_id_seq"
     , initialValue = 1
-    , allocationSize = 1
 )
 public class ClusterEntity {
 
@@ -97,9 +96,12 @@ public class ClusterEntity {
   @Column(name = "cluster_info", insertable = true, updatable = true)
   private String clusterInfo = "";
 
-  @Basic
-  @Column(name = "desired_stack_version", insertable = true, updatable = true)
-  private String desiredStackVersion = "";
+  /**
+   * Unidirectional one-to-one association to {@link StackEntity}
+   */
+  @OneToOne
+  @JoinColumn(name = "desired_stack_id", unique = false, nullable = false, insertable = true, updatable = true)
+  private StackEntity desiredStack;
 
   @OneToMany(mappedBy = "clusterEntity")
   private Collection<ClusterServiceEntity> clusterServiceEntities;
@@ -130,6 +132,12 @@ public class ClusterEntity {
 
   @OneToMany(mappedBy = "clusterEntity", cascade = CascadeType.REMOVE, fetch = FetchType.LAZY)
   private Collection<ClusterVersionEntity> clusterVersionEntities;
+
+  @OneToMany(mappedBy = "clusterEntity", cascade = CascadeType.REMOVE, fetch = FetchType.LAZY)
+  private Collection<WidgetEntity> widgetEntities;
+
+  @OneToMany(mappedBy = "clusterEntity", cascade = CascadeType.REMOVE, fetch = FetchType.LAZY)
+  private Collection<WidgetLayoutEntity> widgetLayoutEntities;
 
   @OneToOne(cascade = CascadeType.ALL)
   @JoinColumns({
@@ -169,12 +177,12 @@ public class ClusterEntity {
     this.clusterInfo = clusterInfo;
   }
 
-  public String getDesiredStackVersion() {
-    return defaultString(desiredStackVersion);
+  public StackEntity getDesiredStack() {
+    return desiredStack;
   }
 
-  public void setDesiredStackVersion(String desiredStackVersion) {
-    this.desiredStackVersion = desiredStackVersion;
+  public void setDesiredStack(StackEntity desiredStack) {
+    this.desiredStack = desiredStack;
   }
 
   /**
@@ -320,10 +328,10 @@ public class ClusterEntity {
   public void setClusterVersionEntities(Collection<ClusterVersionEntity> clusterVersionEntities) { this.clusterVersionEntities = clusterVersionEntities; }
 
   public void addClusterVersionEntity(ClusterVersionEntity clusterVersionEntity) {
-    if (this.clusterVersionEntities == null) {
-      this.clusterVersionEntities = new ArrayList<ClusterVersionEntity>();
+    if (clusterVersionEntities == null) {
+      clusterVersionEntities = new ArrayList<ClusterVersionEntity>();
     }
-    this.clusterVersionEntities.add(clusterVersionEntity);
+    clusterVersionEntities.add(clusterVersionEntity);
   }
 
   /**

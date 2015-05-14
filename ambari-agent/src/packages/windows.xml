@@ -24,6 +24,7 @@
   <id>windows-dist</id>
   <formats>
     <format>dir</format>
+    <format>zip</format>
   </formats>
   <includeBaseDirectory>false</includeBaseDirectory>
   <fileSets>
@@ -76,11 +77,6 @@
     <file>
       <source>${project.basedir}/../version</source>
       <outputDirectory>data</outputDirectory>
-      <filtered>true</filtered>
-    </file>
-    <file>
-      <source>${basedir}/src/main/package/msi/ambari-agent.wxs</source>
-      <outputDirectory>../../</outputDirectory>
       <filtered>true</filtered>
     </file>
   </files>

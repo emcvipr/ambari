@@ -117,14 +117,11 @@
             <package>
               <name>oozie-client</name>
             </package>
-            <package>
-              <name>mysql-connector-java</name>
-            </package>
           </packages>
         </osSpecific>
         
        <osSpecific>
-          <osFamily>redhat5,redhat6,suse11</osFamily>
+          <osFamily>redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>extjs-2.2-1</name>
@@ -133,7 +130,7 @@
         </osSpecific>
         
         <osSpecific>
-          <osFamily>ubuntu12</osFamily>
+          <osFamily>debian7,ubuntu12,ubuntu14</osFamily>
           <packages>
             <package>
               <name>extjs</name>
@@ -161,6 +158,8 @@
         <config-type>oozie-env</config-type>
         <config-type>oozie-log4j</config-type>
         <config-type>yarn-site</config-type>
+        <config-type>hive-site</config-type>
+        <config-type>tez-site</config-type>
       </configuration-dependencies>
     </service>
   </services>

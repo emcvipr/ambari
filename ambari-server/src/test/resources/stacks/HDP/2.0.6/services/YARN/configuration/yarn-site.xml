@@ -57,4 +57,41 @@
     <description>some description.</description>
   </property>
 
+  <property>
+    <name>new-enhanced-yarn-property</name>
+    <value>1024</value>
+    <description>some enhanced description.</description>
+    <value-attributes>
+      <type>int</type>
+      <minimum>512</minimum>
+      <maximum>15360</maximum>
+      <unit>MB</unit>
+      <increment-step>256</increment-step>
+    </value-attributes>
+    <depends-on>
+      <property>
+        <type>yarn-site</type>
+        <name>new-yarn-property</name>
+      </property>
+      <property>
+        <type>global</type>
+        <name>yarn_heapsize</name>
+      </property>
+    </depends-on>
+  </property>
+
+  <property>
+    <name>new-enhanced-yarn-property2</name>
+    <value>1024</value>
+    <description>some enhanced description.</description>
+
+    <depends-on>
+      <property>
+        <type>yarn-site</type>
+        <name>new-enhanced-yarn-property</name>
+      </property>
+    </depends-on>
+  </property>
+
+
 </configuration>

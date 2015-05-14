@@ -27,9 +27,13 @@ import org.apache.ambari.server.state.State;
 import org.apache.ambari.server.state.stack.PrereqCheckStatus;
 import org.apache.ambari.server.state.stack.PrerequisiteCheck;
 
+import com.google.inject.Singleton;
+
 /**
  * Checks that services are up.
  */
+@Singleton
+@UpgradeCheck(group = UpgradeCheckGroup.LIVELINESS, order = 2.0f)
 public class ServicesUpCheck extends AbstractCheckDescriptor {
 
   /**

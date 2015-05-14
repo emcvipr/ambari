@@ -238,4 +238,119 @@ describe('App.WizardController', function () {
     });
 
   });
+
+  describe('#setSkipSlavesStep', function () {
+
+    var step = 6,
+      cases = [
+        {
+          services: [
+            {
+              hasSlave: true,
+              hasNonMastersWithCustomAssignment: true
+            }
+          ],
+          skipSlavesStep: false,
+          title: 'service with customizable slave selected'
+        },
+        {
+          services: [
+            {
+              hasClient: true,
+              hasNonMastersWithCustomAssignment: true
+            }
+          ],
+          skipSlavesStep: false,
+          title: 'service with customizable client selected'
+        },
+        {
+          services: [
+            {
+              hasSlave: true,
+              hasNonMastersWithCustomAssignment: false
+            },
+            {
+              hasClient: true,
+              hasNonMastersWithCustomAssignment: false
+            }
+          ],
+          skipSlavesStep: true,
+          title: 'no service with customizable slaves or clients selected'
+        },
+        {
+          services: [
+            {
+              hasSlave: false,
+              hasClient: false
+            }
+          ],
+          skipSlavesStep: true,
+          title: 'no service with slaves or clients selected'
+        }
+      ];
+
+    beforeEach(function () {
+      c.reopen({
+        isStepDisabled: [
+          Em.Object.create({
+            step: 6
+          })
+        ],
+        content: {}
+      });
+    });
+
+    cases.forEach(function (item) {
+      it(item.title, function () {
+        c.setSkipSlavesStep(item.services, step);
+        expect(Boolean(c.get('isStepDisabled').findProperty('step', step).get('value'))).to.equal(item.skipSlavesStep);
+      });
+    });
+
+  });
+
+  describe('#toJSInstance', function () {
+
+    var testCases = [
+      {
+        o: {'test': 'test'},
+        e: {'test': 'test'}
+      },
+      {
+        o: {'test': Em.Object.create()},
+        e: {'test': {}}
+      },
+      {
+        o: {'test': Em.Object.create({'test': {}})},
+        e: {'test': {'test': {}}}
+      },
+      {
+        o: [],
+        e: []
+      },
+      {
+        o: Em.A([[]]),
+        e: [[]]
+      },
+      {
+        o: 11,
+        e: 11
+      },
+      {
+        o: '11',
+        e: '11'
+      },
+      {
+        o: null,
+        e: null
+      }
+    ];
+
+    it('should convert objects and arrays to pure JS objects and arrays', function () {
+      testCases.forEach(function (testCase) {
+        expect(c.toJSInstance(testCase.o)).to.eql(testCase.e);
+      });
+    });
+
+  });
 });

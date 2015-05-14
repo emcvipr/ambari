@@ -65,15 +65,12 @@
               <name>zip</name>
             </package>
             <package>
-              <name>mysql-connector-java</name>
-            </package>
-            <package>
               <name>extjs</name>
             </package>
           </packages>
         </osSpecific>
         <osSpecific>
-          <osFamily>redhat5,redhat6,suse11</osFamily>
+          <osFamily>redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>oozie_2_2_*</name>

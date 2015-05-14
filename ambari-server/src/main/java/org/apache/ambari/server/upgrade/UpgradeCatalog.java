@@ -17,9 +17,9 @@
  */
 package org.apache.ambari.server.upgrade;
 
-import org.apache.ambari.server.AmbariException;
-
 import java.sql.SQLException;
+
+import org.apache.ambari.server.AmbariException;
 
 /**
  * Interface for upgrading Ambari DB
@@ -30,20 +30,38 @@ public interface UpgradeCatalog {
    * to the new version.
    * @throws AmbariException
    */
-  public void upgradeSchema() throws AmbariException, SQLException;
+  void upgradeSchema() throws AmbariException, SQLException;
+
+  /**
+   * perform data insertion before running normal upgrade of data, requires started persist service
+   * @throws AmbariException
+   * @throws SQLException
+   */
+  void preUpgradeData() throws AmbariException, SQLException;
 
   /**
    * perform data updates as necessary, requires started persist service
    * @throws AmbariException
    * @throws SQLException
    */
-  public void upgradeData() throws AmbariException, SQLException;
+  void upgradeData() throws AmbariException, SQLException;
+
+  /**
+   * Called after {@link #upgradeSchema()} and {@link #upgradeData()}, this
+   * method is used to perform any operations after the catalog has finished.
+   * Usually, this is cleanup work that does not directly affect the upgrade.
+   *
+   * @throws AmbariException
+   * @throws SQLException
+   */
+  void onPostUpgrade() throws AmbariException, SQLException;
 
   /**
    * Return the version that will be upgraded to
+   * 
    * @return
    */
-  public abstract String getTargetVersion();
+  String getTargetVersion();
 
   /**
    * Return latest source version that can be upgraded from.
@@ -51,5 +69,5 @@ public interface UpgradeCatalog {
    *
    * @return null : default
    */
-  public String getSourceVersion();
+  String getSourceVersion();
 }

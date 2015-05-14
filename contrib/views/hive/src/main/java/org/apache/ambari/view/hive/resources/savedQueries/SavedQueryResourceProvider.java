@@ -18,14 +18,14 @@
 
 package org.apache.ambari.view.hive.resources.savedQueries;
 
-import com.google.inject.Inject;
 import org.apache.ambari.view.*;
 import org.apache.ambari.view.hive.persistence.utils.ItemNotFound;
 import org.apache.ambari.view.hive.persistence.utils.OnlyOwnersFilteringStrategy;
-import org.apache.ambari.view.hive.resources.PersonalCRUDResourceManager;
+import org.apache.ambari.view.hive.utils.SharedObjectsFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.inject.Inject;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashSet;
 import java.util.Map;
@@ -38,18 +38,24 @@ public class SavedQueryResourceProvider implements ResourceProvider<SavedQuery> 
   @Inject
   ViewContext context;
 
-  protected SavedQueryResourceManager resourceManager = null;
   protected final static Logger LOG =
       LoggerFactory.getLogger(SavedQueryResourceProvider.class);
+  private SharedObjectsFactory sharedObjectsFactory;
+
+  public SharedObjectsFactory getSharedObjectsFactory() {
+    if (sharedObjectsFactory == null)
+      sharedObjectsFactory = new SharedObjectsFactory(context);
+    return sharedObjectsFactory;
+  }
 
   protected synchronized SavedQueryResourceManager getResourceManager() {
-    return SavedQueryResourceManager.getInstance(context);
+    return getSharedObjectsFactory().getSavedQueryResourceManager();
   }
 
   @Override
   public SavedQuery getResource(String resourceId, Set<String> properties) throws SystemException, NoSuchResourceException, UnsupportedPropertyException {
     try {
-      return getResourceManager().read(Integer.valueOf(resourceId));
+      return getResourceManager().read(resourceId);
     } catch (ItemNotFound itemNotFound) {
       throw new NoSuchResourceException(resourceId);
     }
@@ -57,6 +63,8 @@ public class SavedQueryResourceProvider implements ResourceProvider<SavedQuery> 
 
   @Override
   public Set<SavedQuery> getResources(ReadRequest readRequest) throws SystemException, NoSuchResourceException, UnsupportedPropertyException {
+    if (context == null)
+      return new HashSet();
     return new HashSet<SavedQuery>(getResourceManager().readAll(
         new OnlyOwnersFilteringStrategy(this.context.getUsername())));
   }
@@ -85,7 +93,7 @@ public class SavedQueryResourceProvider implements ResourceProvider<SavedQuery> 
       throw new SystemException("error on updating resource", e);
     }
     try {
-      getResourceManager().update(item, Integer.valueOf(resourceId));
+      getResourceManager().update(item, resourceId);
     } catch (ItemNotFound itemNotFound) {
       throw new NoSuchResourceException(resourceId);
     }
@@ -95,7 +103,7 @@ public class SavedQueryResourceProvider implements ResourceProvider<SavedQuery> 
   @Override
   public boolean deleteResource(String resourceId) throws SystemException, NoSuchResourceException, UnsupportedPropertyException {
     try {
-      getResourceManager().delete(Integer.valueOf(resourceId));
+      getResourceManager().delete(resourceId);
     } catch (ItemNotFound itemNotFound) {
       throw new NoSuchResourceException(resourceId);
     }

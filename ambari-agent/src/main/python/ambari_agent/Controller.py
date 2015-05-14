@@ -44,6 +44,7 @@ from ambari_agent.NetUtil import NetUtil
 from ambari_agent.LiveStatus import LiveStatus
 from ambari_agent.AlertSchedulerHandler import AlertSchedulerHandler
 from ambari_agent.ClusterConfiguration import  ClusterConfiguration
+from ambari_agent.RecoveryManager import  RecoveryManager
 from ambari_agent.HeartbeatHandlers import HeartbeatStopHandlers, bind_signal_handlers
 
 logger = logging.getLogger()
@@ -63,7 +64,7 @@ class Controller(threading.Thread):
     self.credential = None
     self.config = config
     self.hostname = hostname.hostname(config)
-    self.serverHostname = config.get('server', 'hostname')
+    self.serverHostname = hostname.server_hostname(config)
     server_secured_url = 'https://' + self.serverHostname + \
                          ':' + config.get('server', 'secured_url_port')
     self.registerUrl = server_secured_url + '/agent/v1/register/' + self.hostname
@@ -81,6 +82,7 @@ class Controller(threading.Thread):
     self.heartbeat_stop_callback = heartbeat_stop_callback
     # List of callbacks that are called at agent registration
     self.registration_listeners = []
+    self.recovery_manager = RecoveryManager()
 
     # pull config directory out of config
     cache_dir = config.get('agent', 'cache_dir')
@@ -99,10 +101,11 @@ class Controller(threading.Thread):
       stacks_cache_dir, common_services_cache_dir, host_scripts_cache_dir,
       self.cluster_configuration, config)
 
+    self.alert_scheduler_handler.start()
+
 
   def __del__(self):
     logger.info("Server connection disconnected.")
-    pass
 
   def registerWithServer(self):
     """
@@ -127,8 +130,10 @@ class Controller(threading.Thread):
                       self.hostname, prettyData)
 
         ret = self.sendRequest(self.registerUrl, data)
+        prettyData = pprint.pformat(ret)
+        logger.debug("Registration response is %s", prettyData)
 
-        # exitstatus is a code of error which was rised on server side.
+        # exitstatus is a code of error which was raised on server side.
         # exitstatus = 0 (OK - Default)
         # exitstatus = 1 (Registration failed because different version of agent and server)
         exitstatus = 0
@@ -144,19 +149,20 @@ class Controller(threading.Thread):
           self.repeatRegistration = False
           return ret
 
-        logger.info("Registration Successful (response=%s)", pprint.pformat(ret))
-
         self.responseId = int(ret['responseId'])
+        logger.info("Registration Successful (response id = %s)", self.responseId)
+
         self.isRegistered = True
         if 'statusCommands' in ret.keys():
-          logger.info("Got status commands on registration " + pprint.pformat(ret['statusCommands']))
+          logger.info("Got status commands on registration.")
           self.addToStatusQueue(ret['statusCommands'])
-          pass
         else:
           self.hasMappedComponents = False
 
         # always update cached cluster configurations on registration
         self.cluster_configuration.update_configurations_from_heartbeat(ret)
+
+        self.recovery_manager.update_configuration_from_registration(ret)
 
         # always update alert definitions on registration
         self.alert_scheduler_handler.update_definitions(ret)
@@ -164,13 +170,14 @@ class Controller(threading.Thread):
         self.repeatRegistration = False
         self.isRegistered = False
         return
-      except Exception:
+      except Exception, ex:
         # try a reconnect only after a certain amount of random time
         delay = randint(0, self.range)
         logger.error("Unable to connect to: " + self.registerUrl, exc_info=True)
-        """ Sleeping for {0} seconds and then retrying again """.format(delay)
+        logger.error("Error:" + str(ex))
+        logger.warn(""" Sleeping for {0} seconds and then trying again """.format(delay,))
         time.sleep(delay)
-      pass
+
     return ret
 
   def cancelCommandInQueue(self, commands):
@@ -180,8 +187,6 @@ class Controller(threading.Thread):
         self.actionQueue.cancel(commands)
       except Exception, err:
         logger.error("Exception occurred on commands cancel: %s", err.message)
-        pass
-    pass
 
   def addToQueue(self, commands):
     """Add to the queue for running the commands """
@@ -192,7 +197,6 @@ class Controller(threading.Thread):
     else:
       """Only add to the queue if not empty list """
       self.actionQueue.put(commands)
-    pass
 
   def addToStatusQueue(self, commands):
     if not commands:
@@ -201,7 +205,6 @@ class Controller(threading.Thread):
       if not LiveStatus.SERVICES:
         self.updateComponents(commands[0]['clusterName'])
       self.actionQueue.put_status(commands)
-    pass
 
   # For testing purposes
   DEBUG_HEARTBEAT_RETRIES = 0
@@ -223,7 +226,6 @@ class Controller(threading.Thread):
         if not retry:
           data = json.dumps(
               self.heartbeat.build(self.responseId, int(hb_interval), self.hasMappedComponents))
-          pass
         else:
           self.DEBUG_HEARTBEAT_RETRIES += 1
 
@@ -231,7 +233,6 @@ class Controller(threading.Thread):
           logger.debug("Sending Heartbeat (id = %s): %s", self.responseId, data)
 
         response = self.sendRequest(self.heartbeatUrl, data)
-
         exitStatus = 0
         if 'exitstatus' in response.keys():
           exitStatus = int(response['exitstatus'])
@@ -241,13 +242,14 @@ class Controller(threading.Thread):
 
         serverId = int(response['responseId'])
 
-        if logger.isEnabledFor(logging.DEBUG):
-          logger.debug('Heartbeat response (id = %s): %s', serverId, pprint.pformat(response))
-        else:
-          logger.info('Heartbeat response received (id = %s)', serverId)
+        logger.info('Heartbeat response received (id = %s)', serverId)
 
         if 'hasMappedComponents' in response.keys():
           self.hasMappedComponents = response['hasMappedComponents'] is not False
+
+        if 'hasPendingTasks' in response.keys():
+          self.recovery_manager.set_paused(response['hasPendingTasks'])
+
 
         if 'registrationCommand' in response.keys():
           # check if the registration command is None. If none skip
@@ -273,10 +275,20 @@ class Controller(threading.Thread):
 
         if 'executionCommands' in response_keys:
           execution_commands = response['executionCommands']
+          self.recovery_manager.process_execution_commands(execution_commands)
           self.addToQueue(execution_commands)
 
         if 'statusCommands' in response_keys:
+          # try storing execution command details and desired state
+          self.recovery_manager.process_status_commands(response['statusCommands'])
           self.addToStatusQueue(response['statusCommands'])
+
+        if not self.actionQueue.tasks_in_progress_or_pending():
+          recovery_commands = self.recovery_manager.get_recovery_commands()
+          for recovery_command in recovery_commands:
+            logger.info("Adding recovery command %s for component %s",
+                        recovery_command['roleCommand'], recovery_command['role'])
+            self.addToQueue([recovery_command])
 
         if 'alertDefinitionCommands' in response_keys:
           self.alert_scheduler_handler.update_definitions(response)
@@ -336,7 +348,6 @@ class Controller(threading.Thread):
         # Stop loop when stop event received
         logger.info("Stop event received")
         self.DEBUG_STOP_HEARTBEATING=True
-    pass
 
   def run(self):
     self.actionQueue = ActionQueue(self.config, controller=self)
@@ -353,14 +364,10 @@ class Controller(threading.Thread):
       if not self.repeatRegistration:
         break
 
-    pass
-
   def registerAndHeartbeat(self):
     registerResponse = self.registerWithServer()
     message = registerResponse['response']
     logger.info("Registration response from %s was %s", self.serverHostname, message)
-
-    self.alert_scheduler_handler.start()
 
     if self.isRegistered:
       # Clearing command queue to stop executing "stale" commands
@@ -376,8 +383,8 @@ class Controller(threading.Thread):
       self.heartbeatWithServer()
 
   def restartAgent(self):
-    os._exit(AGENT_AUTO_RESTART_EXIT_CODE)
-    pass
+    sys.exit(AGENT_AUTO_RESTART_EXIT_CODE)
+
 
   def sendRequest(self, url, data):
     response = None
@@ -414,7 +421,6 @@ class Controller(threading.Thread):
     logger.debug("LiveStatus.SERVICES" + str(LiveStatus.SERVICES))
     logger.debug("LiveStatus.CLIENT_COMPONENTS" + str(LiveStatus.CLIENT_COMPONENTS))
     logger.debug("LiveStatus.COMPONENTS" + str(LiveStatus.COMPONENTS))
-    pass
 
 def main(argv=None):
   # Allow Ctrl-C

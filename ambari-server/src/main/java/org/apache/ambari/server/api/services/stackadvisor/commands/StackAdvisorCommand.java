@@ -69,18 +69,24 @@ public abstract class StackAdvisorCommand<T extends StackAdvisorResponse> extend
   protected static Log LOG = LogFactory.getLog(StackAdvisorCommand.class);
 
   private static final String GET_HOSTS_INFO_URI = "/api/v1/hosts"
-      + "?fields=Hosts&Hosts/host_name.in(%s)";
-  private static final String GET_SERVICES_INFO_URI = "/api/v1/stacks/%s/versions/%s"
+      + "?fields=Hosts/*&Hosts/host_name.in(%s)";
+  private static final String GET_SERVICES_INFO_URI = "/api/v1/stacks/%s/versions/%s/"
       + "?fields=Versions/stack_name,Versions/stack_version,Versions/parent_stack_version"
       + ",services/StackServices/service_name,services/StackServices/service_version"
       + ",services/components/StackServiceComponents,services/components/dependencies,services/components/auto_deploy"
+      + ",services/configurations/StackConfigurations/property_depends_on"
+      + ",services/configurations/dependencies/StackConfigurationDependency/dependency_name"
+      + ",services/configurations/dependencies/StackConfigurationDependency/dependency_type"
+      + ",services/configurations/StackConfigurations/type"
       + "&services/StackServices/service_name.in(%s)";
-  private static final String SERVICES_PROPETRY = "services";
-  private static final String SERVICES_COMPONENTS_PROPETRY = "components";
-  private static final String COMPONENT_INFO_PROPETRY = "StackServiceComponents";
+  private static final String SERVICES_PROPERTY = "services";
+  private static final String SERVICES_COMPONENTS_PROPERTY = "components";
+  private static final String CONFIG_GROUPS_PROPERTY = "config-groups";
+  private static final String COMPONENT_INFO_PROPERTY = "StackServiceComponents";
   private static final String COMPONENT_NAME_PROPERTY = "component_name";
-  private static final String COMPONENT_HOSTNAMES_PROPETRY = "hostnames";
-  private static final String CONFIGURATIONS_PROPETRY = "configurations";
+  private static final String COMPONENT_HOSTNAMES_PROPERTY = "hostnames";
+  private static final String CONFIGURATIONS_PROPERTY = "configurations";
+  private static final String CHANGED_CONFIGURATIONS_PROPERTY = "changed-configurations";
 
   private File recommendationsDir;
   private String stackAdvisorScript;
@@ -140,8 +146,8 @@ public abstract class StackAdvisorCommand<T extends StackAdvisorResponse> extend
 
       populateStackHierarchy(root);
       populateComponentHostsMap(root, request.getComponentHostsMap());
-      populateConfigurations(root, request.getConfigurations());
-
+      populateConfigurations(root, request);
+      populateConfigGroups(root, request);
       data.servicesJSON = mapper.writeValueAsString(root);
     } catch (Exception e) {
       // should not happen
@@ -154,8 +160,10 @@ public abstract class StackAdvisorCommand<T extends StackAdvisorResponse> extend
   }
 
   private void populateConfigurations(ObjectNode root,
-      Map<String, Map<String, Map<String, String>>> configurations) {
-    ObjectNode configurationsNode = root.putObject(CONFIGURATIONS_PROPETRY);
+                                      StackAdvisorRequest request) {
+    Map<String, Map<String, Map<String, String>>> configurations =
+      request.getConfigurations();
+    ObjectNode configurationsNode = root.putObject(CONFIGURATIONS_PROPERTY);
     for (String siteName : configurations.keySet()) {
       ObjectNode siteNode = configurationsNode.putObject(siteName);
 
@@ -169,6 +177,18 @@ public abstract class StackAdvisorCommand<T extends StackAdvisorResponse> extend
           propertiesNode.put(propertyName, propertyValue);
         }
       }
+    }
+
+    JsonNode changedConfigs = mapper.valueToTree(request.getChangedConfigurations());
+    root.put(CHANGED_CONFIGURATIONS_PROPERTY, changedConfigs);
+  }
+
+  private void populateConfigGroups(ObjectNode root,
+                                    StackAdvisorRequest request) {
+    if (request.getConfigGroups() != null &&
+      !request.getConfigGroups().isEmpty()) {
+      JsonNode configGroups = mapper.valueToTree(request.getConfigGroups());
+      root.put(CONFIG_GROUPS_PROPERTY, configGroups);
     }
   }
 
@@ -185,21 +205,21 @@ public abstract class StackAdvisorCommand<T extends StackAdvisorResponse> extend
   }
 
   private void populateComponentHostsMap(ObjectNode root, Map<String, Set<String>> componentHostsMap) {
-    ArrayNode services = (ArrayNode) root.get(SERVICES_PROPETRY);
+    ArrayNode services = (ArrayNode) root.get(SERVICES_PROPERTY);
     Iterator<JsonNode> servicesIter = services.getElements();
 
     while (servicesIter.hasNext()) {
       JsonNode service = servicesIter.next();
-      ArrayNode components = (ArrayNode) service.get(SERVICES_COMPONENTS_PROPETRY);
+      ArrayNode components = (ArrayNode) service.get(SERVICES_COMPONENTS_PROPERTY);
       Iterator<JsonNode> componentsIter = components.getElements();
 
       while (componentsIter.hasNext()) {
         JsonNode component = componentsIter.next();
-        ObjectNode componentInfo = (ObjectNode) component.get(COMPONENT_INFO_PROPETRY);
+        ObjectNode componentInfo = (ObjectNode) component.get(COMPONENT_INFO_PROPERTY);
         String componentName = componentInfo.get(COMPONENT_NAME_PROPERTY).getTextValue();
 
         Set<String> componentHosts = componentHostsMap.get(componentName);
-        ArrayNode hostnames = componentInfo.putArray(COMPONENT_HOSTNAMES_PROPETRY);
+        ArrayNode hostnames = componentInfo.putArray(COMPONENT_HOSTNAMES_PROPERTY);
         if (null != componentHosts) {
           for (String hostName : componentHosts) {
             hostnames.add(hostName);

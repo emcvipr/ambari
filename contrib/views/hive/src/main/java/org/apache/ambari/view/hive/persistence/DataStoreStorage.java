@@ -25,12 +25,15 @@ import org.apache.ambari.view.hive.persistence.utils.Indexed;
 import org.apache.ambari.view.hive.persistence.utils.ItemNotFound;
 import org.apache.ambari.view.hive.persistence.utils.OnlyOwnersFilteringStrategy;
 import org.apache.ambari.view.hive.utils.ServiceFormattedException;
+import org.apache.commons.beanutils.BeanUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.ws.rs.WebApplicationException;
+import java.beans.Transient;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -53,18 +56,56 @@ public class DataStoreStorage implements Storage {
 
   @Override
   public synchronized void store(Class model, Indexed obj) {
+    assignId(model, obj);
+
+    Indexed newBean;
     try {
-      if (obj.getId() == null) {
-        int id = nextIdForEntity(context, model);
-        obj.setId(id);
-      }
-      context.getDataStore().store(obj);
+      newBean = (Indexed) BeanUtils.cloneBean(obj);
+    } catch (IllegalAccessException e) {
+      throw new ServiceFormattedException("S010 Data storage error", e);
+    } catch (InstantiationException e) {
+      throw new ServiceFormattedException("S010 Data storage error", e);
+    } catch (InvocationTargetException e) {
+      throw new ServiceFormattedException("S010 Data storage error", e);
+    } catch (NoSuchMethodException e) {
+      throw new ServiceFormattedException("S010 Data storage error", e);
+    }
+    preprocessEntity(newBean);
+
+    try {
+      context.getDataStore().store(newBean);
     } catch (PersistenceException e) {
-      throw new ServiceFormattedException("Error while saving object to DataStorage", e);
+      throw new ServiceFormattedException("S020 Data storage error", e);
     }
   }
 
-  private static synchronized int nextIdForEntity(ViewContext context, Class aClass) {
+  public void assignId(Class model, Indexed obj) {
+    if (obj.getId() == null) {
+      String id = nextIdForEntity(context, model);
+      obj.setId(id);
+    }
+  }
+
+  private void preprocessEntity(Indexed obj) {
+    cleanTransientFields(obj);
+  }
+
+  private void cleanTransientFields(Indexed obj) {
+    for (Method m : obj.getClass().getMethods()) {
+      Transient aTransient = m.getAnnotation(Transient.class);
+      if (aTransient != null && m.getName().startsWith("set")) {
+        try {
+          m.invoke(obj, new Object[]{ null });
+        } catch (IllegalAccessException e) {
+          throw new ServiceFormattedException("S030 Data storage error", e);
+        } catch (InvocationTargetException e) {
+          throw new ServiceFormattedException("S030 Data storage error", e);
+        }
+      }
+    }
+  }
+
+  private static synchronized String nextIdForEntity(ViewContext context, Class aClass) {
     // auto increment id implementation
     String lastId = context.getInstanceData(aClass.getName());
     int newId;
@@ -74,12 +115,12 @@ public class DataStoreStorage implements Storage {
       newId = Integer.parseInt(lastId) + 1;
     }
     context.putInstanceData(aClass.getName(), String.valueOf(newId));
-    return newId;
+    return String.valueOf(newId);
   }
 
   @Override
-  public synchronized <T extends Indexed> T load(Class<T> model, Integer id) throws ItemNotFound {
-    LOG.debug(String.format("Loading %s #%d", model.getName(), id));
+  public synchronized <T extends Indexed> T load(Class<T> model, Object id) throws ItemNotFound {
+    LOG.debug(String.format("Loading %s #%s", model.getName(), id));
     try {
       T obj = context.getDataStore().find(model, id);
       if (obj != null) {
@@ -88,7 +129,7 @@ public class DataStoreStorage implements Storage {
         throw new ItemNotFound();
       }
     } catch (PersistenceException e) {
-      throw new ServiceFormattedException("Error while finding object in DataStorage", e);
+      throw new ServiceFormattedException("S040 Data storage error", e);
     }
   }
 
@@ -97,25 +138,13 @@ public class DataStoreStorage implements Storage {
     LinkedList<T> list = new LinkedList<T>();
     LOG.debug(String.format("Loading all %s-s", model.getName()));
     try {
-      for(T item: context.getDataStore().findAll(model, null)) {
-        if ((filter == null) || filter.isConform(item)) {
-          list.add(item);
-        }
+      for(T item: context.getDataStore().findAll(model, filter.whereStatement())) {
+        list.add(item);
       }
     } catch (PersistenceException e) {
-      throw new ServiceFormattedException("Error while finding all objects in DataStorage", e);
+      throw new ServiceFormattedException("S050 Data storage error", e);
     }
     return list;
-  }
-
-  @Override
-  public <T extends Indexed> List<T> loadWhere(Class<T> model, String where) {
-    LOG.debug(String.format("Loading all %s-s", model.getName()));
-    try {
-      return new ArrayList<T>(context.getDataStore().findAll(model, where));
-    } catch (PersistenceException e) {
-      throw new ServiceFormattedException("Error while finding objects in DataStorage; where = " + where, e);
-    }
   }
 
   @Override
@@ -124,63 +153,22 @@ public class DataStoreStorage implements Storage {
   }
 
   @Override
-  public synchronized void delete(Class model, int id) throws ItemNotFound {
-    LOG.debug(String.format("Deleting %s:%d", model.getName(), id));
+  public synchronized void delete(Class model, Object id) throws ItemNotFound {
+    LOG.debug(String.format("Deleting %s:%s", model.getName(), id));
     Object obj = load(model, id);
     try {
       context.getDataStore().remove(obj);
     } catch (PersistenceException e) {
-      throw new ServiceFormattedException("Error while removing object from DataStorage", e);
+      throw new ServiceFormattedException("S060 Data storage error", e);
     }
   }
 
   @Override
-  public boolean exists(Class model, Integer id) {
+  public boolean exists(Class model, Object id) {
     try {
       return context.getDataStore().find(model, id) != null;
     } catch (PersistenceException e) {
-      throw new ServiceFormattedException("Error while finding object in DataStorage", e);
-    }
-  }
-
-  public static void storageSmokeTest(ViewContext context) {
-    try {
-      SmokeTestEntity entity = new SmokeTestEntity();
-      entity.setData("42");
-      DataStoreStorage storage = new DataStoreStorage(context);
-      storage.store(SmokeTestEntity.class, entity);
-
-      if (entity.getId() == null) throw new ServiceFormattedException("Ambari Views instance data DB doesn't work properly (auto increment id doesn't work)", null);
-      Integer id = entity.getId();
-      SmokeTestEntity entity2 = storage.load(SmokeTestEntity.class, id);
-      boolean status = entity2.getData().compareTo("42") == 0;
-      storage.delete(SmokeTestEntity.class, id);
-      if (!status) throw new ServiceFormattedException("Ambari Views instance data DB doesn't work properly", null);
-    } catch (WebApplicationException ex) {
-      throw ex;
-    } catch (Exception ex) {
-      throw new ServiceFormattedException(ex.getMessage(), ex);
-    }
-  }
-
-  public static class SmokeTestEntity implements Indexed {
-    private Integer id = null;
-    private String data = null;
-
-    public Integer getId() {
-      return id;
-    }
-
-    public void setId(Integer id) {
-      this.id = id;
-    }
-
-    public String getData() {
-      return data;
-    }
-
-    public void setData(String data) {
-      this.data = data;
+      throw new ServiceFormattedException("S070 Data storage error", e);
     }
   }
 }

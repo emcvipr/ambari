@@ -18,27 +18,35 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import json
 import socket
 import time
-import traceback
-import urllib2
+
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions import get_kinit_path
 from resource_management.core.resources import Execute
 
-OK_MESSAGE = "Metastore OK - %.4f response"
-CRITICAL_MESSAGE = "Connection to metastore failed on host {0}"
+OK_MESSAGE = "Metastore OK - Hive command took {0:.3f}s"
+CRITICAL_MESSAGE = "Metastore on {0} failed ({1})"
 
 SECURITY_ENABLED_KEY = '{{cluster-env/security_enabled}}'
 SMOKEUSER_KEYTAB_KEY = '{{cluster-env/smokeuser_keytab}}'
+SMOKEUSER_PRINCIPAL_KEY = '{{cluster-env/smokeuser_principal_name}}'
 SMOKEUSER_KEY = '{{cluster-env/smokeuser}}'
 HIVE_METASTORE_URIS_KEY = '{{hive-site/hive.metastore.uris}}'
 
-PERCENT_WARNING = 200
-PERCENT_CRITICAL = 200
+# The configured Kerberos executable search paths, if any
+KERBEROS_EXECUTABLE_SEARCH_PATHS_KEY = '{{kerberos-env/executable_search_paths}}'
 
+# default keytab location
+SMOKEUSER_KEYTAB_SCRIPT_PARAM_KEY = 'default.smoke.keytab'
 SMOKEUSER_KEYTAB_DEFAULT = '/etc/security/keytabs/smokeuser.headless.keytab'
+
+# default smoke principal
+SMOKEUSER_PRINCIPAL_SCRIPT_PARAM_KEY = 'default.smoke.principal'
+SMOKEUSER_PRINCIPAL_DEFAULT = 'ambari-qa@EXAMPLE.COM'
+
+# default smoke user
+SMOKEUSER_SCRIPT_PARAM_KEY = 'default.smoke.user'
 SMOKEUSER_DEFAULT = 'ambari-qa'
 
 def get_tokens():
@@ -46,47 +54,75 @@ def get_tokens():
   Returns a tuple of tokens in the format {{site/property}} that will be used
   to build the dictionary passed into execute
   """
-  return (SECURITY_ENABLED_KEY,SMOKEUSER_KEYTAB_KEY,SMOKEUSER_KEY,HIVE_METASTORE_URIS_KEY)
+  return (SECURITY_ENABLED_KEY,SMOKEUSER_KEYTAB_KEY,SMOKEUSER_PRINCIPAL_KEY,
+    HIVE_METASTORE_URIS_KEY, SMOKEUSER_KEY, KERBEROS_EXECUTABLE_SEARCH_PATHS_KEY)
 
 
-def execute(parameters=None, host_name=None):
+def execute(configurations={}, parameters={}, host_name=None):
   """
   Returns a tuple containing the result code and a pre-formatted result label
 
   Keyword arguments:
-  parameters (dictionary): a mapping of parameter key to value
+  configurations (dictionary): a mapping of configuration key to value
+  parameters (dictionary): a mapping of script parameter key to value
   host_name (string): the name of this host where the alert is running
   """
 
-  if parameters is None:
-    return (('UNKNOWN', ['There were no parameters supplied to the script.']))
+  if configurations is None:
+    return (('UNKNOWN', ['There were no configurations supplied to the script.']))
 
-  if not HIVE_METASTORE_URIS_KEY in parameters:
+  if not HIVE_METASTORE_URIS_KEY in configurations:
     return (('UNKNOWN', ['Hive metastore uris were not supplied to the script.']))
-  metastore_uris = parameters[HIVE_METASTORE_URIS_KEY].split(',')
+
+  metastore_uris = configurations[HIVE_METASTORE_URIS_KEY].split(',')
 
   security_enabled = False
-  if SECURITY_ENABLED_KEY in parameters:
-    security_enabled = str(parameters[SECURITY_ENABLED_KEY]).upper() == 'TRUE'
+  if SECURITY_ENABLED_KEY in configurations:
+    security_enabled = str(configurations[SECURITY_ENABLED_KEY]).upper() == 'TRUE'
 
+  # defaults
+  smokeuser_keytab = SMOKEUSER_KEYTAB_DEFAULT
+  smokeuser_principal = SMOKEUSER_PRINCIPAL_DEFAULT
   smokeuser = SMOKEUSER_DEFAULT
-  if SMOKEUSER_KEY in parameters:
-    smokeuser = parameters[SMOKEUSER_KEY]
+
+  # check script params
+  if SMOKEUSER_PRINCIPAL_SCRIPT_PARAM_KEY in parameters:
+    smokeuser_principal = parameters[SMOKEUSER_PRINCIPAL_SCRIPT_PARAM_KEY]
+
+  if SMOKEUSER_SCRIPT_PARAM_KEY in parameters:
+    smokeuser = parameters[SMOKEUSER_SCRIPT_PARAM_KEY]
+
+  if SMOKEUSER_KEYTAB_SCRIPT_PARAM_KEY in parameters:
+    smokeuser_keytab = parameters[SMOKEUSER_KEYTAB_SCRIPT_PARAM_KEY]
+
+
+  # check configurations last as they should always take precedence
+  if SMOKEUSER_PRINCIPAL_KEY in configurations:
+    smokeuser_principal = configurations[SMOKEUSER_PRINCIPAL_KEY]
+
+  if SMOKEUSER_KEY in configurations:
+    smokeuser = configurations[SMOKEUSER_KEY]
 
   result_code = None
 
-  if security_enabled:
-    smokeuser_keytab = SMOKEUSER_KEYTAB_DEFAULT
-    if SMOKEUSER_KEYTAB_KEY in parameters:
-      smokeuser_keytab = parameters[SMOKEUSER_KEYTAB_KEY]
-    kinit_path_local = get_kinit_path()
-    kinitcmd=format("{kinit_path_local} -kt {smokeuser_keytab} {smokeuser}; ")
-    Execute(kinitcmd,
-            user=smokeuser,
-            path=["/bin/", "/usr/bin/", "/usr/lib/hive/bin/", "/usr/sbin/"],
-    )
-
   try:
+    if security_enabled:
+      if SMOKEUSER_KEYTAB_KEY in configurations:
+        smokeuser_keytab = configurations[SMOKEUSER_KEYTAB_KEY]
+
+      # Get the configured Kerberos executable search paths, if any
+      if KERBEROS_EXECUTABLE_SEARCH_PATHS_KEY in configurations:
+        kerberos_executable_search_paths = configurations[KERBEROS_EXECUTABLE_SEARCH_PATHS_KEY]
+      else:
+        kerberos_executable_search_paths = None
+             
+      kinit_path_local = get_kinit_path(kerberos_executable_search_paths)
+      kinitcmd=format("{kinit_path_local} -kt {smokeuser_keytab} {smokeuser_principal}; ")
+
+      Execute(kinitcmd, user=smokeuser,
+        path=["/bin/", "/usr/bin/", "/usr/lib/hive/bin/", "/usr/sbin/"],
+        timeout=10)
+
     if host_name is None:
       host_name = socket.getfqdn()
 
@@ -94,25 +130,28 @@ def execute(parameters=None, host_name=None):
       if host_name in uri:
         metastore_uri = uri
 
-    cmd = format("hive --hiveconf hive.metastore.uris={metastore_uri} -e 'show databases;'")
-    start_time = time.time()
-    try:
-      Execute(cmd,
-              user=smokeuser,
-              path=["/bin/", "/usr/bin/", "/usr/lib/hive/bin/", "/usr/sbin/"],
-              timeout=240
-      )
-      is_metastore_ok = True
-    except:
-      is_metastore_ok = False
+    cmd = format("export HIVE_CONF_DIR='/etc/hive/conf.server/' ; "
+                 "hive --hiveconf hive.metastore.uris={metastore_uri}\
+                 --hiveconf hive.metastore.client.connect.retry.delay=1s\
+                 --hiveconf hive.metastore.failure.retries=1\
+                 --hiveconf hive.metastore.connect.retries=1\
+                 --hiveconf hive.metastore.client.socket.timeout=14s\
+                 --hiveconf hive.execution.engine=mr -e 'show databases;'")
 
-    if is_metastore_ok == True:
-      result_code = 'OK'
+    start_time = time.time()
+
+    try:
+      Execute(cmd, user=smokeuser,
+        path=["/bin/", "/usr/bin/", "/usr/lib/hive/bin/", "/usr/sbin/"],
+        timeout=30 )
+
       total_time = time.time() - start_time
-      label = OK_MESSAGE % (total_time)
-    else:
+
+      result_code = 'OK'
+      label = OK_MESSAGE.format(total_time)
+    except Exception, exception:
       result_code = 'CRITICAL'
-      label = CRITICAL_MESSAGE.format(host_name)
+      label = CRITICAL_MESSAGE.format(host_name, str(exception))
 
   except Exception, e:
     label = str(e)

@@ -227,4 +227,43 @@ describe('App.MainServiceInfoSummaryController', function () {
 
   });
 
+  describe("#getActiveWidgetLayout() for Enhanced Dashboard", function () {
+    before(function () {
+      sinon.stub(App.ajax, 'send');
+    });
+    after(function () {
+      App.ajax.send.restore();
+    });
+    it("make GET call", function () {
+      var controller = App.MainServiceInfoSummaryController.create({
+        isServiceWithEnhancedWidgets: true,
+        content: Em.Object.create({serviceName: 'HDFS'})
+      });
+      controller.getActiveWidgetLayout();
+      expect(App.ajax.send.getCall(0).args[0].name).to.equal('widgets.layouts.active.get');
+    });
+  });
+
+  describe("#getActiveWidgetLayoutSuccessCallback()", function () {
+    beforeEach(function () {
+      sinon.stub( App.widgetLayoutMapper, 'map');
+      sinon.stub( App.widgetMapper, 'map');
+    });
+    afterEach(function () {
+      App.widgetLayoutMapper.map.restore();
+      App.widgetMapper.map.restore();
+    });
+    it("isWidgetLayoutsLoaded should be set to true", function () {
+      var controller = App.MainServiceInfoSummaryController.create({
+        isServiceWithEnhancedWidgets: true,
+        content: Em.Object.create({serviceName: 'HDFS'})
+      });
+      controller.getActiveWidgetLayoutSuccessCallback({items:[{
+        WidgetLayoutInfo: {}
+      }]});
+      expect(controller.get('isWidgetsLoaded')).to.be.true;
+    });
+
+  });
+
 });

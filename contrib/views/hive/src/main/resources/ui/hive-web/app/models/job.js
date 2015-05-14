@@ -26,7 +26,27 @@ export default DS.Model.extend({
   dataBase: DS.attr('string'),
   duration: DS.attr(),
   status: DS.attr('string'),
+  statusMessage: DS.attr('string'),
   dateSubmitted: DS.attr('date'),
   forcedContent: DS.attr('string'),
-  logFile: DS.attr('string')
+  logFile: DS.attr('string'),
+  dagName:  DS.attr('string'),
+  dagId: DS.attr('string'),
+  sessionTag: DS.attr('string'),
+  page: DS.attr(),
+  statusDir: DS.attr('string'),
+  applicationId: DS.attr(),
+  confFile: DS.attr('string'),
+
+  dateSubmittedTimestamp: function () {
+    var date = this.get('dateSubmitted');
+
+    return date ? date * 1000 : date;
+  }.property('dateSubmitted'),
+
+  uppercaseStatus: function () {
+    var status = this.get('status');
+
+    return status ? status.toUpperCase() : status;
+  }.property('status')
 });

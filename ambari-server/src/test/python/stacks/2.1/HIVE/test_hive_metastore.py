@@ -17,6 +17,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 '''
+import json
 import os
 from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
@@ -215,6 +216,17 @@ class TestHiveMetastore(RMFTestCase):
                               owner = 'hive',
                               group = 'hadoop',
                               )
+    self.assertResourceCalled('Directory', '/etc/security/limits.d',
+                              owner = 'root',
+                              group = 'root',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('File', '/etc/security/limits.d/hive.conf',
+                              content = Template('hive.conf.j2'),
+                              owner = 'root',
+                              group = 'root',
+                              mode = 0644,
+                              )
     self.assertResourceCalled('Execute', ('cp',
                                           '--remove-destination',
                                           '/usr/share/java/mysql-connector-java.jar',
@@ -222,6 +234,9 @@ class TestHiveMetastore(RMFTestCase):
                               path = ['/bin', '/usr/bin/'],
                               sudo = True,
                               )
+    self.assertResourceCalled('File', '/usr/lib/hive/lib//mysql-connector-java.jar',
+        mode = 0644,
+    )
     self.assertResourceCalled('File', '/usr/lib/ambari-agent/DBConnectionVerification.jar',
         content = DownloadSource('http://c6401.ambari.apache.org:8080/resources/DBConnectionVerification.jar'),
     )
@@ -230,8 +245,9 @@ class TestHiveMetastore(RMFTestCase):
                               mode = 0755,
                               )
     self.assertResourceCalled('Execute', 'export HIVE_CONF_DIR=/etc/hive/conf.server ; /usr/lib/hive/bin/schematool -initSchema -dbType mysql -userName hive -passWord aaa',
-                              not_if = 'export HIVE_CONF_DIR=/etc/hive/conf.server ; /usr/lib/hive/bin/schematool -info -dbType mysql -userName hive -passWord aaa',
-                              )
+        not_if = "ambari-sudo.sh su hive -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]export HIVE_CONF_DIR=/etc/hive/conf.server ; /usr/lib/hive/bin/schematool -info -dbType mysql -userName hive -passWord aaa'",
+        user = 'hive',
+    )
     self.assertResourceCalled('Directory', '/var/run/hive',
                               owner = 'hive',
                               group = 'hadoop',
@@ -295,6 +311,17 @@ class TestHiveMetastore(RMFTestCase):
                               owner = 'hive',
                               group = 'hadoop',
                               )
+    self.assertResourceCalled('Directory', '/etc/security/limits.d',
+                              owner = 'root',
+                              group = 'root',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('File', '/etc/security/limits.d/hive.conf',
+                              content = Template('hive.conf.j2'),
+                              owner = 'root',
+                              group = 'root',
+                              mode = 0644,
+                              )
     self.assertResourceCalled('Execute', ('cp',
                                           '--remove-destination',
                                           '/usr/share/java/mysql-connector-java.jar',
@@ -302,6 +329,9 @@ class TestHiveMetastore(RMFTestCase):
                               path = ['/bin', '/usr/bin/'],
                               sudo = True,
                               )
+    self.assertResourceCalled('File', '/usr/lib/hive/lib//mysql-connector-java.jar',
+        mode = 0644,
+    )
     self.assertResourceCalled('File', '/usr/lib/ambari-agent/DBConnectionVerification.jar',
         content = DownloadSource('http://c6401.ambari.apache.org:8080/resources/DBConnectionVerification.jar'),
     )
@@ -310,8 +340,9 @@ class TestHiveMetastore(RMFTestCase):
                               mode = 0755,
                               )
     self.assertResourceCalled('Execute', 'export HIVE_CONF_DIR=/etc/hive/conf.server ; /usr/lib/hive/bin/schematool -initSchema -dbType mysql -userName hive -passWord asd',
-                              not_if = 'export HIVE_CONF_DIR=/etc/hive/conf.server ; /usr/lib/hive/bin/schematool -info -dbType mysql -userName hive -passWord asd',
-                              )
+        not_if = "ambari-sudo.sh su hive -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]export HIVE_CONF_DIR=/etc/hive/conf.server ; /usr/lib/hive/bin/schematool -info -dbType mysql -userName hive -passWord asd'",
+        user = 'hive',
+    )
     self.assertResourceCalled('Directory', '/var/run/hive',
                               owner = 'hive',
                               group = 'hadoop',
@@ -446,3 +477,49 @@ class TestHiveMetastore(RMFTestCase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
+
+  def test_pre_rolling_restart(self):
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.2.1.0-3242'
+    json_content['commandParams']['version'] = version
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_metastore.py",
+                       classname = "HiveMetastore",
+                       command = "pre_rolling_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
+    self.assertResourceCalled('Execute',
+                              'hdp-select set hive-metastore %s' % version,)
+    self.assertNoMoreResources()
+
+  @patch("resource_management.core.shell.call")
+  def test_pre_rolling_restart_23(self, call_mock):
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.3.0.0-1234'
+    json_content['commandParams']['version'] = version
+
+    mocks_dict = {}
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/hive_metastore.py",
+                       classname = "HiveMetastore",
+                       command = "pre_rolling_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES,
+                       call_mocks = [(0, None), (0, None)],
+                       mocks_dict = mocks_dict)
+
+    self.assertResourceCalled('Execute',
+                              'hdp-select set hive-metastore %s' % version,)
+    self.assertNoMoreResources()
+
+    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(
+      "conf-select create-conf-dir --package hive --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[0][0][0])
+    self.assertEquals(
+      "conf-select set-conf-dir --package hive --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[1][0][0])

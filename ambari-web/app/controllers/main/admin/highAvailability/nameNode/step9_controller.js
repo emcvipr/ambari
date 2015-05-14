@@ -18,11 +18,9 @@
 
 var App = require('app');
 
-App.HighAvailabilityWizardStep9Controller = App.HighAvailabilityProgressPageController.extend({
+App.HighAvailabilityWizardStep9Controller = App.HighAvailabilityProgressPageController.extend(App.WizardEnableDone, {
 
   name:"highAvailabilityWizardStep9Controller",
-
-  isHA: true,
 
   commands: ['startSecondNameNode', 'installZKFC', 'startZKFC', 'reconfigureHBase', 'deleteSNameNode', 'startAllServices'],
 
@@ -36,7 +34,7 @@ App.HighAvailabilityWizardStep9Controller = App.HighAvailabilityProgressPageCont
   },
 
   startSecondNameNode: function () {
-    var hostName = this.get('content.masterComponentHosts').findProperty('isAddNameNode', true).hostName;
+    var hostName = this.get('content.masterComponentHosts').filterProperty('component', 'NAMENODE').findProperty('isInstalled', false).hostName;
     this.updateComponent('NAMENODE', hostName, "HDFS", "Start");
   },
 
@@ -61,7 +59,7 @@ App.HighAvailabilityWizardStep9Controller = App.HighAvailabilityProgressPageCont
 
   reconfigureHBase: function () {
     var data = this.get('content.serviceConfigProperties');
-    var configData = this.reconfigureSites(['hbase-site'],data);
+    var configData = this.reconfigureSites(['hbase-site'], data, Em.I18n.t('admin.highAvailability.step4.save.configuration.note').format(App.format.role('NAMENODE')));
     App.ajax.send({
       name: 'common.service.configurations',
       sender: this,
@@ -84,18 +82,7 @@ App.HighAvailabilityWizardStep9Controller = App.HighAvailabilityProgressPageCont
   },
 
   startAllServices: function () {
-    App.ajax.send({
-      name: 'common.services.update',
-      data: {
-        context: "Start all services",
-        "ServiceInfo": {
-          "state": "STARTED"
-        }
-      },
-      sender: this,
-      success: 'startPolling',
-      error: 'onTaskError'
-    });
+    this.startServices(false);
   },
 
   deleteSNameNode: function () {

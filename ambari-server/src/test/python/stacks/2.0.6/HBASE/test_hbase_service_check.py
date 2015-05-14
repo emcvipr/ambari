@@ -22,6 +22,7 @@ from stacks.utils.RMFTestCase import *
 import datetime
 import  resource_management.libraries.functions
 
+@patch("platform.linux_distribution", new = MagicMock(return_value="Linux"))
 @patch.object(resource_management.libraries.functions, "get_unique_id_and_date", new = MagicMock(return_value=''))
 class TestServiceCheck(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "HBASE/0.96.0.2.0/package"
@@ -43,15 +44,9 @@ class TestServiceCheck(RMFTestCase):
       content = Template('hbase-smoke.sh.j2'),
       mode = 0755,
     )
-    self.assertResourceCalled('Execute', ' /usr/lib/hbase/bin/hbase --config /etc/hbase/conf shell /tmp/hbase-smoke.sh',
+    self.assertResourceCalled('Execute', ' /usr/lib/hbase/bin/hbase --config /etc/hbase/conf shell /tmp/hbase-smoke.sh && /tmp/hbaseSmokeVerify.sh /etc/hbase/conf  /usr/lib/hbase/bin/hbase',
       logoutput = True,
-      tries = 3,
-      user = 'ambari-qa',
-      try_sleep = 5,
-    )
-    self.assertResourceCalled('Execute', ' /tmp/hbaseSmokeVerify.sh /etc/hbase/conf  /usr/lib/hbase/bin/hbase',
-      logoutput = True,
-      tries = 3,
+      tries = 6,
       user = 'ambari-qa',
       try_sleep = 5,
     )
@@ -83,15 +78,9 @@ class TestServiceCheck(RMFTestCase):
     self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/hbase.headless.keytab hbase; /usr/lib/hbase/bin/hbase shell /tmp/hbase_grant_permissions.sh',
       user = 'hbase',
     )
-    self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa@EXAMPLE.COM; /usr/lib/hbase/bin/hbase --config /etc/hbase/conf shell /tmp/hbase-smoke.sh',
+    self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa@EXAMPLE.COM; /usr/lib/hbase/bin/hbase --config /etc/hbase/conf shell /tmp/hbase-smoke.sh && /tmp/hbaseSmokeVerify.sh /etc/hbase/conf  /usr/lib/hbase/bin/hbase',
       logoutput = True,
-      tries = 3,
-      user = 'ambari-qa',
-      try_sleep = 5,
-    )
-    self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa@EXAMPLE.COM; /tmp/hbaseSmokeVerify.sh /etc/hbase/conf  /usr/lib/hbase/bin/hbase',
-      logoutput = True,
-      tries = 3,
+      tries = 6,
       user = 'ambari-qa',
       try_sleep = 5,
     )
@@ -113,15 +102,9 @@ class TestServiceCheck(RMFTestCase):
       content = Template('hbase-smoke.sh.j2'),
       mode = 0755,
     )
-    self.assertResourceCalled('Execute', ' /usr/hdp/current/hbase-client/bin/hbase --config /etc/hbase/conf shell /tmp/hbase-smoke.sh',
+    self.assertResourceCalled('Execute', ' /usr/hdp/current/hbase-client/bin/hbase --config /usr/hdp/current/hbase-client/conf shell /tmp/hbase-smoke.sh && /tmp/hbaseSmokeVerify.sh /usr/hdp/current/hbase-client/conf  /usr/hdp/current/hbase-client/bin/hbase',
       logoutput = True,
-      tries = 3,
-      user = 'ambari-qa',
-      try_sleep = 5,
-    )
-    self.assertResourceCalled('Execute', ' /tmp/hbaseSmokeVerify.sh /etc/hbase/conf  /usr/hdp/current/hbase-client/bin/hbase',
-      logoutput = True,
-      tries = 3,
+      tries = 6,
       user = 'ambari-qa',
       try_sleep = 5,
     )

@@ -17,7 +17,6 @@
  */
 package org.apache.ambari.server.state.alerts;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -25,8 +24,6 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.ambari.server.events.AlertStateChangeEvent;
-import org.apache.ambari.server.events.listeners.alerts.AlertServiceStateListener;
-import org.apache.ambari.server.events.listeners.alerts.AlertStateChangedListener;
 import org.apache.ambari.server.events.publishers.AlertEventPublisher;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
@@ -36,13 +33,14 @@ import org.apache.ambari.server.orm.entities.AlertGroupEntity;
 import org.apache.ambari.server.orm.entities.AlertHistoryEntity;
 import org.apache.ambari.server.orm.entities.AlertNoticeEntity;
 import org.apache.ambari.server.orm.entities.AlertTargetEntity;
+import org.apache.ambari.server.state.Alert;
 import org.apache.ambari.server.state.AlertState;
+import org.apache.ambari.server.utils.EventBusSynchronizer;
 import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.google.common.eventbus.EventBus;
 import com.google.inject.Binder;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -70,20 +68,13 @@ public class AlertStateChangedEventTest {
 
     injector.getInstance(GuiceJpaInitializer.class);
 
-    // force singleton init via Guice so the listener registers with the bus
-    injector.getInstance(AlertServiceStateListener.class);
-    injector.getInstance(AlertStateChangedListener.class);
-
     dispatchDao = injector.getInstance(AlertDispatchDAO.class);
-    eventPublisher = injector.getInstance(AlertEventPublisher.class);
-
-    EventBus synchronizedBus = new EventBus();
-    synchronizedBus.register(injector.getInstance(AlertStateChangedListener.class));
 
     // !!! need a synchronous op for testing
-    Field field = AlertEventPublisher.class.getDeclaredField("m_eventBus");
-    field.setAccessible(true);
-    field.set(eventPublisher, synchronizedBus);
+    EventBusSynchronizer.synchronizeAlertEventPublisher(injector);
+    EventBusSynchronizer.synchronizeAmbariEventPublisher(injector);
+
+    eventPublisher = injector.getInstance(AlertEventPublisher.class);
   }
 
   /**
@@ -124,12 +115,24 @@ public class AlertStateChangedEventTest {
 
     EasyMock.replay(alertTarget, alertGroup, dispatchDao);
 
+    AlertDefinitionEntity definition = EasyMock.createNiceMock(AlertDefinitionEntity.class);
+    EasyMock.expect(definition.getDefinitionId()).andReturn(1L);
+    EasyMock.expect(definition.getServiceName()).andReturn("HDFS");
+    EasyMock.expect(definition.getLabel()).andReturn("hdfs-foo-alert");
+    EasyMock.expect(definition.getDescription()).andReturn("HDFS Foo Alert");
+
     AlertHistoryEntity history = EasyMock.createNiceMock(AlertHistoryEntity.class);
     AlertStateChangeEvent event = EasyMock.createNiceMock(AlertStateChangeEvent.class);
-    EasyMock.expect(history.getAlertState()).andReturn(AlertState.CRITICAL).atLeastOnce();
-    EasyMock.expect(event.getNewHistoricalEntry()).andReturn(history).atLeastOnce();
+    Alert alert = EasyMock.createNiceMock(Alert.class);
 
-    EasyMock.replay(history, event);
+    EasyMock.expect(history.getAlertState()).andReturn(AlertState.CRITICAL).atLeastOnce();
+    EasyMock.expect(history.getAlertDefinition()).andReturn(definition).atLeastOnce();
+    EasyMock.expect(alert.getText()).andReturn("The HDFS Foo Alert Is Not Good").atLeastOnce();
+    EasyMock.expect(alert.getState()).andReturn(AlertState.CRITICAL).atLeastOnce();
+    EasyMock.expect(event.getNewHistoricalEntry()).andReturn(history).atLeastOnce();
+    EasyMock.expect(event.getAlert()).andReturn(alert).atLeastOnce();
+
+    EasyMock.replay(definition, history, event, alert);
 
     // async publishing
     eventPublisher.publish(event);
@@ -164,15 +167,27 @@ public class AlertStateChangedEventTest {
     // that the create alert notice method was not called
     EasyMock.replay(alertTarget, alertGroup, dispatchDao);
 
+    AlertDefinitionEntity definition = EasyMock.createNiceMock(AlertDefinitionEntity.class);
+    EasyMock.expect(definition.getDefinitionId()).andReturn(1L);
+    EasyMock.expect(definition.getServiceName()).andReturn("HDFS");
+    EasyMock.expect(definition.getLabel()).andReturn("hdfs-foo-alert");
+    EasyMock.expect(definition.getDescription()).andReturn("HDFS Foo Alert");
+
     AlertHistoryEntity history = EasyMock.createNiceMock(AlertHistoryEntity.class);
     AlertStateChangeEvent event = EasyMock.createNiceMock(AlertStateChangeEvent.class);
+    Alert alert = EasyMock.createNiceMock(Alert.class);
 
     // use WARNING to ensure that the target (which only cares about OK/CRIT)
     // does not receive the alert notice
     EasyMock.expect(history.getAlertState()).andReturn(AlertState.WARNING).atLeastOnce();
-    EasyMock.expect(event.getNewHistoricalEntry()).andReturn(history).atLeastOnce();
 
-    EasyMock.replay(history, event);
+    EasyMock.expect(history.getAlertDefinition()).andReturn(definition).atLeastOnce();
+    EasyMock.expect(alert.getText()).andReturn("The HDFS Foo Alert Is Not Good").atLeastOnce();
+    EasyMock.expect(alert.getState()).andReturn(AlertState.WARNING).atLeastOnce();
+    EasyMock.expect(event.getNewHistoricalEntry()).andReturn(history).atLeastOnce();
+    EasyMock.expect(event.getAlert()).andReturn(alert).atLeastOnce();
+
+    EasyMock.replay(definition, history, event, alert);
 
     // async publishing
     eventPublisher.publish(event);

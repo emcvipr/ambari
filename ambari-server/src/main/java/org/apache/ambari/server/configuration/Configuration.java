@@ -33,6 +33,7 @@ import org.apache.ambari.server.orm.PersistenceType;
 import org.apache.ambari.server.security.ClientSecurityType;
 import org.apache.ambari.server.security.authorization.LdapServerProperties;
 import org.apache.ambari.server.security.encryption.CredentialProvider;
+import org.apache.ambari.server.state.stack.OsFamily;
 import org.apache.ambari.server.utils.ShellCommandUtil;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.RandomStringUtils;
@@ -40,6 +41,7 @@ import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.inject.Inject;
 import com.google.inject.Singleton;
 
 
@@ -49,6 +51,9 @@ import com.google.inject.Singleton;
  */
 @Singleton
 public class Configuration {
+
+  @Inject
+  private OsFamily osFamily;
 
   public static final String CONFIG_FILE = "ambari.properties";
   public static final String BOOTSTRAP_DIR = "bootstrap.dir";
@@ -234,6 +239,23 @@ public class Configuration {
   public static final String KDC_PORT_KEY_DEFAULT = "88";
   public static final String KDC_CONNECTION_CHECK_TIMEOUT_KEY = "kdcserver.connection.check.timeout";
   public static final String KDC_CONNECTION_CHECK_TIMEOUT_DEFAULT = "10000";
+  public static final String KERBEROS_KEYTAB_CACHE_DIR_KEY = "kerberos.keytab.cache.dir";
+  public static final String KERBEROS_KEYTAB_CACHE_DIR_DEFAULT = "/var/lib/ambari-server/data/cache";
+
+  /**
+   * Recovery related configuration
+   */
+  public static final String RECOVERY_TYPE_KEY = "recovery.type";
+  public static final String RECOVERY_TYPE_DEFAULT = "DEFAULT";
+  public static final String RECOVERY_LIFETIME_MAX_COUNT_KEY = "recovery.lifetime_max_count";
+  public static final String RECOVERY_LIFETIME_MAX_COUNT_DEFAULT = "12";
+  public static final String RECOVERY_MAX_COUNT_KEY = "recovery.max_count";
+  public static final String RECOVERY_MAX_COUNT_DEFAULT = "6";
+  public static final String RECOVERY_WINDOW_IN_MIN_KEY = "recovery.window_in_minutes";
+  public static final String RECOVERY_WINDOW_IN_MIN_DEFAULT = "60";
+  public static final String RECOVERY_RETRY_GAP_KEY = "recovery.retry_interval";
+  public static final String RECOVERY_RETRY_GAP_DEFAULT = "5";
+
   /**
    * This key defines whether stages of parallel requests are executed in
    * parallel or sequentally. Only stages from different requests
@@ -242,6 +264,15 @@ public class Configuration {
   public static final String PARALLEL_STAGE_EXECUTION_KEY = "server.stages.parallel";
   public static final String AGENT_TASK_TIMEOUT_KEY = "agent.task.timeout";
   public static final String AGENT_PACKAGE_INSTALL_TASK_TIMEOUT_KEY = "agent.package.install.task.timeout";
+
+  /**
+   * Max number of tasks that may be executed within a single stage.
+   * This limitation is used for tasks that when executed in a 1000+ node cluster,
+   * may DDOS servers providing downloadable resources
+   */
+  public static final String AGENT_PACKAGE_PARALLEL_COMMANDS_LIMIT_KEY = "agent.package.parallel.commands.limit";
+  public static final String AGENT_PACKAGE_PARALLEL_COMMANDS_LIMIT_DEFAULT = "100";
+
   public static final String AGENT_TASK_TIMEOUT_DEFAULT = "900";
   public static final String AGENT_PACKAGE_INSTALL_TASK_TIMEOUT_DEFAULT = "1800";
 
@@ -272,6 +303,14 @@ public class Configuration {
   private static final String LDAP_BIND_ANONYMOUSLY_DEFAULT = "true";
 
   /**
+   * Indicator for sys prepped host
+   * It is possible the some nodes are sys prepped and some are not. This can be enabled later
+   * by agent over-writing global indicator from ambari-server
+   */
+  public static final String SYS_PREPPED_HOSTS_KEY = "packages.pre.installed";
+  public static final String SYS_PREPPED_HOSTS_DEFAULT = "false";
+
+  /**
    * !!! TODO: For embedded server only - should be removed later
    */
   private static final String LDAP_PRIMARY_URL_DEFAULT = "localhost:33389";
@@ -295,8 +334,6 @@ public class Configuration {
 
   private static final String SERVER_PERSISTENCE_TYPE_DEFAULT = "local";
   private static final String SERVER_CONNECTION_MAX_IDLE_TIME = "server.connection.max.idle.millis";
-
-  private static final String UBUNTU_OS = "ubuntu12";
 
   /**
    * Default for repo validation suffixes.
@@ -329,6 +366,10 @@ public class Configuration {
   private static final String DEFAULT_JDBC_POOL_MAX_AGE_SECONDS = "0";
   private static final String DEFAULT_JDBC_POOL_IDLE_TEST_INTERVAL = "7200";
 
+  private static final String IS_COMMAND_RETRY_ENABLED_KEY = "command.retry.enabled";
+  private static final String IS_COMMAND_RETRY_ENABLED_DEFAULT = "false";
+  private static final String COMMAND_RETRY_COUNT_KEY = "command.retry.count";
+  private static final String COMMAND_RETRY_COUNT_DEFAULT = "3";
   /**
    * The full path to the XML file that describes the different alert templates.
    */
@@ -503,6 +544,8 @@ public class Configuration {
     configsMap.put(KDC_PORT_KEY, properties.getProperty(
         KDC_PORT_KEY, KDC_PORT_KEY_DEFAULT));
 
+    configsMap.put(AGENT_PACKAGE_PARALLEL_COMMANDS_LIMIT_KEY, properties.getProperty(
+            AGENT_PACKAGE_PARALLEL_COMMANDS_LIMIT_KEY, AGENT_PACKAGE_PARALLEL_COMMANDS_LIMIT_DEFAULT));
 
     File passFile = new File(configsMap.get(SRVR_KSTR_DIR_KEY) + File.separator
         + configsMap.get(SRVR_CRT_PASS_FILE_KEY));
@@ -568,6 +611,16 @@ public class Configuration {
    */
   public String getProperty(String key) {
     return properties.getProperty(key);
+  }
+
+  /**
+   * Gets a copy of all of the configuration properties that back this
+   * {@link Configuration} instance.
+   *
+   * @return a copy of all of the properties.
+   */
+  public Properties getProperties() {
+    return new Properties(properties);
   }
 
   /**
@@ -655,6 +708,25 @@ public class Configuration {
     return "true".equalsIgnoreCase(properties.getProperty(VIEWS_VALIDATE, VIEWS_VALIDATE_DEFAULT));
   }
 
+
+  /**
+   * @return conventional Java version number, e.g. 7.
+   * Integer is used here to simplify comparisons during usage.
+   * If java version is not supported, returns -1
+   */
+  public int getJavaVersion() {
+    String versionStr = System.getProperty("java.version");
+    if (versionStr.startsWith("1.6")) {
+      return 6;
+    } else if (versionStr.startsWith("1.7")) {
+      return 7;
+    } else if (versionStr.startsWith("1.8")) {
+      return 8;
+    } else { // Some unsupported java version
+      return -1;
+    }
+  }
+
   public File getBootStrapDir() {
     String fileName = properties.getProperty(BOOTSTRAP_DIR, BOOTSTRAP_DIR_DEFAULT);
     return new File(fileName);
@@ -683,6 +755,10 @@ public class Configuration {
   public File getRecommendationsDir() {
     String fileName = properties.getProperty(RECOMMENDATIONS_DIR, RECOMMENDATIONS_DIR_DEFAULT);
     return new File(fileName);
+  }
+
+  public String areHostsSysPrepped(){
+    return properties.getProperty(SYS_PREPPED_HOSTS_KEY, SYS_PREPPED_HOSTS_DEFAULT);
   }
 
   public String getStackAdvisorScript() {
@@ -1035,7 +1111,7 @@ public class Configuration {
 
   public int getConnectionMaxIdleTime() {
     return Integer.parseInt(properties.getProperty
-            (SERVER_CONNECTION_MAX_IDLE_TIME, String.valueOf("900000")));
+        (SERVER_CONNECTION_MAX_IDLE_TIME, String.valueOf("900000")));
   }
 
   /**
@@ -1071,13 +1147,24 @@ public class Configuration {
   }
 
   public int getOneWayAuthPort() {
-    return Integer.parseInt(properties.getProperty(SRVR_ONE_WAY_SSL_PORT_KEY, String.valueOf(SRVR_ONE_WAY_SSL_PORT_DEFAULT)));
+    return Integer.parseInt(properties.getProperty(SRVR_ONE_WAY_SSL_PORT_KEY,
+                                                   String.valueOf(SRVR_ONE_WAY_SSL_PORT_DEFAULT)));
   }
 
   public int getTwoWayAuthPort() {
     return Integer.parseInt(properties.getProperty(SRVR_TWO_WAY_SSL_PORT_KEY, String.valueOf(SRVR_TWO_WAY_SSL_PORT_DEFAULT)));
   }
 
+  /**
+   * Command retry configs
+   */
+  public boolean isCommandRetryEnabled() {
+    return Boolean.parseBoolean(properties.getProperty(IS_COMMAND_RETRY_ENABLED_KEY, IS_COMMAND_RETRY_ENABLED_DEFAULT));
+  }
+
+  public int commandRetryCount() {
+    return Integer.parseInt(properties.getProperty(COMMAND_RETRY_COUNT_KEY, COMMAND_RETRY_COUNT_DEFAULT));
+  }
   /**
    * @return custom properties for database connections
    */
@@ -1137,10 +1224,10 @@ public class Configuration {
   /**
    * @return a string array of suffixes used to validate repo URLs.
    */
-  public String[] getRepoValidationSuffixes(String osFamily) {
+  public String[] getRepoValidationSuffixes(String osType) {
     String repoSuffixes;
 
-    if(osFamily.equals(UBUNTU_OS)) {
+    if(osFamily.isUbuntuFamily(osType)) {
       repoSuffixes = properties.getProperty(REPO_SUFFIX_KEY_UBUNTU,
           REPO_SUFFIX_UBUNTU);
     } else {
@@ -1162,7 +1249,7 @@ public class Configuration {
 
   public Integer getRequestReadTimeout() {
     return Integer.parseInt(properties.getProperty(REQUEST_READ_TIMEOUT,
-        REQUEST_READ_TIMEOUT_DEFAULT));
+                                                   REQUEST_READ_TIMEOUT_DEFAULT));
   }
 
   public Integer getRequestConnectTimeout() {
@@ -1172,7 +1259,7 @@ public class Configuration {
 
   public String getExecutionSchedulerConnections() {
     return properties.getProperty(EXECUTION_SCHEDULER_CONNECTIONS,
-        DEFAULT_SCHEDULER_MAX_CONNECTIONS);
+                                  DEFAULT_SCHEDULER_MAX_CONNECTIONS);
   }
 
   public Long getExecutionSchedulerMisfireToleration() {
@@ -1198,9 +1285,19 @@ public class Configuration {
 
   public String getCustomActionDefinitionPath() {
     return properties.getProperty(CUSTOM_ACTION_DEFINITION_KEY,
-        CUSTOM_ACTION_DEFINITION_DEF_VALUE);
+                                  CUSTOM_ACTION_DEFINITION_DEF_VALUE);
   }
 
+  public int getAgentPackageParallelCommandsLimit() {
+    int value = Integer.parseInt(properties.getProperty(
+            AGENT_PACKAGE_PARALLEL_COMMANDS_LIMIT_KEY,
+            AGENT_PACKAGE_PARALLEL_COMMANDS_LIMIT_DEFAULT));
+    if (value < 1) {
+      value = 1;
+    }
+    return value;
+  }
+  
   /**
    * @param isPackageInstallationTask true, if task is for installing packages
    * @return default task timeout in seconds (string representation). This value
@@ -1303,6 +1400,48 @@ public class Configuration {
   }
 
   /**
+   * Get the node recovery type DEFAULT|AUTO_START|FULL
+   * @return
+   */
+  public String getNodeRecoveryType() {
+    return properties.getProperty(RECOVERY_TYPE_KEY, RECOVERY_TYPE_DEFAULT);
+  }
+
+  /**
+   * Get configured max count of recovery attempt allowed per host component in a window
+   * This is reset when agent is restarted.
+   * @return
+   */
+  public String getNodeRecoveryMaxCount() {
+    return properties.getProperty(RECOVERY_MAX_COUNT_KEY, RECOVERY_MAX_COUNT_DEFAULT);
+  }
+
+  /**
+   * Get configured max lifetime count of recovery attempt allowed per host component.
+   * This is reset when agent is restarted.
+   * @return
+   */
+  public String getNodeRecoveryLifetimeMaxCount() {
+    return properties.getProperty(RECOVERY_LIFETIME_MAX_COUNT_KEY, RECOVERY_LIFETIME_MAX_COUNT_DEFAULT);
+  }
+
+  /**
+   * Get configured window size in minutes
+   * @return
+   */
+  public String getNodeRecoveryWindowInMin() {
+    return properties.getProperty(RECOVERY_WINDOW_IN_MIN_KEY, RECOVERY_WINDOW_IN_MIN_DEFAULT);
+  }
+
+  /**
+   * Get the configured retry gap between tries per host component
+   * @return
+   */
+  public String getNodeRecoveryRetryGap() {
+    return properties.getProperty(RECOVERY_RETRY_GAP_KEY, RECOVERY_RETRY_GAP_DEFAULT);
+  }
+
+  /**
    * Gets the default KDC port to use when no port is specified in KDC hostname
    *
    * @return the default KDC port to use.
@@ -1321,6 +1460,16 @@ public class Configuration {
   public int getKdcConnectionCheckTimeout() {
     return Integer.parseInt(properties.getProperty(
         KDC_CONNECTION_CHECK_TIMEOUT_KEY, KDC_CONNECTION_CHECK_TIMEOUT_DEFAULT));
+  }
+
+  /**
+   * Gets the directory where Ambari is to store cached keytab files.
+   *
+   * @return a File containing the path to the directory to use to store cached keytab files
+   */
+  public File getKerberosKeytabCacheDir() {
+    String fileName = properties.getProperty(KERBEROS_KEYTAB_CACHE_DIR_KEY, KERBEROS_KEYTAB_CACHE_DIR_DEFAULT);
+    return new File(fileName);
   }
 
   /**
@@ -1343,6 +1492,8 @@ public class Configuration {
       databaseType = DatabaseType.MYSQL;
     } else if (dbUrl.contains(DatabaseType.DERBY.getName())) {
       databaseType = DatabaseType.DERBY;
+    } else if (dbUrl.contains(DatabaseType.SQL_SERVER.getName())) {
+      databaseType = DatabaseType.SQL_SERVER;
     } else {
       throw new RuntimeException(
           "The database type could be not determined from the JDBC URL "
@@ -1451,6 +1602,22 @@ public class Configuration {
     return Integer.parseInt(properties.getProperty(
         SERVER_JDBC_CONNECTION_POOL_IDLE_TEST_INTERVAL,
         DEFAULT_JDBC_POOL_IDLE_TEST_INTERVAL));
+  }
+
+  /**
+   * Sets a property on the configuration.
+   *
+   * @param key
+   *          the key (not {@code null}).
+   * @param value
+   *          the value, or {@code null} to remove it.
+   */
+  public void setProperty(String key, String value) {
+    if (null == value) {
+      properties.remove(key);
+    } else {
+      properties.setProperty(key, value);
+    }
   }
 
 }

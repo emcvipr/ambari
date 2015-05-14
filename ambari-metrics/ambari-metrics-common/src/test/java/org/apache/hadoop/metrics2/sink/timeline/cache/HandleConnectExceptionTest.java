@@ -65,13 +65,15 @@ public class HandleConnectExceptionTest {
   }
   class TestTimelineMetricsSink extends AbstractTimelineMetricsSink{
     @Override
-    protected SocketAddress getServerSocketAddress() {
-      return new InetSocketAddress("host", 13);
-    }
-    @Override
     protected String getCollectorUri() {
       return COLLECTOR_URL;
     }
+
+    @Override
+    protected int getTimeoutSeconds() {
+      return 10;
+    }
+
     @Override
     public void emitMetrics(TimelineMetrics metrics) throws IOException {
       super.emitMetrics(metrics);

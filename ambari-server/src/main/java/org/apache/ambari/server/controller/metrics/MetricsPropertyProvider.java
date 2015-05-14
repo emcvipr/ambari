@@ -24,13 +24,15 @@ import org.apache.ambari.server.controller.spi.Predicate;
 import org.apache.ambari.server.controller.spi.Request;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.SystemException;
+import org.apache.ambari.server.controller.utilities.PredicateHelper;
 import org.apache.ambari.server.controller.utilities.StreamProvider;
-import org.apache.http.client.utils.URIBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+
+import static org.apache.ambari.server.controller.metrics.MetricsPaddingMethod.ZERO_PADDING_PARAM;
 
 public abstract class MetricsPropertyProvider extends AbstractPropertyProvider {
   protected final static Logger LOG =
@@ -50,14 +52,19 @@ public abstract class MetricsPropertyProvider extends AbstractPropertyProvider {
 
   protected final ComponentSSLConfiguration configuration;
 
+  protected MetricsPaddingMethod metricsPaddingMethod;
+
+  private static final MetricsPaddingMethod DEFAULT_PADDING_METHOD =
+    new MetricsPaddingMethod(MetricsPaddingMethod.PADDING_STRATEGY.ZEROS);
+
   protected MetricsPropertyProvider(Map<String, Map<String,
-    PropertyInfo>> componentPropertyInfoMap,
-                                 StreamProvider streamProvider,
-                                 ComponentSSLConfiguration configuration,
-                                 MetricHostProvider hostProvider,
-                                 String clusterNamePropertyId,
-                                 String hostNamePropertyId,
-                                 String componentNamePropertyId) {
+       PropertyInfo>> componentPropertyInfoMap,
+       StreamProvider streamProvider,
+       ComponentSSLConfiguration configuration,
+       MetricHostProvider hostProvider,
+       String clusterNamePropertyId,
+       String hostNamePropertyId,
+       String componentNamePropertyId) {
 
     super(componentPropertyInfoMap);
 
@@ -122,6 +129,20 @@ public abstract class MetricsPropertyProvider extends AbstractPropertyProvider {
     Set<String> ids = getRequestPropertyIds(request, predicate);
     if (ids.isEmpty()) {
       return resources;
+    }
+
+    // Re-initialize in case of reuse.
+    metricsPaddingMethod = DEFAULT_PADDING_METHOD;
+
+    Set<String> requestPropertyIds = request.getPropertyIds();
+    if (requestPropertyIds != null && !requestPropertyIds.isEmpty()) {
+      for (String propertyId : requestPropertyIds) {
+        if (propertyId.startsWith(ZERO_PADDING_PARAM)) {
+          String paddingStrategyStr = propertyId.substring(ZERO_PADDING_PARAM.length() + 1);
+          metricsPaddingMethod = new MetricsPaddingMethod(
+            MetricsPaddingMethod.PADDING_STRATEGY.valueOf(paddingStrategyStr));
+        }
+      }
     }
 
     return populateResourcesWithProperties(resources, request, ids);

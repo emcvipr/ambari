@@ -18,7 +18,7 @@
 var App = require('app');
 var stringUtils = require('utils/string_utils');
 
-App.WizardStep9Controller = Em.Controller.extend({
+App.WizardStep9Controller = Em.Controller.extend(App.ReloadPopupMixin, {
 
   name: 'wizardStep9Controller',
 
@@ -45,13 +45,13 @@ App.WizardStep9Controller = Em.Controller.extend({
    */
   progress: '0',
 
-  /*
+  /**
    * Json file for the mock data to be used in mock mode
    * @type {string}
    */
   mockDataPrefix: '/data/wizard/deploy/5_hosts',
 
-  /*
+  /**
    * Current Request data polled from the API: api/v1/clusters/{clusterName}/requests/{RequestId}?fields=tasks/Tasks/command,
    * tasks/Tasks/exit_code,tasks/Tasks/start_time,tasks/Tasks/end_time,tasks/Tasks/host_name,tasks/Tasks/id,tasks/Tasks/role,
    * tasks/Tasks/status&minimal_response=true
@@ -59,7 +59,7 @@ App.WizardStep9Controller = Em.Controller.extend({
    */
   polledData: [],
 
-  /*
+  /**
    * This flag is only used in UI mock mode as a counter for number of polls.
    * @type {number}
    */
@@ -89,13 +89,15 @@ App.WizardStep9Controller = Em.Controller.extend({
    */
   startCallFailed: false,
 
-  /*
+  /**
    * Status of the page. Possible values: <info, warning, failed and success>.
    * This property is used in the step-9 view for displaying the appropriate color of the overall progress bar and
    * the appropriate result message at the bottom of the page
    * @type {string}
    */
   status: 'info',
+
+  skipServiceChecks: false,
 
   /**
    * This computed property is used to determine if the Next button and back button on the page should be disabled. The property is
@@ -128,7 +130,7 @@ App.WizardStep9Controller = Em.Controller.extend({
     }
   }.observes('content.cluster.status', 'content.controllerName'),
 
-  /*
+  /**
    * Computed property to determine if the Retry button should be made visible on the page.
    * @type {bool}
    */
@@ -196,7 +198,9 @@ App.WizardStep9Controller = Em.Controller.extend({
         if (self.get('currentOpenTaskId')) {
           self.loadCurrentTaskLog();
         }
-        self.doPolling();
+        if (App.router.loggedIn) {
+          self.doPolling();
+        }
       }, this.get('POLL_INTERVAL'));
     }
   },
@@ -495,7 +499,7 @@ App.WizardStep9Controller = Em.Controller.extend({
         data = {
           "context": Em.I18n.t("requestInfo.startServices"),
           "ServiceInfo": { "state": "STARTED" },
-          "urlParams": "ServiceInfo/state=INSTALLED&params/run_smoke_test=true&params/reconfigure_client=false"
+          "urlParams": "ServiceInfo/state=INSTALLED&params/run_smoke_test=" + !this.get('skipServiceChecks') + "&params/reconfigure_client=false"
         };
     }
 
@@ -825,7 +829,10 @@ App.WizardStep9Controller = Em.Controller.extend({
       if (this.get('status') === 'failed') {
         clusterStatus.status = 'INSTALL FAILED';
         this.saveClusterStatus(clusterStatus);
-        this.set('progress', '100');
+        this.setProperties({
+          progress: '100',
+          isPolling: false
+        });
         this.get('hosts').forEach(function (host) {
           host.set('progress', '100');
         });
@@ -1021,6 +1028,7 @@ App.WizardStep9Controller = Em.Controller.extend({
    * @return {$.ajax|null}
    */
   getLogsByRequest: function (polling, requestId) {
+    var self = this;
     return App.ajax.send({
       name: 'wizard.step9.load_log',
       sender: this,
@@ -1032,9 +1040,12 @@ App.WizardStep9Controller = Em.Controller.extend({
       },
       success: 'getLogsByRequestSuccessCallback',
       error: 'getLogsByRequestErrorCallback'
-    }).retry({times: App.maxRetries, timeout: 3000}).then(null,
+    }).retry({times: App.maxRetries, timeout: 3000}).then(
       function () {
-        App.showReloadPopup();
+        self.closeReloadPopup();
+      },
+      function () {
+        self.showReloadPopup();
         console.log('Install services all retries failed');
       }
     );
@@ -1095,7 +1106,7 @@ App.WizardStep9Controller = Em.Controller.extend({
         error: 'isAllComponentsInstalledErrorCallback'
       }).complete(function(){
           dfd.resolve();
-        });
+      });
     }
     return dfd.promise();
   },
@@ -1134,7 +1145,7 @@ App.WizardStep9Controller = Em.Controller.extend({
       });
       this.set('progress', '100');
       this.saveClusterStatus(clusterStatus);
-    } else if (this.get('content.cluster.status') === 'PENDING') {
+    } else if (this.get('content.cluster.status') === 'PENDING' && this.get('isPolling')) {
       this.launchStartServices();
     }
 
@@ -1182,6 +1193,36 @@ App.WizardStep9Controller = Em.Controller.extend({
   saveInstalledHosts: function (context) {
     if (!App.get('testMode')) {
       App.router.get(this.get('content.controllerName')).saveInstalledHosts(context);
+    }
+  },
+
+  /**
+   * Load ambari property to determine if we should run service checks on deploy
+   */
+  loadDoServiceChecksFlag: function () {
+    var def = $.Deferred();
+    App.ajax.send({
+      name: 'ambari.service',
+      sender: this,
+      data: {
+        fields: '?fields=RootServiceComponents/properties/skip.service.checks'
+      },
+      success: 'loadDoServiceChecksFlagSuccessCallback'
+    }).complete(function(){
+      def.resolve();
+    });
+    return def.promise();
+  },
+
+  /**
+   *  Callback function Load ambari property to determine if we should run service checks on deploy
+   * @param {Object} data
+   * @method loadDoServiceChecksFlagSuccessCallback
+   */
+  loadDoServiceChecksFlagSuccessCallback: function (data) {
+    var properties = Em.get(data, 'RootServiceComponents.properties');
+    if(properties && properties.hasOwnProperty('skip.service.checks')){
+      this.set('skipServiceChecks', properties['skip.service.checks'] === 'true');
     }
   }
 

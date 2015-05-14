@@ -264,7 +264,7 @@ App.SliderAppsMapper = App.Mapper.createWithMixins(App.RunPeriodically, {
           user: app.user,
           started: app.startTime || 0,
           ended: app.endTime  || 0,
-          appType: app.type.toUpperCase(),
+          appType: app.typeId,
           diagnostics: app.diagnostics || "-",
           description: app.description || "-",
           components: componentsId,
@@ -282,7 +282,7 @@ App.SliderAppsMapper = App.Mapper.createWithMixins(App.RunPeriodically, {
     appsToDelete.forEach(function (app) {
       var appRecord = App.SliderApp.store.getById('sliderApp', app);
       if (appRecord) {
-        appRecord.destroyRecord();
+        appRecord.deleteRecord();
       }
     });
     apps.forEach(function(app) {

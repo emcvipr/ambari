@@ -144,6 +144,61 @@ class TestCustomServiceOrchestrator(TestCase):
 
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch("hostname.public_hostname")
+  @patch("os.path.isfile")
+  @patch("os.unlink")
+  @patch.object(FileCache, "__init__")
+  def test_dump_command_to_json_with_retry(self, FileCache_mock, unlink_mock,
+                                isfile_mock, hostname_mock):
+    FileCache_mock.return_value = None
+    hostname_mock.return_value = "test.hst"
+    command = {
+      'commandType': 'EXECUTION_COMMAND',
+      'role': u'DATANODE',
+      'roleCommand': u'INSTALL',
+      'commandId': '1-1',
+      'taskId': 3,
+      'clusterName': u'cc',
+      'serviceName': u'HDFS',
+      'configurations':{'global' : {}},
+      'configurationTags':{'global' : { 'tag': 'v1' }},
+      'clusterHostInfo':{'namenode_host' : ['1'],
+                         'slave_hosts'   : ['0', '1'],
+                         'all_racks'   : [u'/default-rack:0'],
+                         'ambari_server_host' : 'a.b.c',
+                         'all_ipv4_ips'   : [u'192.168.12.101:0'],
+                         'all_hosts'     : ['h1.hortonworks.com', 'h2.hortonworks.com'],
+                         'all_ping_ports': ['8670:0,1']},
+      'hostLevelParams':{}
+    }
+
+    config = AmbariConfig().getConfig()
+    tempdir = tempfile.gettempdir()
+    config.set('agent', 'prefix', tempdir)
+    dummy_controller = MagicMock()
+    orchestrator = CustomServiceOrchestrator(config, dummy_controller)
+    isfile_mock.return_value = True
+    # Test dumping EXECUTION_COMMAND
+    json_file = orchestrator.dump_command_to_json(command)
+    self.assertTrue(os.path.exists(json_file))
+    self.assertTrue(os.path.getsize(json_file) > 0)
+    if get_platform() != PLATFORM_WINDOWS:
+      self.assertEqual(oct(os.stat(json_file).st_mode & 0777), '0600')
+    self.assertTrue(json_file.endswith("command-3.json"))
+    os.unlink(json_file)
+    # Test dumping STATUS_COMMAND
+    json_file = orchestrator.dump_command_to_json(command, True)
+    self.assertTrue(os.path.exists(json_file))
+    self.assertTrue(os.path.getsize(json_file) > 0)
+    if get_platform() != PLATFORM_WINDOWS:
+      self.assertEqual(oct(os.stat(json_file).st_mode & 0777), '0600')
+    self.assertTrue(json_file.endswith("command-3.json"))
+    os.unlink(json_file)
+    # Testing side effect of dump_command_to_json
+    self.assertEquals(command['public_hostname'], "test.hst")
+    self.assertTrue(unlink_mock.called)
+
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch("os.path.exists")
   @patch.object(FileCache, "__init__")
   def test_resolve_script_path(self, FileCache_mock, exists_mock):
@@ -334,19 +389,21 @@ class TestCustomServiceOrchestrator(TestCase):
   from ambari_agent.StackVersionsFileHandler import StackVersionsFileHandler
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch.object(CustomServiceOrchestrator, "get_py_executor")
   @patch("ambari_commons.shell.kill_process_with_children")
   @patch.object(FileCache, "__init__")
   @patch.object(CustomServiceOrchestrator, "resolve_script_path")
   @patch.object(CustomServiceOrchestrator, "resolve_hook_script_path")
   @patch.object(StackVersionsFileHandler, "read_stack_version")
-  def test_cancel_backgound_command(self, read_stack_version_mock, resolve_hook_script_path_mock, resolve_script_path_mock, FileCache_mock,
-                                      kill_process_with_children_mock):
+  def test_cancel_backgound_command(self, read_stack_version_mock, resolve_hook_script_path_mock,
+                                    resolve_script_path_mock, FileCache_mock, kill_process_with_children_mock,
+                                    get_py_executor_mock):
     FileCache_mock.return_value = None
     FileCache_mock.cache_dir = MagicMock()
     resolve_hook_script_path_mock.return_value = None
 #     shell.kill_process_with_children = MagicMock()
     dummy_controller = MagicMock()
-    cfg = AmbariConfig().getConfig()
+    cfg = AmbariConfig()
     cfg.set('agent', 'tolerate_download_failures', 'true')
     cfg.set('agent', 'prefix', '.')
     cfg.set('agent', 'cache_dir', 'background_tasks')
@@ -364,8 +421,10 @@ class TestCustomServiceOrchestrator(TestCase):
     import TestActionQueue
     import copy
 
-    TestActionQueue.patch_output_file(orchestrator.python_executor)
-    orchestrator.python_executor.prepare_process_result = MagicMock()
+    pyex = PythonExecutor(actionQueue.customServiceOrchestrator.tmp_dir, actionQueue.customServiceOrchestrator.config)
+    TestActionQueue.patch_output_file(pyex)
+    pyex.prepare_process_result = MagicMock()
+    get_py_executor_mock.return_value = pyex
     orchestrator.dump_command_to_json = MagicMock()
 
     lock = threading.RLock()
@@ -543,12 +602,14 @@ class TestCustomServiceOrchestrator(TestCase):
     self.assertEqual('UNKNOWN', status)
 
 
+  @patch.object(CustomServiceOrchestrator, "get_py_executor")
   @patch.object(CustomServiceOrchestrator, "dump_command_to_json")
   @patch.object(FileCache, "__init__")
   @patch.object(FileCache, "get_custom_actions_base_dir")
   def test_runCommand_background_action(self, get_custom_actions_base_dir_mock,
                                     FileCache_mock,
-                                    dump_command_to_json_mock):
+                                    dump_command_to_json_mock,
+                                    get_py_executor_mock):
     FileCache_mock.return_value = None
     get_custom_actions_base_dir_mock.return_value = "some path"
     _, script = tempfile.mkstemp()
@@ -570,8 +631,10 @@ class TestCustomServiceOrchestrator(TestCase):
     orchestrator = CustomServiceOrchestrator(self.config, dummy_controller)
 
     import TestActionQueue
-    TestActionQueue.patch_output_file(orchestrator.python_executor)
-    orchestrator.python_executor.condenseOutput = MagicMock()
+    pyex = PythonExecutor(orchestrator.tmp_dir, orchestrator.config)
+    TestActionQueue.patch_output_file(pyex)
+    pyex.condenseOutput = MagicMock()
+    get_py_executor_mock.return_value = pyex
     orchestrator.dump_command_to_json = MagicMock()
 
     ret = orchestrator.runCommand(command, "out.txt", "err.txt")

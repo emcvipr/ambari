@@ -16,13 +16,13 @@
 * limitations under the License.
 }}
 
-{{#panel-widget headingTranslation="titles.database" isLoading=isLoading classNames="database-explorer"}}
+{{#panel-widget headingTranslation="titles.database" isLoading=isLoading classNames="database-explorer" iconActions=panelIconActions}}
   {{#if model}}
 
     {{typeahead-widget
         content=model
-        optionValuePath="content.id"
-        optionLabelPath="content.name"
+        optionValuePath="id"
+        optionLabelPath="name"
         selection=selectedDatabase
     }}
 

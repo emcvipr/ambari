@@ -28,7 +28,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 /**
- * This is a test to see how well the KerberosConfigDataFileBuilder and KerberosConfigDataFileReader
+ * This is a test to see how well the KerberosConfigDataFileWriter and KerberosConfigDataFileReader
  * work when the data temporaryDirectory is opened, close, reopened, and appended to.
  */
 public class KerberosConfigDataFileTest {
@@ -36,24 +36,30 @@ public class KerberosConfigDataFileTest {
   @Rule
   public TemporaryFolder folder = new TemporaryFolder();
 
+  private KerberosConfigDataFileReaderFactory kerberosConfigDataFileReaderFactory = new KerberosConfigDataFileReaderFactory();
+  private KerberosConfigDataFileWriterFactory kerberosConfigDataFileWriterFactory = new KerberosConfigDataFileWriterFactory();
+
   @Test
   public void testKerberosConfigDataFile() throws Exception {
     File file = folder.newFile();
     Assert.assertNotNull(file);
 
     // Write the data
-    KerberosConfigDataFileBuilder builder = new KerberosConfigDataFileBuilder(file);
-    Assert.assertFalse(builder.isClosed());
+    KerberosConfigDataFileWriter writer = kerberosConfigDataFileWriterFactory.createKerberosConfigDataFileWriter(file);
+    Assert.assertFalse(writer.isClosed());
 
     for (int i = 0; i < 10; i++) {
-      builder.addRecord("config-type" + i, "key" + i, "value" + i);
+      writer.addRecord("config-type" + i, "key" + i, "value" + i, KerberosConfigDataFileWriter.OPERATION_TYPE_SET);
+    }
+    for (int i = 10; i < 15; i++) {
+      writer.addRecord("config-type" + i, "key" + i, "value" + i, KerberosConfigDataFileWriter.OPERATION_TYPE_REMOVE);
     }
 
-    builder.close();
-    Assert.assertTrue(builder.isClosed());
+    writer.close();
+    Assert.assertTrue(writer.isClosed());
 
     // Read the data...
-    KerberosConfigDataFileReader reader = new KerberosConfigDataFileReader(file);
+    KerberosConfigDataFileReader reader = kerberosConfigDataFileReaderFactory.createKerberosConfigDataFileReader(file);
     Assert.assertFalse(reader.isClosed());
 
     Iterator<Map<String, String>> iterator = reader.iterator();
@@ -64,14 +70,23 @@ public class KerberosConfigDataFileTest {
     while (iterator.hasNext()) {
       Map<String, String> record = iterator.next();
 
-      if (i < 10) {
-        Assert.assertEquals("config-type" + i, record.get(KerberosConfigDataFile.CONFIGURATION_TYPE));
-        Assert.assertEquals("key" + i, record.get(KerberosConfigDataFile.KEY));
-        Assert.assertEquals("value" + i, record.get(KerberosConfigDataFile.VALUE));
+      if (i < 15) {
+        Assert.assertEquals("config-type" + i, record.get(KerberosConfigDataFileReader.CONFIGURATION_TYPE));
+        Assert.assertEquals("key" + i, record.get(KerberosConfigDataFileReader.KEY));
+        Assert.assertEquals("value" + i, record.get(KerberosConfigDataFileReader.VALUE));
+
+        if(i<10) {
+          Assert.assertEquals("SET", record.get(KerberosConfigDataFileReader.OPERATION));
+        }
+        else {
+          Assert.assertEquals("REMOVE", record.get(KerberosConfigDataFileReader.OPERATION));
+        }
       }
 
       i++;
     }
+
+    Assert.assertEquals(15, i);
 
     reader.close();
     Assert.assertTrue(reader.isClosed());
@@ -81,27 +96,29 @@ public class KerberosConfigDataFileTest {
     i = 0;
     for (Map<String, String> record : reader) {
       if (i < 10) {
-        Assert.assertEquals("config-type" + i, record.get(KerberosConfigDataFile.CONFIGURATION_TYPE));
-        Assert.assertEquals("key" + i, record.get(KerberosConfigDataFile.KEY));
-        Assert.assertEquals("value" + i, record.get(KerberosConfigDataFile.VALUE));
+        Assert.assertEquals("config-type" + i, record.get(KerberosConfigDataFileReader.CONFIGURATION_TYPE));
+        Assert.assertEquals("key" + i, record.get(KerberosConfigDataFileReader.KEY));
+        Assert.assertEquals("value" + i, record.get(KerberosConfigDataFileReader.VALUE));
       }
 
       i++;
     }
 
+    Assert.assertEquals(15, i);
+
     reader.close();
     Assert.assertTrue(reader.isClosed());
 
     // Add an additional record
-    builder.open();
-    Assert.assertFalse(builder.isClosed());
+    writer.open();
+    Assert.assertFalse(writer.isClosed());
 
-    builder.addRecord("config-type", "key", "value");
+    writer.addRecord("config-type", "key", "value", KerberosConfigDataFileReader.OPERATION_TYPE_SET);
 
-    builder.close();
-    Assert.assertTrue(builder.isClosed());
+    writer.close();
+    Assert.assertTrue(writer.isClosed());
 
-    reader = new KerberosConfigDataFileReader(file);
+    reader = kerberosConfigDataFileReaderFactory.createKerberosConfigDataFileReader(file);
     Assert.assertFalse(reader.isClosed());
 
     i = 0;
@@ -109,19 +126,19 @@ public class KerberosConfigDataFileTest {
       i++;
     }
 
-    Assert.assertEquals(11, i);
+    Assert.assertEquals(16, i);
 
     reader.close();
     Assert.assertTrue(reader.isClosed());
 
     // Add an additional record
-    builder = new KerberosConfigDataFileBuilder(file);
-    Assert.assertFalse(builder.isClosed());
+    writer = kerberosConfigDataFileWriterFactory.createKerberosConfigDataFileWriter(file);
+    Assert.assertFalse(writer.isClosed());
 
-    builder.addRecord("config-type", "key", "value");
+    writer.addRecord("config-type", "key", "value", KerberosConfigDataFileReader.OPERATION_TYPE_REMOVE);
 
-    builder.close();
-    Assert.assertTrue(builder.isClosed());
+    writer.close();
+    Assert.assertTrue(writer.isClosed());
 
     reader.open();
     Assert.assertFalse(reader.isClosed());
@@ -131,7 +148,7 @@ public class KerberosConfigDataFileTest {
       i++;
     }
 
-    Assert.assertEquals(12, i);
+    Assert.assertEquals(17, i);
 
     reader.close();
     Assert.assertTrue(reader.isClosed());

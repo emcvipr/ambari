@@ -17,11 +17,16 @@
  */
 package org.apache.ambari.server.orm.dao;
 
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+
+import com.google.inject.assistedinject.AssistedInject;
 import junit.framework.Assert;
+
 import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.cache.ConfigGroupHostMapping;
@@ -33,13 +38,15 @@ import org.apache.ambari.server.orm.entities.ConfigGroupHostMappingEntity;
 import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.ResourceEntity;
 import org.apache.ambari.server.orm.entities.ResourceTypeEntity;
+import org.apache.ambari.server.orm.entities.StackEntity;
+import org.apache.ambari.server.state.host.HostFactory;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
 
 public class ConfigGroupDAOTest {
   private Injector injector;
@@ -49,12 +56,18 @@ public class ConfigGroupDAOTest {
   private ConfigGroupHostMappingDAO configGroupHostMappingDAO;
   private HostDAO hostDAO;
   private ResourceTypeDAO resourceTypeDAO;
+  private StackDAO stackDAO;
+  private HostFactory hostFactory;
 
   @Before
   public void setup() throws Exception {
     injector = Guice.createInjector(new InMemoryDefaultTestModule());
     injector.getInstance(GuiceJpaInitializer.class);
 
+    // required to populate the database with stacks
+    injector.getInstance(AmbariMetaInfo.class);
+
+    stackDAO = injector.getInstance(StackDAO.class);
     clusterDAO = injector.getInstance(ClusterDAO.class);
     configGroupDAO = injector.getInstance(ConfigGroupDAO.class);
     configGroupConfigMappingDAO = injector.getInstance
@@ -63,6 +76,7 @@ public class ConfigGroupDAOTest {
       (ConfigGroupHostMappingDAO.class);
     hostDAO = injector.getInstance(HostDAO.class);
     resourceTypeDAO = injector.getInstance(ResourceTypeDAO.class);
+    hostFactory = injector.getInstance(HostFactory.class);
   }
 
   @After
@@ -83,12 +97,17 @@ public class ConfigGroupDAOTest {
       resourceTypeEntity.setName(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE_NAME);
       resourceTypeEntity = resourceTypeDAO.merge(resourceTypeEntity);
     }
+
+    StackEntity stackEntity = stackDAO.find("HDP", "0.1");
+
     ResourceEntity resourceEntity = new ResourceEntity();
     resourceEntity.setResourceType(resourceTypeEntity);
 
     ClusterEntity clusterEntity = new ClusterEntity();
     clusterEntity.setClusterName(clusterName);
     clusterEntity.setResource(resourceEntity);
+    clusterEntity.setDesiredStack(stackEntity);
+
     clusterDAO.create(clusterEntity);
 
     configGroupEntity.setClusterEntity(clusterEntity);
@@ -100,15 +119,14 @@ public class ConfigGroupDAOTest {
     configGroupDAO.create(configGroupEntity);
 
     if (hosts != null && !hosts.isEmpty()) {
-      List<ConfigGroupHostMappingEntity> hostMappingEntities = new
-        ArrayList<ConfigGroupHostMappingEntity>();
+      List<ConfigGroupHostMappingEntity> hostMappingEntities = new ArrayList<ConfigGroupHostMappingEntity>();
 
       for (HostEntity host : hosts) {
+        host.setClusterEntities(Arrays.asList(clusterEntity));
         hostDAO.create(host);
 
-        ConfigGroupHostMappingEntity hostMappingEntity = new
-          ConfigGroupHostMappingEntity();
-        hostMappingEntity.setHostname(host.getHostName());
+        ConfigGroupHostMappingEntity hostMappingEntity = new ConfigGroupHostMappingEntity();
+        hostMappingEntity.setHostId(host.getHostId());
         hostMappingEntity.setHostEntity(host);
         hostMappingEntity.setConfigGroupEntity(configGroupEntity);
         hostMappingEntity.setConfigGroupId(configGroupEntity.getGroupId());
@@ -196,12 +214,16 @@ public class ConfigGroupDAOTest {
   @Test
   public void testFindByHost() throws Exception {
     List<HostEntity> hosts = new ArrayList<HostEntity>();
+    // Partially constructed HostEntity that will persisted in {@link createConfigGroup}
     HostEntity hostEntity = new HostEntity();
     hostEntity.setHostName("h1");
     hostEntity.setOsType("centOS");
+
     hosts.add(hostEntity);
     ConfigGroupEntity configGroupEntity =
       createConfigGroup("c1", "hdfs-1", "HDFS", "some description", hosts, null);
+
+    Assert.assertNotNull(hostEntity.getHostId());
 
     Assert.assertNotNull(configGroupEntity);
     Assert.assertTrue(configGroupEntity.getConfigGroupHostMappingEntities()
@@ -209,25 +231,26 @@ public class ConfigGroupDAOTest {
     Assert.assertNotNull(configGroupEntity
       .getConfigGroupHostMappingEntities().iterator().next());
 
-    Set<ConfigGroupHostMapping> hostMappingEntities = configGroupHostMappingDAO
-      .findByHost("h1");
+    Set<ConfigGroupHostMapping> hostMappingEntities = configGroupHostMappingDAO.findByHostId(hostEntity.getHostId());
 
     Assert.assertNotNull(hostMappingEntities);
-    
+
     for (ConfigGroupHostMapping hostMappingEntity : hostMappingEntities) {
-    
-      Assert.assertEquals("h1", hostMappingEntity.getHostname());
+      Assert.assertEquals(hostEntity.getHostId(), hostMappingEntity.getHostId());
       Assert.assertEquals("centOS", hostMappingEntity.getHost().getOsType());
     }
   }
 
   @Test
   public void testFindConfigsByGroup() throws Exception {
+    StackEntity stackEntity = stackDAO.find("HDP", "0.1");
+
     ClusterConfigEntity configEntity = new ClusterConfigEntity();
     configEntity.setType("core-site");
     configEntity.setTag("version1");
     configEntity.setData("someData");
     configEntity.setAttributes("someAttributes");
+    configEntity.setStack(stackEntity);
 
     List<ClusterConfigEntity> configEntities = new
       ArrayList<ClusterConfigEntity>();

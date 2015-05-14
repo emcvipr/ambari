@@ -18,10 +18,11 @@
 
 package org.apache.ambari.server.state;
 
-import org.apache.ambari.server.AmbariException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import org.apache.ambari.server.AmbariException;
 
 /**
  * Single entity that tracks all clusters and hosts that are managed
@@ -31,9 +32,13 @@ public interface Clusters {
 
   /**
    * Add a new Cluster
+   * 
    * @param clusterName
+   *          the cluster name (not {@code null}).
+   * @param stackId
+   *          the stack for the cluster (not {@code null}).
    */
-  public void addCluster(String clusterName)
+  public void addCluster(String clusterName, StackId stackId)
       throws AmbariException;
 
   /**
@@ -73,6 +78,14 @@ public interface Clusters {
    * @throws AmbariException
    */
   public Host getHost(String hostname) throws AmbariException;
+
+  /**
+   * Get a Host object managed by this server
+   * @param hostId Host Id from the {@link org.apache.ambari.server.orm.entities.HostEntity} objecty
+   * @return Host object
+   * @throws AmbariException
+   */
+  public Host getHostById(Long hostId) throws AmbariException;
 
   /**
    * Add a Host object to be managed by this server
@@ -129,6 +142,15 @@ public interface Clusters {
    * @throws AmbariException
    */
   public Map<String, Host> getHostsForCluster(String clusterName)
+      throws AmbariException;
+
+  /**
+   * Gets all the host Ids associated with the cluster
+   * @param clusterName The name of the cluster
+   * @return <code>Map</code> containing host id and <code>Host</code>
+   * @throws AmbariException
+   */
+  public Map<Long, Host> getHostIdsForCluster(String clusterName)
       throws AmbariException;
 
   /**

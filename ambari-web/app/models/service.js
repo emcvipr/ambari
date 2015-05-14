@@ -84,7 +84,8 @@ App.Service = DS.Model.extend({
     var typeServiceMap = {
       GANGLIA: ['MONITORING'],
       HDFS: ['HA_MODE'],
-      YARN: ['HA_MODE']
+      YARN: ['HA_MODE'],
+      RANGER: ['HA_MODE']
     };
     return typeServiceMap[this.get('serviceName')] || [];
   }.property('serviceName'),
@@ -143,12 +144,12 @@ App.Service = DS.Model.extend({
 
   hasCriticalAlerts: function () {
     var controller = App.router.get('mainAlertDefinitionsController');
-    return controller.getCriticalAlertsCountForService(this) > 0;
+    return controller.getCriticalAlertsCountForService(this.get('serviceName')) > 0;
   }.property('alertsCount'),
 
   alertsCount: function () {
     var controller = App.router.get('mainAlertDefinitionsController');
-    return controller.getCriticalOrWarningAlertsCountForService(this);
+    return controller.getCriticalOrWarningAlertsCountForService(this.get('serviceName'));
   }.property('App.router.mainAlertDefinitionsController.content.@each.isCriticalOrWarning')
 });
 

@@ -137,7 +137,11 @@ App.QuickViewLinks = Em.View.extend({
         var protocol = self.setProtocol(item.get('service_id'), self.get('configProperties'), self.ambariProperties());
         if (item.get('template')) {
           var port = item.get('http_config') && self.setPort(item, protocol);
-          item.set('url', item.get('template').fmt(protocol, hosts[0], port));
+          if (['FALCON', 'OOZIE'].contains(item.get('service_id'))) {
+            item.set('url', item.get('template').fmt(protocol, hosts[0], port, App.router.get('loginName')));
+          } else {
+            item.set('url', item.get('template').fmt(protocol, hosts[0], port));
+          }
         }
         return item;
       });
@@ -263,6 +267,9 @@ App.QuickViewLinks = Em.View.extend({
         break;
       case "STORM":
         hosts[0] = this.findComponentHost(response.items, "STORM_UI_SERVER");
+        break;
+      case "ACCUMULO":
+        hosts[0] = this.findComponentHost(response.items, "ACCUMULO_MONITOR");
         break;
       default:
         var service = App.StackService.find().findProperty('serviceName', serviceName);

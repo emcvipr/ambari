@@ -22,17 +22,19 @@ from unittest import TestCase
 from mock.mock import patch, MagicMock
 import unittest
 import platform
-from only_for_platform import only_for_platform, PLATFORM_LINUX
+import socket
+from only_for_platform import not_for_platform, PLATFORM_WINDOWS
+from ambari_agent import hostname
+from ambari_agent.Hardware import Hardware
+from ambari_agent.Facter import Facter, FacterLinux
+from ambari_commons import OSCheck
 
-with patch("platform.linux_distribution", return_value = ('Suse','11','Final')):
-  from ambari_agent import hostname
-  from ambari_agent.Hardware import Hardware
-  from ambari_agent.Facter import Facter, FacterLinux
-  from ambari_commons import OSCheck
-
-@only_for_platform(PLATFORM_LINUX)
+@not_for_platform(PLATFORM_WINDOWS)
 @patch.object(platform,"linux_distribution", new = ('Suse','11','Final'))
+@patch.object(socket, "getfqdn", new = MagicMock(return_value = "ambari.apache.org"))
+@patch.object(socket, "gethostbyname", new = MagicMock(return_value = "192.168.1.1"))
 class TestHardware(TestCase):
+
   @patch.object(Hardware, "_chk_mount", new = MagicMock(return_value=True))
   @patch.object(OSCheck, "get_os_type")
   @patch.object(OSCheck, "get_os_version")
@@ -144,11 +146,21 @@ SwapFree:        1598676 kB
     self.assertEquals(result['swapsize'], '2.04 GB')
     self.assertEquals(result['swapfree'], '1.52 GB')
 
+  @patch("fcntl.ioctl")
+  @patch("socket.socket")
+  @patch("struct.pack")
+  @patch("socket.inet_ntoa")
+  @patch.object(FacterLinux, "get_ip_address_by_ifname")
+  @patch.object(Facter, "getIpAddress")
   @patch.object(FacterLinux, "setDataIfConfigOutput")
   @patch.object(OSCheck, "get_os_type")
   @patch.object(OSCheck, "get_os_version")
-  def test_facterDataIfConfigOutput(self, get_os_version_mock, get_os_type_mock, facter_setDataIfConfigOutput_mock):
-
+  def test_facterDataIfConfigOutput(self, get_os_version_mock, get_os_type_mock, facter_setDataIfConfigOutput_mock,
+                                    getIpAddress_mock, get_ip_address_by_ifname_mock, inet_ntoa_mock, struct_pack_mock,
+                                    socket_socket_mock, fcntl_ioctl_mock):
+    getIpAddress_mock.return_value = "10.0.2.15"
+    get_ip_address_by_ifname_mock.return_value = "10.0.2.15"
+    inet_ntoa_mock.return_value = "255.255.255.0"
     facter_setDataIfConfigOutput_mock.return_value = '''
 eth0      Link encap:Ethernet  HWaddr 08:00:27:C9:39:9E
           inet addr:10.0.2.15  Bcast:10.0.2.255  Mask:255.255.255.0
@@ -182,6 +194,9 @@ lo        Link encap:Local Loopback
     get_os_version_mock.return_value = "11"
     result = Facter().facterInfo()
 
+    self.assertTrue(inet_ntoa_mock.called)
+    self.assertTrue(get_ip_address_by_ifname_mock.called)
+    self.assertTrue(getIpAddress_mock.called)
     self.assertEquals(result['ipaddress'], '10.0.2.15')
     self.assertEquals(result['netmask'], '255.255.255.0')
     self.assertEquals(result['interfaces'], 'eth0,eth1,lo')

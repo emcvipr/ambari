@@ -24,6 +24,7 @@ require('models/host_component');
 require('models/host_stack_version');
 var batchUtils = require('utils/batch_scheduled_requests');
 var componentsUtils = require('utils/components');
+var hostsManagement = require('utils/hosts');
 var controller;
 
 describe('App.MainHostDetailsController', function () {
@@ -493,9 +494,35 @@ describe('App.MainHostDetailsController', function () {
 
   describe('#addClientComponent()', function () {
 
+    var component = Em.Object.create({
+      componentName: ' Comp1'
+    });
+
     beforeEach(function () {
-      sinon.spy(App.ModalPopup, "show");
-      sinon.stub(controller, "primary", Em.K);
+      sinon.stub(controller, 'showAddComponentPopup', Em.K);
+    });
+
+    afterEach(function () {
+      controller.showAddComponentPopup.restore();
+    });
+
+    it('any CLIENT component', function () {
+      var popup = controller.addClientComponent(component);
+      expect(controller.showAddComponentPopup.calledOnce).to.be.true;
+    });
+
+  });
+
+  describe('#showAddComponentPopup()', function () {
+
+    var message = 'Comp1',
+      component = Em.Object.create({
+        componentName: ' Comp1'
+      });
+
+    beforeEach(function () {
+      sinon.spy(App.ModalPopup, 'show');
+      sinon.stub(controller, 'primary', Em.K);
     });
 
     afterEach(function () {
@@ -503,12 +530,14 @@ describe('App.MainHostDetailsController', function () {
       controller.primary.restore();
     });
 
-    it('any CLIENT component', function () {
-      var component = Em.Object.create({'componentName': 'Comp1'});
-      var popup = controller.addClientComponent(component);
+    it('should display add component confirmation', function () {
+      var popup = controller.showAddComponentPopup(message, function () {
+        controller.primary(component);
+      });
       expect(App.ModalPopup.show.calledOnce).to.be.true;
+      expect(popup.get('addComponentMsg')).to.eql(Em.I18n.t('hosts.host.addComponent.msg').format(message));
       popup.onPrimary();
-      expect(controller.primary.calledWith(Em.Object.create({'componentName': 'Comp1'}))).to.be.true;
+      expect(controller.primary.calledWith(component)).to.be.true;
     });
   });
 
@@ -532,6 +561,11 @@ describe('App.MainHostDetailsController', function () {
       controller.showBackgroundOperationsPopup.restore();
     });
 
+    it('data is null', function () {
+      var data = {Requests: null};
+      expect(controller.installNewComponentSuccessCallback(null, {}, {})).to.be.false;
+      expect(controller.showBackgroundOperationsPopup.called).to.be.false;
+    });
     it('data.Requests is null', function () {
       var data = {Requests: null};
       expect(controller.installNewComponentSuccessCallback(data, {}, {})).to.be.false;
@@ -857,7 +891,8 @@ describe('App.MainHostDetailsController', function () {
       App.set('currentStackVersion', 'HDP-2.2.0');
       expect(controller.setZKConfigs(configs, 'host1:2181', [])).to.be.true;
       expect(configs).to.eql({"yarn-site": {
-        'hadoop.registry.zk.quorum': "host1:2181"
+        'hadoop.registry.zk.quorum': "host1:2181",
+        'yarn.resourcemanager.zk-address': "host1:2181"
       }});
       App.set('currentStackVersion', version);
     });
@@ -1689,6 +1724,26 @@ describe('App.MainHostDetailsController', function () {
     });
   });
 
+
+  describe('#setRackId', function () {
+    beforeEach(function () {
+      sinon.stub(hostsManagement, 'setRackInfo', Em.K);
+
+    });
+    afterEach(function () {
+      hostsManagement.setRackInfo.restore();
+    });
+    it('should call setRackInfo with appropriate arguments', function () {
+      var mockedHost = Em.Object.create({
+        rack: 'rackId'
+      });
+      controller.setRackId({
+        context: mockedHost
+      });
+      expect(hostsManagement.setRackInfo.calledWith({message: Em.I18n.t('hosts.host.details.setRackId')}, [mockedHost], 'rackId')).to.be.true;
+    });
+  });
+
   describe('#restartAllStaleConfigComponents()', function () {
 
     beforeEach(function () {
@@ -1762,23 +1817,12 @@ describe('App.MainHostDetailsController', function () {
       controller.refreshConfigs(event);
       expect(App.showConfirmationPopup.called).to.be.false;
     });
-    it('No components with stale configs', function () {
-      var event = {context: [Em.Object.create({
-        staleConfigs: false
-      })]};
-      controller.refreshConfigs(event);
-      expect(App.showConfirmationPopup.called).to.be.false;
-    });
-    it('Components with stale configs', function () {
-      var event = {context: [Em.Object.create({
-        staleConfigs: true
-      })]};
+    it('Some components present', function () {
+      var event = {context: [Em.Object.create()]};
       var popup = controller.refreshConfigs(event);
       expect(App.showConfirmationPopup.calledOnce).to.be.true;
       popup.onPrimary();
-      expect(batchUtils.restartHostComponents.calledWith([Em.Object.create({
-        staleConfigs: true
-      })])).to.be.true;
+      expect(batchUtils.restartHostComponents.calledWith([Em.Object.create()])).to.be.true;
     });
   });
 
@@ -1898,13 +1942,13 @@ describe('App.MainHostDetailsController', function () {
 
   describe('#_doDeleteHostComponentSuccessCallback()', function () {
     beforeEach(function() {
-      sinon.stub(controller, 'removeHostComponentModel', Em.K);      
+      sinon.stub(controller, 'removeHostComponentModel', Em.K);
     });
-    
+
     afterEach(function() {
-      controller.removeHostComponentModel.restore();      
+      controller.removeHostComponentModel.restore();
     });
-    
+
     it('ZOOKEEPER_SERVER component', function () {
       var data = {
         componentName: 'ZOOKEEPER_SERVER'
@@ -2124,42 +2168,122 @@ describe('App.MainHostDetailsController', function () {
     });
   });
 
-  describe('#reinstallClients()', function () {
+  describe('#installClients()', function () {
+
+    var cases = [
+        {
+          context: [
+            Em.Object.create({
+              componentName: 'c0',
+              workStatus: 'INSTALLED'
+            }),
+            Em.Object.create({
+              componentName: 'c1',
+              workStatus: 'INIT'
+            }),
+            Em.Object.create({
+              componentName: 'c2',
+              workStatus: 'INSTALL_FAILED'
+            })
+          ],
+          dependencies: {
+            c0: [],
+            c1: [],
+            c2: []
+          },
+          getKDCSessionStateCalled: true,
+          sendComponentCommandCalled: true,
+          showAlertPopupCalled: false,
+          title: 'No clients to add, some clients to install'
+        },
+        {
+          context: [
+            Em.Object.create({
+              componentName: 'c3',
+              displayName: 'c3'
+            })
+          ],
+          dependencies: {
+            c3: []
+          },
+          getKDCSessionStateCalled: true,
+          sendComponentCommandCalled: false,
+          showAlertPopupCalled: false,
+          title: 'No clients to install, some clients to add'
+        },
+        {
+          context: [
+            Em.Object.create({
+              componentName: 'c4',
+              displayName: 'c4'
+            })
+          ],
+          dependencies: {
+            c4: ['c5']
+          },
+          getKDCSessionStateCalled: false,
+          sendComponentCommandCalled: false,
+          showAlertPopupCalled: true,
+          title: 'Clients to add have unresolved dependencies'
+        },
+        {
+          context: [
+            Em.Object.create({
+              componentName: 'c5',
+              displayName: 'c5'
+            }),
+            Em.Object.create({
+              componentName: 'c6',
+              displayName: 'c6'
+            })
+          ],
+          dependencies: {
+            c5: ['c6'],
+            c6: ['c5']
+          },
+          getKDCSessionStateCalled: true,
+          sendComponentCommandCalled: false,
+          showAlertPopupCalled: false,
+          title: 'Clients to add have mutual dependencies'
+        }
+      ],
+      componentsUtils = require('utils/components');
+
     beforeEach(function () {
-      sinon.stub(controller, 'sendComponentCommand');
+      sinon.stub(controller, 'sendComponentCommand', Em.K);
+      sinon.stub(controller, 'showAddComponentPopup', Em.K);
+      sinon.stub(App.get('router.mainAdminKerberosController'), 'getKDCSessionState', function (arg) {
+        return arg();
+      });
+      sinon.stub(App, 'showAlertPopup', Em.K);
+      sinon.stub(App.StackServiceComponent, 'find', function (componentName) {
+        return Em.Object.create({
+          displayName: componentName
+        });
+      });
+      controller.set('content.hostComponents', []);
     });
     afterEach(function () {
       controller.sendComponentCommand.restore();
+      controller.showAddComponentPopup.restore();
+      App.get('router.mainAdminKerberosController').getKDCSessionState.restore();
+      App.showAlertPopup.restore();
+      App.StackServiceComponent.find.restore();
+      componentsUtils.checkComponentDependencies.restore();
     });
-    it('No clients to install', function () {
-      var event = {context: [
-        Em.Object.create({
-          workStatus: 'INSTALLED'
-        })
-      ]};
-      controller.reinstallClients(event);
-      expect(controller.sendComponentCommand.called).to.be.false;
-    });
-    it('No clients to install', function () {
-      var event = {context: [
-        Em.Object.create({
-          workStatus: 'INSTALLED'
-        }),
-        Em.Object.create({
-          workStatus: 'INIT'
-        }),
-        Em.Object.create({
-          workStatus: 'INSTALL_FAILED'
-        })
-      ]};
-      controller.reinstallClients(event);
-      expect(controller.sendComponentCommand.calledWith([
-        Em.Object.create({
-          workStatus: 'INIT'
-        }),
-        Em.Object.create({
-          workStatus: 'INSTALL_FAILED'
-        })], Em.I18n.t('host.host.details.installClients'), 'INSTALLED')).to.be.true;
+
+    cases.forEach(function (item) {
+      it(item.title, function () {
+        sinon.stub(componentsUtils, 'checkComponentDependencies', function (componentName, params) {
+          return item.dependencies[componentName];
+        });
+        controller.installClients({
+          context: item.context
+        });
+        expect(App.get('router.mainAdminKerberosController').getKDCSessionState.calledOnce).to.equal(item.getKDCSessionStateCalled);
+        expect(controller.sendComponentCommand.calledOnce).to.equal(item.sendComponentCommandCalled);
+        expect(App.showAlertPopup.calledOnce).to.equal(item.showAlertPopupCalled);
+      });
     });
   });
 
@@ -2351,5 +2475,83 @@ describe('App.MainHostDetailsController', function () {
       expect(App.db.set.calledWith('repoVersionInstall', 'id', [1])).to.be.true;
       expect(App.clusterStatus.setClusterStatus.calledOnce).to.be.true;
     });
+  });
+
+  describe('#getHiveHosts()', function () {
+
+    var cases = [
+      {
+        'input': {
+          'hiveMetastoreHost': '',
+          'fromDeleteHost': false,
+          'deleteHiveMetaStore': false
+        },
+        'hiveHosts': ['h1', 'h2'],
+        'title': 'adding HiveServer2'
+      },
+      {
+        'input': {
+          'hiveMetastoreHost': 'h0',
+          'fromDeleteHost': false,
+          'deleteHiveMetaStore': false
+        },
+        'hiveHosts': ['h0', 'h1', 'h2'],
+        'title': 'adding Hive Metastore'
+      },
+      {
+        'input': {
+          'hiveMetastoreHost': '',
+          'content.hostName': 'h1',
+          'fromDeleteHost': false,
+          'deleteHiveMetaStore': true
+        },
+        'hiveHosts': ['h2'],
+        'title': 'deleting Hive component'
+      },
+      {
+        'input': {
+          'hiveMetastoreHost': '',
+          'content.hostName': 'h2',
+          'fromDeleteHost': true,
+          'deleteHiveMetaStore': false
+        },
+        'hiveHosts': ['h1'],
+        'title': 'deleting host with Hive component'
+      }
+    ];
+
+    before(function () {
+      sinon.stub(App.HostComponent, 'find').returns([
+        {
+          componentName: 'HIVE_METASTORE',
+          hostName: 'h2'
+        },
+        {
+          componentName: 'HIVE_METASTORE',
+          hostName: 'h1'
+        },
+        {
+          componentName: 'HIVE_SERVER',
+          hostName: 'h3'
+        }
+      ]);
+    });
+
+    after(function () {
+      App.HostComponent.find.restore();
+    });
+
+    cases.forEach(function (item) {
+      it(item.title, function () {
+        Em.keys(item.input).forEach(function (key) {
+          controller.set(key, item.input[key]);
+        });
+        expect(controller.getHiveHosts()).to.eql(item.hiveHosts);
+        expect(controller.get('hiveMetastoreHost')).to.be.empty;
+        expect(controller.get('fromDeleteHost')).to.be.false;
+        expect(controller.get('deleteHiveMetaStore')).to.be.false;
+      });
+    });
+
   });
 });

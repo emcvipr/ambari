@@ -155,9 +155,9 @@ App.QuickLinks.FIXTURES = [
   {
     id:19,
     label:'Oozie Web UI',
-    url:'%@://%@:%@/oozie',
+    url:'%@://%@:%@/oozie?user.name=%@',
     service_id: 'OOZIE',
-    template:'%@://%@:%@/oozie',
+    template:'%@://%@:%@/oozie?user.name=%@',
     http_config: 'oozie.base.url',
     site: 'oozie-site',
     regex: portRegex,
@@ -286,9 +286,9 @@ App.QuickLinks.FIXTURES = [
   {
     id:32,
     label:'Falcon Web UI',
-    url:'%@://%@:%@/',
+    url:'%@://%@:%@/index.html?user.name=%@',
     service_id: 'FALCON',
-    template:'%@://%@:%@/',
+    template:'%@://%@:%@/index.html?user.name=%@',
     http_config: 'falcon_port',
     site: 'falcon-env',
     regex: '^(\\d+)$',
@@ -311,5 +311,16 @@ App.QuickLinks.FIXTURES = [
     site: 'spark-defaults',
     regex: '^(\\d+)$',
     default_http_port: 18080
+  },
+  {
+    id:35,
+    label:'Accumulo Monitor UI',
+    url:'%@://%@:%@/',
+    service_id: 'ACCUMULO',
+    template:'%@://%@:%@/',
+    http_config: 'monitor.port.client',
+    site: 'accumulo-site',
+    regex: '^(\\d+)$',
+    default_http_port: 50095
   }
 ];

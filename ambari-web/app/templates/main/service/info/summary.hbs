@@ -31,7 +31,9 @@
             <span class="caret"></span>
           </button>
           <ul class="dropdown-menu">
-            <li><a href="#" {{action restartAllStaleConfigComponents target="view"}}>{{t restart.service.all}}</a></li>
+            <li>
+              <a href="#" {{action restartAllStaleConfigComponents target="view"}}>{{t restart.service.all.affected}}</a>
+            </li>
             {{#if view.rollingRestartSlaveComponentName}}
               <li>
                 <a href="#" {{action rollingRestartStaleConfigSlaveComponents view.rollingRestartSlaveComponentName target="view"}}>{{view.rollingRestartActionName}}</a>
@@ -44,24 +46,24 @@
   {{/isAccessible}}
 {{/if}}
 
-<div class="row-fluid service-block">
-  <div class="span6">
-    <div class="box">
-      <div class="box-header summary-box-header">
-        <h4>{{controller.content.label}} {{t services.service.info.menu.summary}}</h4>
-        {{#if view.hasAlertDefinitions}}
-          {{#if view.alertsCount}}
-            <span {{action "showServiceAlertsPopup" controller.content target="controller"}}
-              {{bindAttr class=":label :pull-right view.hasCriticalAlerts:alerts-crit-count:alerts-warn-count"}}>
-              {{view.alertsCount}} {{pluralize view.alertsCount singular="alert" plural="alerts"}}</span>
-          {{else}}
-            <span {{action "showServiceAlertsPopup" controller.content target="controller"}}
-              class="label pull-right no-alerts-label">{{t services.service.summary.alerts.noAlerts}}</span>
-          {{/if}}
+<div class="service-block">
+  <div class="box">
+    <div class="box-header summary-box-header">
+      <h4>{{controller.content.label}} {{t services.service.info.menu.summary}}</h4>
+      {{#if view.hasAlertDefinitions}}
+        {{#if view.alertsCount}}
+          <span {{action "showServiceAlertsPopup" controller.content target="controller"}}
+            {{bindAttr class=":label :pull-right view.hasCriticalAlerts:alerts-crit-count:alerts-warn-count"}}>
+            {{view.alertsCount}} {{pluralize view.alertsCount singular="alert" plural="alerts"}}</span>
+        {{else}}
+          <span {{action "showServiceAlertsPopup" controller.content target="controller"}}
+                  class="label pull-right no-alerts-label">{{t services.service.summary.alerts.noAlerts}}</span>
         {{/if}}
-      </div>
-      <div class="service-content">
-        <table id="summary-info" class="table no-borders table-condensed">
+      {{/if}}
+    </div>
+    <div class="service-content row-fluid">
+      <div class="span6">
+        <table class="summary-info table no-borders table-condensed">
           <tbody>
           {{#if view.serviceSummaryView}}
             {{view view.serviceSummaryView}}
@@ -73,31 +75,76 @@
   </div>
 
   {{#if view.isServiceMetricLoaded}}
-    {{#if view.serviceMetricGraphs.length}}
-      <div class="span6 service-metrics-block">
+      <div class="service-metrics-block">
         <div class="box">
           <div class="box-header">
             <h4>{{t services.service.metrics}}</h4>
-            <div class="btn-group pull-right">
-              <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
-                {{view.currentTimeRange.name}} &nbsp;<span class="caret"></span>
-              </button>
-              <ul class="dropdown-menu">
-                {{#each option in view.timeRangeOptions}}
+            {{#if showTimeRangeControl}}
+              <div class="btn-group pull-right">
+                <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+                  {{view.currentTimeRange.name}} &nbsp;<span class="caret"></span>
+                </button>
+                <ul class="dropdown-menu">
+                  {{#each option in view.timeRangeOptions}}
                     <li><a href="#" {{action setTimeRange option target="view"}}>{{option.name}}</a></li>
-                {{/each}}
-              </ul>
-            </div>
+                  {{/each}}
+                </ul>
+              </div>
+            {{/if}}
+            {{#if isServiceWithEnhancedWidgets}}
+              <div class="btn-group pull-right actions">
+                <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+                  {{t common.actions}} &nbsp;<span class="caret"></span>
+                </button>
+                <ul class="dropdown-menu">
+                  {{#each option in view.widgetActions}}
+                    <li {{bindAttr class="option.layouts:dropdown-submenu"}}>
+                      {{#if option.isAction}}
+                        <a href="#" {{action doWidgetAction option.action target="view"}}>
+                          <i {{bindAttr class="option.class"}}></i>
+                          {{option.label}}
+                        </a>
+                        {{#if option.layouts}}
+                          <ul class="dropdown-menu">
+                            {{#each layout in option.layouts}}
+                              <li>
+                                <a href="javascript:void(0);">
+                                  {{layout.layoutName}}
+                                </a>
+                              </li>
+                            {{/each}}
+                          </ul>
+                        {{/if}}
+                      {{/if}}
+                    </li>
+                  {{/each}}
+                </ul>
+              </div>
+            {{/if}}
           </div>
-          <div class="">
+          <div>
+            {{#if isServiceWithEnhancedWidgets}}
+              <div id="widget_layout" class="row-fluid">
+                {{#each widget in controller.widgets}}
+                  <div class="widget span2p4" {{bindAttr id="widget.id"}}>
+                    {{view widget.viewClass contentBinding="widget" idBinding="widget.id"}}
+                  </div>
+                {{/each}}
+                <div class="span2p4">
+                  <button id="add-widget-action-box" class="btn btn-default" {{action "goToWidgetsBrowser" controller.content target="controller"}}
+                          rel="add-widget-tooltip" {{translateAttr data-original-title="dashboard.widgets.addButton.tooltip"}}>
+                    <i class="icon-plus"></i></button>
+                </div>
+              </div>
+            {{/if}}
             <table class="graphs">
               {{#each graphs in view.serviceMetricGraphs}}
                 <tr>
                   {{#each graph in graphs}}
                     <td>
-                        <div class="">
-                          {{view graph}}
-                        </div>
+                      <div class="">
+                        {{view graph}}
+                      </div>
                     </td>
                   {{/each}}
                 </tr>
@@ -106,9 +153,7 @@
           </div>
         </div>
       </div>
-    {{/if}}
   {{/if}}
-
 </div>
 
 {{#if view.collapsedSections}}

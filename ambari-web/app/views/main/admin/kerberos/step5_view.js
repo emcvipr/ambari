@@ -20,11 +20,5 @@ var App = require('app');
 
 App.KerberosWizardStep5View = App.KerberosProgressPageView.extend({
 
-  templateName: require('templates/main/admin/kerberos/step5'),
-
-  noticeCompleted: Em.I18n.t('admin.kerberos.wizard.step5.notice.completed'),
-
-  submitButtonText: Em.I18n.t('common.next') + '&rarr;',
-
-  showBackButton: true
+  templateName: require('templates/main/admin/kerberos/step5')
 });

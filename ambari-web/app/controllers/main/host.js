@@ -19,6 +19,7 @@
 var App = require('app');
 var validator = require('utils/validator');
 var batchUtils = require('utils/batch_scheduled_requests');
+var hostsManagement = require('utils/hosts');
 
 App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
   name: 'mainHostController',
@@ -42,10 +43,6 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
   hostsCountMap: {},
 
   startIndex: 1,
-
-  expandedComponentsSections: [],
-
-  expandedVersionsSections: [],
 
   /**
    * Components which will be shown in component filter
@@ -96,6 +93,11 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
       name: 'loadAvg',
       key: 'metrics/load/load_one',
       type: 'EQUAL'
+    },
+    {
+      name: 'rack',
+      key: 'Hosts/rack_info',
+      type: 'MATCH'
     },
     {
       name: 'hostComponents',
@@ -155,6 +157,10 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
       name: 'diskUsage',
       //TODO disk_usage is relative property and need support from API, metrics/disk/disk_free used temporarily
       key: 'metrics/disk/disk_free'
+    },
+    {
+      name: 'rack',
+      key: 'Hosts/rack_info'
     },
     {
       name: 'loadAvg',
@@ -549,7 +555,9 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
       }
     }
     else {
-      if (operationData.action === 'RESTART') {
+      if (operationData.action === 'SET_RACK_INFO') {
+        this.bulkOperationForHostsSetRackInfo(operationData, hosts);
+      } else if (operationData.action === 'RESTART') {
         this.bulkOperationForHostsRestart(operationData, hosts);
       }
       else {
@@ -648,7 +656,11 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
     }
   },
 
-  /**
+  bulkOperationForHostsSetRackInfo: function (operationData, hosts) {
+    hostsManagement.setRackInfo(operationData, hosts);
+  },
+
+   /**
    * Bulk restart for selected hosts
    * @param {Object} operationData - data about bulk operation (action, hostComponents etc)
    * @param {Ember.Enumerable} hosts - list of affected hosts
@@ -932,6 +944,7 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
       }
     });
   },
+
   /**
    * associations between host property and column index
    * @type {Array}
@@ -950,6 +963,7 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
     associations[9] = 'componentsInPassiveStateCount';
     associations[10] = 'selected';
     associations[11] = 'hostStackVersion';
+    associations[12] = 'rack';
     return associations;
   }.property()
 

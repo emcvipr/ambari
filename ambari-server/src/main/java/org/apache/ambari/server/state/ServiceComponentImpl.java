@@ -32,6 +32,7 @@ import org.apache.ambari.server.controller.ServiceComponentResponse;
 import org.apache.ambari.server.orm.dao.ClusterServiceDAO;
 import org.apache.ambari.server.orm.dao.HostComponentDesiredStateDAO;
 import org.apache.ambari.server.orm.dao.ServiceComponentDesiredStateDAO;
+import org.apache.ambari.server.orm.dao.StackDAO;
 import org.apache.ambari.server.orm.entities.ClusterServiceEntity;
 import org.apache.ambari.server.orm.entities.ClusterServiceEntityPK;
 import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntity;
@@ -39,13 +40,14 @@ import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntityPK;
 import org.apache.ambari.server.orm.entities.HostComponentStateEntity;
 import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntity;
 import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntityPK;
+import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.state.cluster.ClusterImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.gson.Gson;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
+import com.google.inject.ProvisionException;
 import com.google.inject.assistedinject.Assisted;
 import com.google.inject.assistedinject.AssistedInject;
 import com.google.inject.persist.Transactional;
@@ -61,8 +63,6 @@ public class ServiceComponentImpl implements ServiceComponent {
   private final boolean isMasterComponent;
   boolean persisted = false;
   @Inject
-  private Gson gson;
-  @Inject
   private ServiceComponentDesiredStateDAO serviceComponentDesiredStateDAO;
   @Inject
   private ClusterServiceDAO clusterServiceDAO;
@@ -74,6 +74,12 @@ public class ServiceComponentImpl implements ServiceComponent {
   private AmbariMetaInfo ambariMetaInfo;
   private ServiceComponentDesiredStateEntity desiredStateEntity;
   private Map<String, ServiceComponentHost> hostComponents;
+
+  /**
+   * Data access object used for lookup up stacks.
+   */
+  @Inject
+  private StackDAO stackDAO;
 
   @AssistedInject
   public ServiceComponentImpl(@Assisted Service service,
@@ -120,13 +126,20 @@ public class ServiceComponentImpl implements ServiceComponent {
       pk.setClusterId(hostComponentStateEntity.getClusterId());
       pk.setServiceName(hostComponentStateEntity.getServiceName());
       pk.setComponentName(hostComponentStateEntity.getComponentName());
-      pk.setHostName(hostComponentStateEntity.getHostName());
+      pk.setHostId(hostComponentStateEntity.getHostId());
 
       HostComponentDesiredStateEntity hostComponentDesiredStateEntity = hostComponentDesiredStateDAO.findByPK(pk);
-
-      hostComponents.put(hostComponentStateEntity.getHostName(),
+      try {
+        hostComponents.put(hostComponentStateEntity.getHostName(),
           serviceComponentHostFactory.createExisting(this,
-              hostComponentStateEntity, hostComponentDesiredStateEntity));
+            hostComponentStateEntity, hostComponentDesiredStateEntity));
+      } catch(ProvisionException ex) {
+        StackId stackId = service.getCluster().getCurrentStackVersion();
+        LOG.error(String.format("Can not get host component info: stackName=%s, stackVersion=%s, serviceName=%s, componentName=%s, hostname=%s",
+          stackId.getStackName(), stackId.getStackVersion(),
+          service.getName(),serviceComponentDesiredStateEntity.getComponentName(), hostComponentStateEntity.getHostName()));
+        ex.printStackTrace();
+      }
     }
 
     StackId stackId = service.getDesiredStackVersion();
@@ -340,15 +353,20 @@ public class ServiceComponentImpl implements ServiceComponent {
   public StackId getDesiredStackVersion() {
     readWriteLock.readLock().lock();
     try {
-      return gson.fromJson(desiredStateEntity.getDesiredStackVersion(),
-          StackId.class);
+      StackEntity stackEntity = desiredStateEntity.getDesiredStack();
+      if (null != stackEntity) {
+        return new StackId(stackEntity.getStackName(),
+            stackEntity.getStackVersion());
+      } else {
+        return null;
+      }
     } finally {
       readWriteLock.readLock().unlock();
     }
   }
 
   @Override
-  public void setDesiredStackVersion(StackId stackVersion) {
+  public void setDesiredStackVersion(StackId stack) {
     readWriteLock.writeLock().lock();
     try {
       if (LOG.isDebugEnabled()) {
@@ -357,9 +375,13 @@ public class ServiceComponentImpl implements ServiceComponent {
             + service.getCluster().getClusterId() + ", serviceName="
             + service.getName() + ", serviceComponentName=" + getName()
             + ", oldDesiredStackVersion=" + getDesiredStackVersion()
-            + ", newDesiredStackVersion=" + stackVersion);
+            + ", newDesiredStackVersion=" + stack);
       }
-      desiredStateEntity.setDesiredStackVersion(gson.toJson(stackVersion));
+
+      StackEntity stackEntity = stackDAO.find(stack.getStackName(),
+          stack.getStackVersion());
+
+      desiredStateEntity.setDesiredStack(stackEntity);
       saveIfPersisted();
     } finally {
       readWriteLock.writeLock().unlock();

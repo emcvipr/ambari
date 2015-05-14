@@ -23,7 +23,19 @@ var mainServiceInfoConfigsController = null;
 describe("App.MainServiceInfoConfigsController", function () {
 
   beforeEach(function () {
-    mainServiceInfoConfigsController = App.MainServiceInfoConfigsController.create({});
+    sinon.stub(App.themesMapper, 'generateAdvancedTabs').returns(Em.K);
+    mainServiceInfoConfigsController = App.MainServiceInfoConfigsController.create({
+      loadDependentConfigs: function () {
+        return {done: Em.K}
+      },
+      loadConfigTheme: function () {
+        return $.Deferred().resolve().promise();
+      }
+    });
+  });
+
+  afterEach(function() {
+    App.themesMapper.generateAdvancedTabs.restore();
   });
 
   describe("#showSavePopup", function () {
@@ -156,27 +168,15 @@ describe("App.MainServiceInfoConfigsController", function () {
     });
   });
 
-  describe("#manageConfigurationGroup", function () {
-    beforeEach(function () {
-      sinon.stub(mainServiceInfoConfigsController, "manageConfigurationGroups", Em.K);
-    });
-    afterEach(function () {
-      mainServiceInfoConfigsController.manageConfigurationGroups.restore();
-    });
-    it("run manageConfigurationGroups", function () {
-      mainServiceInfoConfigsController.manageConfigurationGroup();
-      expect(mainServiceInfoConfigsController.manageConfigurationGroups.calledOnce).to.equal(true);
-    });
-  });
-
   describe("#addOverrideProperty", function () {
     var serviceConfigProperty = Em.Object.create({
-      overrides: []
+      overrides: [],
+      isOriginalSCP: true
     });
 
     var group = {};
     var newSCP = App.ServiceConfigProperty.create(serviceConfigProperty);
-    newSCP.set('value', '');
+    newSCP.set('value', '1');
     newSCP.set('isOriginalSCP', false);
     newSCP.set('parentSCP', serviceConfigProperty);
     newSCP.set('isEditable', true);
@@ -184,8 +184,12 @@ describe("App.MainServiceInfoConfigsController", function () {
 
 
     it("add new overridden property", function () {
-      mainServiceInfoConfigsController.addOverrideProperty(serviceConfigProperty, group);
-      expect(serviceConfigProperty.get("overrides")[0]).to.eql(newSCP);
+      mainServiceInfoConfigsController.addOverrideProperty(serviceConfigProperty, group, '1');
+      expect(serviceConfigProperty.get("overrides")[0].get('name')).to.equal(newSCP.get('name'));
+      expect(serviceConfigProperty.get("overrides")[0].get('isOriginalSCP')).to.be.false;
+      expect(serviceConfigProperty.get("overrides")[0].get('isEditable')).to.be.true;
+      expect(serviceConfigProperty.get("overrides")[0].get('group')).to.eql({});
+      expect(serviceConfigProperty.get("overrides")[0].get('parentSCP')).to.eql(serviceConfigProperty);
     });
   });
 
@@ -326,44 +330,13 @@ describe("App.MainServiceInfoConfigsController", function () {
       mainServiceInfoConfigsController.doCancel();
       expect(Em.run.once.calledWith(mainServiceInfoConfigsController, "onConfigGroupChange")).to.equal(true);
     });
-  });
 
-  describe("#getCurrentServiceComponents", function () {
-    var t = Em.Object.create({
-      content: Em.Object.create({
-        hostComponents: [
-          Em.Object.create({
-            componentName: "componentName1",
-            displayName: "displayName1"
-          }),
-          Em.Object.create({
-            componentName: "componentName2",
-            displayName: "displayName2"
-          })
-        ]
-      }),
-      validComponents: Em.A([
-        Em.Object.create({
-          componentName: "componentName1",
-          displayName: "displayName1",
-          selected: false
-        }),
-        Em.Object.create({
-          componentName: "componentName2",
-          displayName: "displayName2",
-          selected: false
-        })
-      ])
-    });
-
-    beforeEach(function () {
-      mainServiceInfoConfigsController.set("content", { hostComponents: Em.A([])});
-    });
-
-    it("get current service components", function () {
-      mainServiceInfoConfigsController.get("content.hostComponents").push(t.content.hostComponents[0]);
-      var com = mainServiceInfoConfigsController.get("getCurrentServiceComponents");
-      expect(com[0]).to.eql(t.validComponents[0]);
+    it("should clear dependent configs", function() {
+      mainServiceInfoConfigsController.set('groupsToSave', { HDFS: 'my cool group'});
+      mainServiceInfoConfigsController.set('_dependentConfigValues', Em.A([{name: 'prop_1'}]));
+      mainServiceInfoConfigsController.doCancel();
+      expect(App.isEmptyObject(mainServiceInfoConfigsController.get('groupsToSave'))).to.be.true;
+      expect(App.isEmptyObject(mainServiceInfoConfigsController.get('_dependentConfigValues'))).to.be.true;
     });
   });
 
@@ -412,120 +385,7 @@ describe("App.MainServiceInfoConfigsController", function () {
     });
   });
 
-  describe("#setServerConfigValue", function () {
-
-    it("parsing storm.zookeeper.servers property in non standart method", function () {
-      expect(mainServiceInfoConfigsController.setServerConfigValue("storm.zookeeper.servers", ["a", "b"])).to.equal('[\'a\',\'b\']');
-    });
-    it("parsing default properties", function () {
-      expect(mainServiceInfoConfigsController.setServerConfigValue("any.other.property", "value")).to.equal("value");
-    });
-  });
-
-  describe("#createSiteObj", function () {
-
-    var tests = [
-      {
-        siteName: "hdfs-site",
-        tagName: "version1",
-        siteObj: Em.A([
-          {
-            name: "property1",
-            value: "value1"
-          },
-          {
-            name: "property2",
-            value: "value2&lt;"
-          },
-          {
-            name: "property_heapsize",
-            value: "value3"
-          },
-          {
-            name: "property_permsize",
-            value: "value4m"
-          }
-        ]),
-        result: {
-          "type": "hdfs-site",
-          "tag": "version1",
-          "properties": {
-            "property1": "value1",
-            "property2": "value2&lt;",
-            "property_heapsize": "value3m",
-            "property_permsize": "value4m"
-          }
-        },
-        m: "default"
-      },
-      {
-        siteName: "falcon-startup.properties",
-        tagName: "version1",
-        siteObj: Em.A([
-          {
-            name: "property1",
-            value: "value1"
-          },
-          {
-            name: "property2",
-            value: "value2&lt;"
-          }
-        ]),
-        result: {
-          "type": "falcon-startup.properties",
-          "tag": "version1",
-          "properties": {
-            "property1": "value1",
-            "property2": "value2&lt;"
-          }
-        },
-        m: "for falcon-startup.properties"
-
-      }
-    ];
-    tests.forEach(function (t) {
-      it("create site object " + t.m, function () {
-        expect(mainServiceInfoConfigsController.createSiteObj(t.siteName, t.tagName, t.siteObj)).to.deep.eql(t.result)
-      });
-    });
-  });
-
-  describe("#createCoreSiteObj", function () {
-
-    var tests = [
-      {
-        tagName: "version1",
-        uiConfigs: Em.A([
-          Em.Object.create({
-            name: "property1",
-            value: "value1",
-            filename: "core-site.xml"
-          }),
-          Em.Object.create({
-            name: "property2",
-            value: "value2&lt;",
-            filename: "core-site.xml"
-          })
-        ]),
-        result: {
-          "type": "core-site",
-          "tag": "version1",
-          "properties": {
-            "property1": "value1",
-            "property2": "value2&lt;"
-          }
-        }
-      }
-    ];
-    tests.forEach(function (t) {
-      it("create core object", function () {
-        mainServiceInfoConfigsController.set("uiConfigs", t.uiConfigs);
-        expect(mainServiceInfoConfigsController.createCoreSiteObj(t.tagName)).to.deep.eql(t.result);
-      });
-    });
-  });
-
-  describe("#doPUTClusterConfigurationSites", function () {
+  describe("#putChangedConfigurations", function () {
       var sc = [
       Em.Object.create({
         configs: [
@@ -584,19 +444,19 @@ describe("App.MainServiceInfoConfigsController", function () {
       App.ajax.send.restore();
       App.router.getClusterName.restore();
     });
-    it("ajax request to put clsuter cfg", function () {
+    it("ajax request to put cluster cfg", function () {
       mainServiceInfoConfigsController.set('stepConfigs', sc);
-      expect(mainServiceInfoConfigsController.doPUTClusterConfigurationSites([])).to.equal(mainServiceInfoConfigsController.get("doPUTClusterConfigurationSiteResult"));
+      expect(mainServiceInfoConfigsController.putChangedConfigurations([]));
       expect(App.ajax.send.calledOnce).to.be.true;
     });
     it('values should be parsed', function () {
       mainServiceInfoConfigsController.set('stepConfigs', sc);
-      mainServiceInfoConfigsController.doPUTClusterConfigurationSites([]);
+      mainServiceInfoConfigsController.putChangedConfigurations([]);
       expect(mainServiceInfoConfigsController.get('stepConfigs')[0].get('configs').mapProperty('value').uniq()).to.eql(['1024m']);
     });
     it('values should not be parsed', function () {
       mainServiceInfoConfigsController.set('stepConfigs', scExc);
-      mainServiceInfoConfigsController.doPUTClusterConfigurationSites([]);
+      mainServiceInfoConfigsController.putChangedConfigurations([]);
       expect(mainServiceInfoConfigsController.get('stepConfigs')[0].get('configs').mapProperty('value').uniq()).to.eql(['1024m']);
     });
   });
@@ -899,53 +759,6 @@ describe("App.MainServiceInfoConfigsController", function () {
       expect(t.configs).to.deep.equal(t.result);
     });
 
-  });
-
-  describe("#createConfigObject", function() {
-    var tests = [
-      {
-        siteName: "core-site",
-        serviceName: "HDFS",
-        method: "createCoreSiteObj"
-      },
-      {
-        siteName: "core-site",
-        serviceName: "ANY",
-        method: false
-      },
-      {
-        siteName: "any",
-        method: "createSiteObj"
-      },
-      {
-        siteName: "mapred-queue-acls",
-        method: false
-      }
-    ];
-
-    beforeEach(function() {
-      sinon.stub(mainServiceInfoConfigsController, "createCoreSiteObj", Em.K);
-      sinon.stub(mainServiceInfoConfigsController, "createSiteObj", Em.K);
-      mainServiceInfoConfigsController.set("content", {});
-    });
-
-    afterEach(function() {
-      mainServiceInfoConfigsController.createCoreSiteObj.restore();
-      mainServiceInfoConfigsController.createSiteObj.restore();
-    });
-
-    tests.forEach(function(t) {
-      it("create object for " + t.siteName + " run method " + t.method, function() {
-        mainServiceInfoConfigsController.set("content.serviceName", t.serviceName);
-        mainServiceInfoConfigsController.createConfigObject(t.siteName, "versrion1");
-        if (t.method) {
-          expect(mainServiceInfoConfigsController[t.method].calledOnce).to.equal(true);
-        } else {
-          expect(mainServiceInfoConfigsController["createCoreSiteObj"].calledOnce).to.equal(false);
-          expect(mainServiceInfoConfigsController["createSiteObj"].calledOnce).to.equal(false);
-        }
-      });
-    });
   });
 
   describe("#putConfigGroupChanges", function() {
@@ -1302,6 +1115,252 @@ describe("App.MainServiceInfoConfigsController", function () {
         });
       });
     });
+  });
+
+  describe('#setHiveHostName', function () {
+
+    Em.A([
+        {
+          globals: [
+            Em.Object.create({name: 'hive_database', value: 'New MySQL Database'}),
+            Em.Object.create({name: 'hive_database_type', value: 'mysql'}),
+            Em.Object.create({name: 'hive_ambari_host', value: 'h1'}),
+            Em.Object.create({name: 'hive_hostname', value: 'h2'})
+          ],
+          removed: ['hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'],
+          m: 'hive_database: New MySQL Database',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'hive_database', value: 'New PostgreSQL Database'}),
+            Em.Object.create({name: 'hive_database_type', value: 'mysql'}),
+            Em.Object.create({name: 'hive_ambari_host', value: 'h1'}),
+            Em.Object.create({name: 'hive_hostname', value: 'h2'})
+          ],
+          removed: ['hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'],
+          m: 'hive_database: New PostgreSQL Database',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'hive_database', value: 'Existing MySQL Database'}),
+            Em.Object.create({name: 'hive_database_type', value: 'mysql'}),
+            Em.Object.create({name: 'hive_existing_mysql_host', value: 'h1'}),
+            Em.Object.create({name: 'hive_hostname', value: 'h2'})
+          ],
+          removed: ['hive_ambari_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'],
+          m: 'hive_database: Existing MySQL Database',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'hive_database', value: 'Existing PostgreSQL Database'}),
+            Em.Object.create({name: 'hive_database_type', value: 'postgresql'}),
+            Em.Object.create({name: 'hive_existing_postgresql_host', value: 'h1'}),
+            Em.Object.create({name: 'hive_hostname', value: 'h2'})
+          ],
+          removed: ['hive_ambari_database', 'hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'],
+          m: 'hive_database: Existing PostgreSQL Database',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'hive_database', value: 'Existing Oracle Database'}),
+            Em.Object.create({name: 'hive_database_type', value: 'oracle'}),
+            Em.Object.create({name: 'hive_existing_oracle_host', value: 'h1'}),
+            Em.Object.create({name: 'hive_hostname', value: 'h2'})
+          ],
+          removed: ['hive_ambari_database', 'hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'],
+          m: 'hive_database: Existing Oracle Database',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'hive_database', value: 'Existing MSSQL Server database with SQL authentication'}),
+            Em.Object.create({name: 'hive_database_type', value: 'mssql'}),
+            Em.Object.create({name: 'hive_existing_mssql_server_host', value: 'h1'}),
+            Em.Object.create({name: 'hive_hostname', value: 'h2'})
+          ],
+          removed: ['hive_ambari_database', 'hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'],
+          m: 'hive_database: Existing MSSQL Server database with SQL authentication',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'hive_database', value: 'Existing MSSQL Server database with integrated authentication'}),
+            Em.Object.create({name: 'hive_database_type', value: 'mssql'}),
+            Em.Object.create({name: 'hive_existing_mssql_server_2_host', value: 'h1'}),
+            Em.Object.create({name: 'hive_hostname', value: 'h2'})
+          ],
+          removed: ['hive_ambari_database', 'hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host'],
+          m: 'hive_database: Existing MSSQL Server database with integrated authentication',
+          host: 'h2'
+        }
+      ]).forEach(function (test) {
+        it(test.m, function () {
+          var configs = test.globals.slice();
+          test.removed.forEach(function (c) {
+            configs.pushObject(Em.Object.create({name: c}))
+          });
+          configs = mainServiceInfoConfigsController.setHiveHostName(configs);
+          test.removed.forEach(function (name) {
+            if (!Em.isNone(configs.findProperty('name', name))) console.log('!!!!', name);
+            expect(Em.isNone(configs.findProperty('name', name))).to.equal(true);
+          });
+          expect(configs.findProperty('name', 'hive_hostname').value).to.equal(test.host);
+        });
+      });
+
+  });
+
+  describe('#setOozieHostName', function () {
+
+    Em.A([
+        {
+          globals: [
+            Em.Object.create({name: 'oozie_database', value: 'New Derby Database'}),
+            Em.Object.create({name: 'oozie_ambari_host', value: 'h1'}),
+            Em.Object.create({name: 'oozie_hostname', value: 'h2'})
+          ],
+          removed: ['oozie_ambari_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'],
+          m: 'oozie_database: New Derby Database',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'oozie_database', value: 'New MySQL Database'}),
+            Em.Object.create({name: 'oozie_ambari_host', value: 'h1'}),
+            Em.Object.create({name: 'oozie_hostname', value: 'h2'})
+          ],
+          removed: ['oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_derby_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'],
+          m: 'oozie_database: New MySQL Database',
+          host: 'h1'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'oozie_database', value: 'Existing MySQL Database'}),
+            Em.Object.create({name: 'oozie_existing_mysql_host', value: 'h1'}),
+            Em.Object.create({name: 'oozie_hostname', value: 'h2'})
+          ],
+          removed: ['oozie_ambari_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_derby_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'],
+          m: 'oozie_database: Existing MySQL Database',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'oozie_database', value: 'Existing PostgreSQL Database'}),
+            Em.Object.create({name: 'oozie_existing_postgresql_host', value: 'h1'}),
+            Em.Object.create({name: 'oozie_hostname', value: 'h2'})
+          ],
+          removed: ['oozie_ambari_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'],
+          m: 'oozie_database: Existing PostgreSQL Database',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'oozie_database', value: 'Existing Oracle Database'}),
+            Em.Object.create({name: 'oozie_existing_oracle_host', value: 'h1'}),
+            Em.Object.create({name: 'oozie_hostname', value: 'h2'})
+          ],
+          removed: ['oozie_ambari_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_derby_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'],
+          m: 'oozie_database: Existing Oracle Database',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'oozie_database', value: 'Existing MSSQL Server database with SQL authentication'}),
+            Em.Object.create({name: 'oozie_existing_oracle_host', value: 'h1'}),
+            Em.Object.create({name: 'oozie_hostname', value: 'h2'})
+          ],
+          removed: ['oozie_ambari_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_derby_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'],
+          m: 'oozie_database: Existing MSSQL Server database with SQL authentication',
+          host: 'h2'
+        },
+        {
+          globals: [
+            Em.Object.create({name: 'oozie_database', value: 'Existing MSSQL Server database with integrated authentication'}),
+            Em.Object.create({name: 'oozie_existing_oracle_host', value: 'h1'}),
+            Em.Object.create({name: 'oozie_hostname', value: 'h2'})
+          ],
+          removed: ['oozie_ambari_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_derby_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host'],
+          m: 'oozie_database: Existing MSSQL Server database with integrated authentication',
+          host: 'h2'
+        }
+      ]).forEach(function (test) {
+        it(test.m, function () {
+          var configs = test.globals.slice();
+          test.removed.forEach(function (c) {
+            if (!configs.findProperty('name', c)) {
+              configs.pushObject(Em.Object.create({name: c}))
+            }
+          });
+          configs = mainServiceInfoConfigsController.setOozieHostName(configs);
+          test.removed.forEach(function (name) {
+            expect(Em.isNone(configs.findProperty('name', name))).to.equal(true);
+          });
+          expect(configs.findProperty('name', 'oozie_hostname').value).to.equal(test.host);
+        });
+      });
+
+  });
+
+  describe('#errorsCount', function () {
+
+    it('should ignore configs with widgets (enhanced configs)', function () {
+
+      mainServiceInfoConfigsController.reopen({selectedService: {
+        configs: [
+          Em.Object.create({isVisible: true, widget: Em.View, isValid: false}),
+          Em.Object.create({isVisible: true, widget: Em.View, isValid: true}),
+          Em.Object.create({isVisible: true, isValid: true}),
+          Em.Object.create({isVisible: true, isValid: false})
+        ]
+      }});
+
+      expect(mainServiceInfoConfigsController.get('errorsCount')).to.equal(1);
+
+    });
+
+    it('should ignore configs with widgets (enhanced configs) and hidden configs', function () {
+
+      mainServiceInfoConfigsController.reopen({selectedService: {
+        configs: [
+          Em.Object.create({isVisible: true, widget: Em.View, isValid: false}),
+          Em.Object.create({isVisible: true, widget: Em.View, isValid: true}),
+          Em.Object.create({isVisible: false, isValid: false}),
+          Em.Object.create({isVisible: true, isValid: true}),
+          Em.Object.create({isVisible: true, isValid: false})
+        ]
+      }});
+
+      expect(mainServiceInfoConfigsController.get('errorsCount')).to.equal(1);
+
+    });
+
+  });
+
+  describe('#mergeWithStackProperties', function () {
+
+    it('should set recommended value', function () {
+      mainServiceInfoConfigsController.reopen({
+        advancedConfigs: [
+          Em.Object.create({
+            name: 'n1',
+            value: 'v1'
+          })
+        ]
+      });
+      var configs = [
+        Em.Object.create({
+          name: 'n1',
+          recommendedValue: null
+        })
+      ];
+      configs = mainServiceInfoConfigsController.mergeWithStackProperties(configs);
+      expect(configs.findProperty('name', 'n1').get('recommendedValue')).to.equal('v1');
+    });
+
   });
 
 });

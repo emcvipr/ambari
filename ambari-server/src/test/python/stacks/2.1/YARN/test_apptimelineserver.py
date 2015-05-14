@@ -17,12 +17,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 '''
+import json
+import os
 from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
-import os
 import  resource_management.libraries.functions
 
 origin_exists = os.path.exists
+@patch("platform.linux_distribution", new = MagicMock(return_value="Linux"))
 @patch.object(resource_management.libraries.functions, "check_process_status", new = MagicMock())
 @patch.object(os.path, "exists", new=MagicMock(
     side_effect=lambda *args: origin_exists(args[0])
@@ -89,41 +91,49 @@ class TestAppTimelineServer(RMFTestCase):
                               owner = 'yarn',
                               group = 'hadoop',
                               recursive = True,
+                              cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/run/hadoop-yarn/yarn',
                               owner = 'yarn',
                               group = 'hadoop',
                               recursive = True,
+                              cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/log/hadoop-yarn/yarn',
                               owner = 'yarn',
                               group = 'hadoop',
                               recursive = True,
+                              cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/run/hadoop-mapreduce',
                               owner = 'mapred',
                               group = 'hadoop',
                               recursive = True,
+                              cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/run/hadoop-mapreduce/mapred',
                               owner = 'mapred',
                               group = 'hadoop',
                               recursive = True,
+                              cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/log/hadoop-mapreduce',
                               owner = 'mapred',
                               group = 'hadoop',
                               recursive = True,
+                              cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/log/hadoop-mapreduce/mapred',
                               owner = 'mapred',
                               group = 'hadoop',
                               recursive = True,
+                              cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/log/hadoop-yarn',
                               owner = 'yarn',
                               recursive = True,
                               ignore_failures = True,
+                              cd_access = 'a',
                               )
     self.assertResourceCalled('XmlConfig', 'core-site.xml',
                               owner = 'hdfs',
@@ -181,6 +191,21 @@ class TestAppTimelineServer(RMFTestCase):
                               group = 'hadoop',
                               mode = 0755,
                               )
+    self.assertResourceCalled('File', '/usr/lib/hadoop-yarn/bin/container-executor',
+                              group = 'hadoop',
+                              mode = 06050,
+                              )
+    self.assertResourceCalled('File', '/etc/hadoop/conf/container-executor.cfg',
+                              content = Template('container-executor.cfg.j2'),
+                              group = 'hadoop',
+                              mode = 0644,
+                              )
+    self.assertResourceCalled('Directory', '/cgroups_test/cpu',
+                              group = 'hadoop',
+                              recursive = True,
+                              mode = 0755,
+                              cd_access="a"
+    )
     self.assertResourceCalled('File', '/etc/hadoop/conf/mapred-env.sh',
                               content = InlineTemplate(self.getConfig()['configurations']['mapred-env']['content']),
                               owner = 'hdfs',
@@ -340,3 +365,32 @@ class TestAppTimelineServer(RMFTestCase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
+
+  @patch.object(resource_management.libraries.functions, "get_hdp_version", new = MagicMock(return_value='2.3.0.0-1234'))
+  def test_pre_rolling_restart_23(self):
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.3.0.0-1234'
+    json_content['commandParams']['version'] = version
+
+    mocks_dict = {}
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/application_timeline_server.py",
+                       classname = "ApplicationTimelineServer",
+                       command = "pre_rolling_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES,
+                       call_mocks = [(0, None), (0, None)],
+                       mocks_dict = mocks_dict)
+
+    self.assertResourceCalled('Execute', 'hdp-select set hadoop-yarn-timelineserver {0}'.format(version))
+    self.assertNoMoreResources()
+
+    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(
+      "conf-select create-conf-dir --package hadoop --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[0][0][0])
+    self.assertEquals(
+      "conf-select set-conf-dir --package hadoop --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[1][0][0])

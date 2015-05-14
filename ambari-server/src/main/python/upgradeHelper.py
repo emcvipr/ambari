@@ -451,19 +451,6 @@ class ConfigConst(object):
       return self._config_types_const_definition[item[:-4]]
 
 
-# Copy file and save with file.# (timestamp)
-def backup_file(filePath):
-  if filePath is not None and os.path.exists(filePath):
-    timestamp = datetime.datetime.now()
-    format = '%Y%m%d%H%M%S'
-    try:
-      shutil.copyfile(filePath, filePath + "." + timestamp.strftime(format))
-      os.remove(filePath)
-    except Exception as e:
-      Options.logger.warn('Could not backup file "%s": %s' % (filePath, str(e)))
-  return 0
-
-
 def write_mapping(hostmapping):
   if os.path.isfile(Options.MR_MAPPING_FILE):
     os.remove(Options.MR_MAPPING_FILE)
@@ -625,7 +612,7 @@ def update_config(properties, config_type, attributes=None):
   expect_body = config_type != "cluster-env"  # ToDo: make exceptions more flexible
 
   curl(Options.CLUSTER_URL, request_type="PUT", data=properties_payload, validate=True,
-       validate_expect_body=expect_body)
+       validate_expect_body=expect_body, soft_validation=True)
 
 
 def get_zookeeper_quorum():
@@ -764,7 +751,7 @@ def modify_config_item(config_type, catalog):
   #     "dfs.namenode.checkpoint.edits.dir",
   #     "dfs.namenode.checkpoint.dir",
   #     "dfs.namenode.checkpoint.period"]
-  Options.logger.info("Updating '%s' catalog item..." % config_type )
+  Options.logger.info("Updating '%s' catalog item..." % config_type)
   if is_merged_copy:  # Append configs to existed ones
     tag, structured_resp = get_config_resp(config_type, False)
     if structured_resp is not None:
@@ -910,7 +897,7 @@ def validate_response(response, expect_body):
 
 
 def curl(url, tokens=None, headers=None, request_type="GET", data=None, parse=False,
-         simulate=None, validate=False, validate_expect_body=False):
+         simulate=None, validate=False, validate_expect_body=False, soft_validation=False):
 
   simulate_only = Options.CURL_PRINT_ONLY is not None or (simulate is not None and simulate is True)
   print_url = Options.CURL_PRINT_ONLY is not None and simulate is not None
@@ -967,7 +954,10 @@ def curl(url, tokens=None, headers=None, request_type="GET", data=None, parse=Fa
   if validate and not simulate_only:
     retcode, errdata = validate_response(out, validate_expect_body)
     if not retcode == 0:
-      raise FatalException(retcode, errdata)
+      if soft_validation:
+        Options.logger.warning("Response validation failed, please check previous action result manually.")
+      else:
+        raise FatalException(retcode, errdata)
 
   if parse:
     return json.loads(out)

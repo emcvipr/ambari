@@ -45,7 +45,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
   requestError: null,
 
   colspan: function () {
-    return App.get('supports.stackUpgrade') ? 11 : 10;
+    return 11 + +App.get('supports.stackUpgrade');
   }.property("App.supports.stackUpgrade"),
 
   /**
@@ -210,17 +210,11 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
   },
 
   updateHostsPagination: function () {
-    this.clearExpandedSections();
     this.updatePagination();
   },
 
   willDestroyElement: function () {
-    this.clearExpandedSections();
-  },
-
-  clearExpandedSections: function () {
-    this.get('controller.expandedComponentsSections').clear();
-    this.get('controller.expandedVersionsSections').clear();
+    $('.tooltip').remove();
   },
 
   onInitialLoad: function () {
@@ -293,7 +287,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
    */
   overlayObserver: function() {
     var $tbody = this.$('tbody'),
-      $overlay = this.$('.hosts-overlay'),
+      $overlay = this.$('.table-overlay'),
       $spinner = $($overlay).find('.spinner');
     if (!this.get('filteringComplete')) {
       if (!$tbody) return;
@@ -362,6 +356,11 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
         break;
     }
 
+    if (operationData.action === 'SET_RACK_INFO') {
+      this.getHostsForBulkOperations(queryParams, operationData, null);
+      return;
+    }
+
     var loadingPopup = App.ModalPopup.show({
       header: Em.I18n.t('jobs.loadingTasks'),
       primary: false,
@@ -370,13 +369,22 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
         template: Ember.Handlebars.compile('<div class="spinner"></div>')
       })
     });
-    var parameters = App.router.get('updateController').computeParameters(queryParams);
-    if (!parameters.length) parameters = '&';
+
+    this.getHostsForBulkOperations(queryParams, operationData, loadingPopup);
+  },
+
+  getHostsForBulkOperations: function (queryParams, operationData, loadingPopup) {
+    var params = App.router.get('updateController').computeParameters(queryParams);
+
+    if (!params.length) {
+      params = '&';
+    }
+
     App.ajax.send({
       name: 'hosts.bulk.operations',
       sender: this,
       data: {
-        parameters: parameters.substring(0, parameters.length - 1),
+        parameters: params.substring(0, params.length - 1),
         operationData: operationData,
         loadingPopup: loadingPopup
       },
@@ -439,7 +447,16 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     else {
       message = Em.I18n.t('hosts.bulkOperation.confirmation.hosts').format(operationData.message, hostNames.length);
     }
-    param.loadingPopup.hide();
+
+    if (param.loadingPopup) {
+      param.loadingPopup.hide();
+    }
+
+    if (operationData.action === 'SET_RACK_INFO') {
+      self.get('controller').bulkOperation(operationData, hosts);
+      return;
+    }
+
     App.ModalPopup.show({
       header: Em.I18n.t('hosts.bulkOperation.confirmation.header'),
       hostNames: hostNames.join("\n"),
@@ -498,6 +515,12 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     displayName: Em.I18n.t('common.ipAddress'),
     type: 'ip'
   }),
+  rackSort: sort.fieldView.extend({
+    column: 12,
+    name:'rack',
+    displayName: Em.I18n.t('common.rack'),
+    type: 'rack'
+  }),
   cpuSort: sort.fieldView.extend({
     column: 3,
     name:'cpu',
@@ -525,30 +548,26 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     content:null,
     tagName: 'tr',
     didInsertElement: function(){
-      var hostName = this.get('content.hostName');
       App.tooltip(this.$("[rel='HealthTooltip'], [rel='UsageTooltip'], [rel='ComponentsTooltip']"));
-      this.set('isComponentsCollapsed', !this.get('controller.expandedComponentsSections').contains(hostName));
-      this.set('isVersionsCollapsed', !this.get('controller.expandedVersionsSections').contains(hostName));
     },
 
-    toggleList: function (flagName, arrayName) {
-      var arrayPropertyName = 'controller.' + arrayName;
-      var hostNameArray = this.get(arrayPropertyName);
-      var hostName = this.get('content.hostName');
-      this.toggleProperty(flagName);
-      if (this.get(flagName)) {
-        this.set(arrayPropertyName, hostNameArray.without(hostName));
-      } else {
-        hostNameArray.push(hostName);
-      }
+    displayComponents: function () {
+      var header = Em.I18n.t('common.components'),
+        hostName = this.get('content.hostName'),
+        items = this.get('content.hostComponents').getEach('displayName');
+      App.showHostsTableListPopup(header, hostName, items);
     },
 
-    toggleComponents: function () {
-      this.toggleList('isComponentsCollapsed', 'expandedComponentsSections');
-    },
-
-    toggleVersions: function () {
-      this.toggleList('isVersionsCollapsed', 'expandedVersionsSections');
+    displayVersions: function () {
+      var header = Em.I18n.t('common.versions'),
+        hostName = this.get('content.hostName'),
+        items = this.get('content.stackVersions').filterProperty('isVisible').map(function (stackVersion) {
+          return {
+            name: stackVersion.get('displayName'),
+            status: App.format.role(stackVersion.get('status'))
+          };
+        });
+      App.showHostsTableListPopup(header, hostName, items);
     },
 
     /**
@@ -581,21 +600,23 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     }.property('content.hostComponents.@each.passiveState'),
 
     /**
-     * String with list of host components <code>displayName</code>
-     * @returns {String}
-     */
-    labels: function() {
-      return this.get('content.hostComponents').getEach('displayName').join("<br />");
-    }.property('content.hostComponents.length'),
-
-    /**
      * true if host has only one repoversion
      * in this case expander in version column is hidden
      * @returns {Boolean}
      */
     hasSingleVersion: function() {
-      return this.get('content.stackVersions.length') < 2;
+      return this.get('content.stackVersions').filterProperty('isVisible', true).length < 2;
     }.property('content.stackVersions.length'),
+
+    /**
+     * true if host has no components
+     * @returns {Boolean}
+     */
+    hasNoComponents: function() {
+      return !this.get('content.hostComponents.length');
+    }.property('content.hostComponents.length'),
+
+    /**
 
     /**
      * this version is always shown others hidden unless expander is open
@@ -606,16 +627,6 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
       var currentRepoVersion = this.get('content.stackVersions').findProperty('isCurrent') || this.get('content.stackVersions').objectAt(0);
       return currentRepoVersion ? currentRepoVersion.get('displayName') + " (" + currentRepoVersion.get('displayStatus') + ")" : "";
     }.property('content.stackVersions'),
-
-    /**
-     * String with list of host components <code>displayName</code>
-     * @returns {String}
-     */
-    versionlabels: function () {
-      return this.get('content.stackVersions').filterProperty('isCurrent', false).map(function (version) {
-        return version.get('displayName');
-      }).join("<br />");
-    }.property('content.stackVersions.length'),
 
     /**
      * CSS value for disk usage bar
@@ -839,6 +850,18 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     }
   }),
 
+   /**
+   * Filter view for rack column
+   * Based on <code>filters</code> library
+   */
+  rackFilterView: filters.createTextView({
+    column: 12,
+    fieldType: 'filter-input-width rack-input',
+    onChangeValue: function(){
+      this.get('parentView').updateFilter(this.get('column'), this.get('value'), 'string');
+    }
+  }),
+
   /**
    * Filter view for Cpu column
    * Based on <code>filters</code> library
@@ -1042,7 +1065,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
               value: '',
               label: Em.I18n.t('common.all')
             }
-          ].concat(this.get('controller.allHostStackVersions').mapProperty('displayName').uniq().map(function (version) {
+          ].concat(this.get('controller.allHostStackVersions').filterProperty('isVisible', true).mapProperty('displayName').uniq().map(function (version) {
             return {
               value: version,
               label: version

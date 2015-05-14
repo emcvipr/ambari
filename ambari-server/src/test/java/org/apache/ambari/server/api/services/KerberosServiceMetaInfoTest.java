@@ -18,14 +18,32 @@
 
 package org.apache.ambari.server.api.services;
 
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.junit.Assert.fail;
+
+import java.io.File;
+import java.lang.reflect.Field;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+
+import javax.persistence.EntityManager;
+
 import junit.framework.Assert;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.metadata.ActionMetadata;
+import org.apache.ambari.server.orm.GuiceJpaInitializer;
+import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
 import org.apache.ambari.server.orm.dao.MetainfoDAO;
 import org.apache.ambari.server.stack.StackManager;
+import org.apache.ambari.server.stack.StackManagerFactory;
 import org.apache.ambari.server.state.AutoDeployInfo;
 import org.apache.ambari.server.state.ComponentInfo;
 import org.apache.ambari.server.state.DependencyInfo;
@@ -37,14 +55,10 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.lang.reflect.Field;
-import java.util.*;
-
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.replay;
-import static org.junit.Assert.fail;
+import com.google.inject.AbstractModule;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.util.Modules;
 
 public class KerberosServiceMetaInfoTest {
   private final static Logger LOG = LoggerFactory.getLogger(KerberosServiceMetaInfoTest.class);
@@ -68,9 +82,9 @@ public class KerberosServiceMetaInfoTest {
       AutoDeployInfo expectedAutoDeploy = expectedAutoDeployMap.get(component.getName());
       AutoDeployInfo componentAutoDeploy = component.getAutoDeploy();
 
-      if (expectedAutoDeploy == null)
+      if (expectedAutoDeploy == null) {
         Assert.assertNull(componentAutoDeploy);
-      else {
+      } else {
         Assert.assertNotNull(componentAutoDeploy);
         Assert.assertEquals(expectedAutoDeploy.isEnabled(), componentAutoDeploy.isEnabled());
         Assert.assertEquals(expectedAutoDeploy.getCoLocate(), componentAutoDeploy.getCoLocate());
@@ -106,9 +120,9 @@ public class KerberosServiceMetaInfoTest {
       Map<String, ? extends DependencyInfo> expectedDependencyMap = expectedDependenciesMap.get(component.getName());
       List<DependencyInfo> componentDependencies = component.getDependencies();
 
-      if (expectedDependencyMap == null)
+      if (expectedDependencyMap == null) {
         Assert.assertNull(componentDependencies);
-      else {
+      } else {
         Assert.assertEquals(expectedDependencyMap.size(), componentDependencies.size());
 
         for (DependencyInfo componentDependency : componentDependencies) {
@@ -124,9 +138,9 @@ public class KerberosServiceMetaInfoTest {
           Assert.assertEquals(expectedDependency.getComponentName(), componentDependency.getComponentName());
           Assert.assertEquals(expectedDependency.getScope(), componentDependency.getScope());
 
-          if (expectedDependencyAutoDeploy == null)
+          if (expectedDependencyAutoDeploy == null) {
             Assert.assertNull(componentDependencyAutoDeploy);
-          else {
+          } else {
             Assert.assertNotNull(componentDependencyAutoDeploy);
             Assert.assertEquals(expectedDependencyAutoDeploy.isEnabled(), componentDependencyAutoDeploy.isEnabled());
             Assert.assertEquals(expectedDependencyAutoDeploy.getCoLocate(), componentDependencyAutoDeploy.getCoLocate());
@@ -143,7 +157,9 @@ public class KerberosServiceMetaInfoTest {
     LOG.info("Stacks file " + stackRoot.getAbsolutePath());
     LOG.info("Common Services file " + commonServicesRoot.getAbsolutePath());
 
-    AmbariMetaInfo metaInfo = createAmbariMetaInfo(stackRoot, commonServicesRoot, new File("target/version"), true);
+    AmbariMetaInfo metaInfo = createAmbariMetaInfo(stackRoot,
+        commonServicesRoot, new File("src/test/resources/version"), true);
+
     metaInfo.init();
 
     serviceInfo = metaInfo.getService("HDP", "2.2", "KERBEROS");
@@ -181,7 +197,13 @@ public class KerberosServiceMetaInfoTest {
   }
 
   private TestAmbariMetaInfo createAmbariMetaInfo(File stackRoot, File commonServicesRoot, File versionFile, boolean replayMocks) throws Exception {
-    TestAmbariMetaInfo metaInfo = new TestAmbariMetaInfo(stackRoot, commonServicesRoot, versionFile);
+    Properties properties = new Properties();
+    properties.setProperty(Configuration.METADETA_DIR_PATH, stackRoot.getPath());
+    properties.setProperty(Configuration.COMMON_SERVICES_DIR_PATH, commonServicesRoot.getPath());
+    properties.setProperty(Configuration.SERVER_VERSION_FILE, versionFile.getPath());
+    Configuration configuration = new Configuration(properties);
+
+    TestAmbariMetaInfo metaInfo = new TestAmbariMetaInfo(configuration);
     if (replayMocks) {
       metaInfo.replayAllMocks();
 
@@ -218,20 +240,28 @@ public class KerberosServiceMetaInfoTest {
     AlertDefinitionFactory alertDefinitionFactory;
     OsFamily osFamily;
 
-    public TestAmbariMetaInfo(File stackRoot, File commonServicesRoot, File serverVersionFile) throws Exception {
-      super(stackRoot, commonServicesRoot, serverVersionFile);
-      // MetainfoDAO
-      metaInfoDAO = createNiceMock(MetainfoDAO.class);
+    public TestAmbariMetaInfo(Configuration configuration) throws Exception {
+      super(configuration);
+
+      Injector injector = Guice.createInjector(Modules.override(
+          new InMemoryDefaultTestModule()).with(new MockModule()));
+
+      injector.getInstance(GuiceJpaInitializer.class);
+      injector.getInstance(EntityManager.class);
+
       Class<?> c = getClass().getSuperclass();
+
+      // MetainfoDAO
+      metaInfoDAO = injector.getInstance(MetainfoDAO.class);
       Field f = c.getDeclaredField("metaInfoDAO");
       f.setAccessible(true);
       f.set(this, metaInfoDAO);
 
-      // ActionMetadata
-      ActionMetadata actionMetadata = new ActionMetadata();
-      f = c.getDeclaredField("actionMetadata");
+      // StackManagerFactory
+      StackManagerFactory stackManagerFactory = injector.getInstance(StackManagerFactory.class);
+      f = c.getDeclaredField("stackManagerFactory");
       f.setAccessible(true);
-      f.set(this, actionMetadata);
+      f.set(this, stackManagerFactory);
 
       //AlertDefinitionDAO
       alertDefinitionDAO = createNiceMock(AlertDefinitionDAO.class);
@@ -257,13 +287,24 @@ public class KerberosServiceMetaInfoTest {
       expect(config.getSharedResourcesDirPath()).andReturn("./src/test/resources").anyTimes();
       replay(config);
       osFamily = new OsFamily(config);
-      f = c.getDeclaredField("os_family");
+      f = c.getDeclaredField("osFamily");
       f.setAccessible(true);
       f.set(this, osFamily);
     }
 
     public void replayAllMocks() {
       replay(metaInfoDAO, alertDefinitionDAO);
+    }
+
+    public class MockModule extends AbstractModule {
+      @Override
+      protected void configure() {
+        bind(ActionMetadata.class);
+
+        // create a mock metainfo DAO for the entire system so that injectables
+        // can use the mock as well
+        bind(MetainfoDAO.class).toInstance(createNiceMock(MetainfoDAO.class));
+      }
     }
   }
 

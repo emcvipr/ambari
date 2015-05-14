@@ -19,14 +19,17 @@ Ambari Agent
 
 """
 import random
+import sys
 
 from resource_management.libraries.script.script import Script
 from resource_management.libraries.functions import get_unique_id_and_date
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 from resource_management.libraries.functions.security_commons import build_expectations, \
   cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties, \
   FILE_TYPE_JAAS_CONF
-from resource_management.core.shell import call
+from resource_management.core import shell
 from resource_management.core.logger import Logger
 from resource_management.core.resources.system import Execute
 from resource_management.libraries.functions.check_process_status import check_process_status
@@ -34,9 +37,31 @@ from resource_management.libraries.functions.format import format
 from resource_management.libraries.functions.validate import call_and_match_output
 from zookeeper import zookeeper
 from zookeeper_service import zookeeper_service
+from ambari_commons import OSConst
+from ambari_commons.os_family_impl import OsFamilyImpl
 
 
 class ZookeeperServer(Script):
+
+  def configure(self, env, rolling_restart=False):
+    import params
+    env.set_params(params)
+    zookeeper(type='server', rolling_restart=rolling_restart)
+
+  def start(self, env, rolling_restart=False):
+    import params
+    env.set_params(params)
+    self.configure(env, rolling_restart=rolling_restart)
+    zookeeper_service(action = 'start')
+
+  def stop(self, env, rolling_restart=False):
+    import params
+    env.set_params(params)
+    self.configure(env, rolling_restart=rolling_restart)
+    zookeeper_service(action = 'stop')
+
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class ZookeeperServerLinux(ZookeeperServer):
 
   def get_stack_to_component(self):
     return {"HDP": "zookeeper-server"}
@@ -45,24 +70,14 @@ class ZookeeperServer(Script):
     self.install_packages(env)
     self.configure(env)
 
-  def configure(self, env):
-    import params
-    env.set_params(params)
-    zookeeper(type='server')
-
   def pre_rolling_restart(self, env):
     Logger.info("Executing Rolling Upgrade pre-restart")
     import params
     env.set_params(params)
 
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
-      Execute(format("hdp-select set zookeeper-server {version}"))
-
-  def start(self, env, rolling_restart=False):
-    import params
-    env.set_params(params)
-    self.configure(env)
-    zookeeper_service(action = 'start')
+      conf_select.select(params.stack_name, "zookeeper", params.version)
+      hdp_select.select("zookeeper-server", params.version)
 
   def post_rolling_restart(self, env):
     Logger.info("Executing Rolling Upgrade post-restart")
@@ -79,18 +94,13 @@ class ZookeeperServer(Script):
     quorum_err_message = "Failed to establish zookeeper quorum"
     call_and_match_output(create_command, 'Created', quorum_err_message)
     call_and_match_output(list_command, r"\[.*?" + unique + ".*?\]", quorum_err_message)
-    call(delete_command)
+    shell.call(delete_command)
 
     if params.client_port:
       check_leader_command = format("echo stat | nc localhost {client_port} | grep Mode")
-      code, out = call(check_leader_command, logoutput=False)
+      code, out = shell.call(check_leader_command, logoutput=False)
       if code == 0 and out:
         Logger.info(out)
-
-  def stop(self, env, rolling_restart=False):
-    import params
-    env.set_params(params)
-    zookeeper_service(action = 'stop')
 
   def status(self, env):
     import status_params
@@ -99,7 +109,6 @@ class ZookeeperServer(Script):
 
   def security_status(self, env):
     import status_params
-
     env.set_params(status_params)
 
     if status_params.security_enabled:
@@ -149,6 +158,20 @@ class ZookeeperServer(Script):
     else:
       self.put_structured_out({"securityState": "UNSECURED"})
 
+
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class ZookeeperServerWindows(ZookeeperServer):
+  def install(self, env):
+    from resource_management.libraries.functions.windows_service_utils import check_windows_service_exists
+    import params
+    if not check_windows_service_exists(params.zookeeper_win_service_name):
+      self.install_packages(env)
+    self.configure(env)
+
+  def status(self, env):
+    from resource_management.libraries.functions.windows_service_utils import check_windows_service_status
+    import status_params
+    check_windows_service_status(status_params.zookeeper_win_service_name)
 
 if __name__ == "__main__":
   ZookeeperServer().execute()

@@ -51,6 +51,12 @@ public class UpgradeCatalog161 extends AbstractUpgradeCatalog {
     return "1.6.0";
   }
 
+
+  @Override
+  public String getTargetVersion() {
+    return "1.6.1";
+  }
+
   /**
    * Logger.
    */
@@ -259,6 +265,13 @@ public class UpgradeCatalog161 extends AbstractUpgradeCatalog {
 
 
   // ----- UpgradeCatalog ----------------------------------------------------
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public void executePreDMLUpdates() {
+    ;
+  }
 
   @Override
   protected void executeDMLUpdates() throws AmbariException, SQLException {
@@ -315,10 +328,5 @@ public class UpgradeCatalog161 extends AbstractUpgradeCatalog {
             "data.\npig.temp.dir=/tmp/\n\n# Threshold for merging FRJoin fragment files\npig.files.concatenation." +
             "threshold=100\npig.optimistic.files.concatenation=false;\n\npig.disable.counter=false\n\n" +
             "hcat.bin=/usr/bin/hcat"), true, false);
-  }
-
-  @Override
-  public String getTargetVersion() {
-    return "1.6.1";
   }
 }

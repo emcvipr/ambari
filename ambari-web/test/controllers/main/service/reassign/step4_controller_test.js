@@ -130,7 +130,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
       });
 
       controller.set('tasks', [
-        {id: 1, command: 'stopServices'},
+        {id: 1, command: 'stopRequiredServices'},
         {id: 2, command: 'cleanMySqlServer'},
         {id: 3, command: 'createHostComponents'},
         {id: 4, command: 'putHostComponentsInMaintenanceMode'},
@@ -141,7 +141,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
         {id: 9, command: 'deleteHostComponents'},
         {id: 10, command: 'configureMySqlServer'},
         {id: 11, command: 'startMySqlServer'},
-        {id: 12, command: 'startServices'}
+        {id: 12, command: 'startRequiredServices'}
       ]);
     });
 
@@ -317,49 +317,10 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
     });
   });
 
-  describe('#getStopServicesData()', function () {
-    it('restarting YARN component', function () {
-      controller.set('content.reassign.component_name', 'RESOURCEMANAGER');
-      sinon.stub(App.Service, 'find', function () {
-        return [
-          {
-            serviceName: 'HDFS'
-          },
-          {
-            serviceName: 'SERVICE1'
-          }
-        ];
-      });
-
-      expect(controller.getStopServicesData()).to.eql({
-        "ServiceInfo": {
-          "state": "INSTALLED"
-        },
-        "context": "Stop required services",
-        "urlParams": "ServiceInfo/service_name.in(SERVICE1)"
-      });
-      App.Service.find.restore();
-    });
-    it('restarting non-YARN component', function () {
-      controller.set('content.reassign.component_name', 'NAMENODE');
-      expect(controller.getStopServicesData()).to.eql({
-        "ServiceInfo": {
-          "state": "INSTALLED"
-        },
-        "context": "Stop all services"
-      });
-    });
-  });
-
   describe('#stopServices()', function () {
     it('', function () {
-      sinon.stub(controller, 'getStopServicesData', Em.K);
-
       controller.stopServices();
       expect(App.ajax.send.calledOnce).to.be.true;
-      expect(controller.getStopServicesData.calledOnce).to.be.true;
-
-      controller.getStopServicesData.restore();
     });
   });
 
@@ -729,13 +690,13 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
       App.get.restore();
       App.Service.find.restore();
     });
-    it('HA isn\'t enabled and no HBASE service', function () {
+    it('HA isn\'t enabled and no HBASE or ACCUMULO service', function () {
       isHaEnabled = false;
       var configs = {};
       controller.setSpecificNamenodeConfigs(configs, 'host1');
       expect(configs).to.eql({});
     });
-    it('HA isn\'t enabled and HBASE service', function () {
+    it('HA isn\'t enabled and HBASE and ACCUMULO service', function () {
       isHaEnabled = false;
       service = Em.Object.create({
         isLoaded: true
@@ -743,10 +704,14 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
       var configs = {
         'hbase-site': {
           'hbase.rootdir': 'hdfs://localhost:8020/apps/hbase/data'
+        },
+        'accumulo-site': {
+          'instance.volumes': 'hdfs://localhost:8020/apps/accumulo/data'
         }
       };
       controller.setSpecificNamenodeConfigs(configs, 'host1');
       expect(configs['hbase-site']['hbase.rootdir']).to.equal('hdfs://host1:8020/apps/hbase/data');
+      expect(configs['accumulo-site']['instance.volumes']).to.equal('hdfs://host1:8020/apps/accumulo/data');
     });
     it('HA enabled and namenode 1', function () {
       isHaEnabled = true;
@@ -1004,58 +969,15 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
   });
 
   describe('#startServices()', function () {
-    beforeEach(function () {
-      sinon.stub(controller, 'getStartServicesData', Em.K);
+    before(function () {
+      sinon.stub(App.router, 'get').returns({"skip.service.checks": "false"});
     });
-    afterEach(function () {
-      controller.getStartServicesData.restore();
+    after(function () {
+      App.router.get.restore();
     });
-
     it('', function () {
       controller.startServices();
-      expect(controller.getStartServicesData.calledOnce).to.be.true;
       expect(App.ajax.send.calledOnce).to.be.true;
-    });
-  });
-
-  describe('#getStartServicesData()', function () {
-    beforeEach(function () {
-      sinon.stub(App.Service, 'find', function () {
-        return [
-          {serviceName: 'SERVICE1'},
-          {serviceName: 'SERVICE2'}
-        ]
-      })
-    });
-    afterEach(function () {
-      App.Service.find.restore();
-    });
-
-    it('No unrelated services', function () {
-      controller.set('unrelatedServicesMap', {
-        'COMP1': ['SERVICE1']
-      });
-      controller.set('content.reassign.component_name', 'COMP2');
-      expect(controller.getStartServicesData()).to.eql({
-        "context": "Start all services",
-        "ServiceInfo": {
-          "state": "STARTED"
-        },
-        "urlParams": "params/run_smoke_test=true"
-      });
-    });
-    it('Present unrelated services', function () {
-      controller.set('unrelatedServicesMap', {
-        'COMP1': ['SERVICE1']
-      });
-      controller.set('content.reassign.component_name', 'COMP1');
-      expect(controller.getStartServicesData()).to.eql({
-        "context": "Start required services",
-        "ServiceInfo": {
-          "state": "STARTED"
-        },
-        "urlParams": "ServiceInfo/service_name.in(SERVICE2)"
-      });
     });
   });
 

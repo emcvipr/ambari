@@ -20,6 +20,7 @@ limitations under the License.
 from stacks.utils.RMFTestCase import *
 import json
 from mock.mock import MagicMock, patch
+from resource_management.libraries.script import Script
 from resource_management.core import shell
 from resource_management.core.exceptions import Fail
 
@@ -149,7 +150,7 @@ class TestDatanode(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_start_secured_HDP22_root(self):
-    config_file = self._getSrcFolder()+"/test/python/stacks/2.0.6/configs/secured.json"
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/secured.json"
     with open(config_file, "r") as f:
       secured_json = json.load(f)
 
@@ -162,7 +163,7 @@ class TestDatanode(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-    self.assert_configure_secured()
+    self.assert_configure_secured("2.2")
     self.assertResourceCalled('Directory', '/var/run/hadoop',
                               owner = 'hdfs',
                               group = 'hadoop',
@@ -180,14 +181,14 @@ class TestDatanode(RMFTestCase):
                               action = ['delete'],
                               not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid` >/dev/null 2>&1',
                               )
-    self.assertResourceCalled('Execute', 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E /usr/hdp/current/hadoop-client/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start datanode',
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E /usr/hdp/current/hadoop-client/sbin/hadoop-daemon.sh --config /usr/hdp/current/hadoop-client/conf start datanode',
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/hdp/current/hadoop-client/libexec'},
         not_if = 'ls /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid` >/dev/null 2>&1',
     )
     self.assertNoMoreResources()
 
   def test_start_secured_HDP22_non_root_https_only(self):
-    config_file = self._getSrcFolder()+"/test/python/stacks/2.0.6/configs/secured.json"
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/secured.json"
     with open(config_file, "r") as f:
       secured_json = json.load(f)
 
@@ -203,7 +204,7 @@ class TestDatanode(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-    self.assert_configure_secured()
+    self.assert_configure_secured("2.2")
     self.assertResourceCalled('Directory', '/var/run/hadoop',
                               owner = 'hdfs',
                               group = 'hadoop',
@@ -221,7 +222,7 @@ class TestDatanode(RMFTestCase):
                               action = ['delete'],
                               not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid` >/dev/null 2>&1',
                               )
-    self.assertResourceCalled('Execute', "ambari-sudo.sh su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited ;  /usr/hdp/current/hadoop-client/sbin/hadoop-daemon.sh --config /etc/hadoop/conf start datanode'",
+    self.assertResourceCalled('Execute', "ambari-sudo.sh su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited ;  /usr/hdp/current/hadoop-client/sbin/hadoop-daemon.sh --config /usr/hdp/current/hadoop-client/conf start datanode'",
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/hdp/current/hadoop-client/libexec'},
         not_if = 'ls /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid` >/dev/null 2>&1',
     )
@@ -265,7 +266,7 @@ class TestDatanode(RMFTestCase):
 
   @patch("os.path.exists", new = MagicMock(return_value=False))
   def test_stop_secured_HDP22_root(self):
-    config_file = self._getSrcFolder()+"/test/python/stacks/2.0.6/configs/secured.json"
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/secured.json"
     with open(config_file, "r") as f:
       secured_json = json.load(f)
 
@@ -295,7 +296,7 @@ class TestDatanode(RMFTestCase):
                               action = ['delete'],
                               not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid` >/dev/null 2>&1',
                               )
-    self.assertResourceCalled('Execute', 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E /usr/hdp/current/hadoop-client/sbin/hadoop-daemon.sh --config /etc/hadoop/conf stop datanode',
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E /usr/hdp/current/hadoop-client/sbin/hadoop-daemon.sh --config /usr/hdp/current/hadoop-client/conf stop datanode',
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/hdp/current/hadoop-client/libexec'},
         not_if = None,
     )
@@ -306,7 +307,7 @@ class TestDatanode(RMFTestCase):
 
   @patch("os.path.exists", new = MagicMock(return_value=False))
   def test_stop_secured_HDP22_non_root_https_only(self):
-    config_file = self._getSrcFolder()+"/test/python/stacks/2.0.6/configs/secured.json"
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/secured.json"
     with open(config_file, "r") as f:
       secured_json = json.load(f)
 
@@ -339,7 +340,7 @@ class TestDatanode(RMFTestCase):
                               action = ['delete'],
                               not_if='ls /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop/hdfs/hadoop-hdfs-datanode.pid` >/dev/null 2>&1',
                               )
-    self.assertResourceCalled('Execute', "ambari-sudo.sh su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited ;  /usr/hdp/current/hadoop-client/sbin/hadoop-daemon.sh --config /etc/hadoop/conf stop datanode'",
+    self.assertResourceCalled('Execute', "ambari-sudo.sh su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited ;  /usr/hdp/current/hadoop-client/sbin/hadoop-daemon.sh --config /usr/hdp/current/hadoop-client/conf stop datanode'",
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/hdp/current/hadoop-client/libexec'},
         not_if = None,
     )
@@ -379,6 +380,9 @@ class TestDatanode(RMFTestCase):
                               content = Template('slaves.j2'),
                               owner = 'hdfs',
                               )
+    self.assertResourceCalled('File', '/var/lib/ambari-agent/lib/fast-hdfs-resource.jar',
+        content = StaticFile('fast-hdfs-resource.jar'),
+    )
     self.assertResourceCalled('Directory', '/var/lib/hadoop-hdfs',
                               owner = 'hdfs',
                               group = 'hadoop',
@@ -394,7 +398,11 @@ class TestDatanode(RMFTestCase):
                               cd_access='a'
                               )
 
-  def assert_configure_secured(self):
+  def assert_configure_secured(self, stackVersion=STACK_VERSION):
+    conf_dir = '/etc/hadoop/conf'
+    if stackVersion != self.STACK_VERSION:
+      conf_dir = '/usr/hdp/current/hadoop-client/conf'
+
     self.assertResourceCalled('Directory', '/etc/security/limits.d',
                               owner = 'root',
                               group = 'root',
@@ -409,22 +417,26 @@ class TestDatanode(RMFTestCase):
     self.assertResourceCalled('XmlConfig', 'hdfs-site.xml',
                               owner = 'hdfs',
                               group = 'hadoop',
-                              conf_dir = '/etc/hadoop/conf',
+                              conf_dir = conf_dir,
                               configurations = self.getConfig()['configurations']['hdfs-site'],
                               configuration_attributes = self.getConfig()['configuration_attributes']['hdfs-site']
                               )
+
     self.assertResourceCalled('XmlConfig', 'core-site.xml',
                               owner = 'hdfs',
                               group = 'hadoop',
-                              conf_dir = '/etc/hadoop/conf',
+                              conf_dir = conf_dir,
                               configurations = self.getConfig()['configurations']['core-site'],
                               configuration_attributes = self.getConfig()['configuration_attributes']['core-site'],
                               mode = 0644
     )
-    self.assertResourceCalled('File', '/etc/hadoop/conf/slaves',
+    self.assertResourceCalled('File', conf_dir + '/slaves',
                               content = Template('slaves.j2'),
                               owner = 'root',
                               )
+    self.assertResourceCalled('File', '/var/lib/ambari-agent/lib/fast-hdfs-resource.jar',
+        content = StaticFile('fast-hdfs-resource.jar'),
+    )
     self.assertResourceCalled('Directory', '/var/lib/hadoop-hdfs',
                               owner = 'hdfs',
                               group = 'hadoop',
@@ -441,10 +453,56 @@ class TestDatanode(RMFTestCase):
                               )
 
 
+  def test_pre_rolling_restart(self):
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.2.1.0-3242'
+    json_content['commandParams']['version'] = version
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/datanode.py",
+                       classname = "DataNode",
+                       command = "pre_rolling_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
+    self.assertResourceCalled('Execute',
+                              'hdp-select set hadoop-hdfs-datanode %s' % version,)
+    self.assertNoMoreResources()
+
+
+  @patch("resource_management.core.shell.call")
+  def test_pre_rolling_restart_23(self, call_mock):
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.3.0.0-1234'
+    json_content['commandParams']['version'] = version
+
+    mocks_dict = {}
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/datanode.py",
+                       classname = "DataNode",
+                       command = "pre_rolling_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES,
+                       call_mocks = [(0, None), (0, None)],
+                       mocks_dict = mocks_dict)
+    self.assertResourceCalled('Execute', 'hdp-select set hadoop-hdfs-datanode %s' % version,)
+
+    self.assertNoMoreResources()
+
+    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(
+      "conf-select create-conf-dir --package hadoop --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[0][0][0])
+    self.assertEquals(
+      "conf-select set-conf-dir --package hadoop --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[1][0][0])
+
+
   @patch('time.sleep')
-  @patch.object(shell, "call")
-  def test_post_rolling_restart(self, process_mock, time_mock):
-    process_output = """
+  def test_post_rolling_restart(self, time_mock):
+    shell_call_output = """
       Live datanodes (2):
 
       Name: 192.168.64.102:50010 (c6401.ambari.apache.org)
@@ -464,57 +522,58 @@ class TestDatanode(RMFTestCase):
       Xceivers: 2
       Last contact: Fri Dec 12 20:47:21 UTC 2014
     """
-
-    process_mock.return_value = (0, process_output)
-
+    mocks_dict = {}
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/datanode.py",
                        classname = "DataNode",
                        command = "post_rolling_restart",
                        config_file = "default.json",
                        hdp_stack_version = self.STACK_VERSION,
-                       target = RMFTestCase.TARGET_COMMON_SERVICES
+                       target = RMFTestCase.TARGET_COMMON_SERVICES,
+                       call_mocks = [(0, shell_call_output)],
+                       mocks_dict = mocks_dict
     )
+    
+    self.assertTrue(mocks_dict['call'].called)
+    self.assertEqual(mocks_dict['call'].call_count,1)
 
-    self.assertTrue(process_mock.called)
-    self.assertEqual(process_mock.call_count,1)
 
 
   @patch('time.sleep')
-  @patch.object(shell, "call")
-  def test_post_rolling_restart_datanode_not_ready(self, process_mock, time_mock):
-    process_mock.return_value = (0, 'There are no DataNodes here!')
-
+  def test_post_rolling_restart_datanode_not_ready(self, time_mock):
+    mocks_dict = {}
     try:
       self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/datanode.py",
                          classname = "DataNode",
                          command = "post_rolling_restart",
                          config_file = "default.json",
                          hdp_stack_version = self.STACK_VERSION,
-                         target = RMFTestCase.TARGET_COMMON_SERVICES
+                         target = RMFTestCase.TARGET_COMMON_SERVICES,
+                         call_mocks = [(0, 'There are no DataNodes here!')],
+                         mocks_dict = mocks_dict
       )
       self.fail('Missing DataNode should have caused a failure')
     except Fail,fail:
-      self.assertTrue(process_mock.called)
-      self.assertEqual(process_mock.call_count,12)
+      self.assertTrue(mocks_dict['call'].called)
+      self.assertEqual(mocks_dict['call'].call_count,12)
 
 
   @patch('time.sleep')
-  @patch.object(shell, "call")
-  def test_post_rolling_restart_bad_returncode(self, process_mock, time_mock):
-    process_mock.return_value = (0, 'some')
-
+  def test_post_rolling_restart_bad_returncode(self, time_mock):
     try:
+      mocks_dict = {}
       self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/datanode.py",
                          classname = "DataNode",
                          command = "post_rolling_restart",
                          config_file = "default.json",
                          hdp_stack_version = self.STACK_VERSION,
-                         target = RMFTestCase.TARGET_COMMON_SERVICES
+                         target = RMFTestCase.TARGET_COMMON_SERVICES,
+                         call_mocks = [(0, 'some')],
+                         mocks_dict = mocks_dict
       )
       self.fail('Invalid return code should cause a failure')
     except Fail,fail:
-      self.assertTrue(process_mock.called)
-      self.assertEqual(process_mock.call_count,12)
+      self.assertTrue(mocks_dict['call'].called)
+      self.assertEqual(mocks_dict['call'].call_count,12)
 
   @patch("resource_management.libraries.functions.security_commons.build_expectations")
   @patch("resource_management.libraries.functions.security_commons.get_params_from_filesystem")

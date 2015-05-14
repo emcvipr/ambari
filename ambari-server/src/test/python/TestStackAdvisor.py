@@ -339,3 +339,175 @@ class TestStackAdvisorInitialization(TestCase):
       }
     }
     self.assertEquals(actualRecommendLayoutResponse, expectedRecommendLayoutResponse)
+
+    # Config groups support by default
+    services["config-groups"] = [{
+      "configurations": {
+      },
+      "hosts": [
+        'host2'
+      ]
+    }]
+
+    actualConfigGroupRecommendConfigResponse = \
+      default_stack_advisor.recommendConfigurations(services, hosts)
+    expectedConfigGroupRecommendConfigResponse = {
+      "Versions": {"stack_name": "HDP1", "stack_version": "2.0.6"},
+      "hosts": ["host1", "host2"],
+      "services": ['GANGLIA', 'HBASE', 'HDFS', 'PIG', 'TEZ', 'ZOOKEEPER'],
+      "recommendations": {
+        'config-groups': [
+          {
+            'configurations': {},
+            'dependent_configurations': {},
+            'hosts': [
+              'host2'
+            ]
+          }
+        ],
+        "blueprint": {
+          "configurations": {},
+          "host_groups": []
+        },
+        "blueprint_cluster_binding": {
+          "host_groups": []
+        }
+      }
+    }
+    self.assertEquals(actualConfigGroupRecommendConfigResponse, expectedConfigGroupRecommendConfigResponse)
+
+    services = {
+      "services": [
+        {
+          "StackServices" : {
+            "service_name" : "YARN",
+            "stack_name" : "HDP",
+            "stack_version" : "2.3"
+          },
+          "configurations" : [
+            {
+              "StackConfigurations" : {
+                "property_depended_by" : [
+                  {
+                    "type" : "yarn-site",
+                    "name" : "yarn.scheduler.minimum-allocation-vcores"
+                  },
+                  {
+                    "type" : "yarn-site",
+                    "name" : "yarn.scheduler.maximum-allocation-vcores"
+                  }
+                ],
+                "property_name" : "yarn.nodemanager.resource.cpu-vcores",
+                "type" : "yarn-site.xml"
+              },
+             "dependencies": []
+            },
+            {
+              "StackConfigurations" : {
+                "property_name" : "yarn.nodemanager.resource.memory-mb",
+                "type" : "yarn-site.xml"
+              },
+             "dependencies": [
+                {
+                  "StackConfigurationDependency" : {
+                    "dependency_name": "yarn.scheduler.maximum-allocation-mb",
+                    "dependency_type": "yarn-site"
+                  }
+                },
+                {
+                  "StackConfigurationDependency" : {
+                    "dependency_name": "yarn.scheduler.minimum-allocation-mb",
+                    "dependency_type": "yarn-site"
+                  }
+                },
+              ]
+            },
+            {
+              "StackConfigurations" : {
+                "property_depended_by" : [
+                  {
+                    "type" : "mapred-site",
+                    "name" : "yarn.app.mapreduce.am.resource.mb"
+                  },
+                  {
+                    "type" : "mapred-site",
+                    "name" : "mapreduce.map.memory.mb"
+                  },
+                  {
+                    "type" : "mapred-site",
+                    "name" : "mapreduce.reduce.memory.mb"
+                  }
+                ],
+                "property_name" : "yarn.scheduler.maximum-allocation-mb",
+                "type" : "yarn-site.xml"
+              },
+             "dependencies": []
+            },
+            {
+              "StackConfigurations" : {
+                "property_depended_by" : [ ],
+                "property_name" : "yarn.scheduler.maximum-allocation-vcores",
+                "type" : "yarn-site.xml"
+              },
+             "dependencies": []
+            },
+            {
+              "StackConfigurations" : {
+                "property_name" : "yarn.scheduler.minimum-allocation-mb",
+                "type" : "yarn-site.xml"
+              },
+             "dependencies": [
+                {
+                  "StackConfigurationDependency" : {
+                    "dependency_name": "hive.tez.container.size",
+                    "dependency_type": "hive-site"
+                  }
+                },
+                {
+                  "StackConfigurationDependency" : {
+                    "dependency_name": "yarn.app.mapreduce.am.resource.mb",
+                    "dependency_type": "mapred-site"
+                  }
+                },
+                {
+                  "StackConfigurationDependency" : {
+                    "dependency_name": "mapreduce.map.memory.mb",
+                    "dependency_type": "mapred-site"
+                  }
+                },
+                {
+                  "StackConfigurationDependency" : {
+                    "dependency_name": "mapreduce.reduce.memory.mb",
+                    "dependency_type": "mapred-site"
+                  }
+                },
+              ]
+            },
+            {
+              "StackConfigurations" : {
+                "property_name" : "yarn.scheduler.minimum-allocation-vcores",
+                "type" : "yarn-site.xml"
+              },
+             "dependencies": []
+            }
+          ]
+        }
+      ],
+      "changed-configurations": [
+        {
+          "type": "yarn-site",
+          "name": "yarn.nodemanager.resource.memory-mb"
+        }
+      ]
+
+    }
+
+    properties_dict = default_stack_advisor.getAffectedConfigs(services)
+    expected_properties_dict = [{'name': 'yarn.scheduler.maximum-allocation-mb', 'type': 'yarn-site'},
+                                {'name': 'yarn.scheduler.minimum-allocation-mb', 'type': 'yarn-site'},
+                                {'name': 'hive.tez.container.size', 'type': 'hive-site'},
+                                {'name': 'yarn.app.mapreduce.am.resource.mb', 'type': 'mapred-site'},
+                                {'name': 'mapreduce.map.memory.mb', 'type': 'mapred-site'},
+                                {'name': 'mapreduce.reduce.memory.mb', 'type': 'mapred-site'}]
+
+    self.assertEquals(properties_dict, expected_properties_dict)

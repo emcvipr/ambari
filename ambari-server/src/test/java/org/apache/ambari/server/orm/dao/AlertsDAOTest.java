@@ -24,7 +24,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -33,8 +32,10 @@ import java.util.List;
 import java.util.TimeZone;
 import java.util.UUID;
 
+import org.apache.ambari.server.controller.AlertCurrentRequest;
 import org.apache.ambari.server.controller.AlertHistoryRequest;
 import org.apache.ambari.server.controller.internal.AlertHistoryResourceProvider;
+import org.apache.ambari.server.controller.internal.AlertResourceProvider;
 import org.apache.ambari.server.controller.internal.PageRequestImpl;
 import org.apache.ambari.server.controller.internal.SortRequestImpl;
 import org.apache.ambari.server.controller.spi.PageRequest.StartingPoint;
@@ -43,8 +44,6 @@ import org.apache.ambari.server.controller.spi.SortRequest;
 import org.apache.ambari.server.controller.spi.SortRequest.Order;
 import org.apache.ambari.server.controller.spi.SortRequestProperty;
 import org.apache.ambari.server.controller.utilities.PredicateBuilder;
-import org.apache.ambari.server.events.listeners.alerts.AlertMaintenanceModeListener;
-import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.orm.AlertDaoHelper;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
@@ -64,11 +63,11 @@ import org.apache.ambari.server.state.ServiceComponentHostFactory;
 import org.apache.ambari.server.state.ServiceFactory;
 import org.apache.ambari.server.state.alert.Scope;
 import org.apache.ambari.server.state.alert.SourceType;
+import org.apache.ambari.server.utils.EventBusSynchronizer;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.google.common.eventbus.EventBus;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.persist.PersistService;
@@ -91,8 +90,6 @@ public class AlertsDAOTest {
   private ServiceFactory m_serviceFactory;
   private ServiceComponentFactory m_componentFactory;
   private ServiceComponentHostFactory m_schFactory;
-  private AmbariEventPublisher m_eventPublisher;
-  private EventBus m_synchronizedBus;
 
   private AlertDaoHelper m_alertHelper;
 
@@ -109,15 +106,11 @@ public class AlertsDAOTest {
     m_serviceFactory = m_injector.getInstance(ServiceFactory.class);
     m_componentFactory = m_injector.getInstance(ServiceComponentFactory.class);
     m_schFactory = m_injector.getInstance(ServiceComponentHostFactory.class);
-    m_eventPublisher = m_injector.getInstance(AmbariEventPublisher.class);
     m_clusters = m_injector.getInstance(Clusters.class);
     m_alertHelper = m_injector.getInstance(AlertDaoHelper.class);
 
     // !!! need a synchronous op for testing
-    m_synchronizedBus = new EventBus();
-    Field field = AmbariEventPublisher.class.getDeclaredField("m_eventBus");
-    field.setAccessible(true);
-    field.set(m_eventPublisher, m_synchronizedBus);
+    EventBusSynchronizer.synchronizeAmbariEventPublisher(m_injector);
 
     // install YARN so there is at least 1 service installed and no
     // unexpected alerts since the test YARN service doesn't have any alerts
@@ -147,6 +140,7 @@ public class AlertsDAOTest {
     assertEquals(5, definitions.size());
 
     // create 10 historical alerts for each definition, 8 OK and 2 CRIT
+    // total of 80 OK, 20 CRITICAL
     calendar.clear();
     calendar.set(2014, Calendar.JANUARY, 1);
 
@@ -338,7 +332,7 @@ public class AlertsDAOTest {
     history.setAlertLabel(hostDef.getDefinitionName());
     history.setAlertText(hostDef.getDefinitionName());
     history.setAlertTimestamp(Long.valueOf(1L));
-    history.setHostName("h2");
+    history.setHostName(HOSTNAME);
     history.setAlertState(AlertState.OK);
 
     // current for the history
@@ -348,15 +342,67 @@ public class AlertsDAOTest {
     current.setAlertHistory(history);
     m_dao.create(current);
 
-    List<AlertCurrentEntity> currentAlerts = m_dao.findCurrentByHost(
-        m_cluster.getClusterId(), history.getHostName());
+    Predicate hostPredicate = null;
+    hostPredicate = new PredicateBuilder().property(
+        AlertResourceProvider.ALERT_HOST).equals(HOSTNAME).toPredicate();
 
+    AlertCurrentRequest request = new AlertCurrentRequest();
+    request.Predicate = hostPredicate;
+
+    List<AlertCurrentEntity> currentAlerts = m_dao.findAll(request);
     assertNotNull(currentAlerts);
     assertEquals(1, currentAlerts.size());
 
-    currentAlerts = m_dao.findCurrentByHost(m_cluster.getClusterId(), "foo");
+    hostPredicate = new PredicateBuilder().property(
+        AlertResourceProvider.ALERT_HOST).equals("invalid.apache.org").toPredicate();
+
+    request = new AlertCurrentRequest();
+    request.Predicate = hostPredicate;
+    currentAlerts = m_dao.findAll(request);
 
     assertNotNull(currentAlerts);
+    assertEquals(0, currentAlerts.size());
+  }
+
+  /**
+   * Tests that the Ambari {@link Predicate} can be converted and submitted to
+   * JPA correctly to return a restricted result set.
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testAlertCurrentPredicate() throws Exception {
+    AlertDefinitionEntity definition = m_definitionDao.findByName(
+        m_cluster.getClusterId(), "Alert Definition 0");
+
+    assertNotNull(definition);
+
+    Predicate definitionIdPredicate = null;
+    Predicate hdfsPredicate = null;
+    Predicate yarnPredicate = null;
+
+    definitionIdPredicate = new PredicateBuilder().property(
+        AlertResourceProvider.ALERT_DEFINITION_ID).equals(
+        definition.getDefinitionId()).toPredicate();
+
+    AlertCurrentRequest request = new AlertCurrentRequest();
+    request.Predicate = definitionIdPredicate;
+
+    List<AlertCurrentEntity> currentAlerts = m_dao.findAll(request);
+    assertEquals(1, currentAlerts.size());
+
+    hdfsPredicate = new PredicateBuilder().property(
+        AlertResourceProvider.ALERT_SERVICE).equals("HDFS").toPredicate();
+
+    yarnPredicate = new PredicateBuilder().property(
+        AlertResourceProvider.ALERT_SERVICE).equals("YARN").toPredicate();
+
+    request.Predicate = yarnPredicate;
+    currentAlerts = m_dao.findAll(request);
+    assertEquals(5, currentAlerts.size());
+
+    request.Predicate = hdfsPredicate;
+    currentAlerts = m_dao.findAll(request);
     assertEquals(0, currentAlerts.size());
   }
 
@@ -853,8 +899,6 @@ public class AlertsDAOTest {
    */
   @Test
   public void testMaintenanceMode() throws Exception {
-    m_synchronizedBus.register(m_injector.getInstance(AlertMaintenanceModeListener.class));
-
     m_helper.installHdfsService(m_cluster, m_serviceFactory,
         m_componentFactory, m_schFactory, HOSTNAME);
 

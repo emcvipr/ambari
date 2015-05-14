@@ -24,14 +24,23 @@ from resource_management.libraries.functions.security_commons import build_expec
   FILE_TYPE_XML
 import utils  # this is needed to avoid a circular dependency since utils.py calls this class
 from hdfs import hdfs
-
+from ambari_commons.os_family_impl import OsFamilyImpl
+from ambari_commons import OSConst
 
 class ZkfcSlave(Script):
   def install(self, env):
     import params
-
-    self.install_packages(env, params.exclude_packages)
     env.set_params(params)
+    self.install_packages(env, params.exclude_packages)
+
+  def configure(self, env):
+    import params
+    env.set_params(params)
+    hdfs("zkfc_slave")
+    pass
+
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class ZkfcSlaveDefault(ZkfcSlave):
 
   def start(self, env, rolling_restart=False):
     import params
@@ -48,8 +57,11 @@ class ZkfcSlave(Script):
     # only run this format command if the active namenode hostname is set
     # The Ambari UI HA Wizard prompts the user to run this command
     # manually, so this guarantees it is only run in the Blueprints case
-    if params.dfs_ha_enabled and params.dfs_ha_namenode_active is not None:
-        Execute("hdfs zkfc -formatZK -force -nonInteractive", user=params.hdfs_user)
+    if params.dfs_ha_enabled and \
+       params.dfs_ha_namenode_active is not None:
+      success =  initialize_ha_zookeeper(params)
+      if not success:
+        raise Fail("Could not initialize HA state in zookeeper")
 
     utils.service(
       action="start", name="zkfc", user=params.hdfs_user, create_pid_dir=True,
@@ -65,22 +77,15 @@ class ZkfcSlave(Script):
       create_log_dir=True
     )
 
-  def configure(self, env):
-    hdfs()
-    pass
 
   def status(self, env):
     import status_params
-
     env.set_params(status_params)
-
     check_process_status(status_params.zkfc_pid_file)
 
   def security_status(self, env):
     import status_params
-
     env.set_params(status_params)
-
     props_value_check = {"hadoop.security.authentication": "kerberos",
                          "hadoop.security.authorization": "true"}
     props_empty_check = ["hadoop.security.auth_to_local"]
@@ -121,6 +126,41 @@ class ZkfcSlave(Script):
     else:
       self.put_structured_out({"securityState": "UNSECURED"})
 
+def initialize_ha_zookeeper(params):
+  try:
+    iterations = 10
+    formatZK_cmd = "hdfs zkfc -formatZK -nonInteractive"
+    Logger.info("Initialize HA state in ZooKeeper: %s" % (formatZK_cmd))
+    for i in range(iterations):
+      Logger.info('Try %d out of %d' % (i+1, iterations))
+      code, out = shell.call(formatZK_cmd, logoutput=False, user=params.hdfs_user)
+      if code == 0:
+        Logger.info("HA state initialized in ZooKeeper successfully")
+        return True
+      elif code == 2:
+        Logger.info("HA state already initialized in ZooKeeper")
+        return True
+      else:
+        Logger.warning('HA state initialization in ZooKeeper failed with %d error code. Will retry' % (code))
+  except Exception as ex:
+    Logger.error('HA state initialization in ZooKeeper threw an exception. Reason %s' %(str(ex)))
+  return False
+
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class ZkfcSlaveWindows(ZkfcSlave):
+  def start(self, env):
+    import params
+    self.configure(env)
+    Service(params.zkfc_win_service_name, action="start")
+
+  def stop(self, env):
+    import params
+    Service(params.zkfc_win_service_name, action="stop")
+
+  def status(self, env):
+    import status_params
+    env.set_params(status_params)
+    check_windows_service_status(status_params.zkfc_win_service_name)
 
 if __name__ == "__main__":
   ZkfcSlave().execute()

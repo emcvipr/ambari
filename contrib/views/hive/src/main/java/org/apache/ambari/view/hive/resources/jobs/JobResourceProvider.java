@@ -18,13 +18,15 @@
 
 package org.apache.ambari.view.hive.resources.jobs;
 
-import com.google.inject.Inject;
 import org.apache.ambari.view.*;
 import org.apache.ambari.view.hive.persistence.utils.ItemNotFound;
 import org.apache.ambari.view.hive.persistence.utils.OnlyOwnersFilteringStrategy;
+import org.apache.ambari.view.hive.resources.jobs.viewJobs.*;
+import org.apache.ambari.view.hive.utils.SharedObjectsFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.inject.Inject;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashSet;
 import java.util.Map;
@@ -43,7 +45,7 @@ public class JobResourceProvider implements ResourceProvider<Job> {
 
   protected synchronized JobResourceManager getResourceManager() {
     if (resourceManager == null) {
-      resourceManager = new JobResourceManager(context);
+      resourceManager = new JobResourceManager(new SharedObjectsFactory(context), context);
     }
     return resourceManager;
   }
@@ -51,7 +53,7 @@ public class JobResourceProvider implements ResourceProvider<Job> {
   @Override
   public Job getResource(String resourceId, Set<String> properties) throws SystemException, NoSuchResourceException, UnsupportedPropertyException {
     try {
-      return getResourceManager().read(Integer.valueOf(resourceId));
+      return getResourceManager().read(resourceId);
     } catch (ItemNotFound itemNotFound) {
       throw new NoSuchResourceException(resourceId);
     }
@@ -59,6 +61,8 @@ public class JobResourceProvider implements ResourceProvider<Job> {
 
   @Override
   public Set<Job> getResources(ReadRequest readRequest) throws SystemException, NoSuchResourceException, UnsupportedPropertyException {
+    if (context == null)
+      return new HashSet();
     return new HashSet<Job>(getResourceManager().readAll(
         new OnlyOwnersFilteringStrategy(this.context.getUsername())));
   }
@@ -74,7 +78,7 @@ public class JobResourceProvider implements ResourceProvider<Job> {
       throw new SystemException("error on creating resource", e);
     }
     getResourceManager().create(item);
-    JobController jobController = JobControllerFactory.getInstance(context).createControllerForJob(item);
+    JobController jobController = new SharedObjectsFactory(context).getJobControllerFactory().createControllerForJob(item);
     jobController.submit();
   }
 
@@ -89,7 +93,7 @@ public class JobResourceProvider implements ResourceProvider<Job> {
       throw new SystemException("error on updating resource", e);
     }
     try {
-      getResourceManager().update(item, Integer.valueOf(resourceId));
+      getResourceManager().update(item, resourceId);
     } catch (ItemNotFound itemNotFound) {
       throw new NoSuchResourceException(resourceId);
     }
@@ -99,7 +103,7 @@ public class JobResourceProvider implements ResourceProvider<Job> {
   @Override
   public boolean deleteResource(String resourceId) throws SystemException, NoSuchResourceException, UnsupportedPropertyException {
     try {
-      getResourceManager().delete(Integer.valueOf(resourceId));
+      getResourceManager().delete(resourceId);
     } catch (ItemNotFound itemNotFound) {
       throw new NoSuchResourceException(resourceId);
     }

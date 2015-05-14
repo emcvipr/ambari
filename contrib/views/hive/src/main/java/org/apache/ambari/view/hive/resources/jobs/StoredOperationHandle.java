@@ -40,9 +40,9 @@ public class StoredOperationHandle implements Indexed {
   private String guid;
   private String secret;
 
-  private Integer jobId;
+  private String jobId;
 
-  private Integer id;
+  private String id;
 
   public StoredOperationHandle() {}
   public StoredOperationHandle(Map<String, Object> stringObjectMap) throws InvocationTargetException, IllegalAccessException {
@@ -80,7 +80,7 @@ public class StoredOperationHandle implements Indexed {
       identifier.setGuid(Hex.decodeHex(getGuid().toCharArray()));
       identifier.setSecret(Hex.decodeHex(getSecret().toCharArray()));
     } catch (DecoderException e) {
-      throw new ServiceFormattedException("Wrong identifer of OperationHandle is stored in DB");
+      throw new ServiceFormattedException("E060 Wrong identifier of OperationHandle is stored in DB");
     }
     handle.setOperationId(identifier);
     return handle;
@@ -126,21 +126,21 @@ public class StoredOperationHandle implements Indexed {
     this.secret = secret;
   }
 
-  public Integer getJobId() {
+  public String getJobId() {
     return jobId;
   }
 
-  public void setJobId(Integer jobId) {
+  public void setJobId(String jobId) {
     this.jobId = jobId;
   }
 
   @Override
-  public Integer getId() {
+  public String getId() {
     return id;
   }
 
   @Override
-  public void setId(Integer id) {
+  public void setId(String id) {
     this.id = id;
   }
 }

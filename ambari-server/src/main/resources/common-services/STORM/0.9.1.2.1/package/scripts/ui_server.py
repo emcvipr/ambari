@@ -24,6 +24,8 @@ from service import service
 from service_check import ServiceCheck
 from resource_management.libraries.functions import check_process_status
 from resource_management.libraries.script import Script
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions import format
 from resource_management.core.resources.system import Execute
 from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
@@ -31,12 +33,12 @@ from resource_management.libraries.functions.security_commons import build_expec
   cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties, \
   FILE_TYPE_JAAS_CONF
 from setup_ranger_storm import setup_ranger_storm
+from ambari_commons import OSConst
+from ambari_commons.os_family_impl import OsFamilyImpl
+from resource_management.core.resources.service import Service
+
 
 class UiServer(Script):
-
-  def get_stack_to_component(self):
-    return {"HDP": "storm-client"}
-
   def install(self, env):
     self.install_packages(env)
     self.configure(env)
@@ -44,15 +46,39 @@ class UiServer(Script):
   def configure(self, env):
     import params
     env.set_params(params)
+    storm("ui")
 
-    storm()
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class UiServerWindows(UiServer):
+  def start(self, env):
+    import status_params
+    env.set_params(status_params)
+    self.configure(env)
+    Service(status_params.ui_win_service_name, action="start")
+
+  def stop(self, env):
+    import status_params
+    env.set_params(status_params)
+    Service(status_params.ui_win_service_name, action="stop")
+
+  def status(self, env):
+    import status_params
+    env.set_params(status_params)
+    from resource_management.libraries.functions.windows_service_utils import check_windows_service_status
+    check_windows_service_status(status_params.ui_win_service_name)
+
+
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class UiServerDefault(UiServer):
+  def get_stack_to_component(self):
+    return {"HDP": "storm-client"}
 
   def pre_rolling_restart(self, env):
     import params
     env.set_params(params)
-
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
-      Execute(format("hdp-select set storm-client {version}"))
+      conf_select.select(params.stack_name, "storm", params.version)
+      hdp_select.select("storm-client", params.version)
 
   def start(self, env, rolling_restart=False):
     import params
@@ -64,7 +90,6 @@ class UiServer(Script):
   def stop(self, env, rolling_restart=False):
     import params
     env.set_params(params)
-
     service("ui", action="stop")
 
   def status(self, env):

@@ -18,6 +18,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 '''
 
+import json
 from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
 import resource_management.core.source
@@ -46,7 +47,7 @@ class TestStormUiServer(TestStormBase):
 
     self.assert_configure_default()
 
-    self.assertResourceCalled('Execute', 'source /etc/storm/conf/storm-env.sh ; export PATH=$PATH:$JAVA_HOME/bin ; storm ui > /var/log/storm/ui.out 2>&1',
+    self.assertResourceCalled('Execute', 'source /etc/storm/conf/storm-env.sh ; export PATH=$JAVA_HOME/bin:$PATH ; storm ui > /var/log/storm/ui.out 2>&1',
         wait_for_finish = False,
         path = ['/usr/bin'],
         user = 'storm',
@@ -103,7 +104,7 @@ class TestStormUiServer(TestStormBase):
 
     self.assert_configure_secured()
 
-    self.assertResourceCalled('Execute', 'source /etc/storm/conf/storm-env.sh ; export PATH=$PATH:$JAVA_HOME/bin ; storm ui > /var/log/storm/ui.out 2>&1',
+    self.assertResourceCalled('Execute', 'source /etc/storm/conf/storm-env.sh ; export PATH=$JAVA_HOME/bin:$PATH ; storm ui > /var/log/storm/ui.out 2>&1',
         wait_for_finish = False,
         path = ['/usr/bin'],
         user = 'storm',
@@ -147,6 +148,33 @@ class TestStormUiServer(TestStormBase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assertResourceCalled("Execute", "hdp-select set storm-client 2.2.1.0-2067")
+
+  def test_pre_rolling_restart_23(self):
+    config_file = self.get_src_folder()+"/test/python/stacks/2.1/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.3.0.0-1234'
+    json_content['commandParams']['version'] = version
+
+    mocks_dict = {}
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/ui_server.py",
+                     classname = "UiServer",
+                     command = "pre_rolling_restart",
+                     config_dict = json_content,
+                     hdp_stack_version = self.STACK_VERSION,
+                     target = RMFTestCase.TARGET_COMMON_SERVICES,
+                     call_mocks = [(0, None), (0, None)],
+                     mocks_dict = mocks_dict)
+
+    self.assertResourceCalled("Execute", "hdp-select set storm-client 2.3.0.0-1234")
+
+    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(
+      "conf-select create-conf-dir --package storm --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[0][0][0])
+    self.assertEquals(
+      "conf-select set-conf-dir --package storm --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[1][0][0])
 
 
   @patch("resource_management.libraries.functions.security_commons.build_expectations")
@@ -228,3 +256,4 @@ class TestStormUiServer(TestStormBase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
+

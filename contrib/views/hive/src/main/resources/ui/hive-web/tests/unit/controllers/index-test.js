@@ -26,7 +26,10 @@ moduleFor('controller:index', 'IndexController', {
           'controller:index/history-query/results',
           'controller:index/history-query/explain',
           'controller:settings',
-          'adapter:database', 'controller:tables', 'controller:columns']
+          'adapter:database', 'controller:tables', 'controller:columns',
+          'controller:visual-explain', 'controller:tez-ui',
+          'adapter:application'
+        ]
 });
 
 test('when initialized, controller sets the queryProcessTabs.', function () {
@@ -104,21 +107,33 @@ test('bindQueryParams replaces same param multiple times', function() {
 });
 
 test('parseQueryParams sets queryParams when query changes', function() {
-  expect(3);
+  expect(4);
 
-  var controller = this.subject();
 
-  var query = "select $what from $where";
+  var query = Ember.Object.create({
+    id: 1,
+    fileContent: "select $what from $where"
+  });
+  var updatedQuery = "select $what from $where and $where";
+
+  var controller = this.subject({
+    model: query
+  });
 
   Ember.run(function() {
-    controller.set('openQueries.currentQuery', {
-        'fileContent': query
-    });
+    controller.set('openQueries.queryTabs', [query]);
+    controller.set('openQueries.currentQuery', query);
   });
 
   equal(controller.get('queryParams.length'), 2, '2 queryParams parsed');
   equal(controller.get('queryParams').objectAt(0).name, '$what', 'First param parsed correctly');
   equal(controller.get('queryParams').objectAt(1).name, '$where', 'Second param parsed correctly');
+
+  Ember.run(function() {
+    controller.set('openQueries.currentQuery.fileContent', updatedQuery);
+  });
+
+  equal(controller.get('queryParams.length'), 2, 'Can use same param multiple times');
 });
 
 test('canExecute return false if query is executing', function() {
@@ -176,4 +191,95 @@ test('canExecute return false if queryParams doesnt\'t have values', function() 
   });
 
   ok(controller.get('canExecute'), 'Params with values => canExecute return true');
+});
+
+test('csvUrl returns if the current query is not a job', function() {
+  expect(1);
+  var content = Ember.Object.create({
+      constructor: {
+        typeKey: 'notJob'
+      }
+  });
+
+  var controller = this.subject({ content: content });
+  ok(!controller.get('csvUrl'), 'returns if current query is not a job');
+});
+
+test('csvUrl returns is status in not SUCCEEDED', function() {
+  expect(1);
+  var content= Ember.Object.create({
+      constructor: {
+        typeKey: 'job'
+      },
+      status: 'notSuccess'
+  });
+
+  var controller = this.subject({ content: content });
+  ok(!controller.get('csvUrl'), 'returns if current status is not success');
+});
+
+test('csvUrl return the download results as csv link', function() {
+  expect(1);
+  var content = Ember.Object.create({
+      constructor: {
+        typeKey: 'job'
+      },
+      status: 'SUCCEEDED',
+      id: 1
+  });
+
+  var controller = this.subject({ content: content });
+  ok(controller.get('csvUrl'));
+});
+
+test('donwloadMenu returns null if status is not succes and results are not visible ', function() {
+  expect(1);
+  var content = Ember.Object.create({
+      status: 'notSuccess',
+      queryProcessTabs: [{
+        path: 'index.historyQuery.results',
+        visible: false
+      }]
+  });
+
+  var controller = this.subject({ content: content });
+  ok(!controller.get('downloadMenu'), 'Returns null');
+});
+
+test('donwloadMenu returns only saveToHDFS if csvUrl is false', function() {
+  expect(1);
+  var content = Ember.Object.create({
+      constructor: {
+        typeKey: 'notjob'
+      },
+      status: 'SUCCEEDED'
+  });
+
+  var controller = this.subject({ content: content });
+  Ember.run(function() {
+    var tabs = controller.get('queryProcessTabs');
+    var results = tabs.findBy('path', 'index.historyQuery.results');
+    results.set('visible', true);
+  });
+
+  equal(controller.get('downloadMenu.length'), 1, 'Returns only saveToHDFS');
+});
+
+test('donwloadMenu returns saveToHDFS and csvUrl', function() {
+  expect(1);
+  var content = Ember.Object.create({
+      constructor: {
+        typeKey: 'job'
+      },
+      status: 'SUCCEEDED'
+  });
+
+  var controller = this.subject({ content: content });
+  Ember.run(function() {
+    var tabs = controller.get('queryProcessTabs');
+    var results = tabs.findBy('path', 'index.historyQuery.results');
+    results.set('visible', true);
+  });
+
+  equal(controller.get('downloadMenu.length'), 2, 'Returns saveToHDFS and csvUrl');
 });

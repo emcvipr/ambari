@@ -46,6 +46,8 @@ import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import com.google.inject.Inject;
+import com.google.inject.persist.PersistService;
 import junit.framework.Assert;
 
 import org.apache.ambari.server.AmbariException;
@@ -62,6 +64,11 @@ import org.apache.ambari.server.agent.ExecutionCommand;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.HostsMap;
 import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
+import org.apache.ambari.server.orm.GuiceJpaInitializer;
+import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
+import org.apache.ambari.server.orm.dao.HostDAO;
+import org.apache.ambari.server.orm.entities.HostEntity;
+import org.apache.ambari.server.orm.entities.RequestEntity;
 import org.apache.ambari.server.serveraction.MockServerAction;
 import org.apache.ambari.server.serveraction.ServerActionExecutor;
 import org.apache.ambari.server.state.Cluster;
@@ -79,7 +86,8 @@ import org.apache.ambari.server.state.svccomphost.ServiceComponentHostUpgradeEve
 import org.apache.ambari.server.utils.StageUtils;
 import org.easymock.Capture;
 import org.easymock.EasyMock;
-import org.junit.BeforeClass;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.invocation.InvocationOnMock;
@@ -109,9 +117,29 @@ public class TestActionScheduler {
   private final String hostname = "ahost.ambari.apache.org";
   private final int MAX_CYCLE_ITERATIONS = 100;
 
-  @BeforeClass
-  public static void beforeClass() throws AmbariException {
-    injector = Guice.createInjector(new MockModule());
+  @Inject
+  HostRoleCommandFactory hostRoleCommandFactory;
+
+  @Inject
+  StageFactory stageFactory;
+
+  @Inject
+  StageUtils stageUtils;
+
+  @Inject
+  HostDAO hostDAO;
+
+  @Before
+  public void setup() throws Exception {
+    injector = Guice.createInjector(new InMemoryDefaultTestModule());
+    injector.getInstance(GuiceJpaInitializer.class);
+    injector.injectMembers(this);
+  }
+
+  @After
+  public void teardown() {
+    injector.getInstance(PersistService.class).stop();
+    injector = null;
   }
 
   /**
@@ -120,7 +148,6 @@ public class TestActionScheduler {
    */
   @Test
   public void testActionSchedule() throws Exception {
-
     Type type = new TypeToken<Map<String, Set<String>>>() {}.getType();
     Map<String, List<String>> clusterHostInfo = StageUtils.getGson().fromJson(CLUSTER_HOST_INFO, type);
 
@@ -145,6 +172,9 @@ public class TestActionScheduler {
     HashMap<String, ServiceComponentHost> hosts =
             new HashMap<String, ServiceComponentHost>();
     hosts.put(hostname, sch);
+    HostEntity hostEntity = new HostEntity();
+    hostEntity.setHostName(hostname);
+    hostDAO.merge(hostEntity);
     when(scomp.getServiceComponentHosts()).thenReturn(hosts);
 
     when(fsm.getHost(anyString())).thenReturn(host);
@@ -160,9 +190,9 @@ public class TestActionScheduler {
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
 
     //Keep large number of attempts so that the task is not expired finally
     //Small action timeout to test rescheduling
@@ -240,6 +270,10 @@ public class TestActionScheduler {
     when(host.getState()).thenReturn(HostState.HEALTHY);
     when(host.getHostName()).thenReturn(hostname);
 
+    HostEntity hostEntity = new HostEntity();
+    hostEntity.setHostName(hostname);
+    hostDAO.create(hostEntity);
+
     List<Stage> stages = new ArrayList<Stage>();
     final Stage s = StageUtils.getATestStage(1, 977, hostname, CLUSTER_HOST_INFO,
       "{\"host_param\":\"param_value\"}", "{\"stage_param\":\"param_value\"}");
@@ -252,9 +286,10 @@ public class TestActionScheduler {
     ActionDBAccessor db = mock(ActionDBAccessor.class);
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
-    Request request = mock(Request.class);
+
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
 
     doAnswer(new Answer() {
       @Override
@@ -330,9 +365,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
     doAnswer(new Answer() {
@@ -384,6 +420,13 @@ public class TestActionScheduler {
     String hostname2 = "host2";
     Host host1 = mock(Host.class);
     Host host2 = mock(Host.class);
+    HostEntity hostEntity1 = new HostEntity();
+    hostEntity1.setHostName(hostname1);
+    HostEntity hostEntity2 = new HostEntity();
+    hostEntity2.setHostName(hostname2);
+    hostDAO.merge(hostEntity1);
+    hostDAO.merge(hostEntity2);
+
     HashMap<String, ServiceComponentHost> hosts =
             new HashMap<String, ServiceComponentHost>();
     hosts.put(hostname1, sch1);
@@ -406,7 +449,7 @@ public class TestActionScheduler {
     when(serviceObj.getCluster()).thenReturn(oneClusterMock);
 
     final List<Stage> stages = new ArrayList<Stage>();
-    Stage stage = new Stage(1, "/tmp", "cluster1", 1L, "stageWith2Tasks",
+    Stage stage = stageFactory.createNew(1, "/tmp", "cluster1", 1L, "stageWith2Tasks",
       CLUSTER_HOST_INFO, "{\"command_param\":\"param_value\"}", "{\"host_param\":\"param_value\"}");
     addInstallTaskToStage(stage, hostname1, "cluster1", Role.DATANODE,
       RoleCommand.INSTALL, Service.Type.HDFS, 1);
@@ -416,9 +459,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
 
@@ -549,9 +593,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
     doAnswer(new Answer() {
@@ -642,9 +687,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
     doAnswer(new Answer() {
@@ -727,9 +773,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
     doAnswer(new Answer() {
@@ -781,11 +828,11 @@ public class TestActionScheduler {
     assertEquals("test", stages.get(0).getRequestContext());
   }
 
-  private static Stage getStageWithServerAction(long requestId, long stageId,
+  private Stage getStageWithServerAction(long requestId, long stageId,
                                                 Map<String, String> payload, String requestContext,
                                                 int timeout) {
     String serverHostname = StageUtils.getHostName();
-    Stage stage = new Stage(requestId, "/tmp", "cluster1", 1L, requestContext, CLUSTER_HOST_INFO,
+    Stage stage = stageFactory.createNew(requestId, "/tmp", "cluster1", 1L, requestContext, CLUSTER_HOST_INFO,
       "{}", "{}");
     stage.setStageId(stageId);
 
@@ -858,9 +905,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
 
@@ -949,9 +997,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
 
@@ -1025,9 +1074,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
 
@@ -1087,9 +1137,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
     doAnswer(new Answer() {
@@ -1220,10 +1271,17 @@ public class TestActionScheduler {
     when(host.getState()).thenReturn(HostState.HEALTHY);
     when(host.getHostName()).thenReturn(host1);
 
+    HostEntity hostEntity1 = new HostEntity();
+    HostEntity hostEntity2 = new HostEntity();
+    hostEntity1.setHostName(host1);
+    hostEntity2.setHostName(host2);
+    hostDAO.create(hostEntity1);
+    hostDAO.create(hostEntity2);
+
     final List<Stage> stages = new ArrayList<Stage>();
 
     long now = System.currentTimeMillis();
-    Stage stage = new Stage(1, "/tmp", "cluster1", 1L,
+    Stage stage = stageFactory.createNew(1, "/tmp", "cluster1", 1L,
         "testRequestFailureBasedOnSuccessFactor", CLUSTER_HOST_INFO, "", "");
     stage.setStageId(1);
 
@@ -1268,9 +1326,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
     doAnswer(new Answer() {
@@ -1372,6 +1431,7 @@ public class TestActionScheduler {
       stage.getOrderedHostRoleCommands().get(index).setStatus(statusesAtIterThree[index]);
     }
 
+    // Fails becuse HostRoleCommand doesn't have a hostName
     scheduler.doWork();
 
     // Request is aborted because HBASE_CLIENT's success factor (1) is not met
@@ -1413,7 +1473,7 @@ public class TestActionScheduler {
     final List<Stage> stages = new ArrayList<Stage>();
 
     long now = System.currentTimeMillis();
-    Stage stage = new Stage(1, "/tmp", "cluster1", 1L, "testRequestFailureBasedOnSuccessFactor",
+    Stage stage = stageFactory.createNew(1, "/tmp", "cluster1", 1L, "testRequestFailureBasedOnSuccessFactor",
       CLUSTER_HOST_INFO, "", "");
     stage.setStageId(1);
     stage.addHostRoleExecutionCommand("host1", Role.DATANODE, RoleCommand.UPGRADE,
@@ -1445,9 +1505,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
     doAnswer(new Answer() {
@@ -1554,7 +1615,7 @@ public class TestActionScheduler {
   private Stage getStageWithSingleTask(String hostname, String clusterName, Role role,
                                        RoleCommand roleCommand, Service.Type service, int taskId,
                                        int stageId, int requestId) {
-    Stage stage = new Stage(requestId, "/tmp", clusterName, 1L, "getStageWithSingleTask",
+    Stage stage = stageFactory.createNew(requestId, "/tmp", clusterName, 1L, "getStageWithSingleTask",
       CLUSTER_HOST_INFO, "{\"host_param\":\"param_value\"}", "{\"stage_param\":\"param_value\"}");
     stage.setStageId(stageId);
     stage.addHostRoleExecutionCommand(hostname, role, roleCommand,
@@ -1673,9 +1734,9 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessorImpl.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
 
     Stage s1 = StageUtils.getATestStage(requestId1, stageId, hostname, CLUSTER_HOST_INFO,
       "{\"host_param\":\"param_value\"}", "{\"stage_param\":\"param_value\"}");
@@ -1706,7 +1767,6 @@ public class TestActionScheduler {
     assertTrue(ac.get(0) instanceof ExecutionCommand);
     assertEquals(String.valueOf(requestId2) + "-" + stageId, ((ExecutionCommand) (ac.get(0))).getCommandId());
     assertEquals(clusterHostInfo2, ((ExecutionCommand) (ac.get(0))).getClusterHostInfo());
-
   }
 
 
@@ -1737,6 +1797,10 @@ public class TestActionScheduler {
     hosts.put(hostname1, sch1);
     when(scomp.getServiceComponentHosts()).thenReturn(hosts);
 
+    HostEntity hostEntity = new HostEntity();
+    hostEntity.setHostName(hostname1);
+    hostDAO.create(hostEntity);
+
     UnitOfWork unitOfWork = mock(UnitOfWork.class);
     when(fsm.getCluster(anyString())).thenReturn(oneClusterMock);
     when(oneClusterMock.getService(anyString())).thenReturn(serviceObj);
@@ -1750,7 +1814,7 @@ public class TestActionScheduler {
     when(serviceObj.getCluster()).thenReturn(oneClusterMock);
 
     final List<Stage> stages = new ArrayList<Stage>();
-    Stage stage1 = new Stage(1, "/tmp", "cluster1", 1L, "stageWith2Tasks",
+    Stage stage1 = stageFactory.createNew(1, "/tmp", "cluster1", 1L, "stageWith2Tasks",
             CLUSTER_HOST_INFO, "", "");
     addInstallTaskToStage(stage1, hostname1, "cluster1", Role.HBASE_MASTER,
             RoleCommand.INSTALL, Service.Type.HBASE, 1);
@@ -1760,9 +1824,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
 
@@ -1841,9 +1906,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
     doAnswer(new Answer() {
@@ -1911,6 +1977,10 @@ public class TestActionScheduler {
     when(scomp.getServiceComponentHost(anyString())).thenReturn(sch);
     when(serviceObj.getCluster()).thenReturn(oneClusterMock);
 
+    HostEntity hostEntity = new HostEntity();
+    hostEntity.setHostName(hostname);
+    hostDAO.create(hostEntity);
+
     HashMap<String, ServiceComponentHost> hosts =
             new HashMap<String, ServiceComponentHost>();
     hosts.put(hostname, sch);
@@ -1936,9 +2006,10 @@ public class TestActionScheduler {
 
     ActionDBAccessor db = mock(ActionDBAccessor.class);
 
-    Request request = mock(Request.class);
+    RequestEntity request = mock(RequestEntity.class);
     when(request.isExclusive()).thenReturn(false);
-    when(db.getRequest(anyLong())).thenReturn(request);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
     when(db.getCommandsInProgressCount()).thenReturn(stages.size());
     when(db.getStagesInProgress()).thenReturn(stages);
 
@@ -2164,16 +2235,16 @@ public class TestActionScheduler {
       }
     }).when(db).startRequest(anyLong());
 
-    Request request1 = mock(Request.class);
+    RequestEntity request1 = mock(RequestEntity.class);
     when(request1.isExclusive()).thenReturn(false);
-    Request request2 = mock(Request.class);
+    RequestEntity request2 = mock(RequestEntity.class);
     when(request2.isExclusive()).thenReturn(true);
-    Request request3 = mock(Request.class);
+    RequestEntity request3 = mock(RequestEntity.class);
     when(request3.isExclusive()).thenReturn(false);
 
-    when(db.getRequest(requestId1)).thenReturn(request1);
-    when(db.getRequest(requestId2)).thenReturn(request2);
-    when(db.getRequest(requestId3)).thenReturn(request3);
+    when(db.getRequestEntity(requestId1)).thenReturn(request1);
+    when(db.getRequestEntity(requestId2)).thenReturn(request2);
+    when(db.getRequestEntity(requestId3)).thenReturn(request3);
 
     Properties properties = new Properties();
     Configuration conf = new Configuration(properties);
@@ -2230,6 +2301,9 @@ public class TestActionScheduler {
     ActionQueue aq = new ActionQueue();
     Clusters fsm = EasyMock.createMock(Clusters.class);
     Configuration conf = new Configuration(new Properties());
+    HostEntity hostEntity1 = new HostEntity();
+    hostEntity1.setHostName("h1");
+    hostDAO.merge(hostEntity1);
 
     db.abortHostRole("h1", -1L, -1L, "AMBARI_SERVER_ACTION");
     EasyMock.expectLastCall();
@@ -2240,11 +2314,11 @@ public class TestActionScheduler {
         new HostsMap((String) null),
         unitOfWork, null, conf);
 
-    HostRoleCommand hrc1 = new HostRoleCommand("h1", Role.NAMENODE, null, RoleCommand.EXECUTE);
+    HostRoleCommand hrc1 = hostRoleCommandFactory.create("h1", Role.NAMENODE, null, RoleCommand.EXECUTE);
     hrc1.setStatus(HostRoleStatus.COMPLETED);
-    HostRoleCommand hrc3 = new HostRoleCommand("h1", Role.AMBARI_SERVER_ACTION, null, RoleCommand.CUSTOM_COMMAND);
+    HostRoleCommand hrc3 = hostRoleCommandFactory.create("h1", Role.AMBARI_SERVER_ACTION, null, RoleCommand.CUSTOM_COMMAND);
     hrc3.setStatus(HostRoleStatus.HOLDING);
-    HostRoleCommand hrc4 = new HostRoleCommand("h1", Role.FLUME_HANDLER, null, RoleCommand.EXECUTE);
+    HostRoleCommand hrc4 = hostRoleCommandFactory.create("h1", Role.FLUME_HANDLER, null, RoleCommand.EXECUTE);
     hrc4.setStatus(HostRoleStatus.PENDING);
 
     List<HostRoleCommand> hostRoleCommands = Arrays.asList(hrc1, hrc3, hrc4);

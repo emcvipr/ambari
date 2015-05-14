@@ -17,7 +17,9 @@ limitations under the License.
 
 """
 
+from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from ambari_commons.os_check import OSCheck
 from resource_management import *
 from resource_management.core.system import System
 import os
@@ -27,22 +29,25 @@ config = Script.get_config()
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
-#hadoop params
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
-  mapreduce_libs_path = "/usr/hdp/current/hadoop-mapreduce-client/*"
-  hadoop_libexec_dir = "/usr/hdp/current/hadoop-client/libexec"
-  hadoop_lib_home = "/usr/hdp/current/hadoop-client/lib"
-  hadoop_bin = "/usr/hdp/current/hadoop-client/sbin"
-  hadoop_home = '/usr/hdp/current/hadoop-client'
-else:
-  mapreduce_libs_path = "/usr/lib/hadoop-mapreduce/*"
-  hadoop_libexec_dir = "/usr/lib/hadoop/libexec"
-  hadoop_lib_home = "/usr/lib/hadoop/lib"
-  hadoop_bin = "/usr/lib/hadoop/sbin"
-  hadoop_home = '/usr'
+# hadoop default params
+mapreduce_libs_path = "/usr/lib/hadoop-mapreduce/*"
 
+hadoop_libexec_dir = conf_select.get_hadoop_dir("libexec")
+hadoop_lib_home = conf_select.get_hadoop_dir("lib")
+hadoop_bin = conf_select.get_hadoop_dir("sbin")
+hadoop_home = '/usr'
+create_lib_snappy_symlinks = True
+hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
+default_topology_script_file_path = "/etc/hadoop/conf/topology_script.py"
+
+# HDP 2.2+ params
+if Script.is_hdp_stack_greater_or_equal("2.2"):
+  mapreduce_libs_path = "/usr/hdp/current/hadoop-mapreduce-client/*"
+  hadoop_home = '/usr/hdp/current/hadoop-client'
+  create_lib_snappy_symlinks = False
+  
 current_service = config['serviceName']
-hadoop_conf_dir = "/etc/hadoop/conf"
+
 #security params
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 
@@ -132,7 +137,7 @@ else:
 #hadoop-env.sh
 java_home = config['hostLevelParams']['java_home']
 
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.0') >= 0 and compare_versions(hdp_stack_version, '2.1') < 0 and System.get_instance().os_family != "suse":
+if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.0') >= 0 and compare_versions(hdp_stack_version, '2.1') < 0 and not OSCheck.is_suse_family():
   # deprecated rhel jsvc_path
   jsvc_path = "/usr/libexec/bigtop-utils"
 else:
@@ -167,3 +172,20 @@ if (('hdfs-log4j' in config['configurations']) and ('content' in config['configu
     log4j_props += config['configurations']['yarn-log4j']['content']
 else:
   log4j_props = None
+
+refresh_topology = False
+command_params = config["commandParams"] if "commandParams" in config else None
+if command_params is not None:
+  refresh_topology = bool(command_params["refresh_topology"]) if "refresh_topology" in command_params else False
+
+#host info
+all_hosts = default("/clusterHostInfo/all_hosts", [])
+all_racks = default("/clusterHostInfo/all_racks", [])
+all_ipv4_ips = default("/clusterHostInfo/all_ipv4_ips", [])
+slave_hosts = default("/clusterHostInfo/slave_hosts", [])
+
+#topology files
+net_topology_script_file_path = default("/configurations/core-site/net.topology.script.file.name",default_topology_script_file_path)
+net_topology_script_dir = os.path.dirname(net_topology_script_file_path)
+net_topology_mapping_data_file_name = 'topology_mappings.data'
+net_topology_mapping_data_file_path = os.path.join(net_topology_script_dir, net_topology_mapping_data_file_name)

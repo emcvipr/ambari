@@ -24,12 +24,10 @@ import org.apache.ambari.server.controller.metrics.ganglia.GangliaComponentPrope
 import org.apache.ambari.server.controller.metrics.ganglia.GangliaHostComponentPropertyProvider;
 import org.apache.ambari.server.controller.metrics.ganglia.GangliaHostPropertyProvider;
 import org.apache.ambari.server.controller.metrics.ganglia.GangliaPropertyProvider;
-import org.apache.ambari.server.controller.metrics.ganglia.GangliaReportPropertyProvider;
 import org.apache.ambari.server.controller.metrics.timeline.AMSComponentPropertyProvider;
 import org.apache.ambari.server.controller.metrics.timeline.AMSHostComponentPropertyProvider;
 import org.apache.ambari.server.controller.metrics.timeline.AMSHostPropertyProvider;
 import org.apache.ambari.server.controller.metrics.timeline.AMSPropertyProvider;
-import org.apache.ambari.server.controller.metrics.timeline.AMSReportPropertyProvider;
 import org.apache.ambari.server.controller.spi.Predicate;
 import org.apache.ambari.server.controller.spi.Request;
 import org.apache.ambari.server.controller.spi.Resource;
@@ -38,6 +36,7 @@ import org.apache.ambari.server.controller.utilities.StreamProvider;
 import java.util.Map;
 import java.util.Set;
 
+import static org.apache.ambari.server.controller.metrics.MetricsPaddingMethod.ZERO_PADDING_PARAM;
 import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService;
 import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService.GANGLIA;
 import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService.TIMELINE_METRICS;
@@ -81,6 +80,21 @@ public class MetricsPropertyProviderProxy extends AbstractPropertyProvider {
 
       default:
         break;
+    }
+  }
+
+  /**
+   * Allow delegates to support special properties not stack defined.
+   */
+  @Override
+  public Set<String> checkPropertyIds(Set<String> propertyIds) {
+    MetricsService metricsService = metricsServiceProvider.getMetricsServiceType();
+    Set<String> checkedPropertyIds = super.checkPropertyIds(propertyIds);
+
+    if (metricsService != null && metricsService.equals(TIMELINE_METRICS)) {
+      return amsPropertyProvider.checkPropertyIds(checkedPropertyIds);
+    } else {
+      return checkedPropertyIds;
     }
   }
 

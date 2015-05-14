@@ -480,10 +480,17 @@ h1 {
   }
 }
 
+.btn-small {
+  text-decoration: none !important;
+}
+
 .hide {
   visibility: hidden;
 }
-
+// some where in the vendor.css "display: none;" is added to ".hide"
+.not-show {
+  visibility: hidden;
+}
 .show {
   visibility: visible;
 }
@@ -623,6 +630,11 @@ h1 {
     background-color: #fff;
 
   }
+
+  .mbm {
+    margin-top: 0;
+  }
+
   .nav-header {
     font-size: 13px;
     padding-left: 0;
@@ -1018,6 +1030,12 @@ h1 {
   height: 36px;
   background: url("/img/spinner.gif");
   margin: 0 auto;
+
+  &.service-button-spinner {
+    width: 30px;
+    height: 30px;
+    background-size: cover;
+  }
 }
 
 .services-host-menu {
@@ -1043,6 +1061,9 @@ h1 {
   .alert{
     .icon-refresh{
       margin-left:10px;
+    }
+    .icon-warning-sign {
+      color: @health-status-yellow;
     }
   }
   .collapsable {
@@ -1170,7 +1191,7 @@ h1 {
       list-style-type: none;
     }
   }
-  .common-config-category {
+  .common-config-category, .enhanced-config-tab-content  {
     .action {
       cursor: pointer;
     }
@@ -1206,7 +1227,21 @@ h1 {
       box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.05);
       cursor: not-allowed;
     }
+    a.accordion-toggle:hover {
+      text-decoration: none;
+      .category-name {
+        text-decoration: underline;
+      }
+    }
   }
+
+  .enhanced-config-tab-content
+  {
+    .action-button {
+      margin-left: 3px;
+    }
+  }
+
   .capacity-scheduler {
     .header {
       margin-bottom: 10px;
@@ -1291,6 +1326,17 @@ h1 {
       }
     }
   }
+
+  .config-tabs {
+    margin-bottom: @space-m * 2;
+  }
+
+  .serviceConfigs {
+    .config-tabs {
+      margin-top: -55px;
+    }
+  }
+
 }
 
 .running-host-components-table{
@@ -1435,6 +1481,9 @@ a:focus {
 }
 
 /*****start styles for host component popup*****/
+#modal {
+  outline: none;
+}
 .host-progress-popup {
   .modal-body, .modal-footer, .modal-header {
     min-width: 600px;
@@ -1871,7 +1920,7 @@ a:focus {
   }
 }
 
-.services, #summary-info {
+.services, .summary-info {
   .tab-marker-position {
     background-position:  0px 3px;
     background-repeat: no-repeat;
@@ -1916,7 +1965,7 @@ a:focus {
   }
 }
 
-#summary-info {
+.summary-info {
   border-top: none;
   border-collapse: collapse;
   color: #666;
@@ -2310,9 +2359,15 @@ a:focus {
     }
   }
 }
+.host-rack-id-popup {
+  .control-label {
+    width: 100px;
+    margin-right: 10px;
+  }
+}
 
 .service-content {
-  #summary-info {
+  .summary-info {
     margin-bottom: 0;
   }
 }
@@ -2861,17 +2916,12 @@ table.graphs {
         padding-left: 4px;
       }
     }
-	thead {
+	  thead {
       background: none repeat scroll 0 0 #F8F8F8;
     }
-  }
 
-  .hosts-overlay {
-    position: absolute;
-    opacity: 0.9;
-    background-color: #fefefe;
-    .spinner {
-      display: none;
+    .set-rack-id {
+      text-decoration: none;
     }
   }
 
@@ -2980,6 +3030,10 @@ table.graphs {
   }
   .filter-input-width{
     width:65%;
+
+    &.rack-input {
+      width: 85%;
+    }
   }
   .table {
     input[type="checkbox"] {
@@ -3027,35 +3081,41 @@ table.graphs {
     .col6,
     td:first-child + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th {
-      width: 10%!important;
+      width: 15%!important;
     }
     .col7,
     td:first-child + td + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th + th{
-      width: 8%!important;
+      width: 5%!important;
     }
 
     .col8,
     td:first-child + td + td + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th + th + th{
-      width: 9%!important;
+      width: 7%!important;
     }
 
     .col9,
     td:first-child + td + td + td + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th + th + th + th{
-      width: 9%!important;
+      width: 11%!important;
     }
 
     .col10,
     td:first-child + td + td + td + td + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th + th + th + th + th{
-      width: 16%!important;
+      width: 10%!important;
     }
 
     .col11,
     td:first-child + td + td + td + td + td + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th + th + th + th + th +th{
+      width: 13%!important;
+    }
+
+    .col12,
+    td:first-child + td + td + td + td + td + td + td + td + td + td + td + td,
+    th:first-child + th + th + th + th + th + th + th + th + th + th + th +th{
       width: 13%!important;
     }
 
@@ -3673,7 +3733,7 @@ table.graphs {
   }
 
   .form-horizontal .control-group select {
-    width: 75%;
+    width: 85%;
     min-width: 100px;
     max-width: 250px;
   }
@@ -3707,6 +3767,13 @@ table.graphs {
     color: #B94A48;
     font-weight: bold;
     vertical-align: middle;
+  }
+
+  .additional-hosts-list {
+    margin-bottom: 15px;
+    .host-cell {
+      line-height: 30px;
+    }
   }
 }
 
@@ -3917,6 +3984,14 @@ ul.filter {
 .heatmap {
   #heatmap-metric-title {
     margin-left: 23px;
+  }
+
+  #select-metric-btn-group {
+    margin-top:5px;
+  }
+
+  li.heatmap-metrics-dropdown-links{
+    cursor: pointer;
   }
   .rack.rack-5-2 {
     .hosts {
@@ -4205,6 +4280,14 @@ ul.inline li {
   }
   th, td {
     border-left-width: 0;
+  }
+
+  td {
+    &.rack-id {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
   .sorting_asc {
     background: url(data:image/png;base64,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) no-repeat right 50%;
@@ -5213,7 +5296,7 @@ i.icon-asterisks {
   }
 }
 
-input[type="checkbox"].align-checkbox {
+input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
   margin: -2px 5px 0 0;
 }
 
@@ -5292,6 +5375,10 @@ input[type="checkbox"].align-checkbox {
 }
 
 .mbm { margin-bottom: @space-m; }
+
+.mls {
+  margin-left: @space-s;
+}
 
 .mll {
   margin-left: @space-l;
@@ -5502,12 +5589,6 @@ input[type="checkbox"].align-checkbox {
   }
 }
 
-#rm-ha-wizard {
-  .rm-host-select {
-    width: 95%;
-  }
-}
-
 .table td.no-borders { border-top: none; }
 .table td.error { background-color: #f2dede; }
 .table td.warning { background-color: #fcf8e3; }
@@ -5533,6 +5614,18 @@ input[type="checkbox"].align-checkbox {
   }
 }
 
+#config-dependencies {
+  max-height: 500px;
+  overflow-y: auto;
+  td {
+    min-width: 120px;
+  }
+  td.check-box-col {
+    min-width: 5px;
+    width: 5px;
+  }
+}
+
 .path-link {
   white-space: nowrap;
   cursor: pointer;
@@ -5540,4 +5633,97 @@ input[type="checkbox"].align-checkbox {
 
 .bottom-border {
   border-bottom: 1px solid #dddddd;
+}
+
+.progress-counter {
+  position: relative;
+  .counters-label {
+    font-weight: bold;
+    left: 45%;
+    position: absolute;
+  }
+}
+
+.tab-content.service-config-tab-content {
+  overflow: visible;
+  .enhanced-config-tab-content {
+    overflow: visible;
+    .section-layout-container {
+      width: 104%; // fallback option
+      width: ~"calc(100% + 40px)";
+      margin-top: -20px;
+      .config-section-table {
+        width: 100%;
+        border-spacing: 20px;
+        border-collapse: separate;
+        table-layout: fixed; // for width to be equally distributed
+        margin: 0 -20px;
+        .config-section {
+          overflow: visible;
+          height: 100%;
+          padding: 18px;
+          border: 1px solid #aaa;
+          vertical-align: top;
+          h4 {
+            margin: 0px;
+            font-size: 22px;
+            font-weight: 400;
+          }
+          h5 {
+            font-size: 18px;
+            font-weight: 400;
+          }
+          .vertical-splitter-r {
+            border-right: 2px solid #ccc; // vertical splitter
+            padding-right: 20px;
+            padding-left: 0px;
+          }
+
+          .vertical-splitter-l {
+            border-left: 2px solid #ccc; // vertical splitter
+            margin-left: -2px;
+            padding-left: 20px;
+            padding-right: 0px;
+          }
+          div.with-border {
+            border: 1px solid #aaa;
+            padding: 10px;
+            margin-bottom: 20px;
+          }
+          .config-subsection-table {
+            width: 100%;
+            height: 90%; // fallback option
+            height: ~"calc(100% - 30px)";
+            border-collapse: separate;
+            table-layout: fixed;
+            .config-subsection {
+              padding: 0px;
+              vertical-align: top;
+              &.no-horizontal-splitter {
+                border-bottom: none; // no horizontal splitter for subsection on the last row
+              }
+              &.top-horizontal-splitter {
+                border-top: 2px solid #ccc; // horizontal splitter
+                padding-top: 15px;
+                padding-bottom: 15px;
+              }
+              .directories {
+                min-width: 0px !important;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+.config-widget-left-popover {
+  margin-left: -10px;
+}
+
+.version-labels, .version-info-bar, .version-box {
+  .label, .badge {
+    font-weight: normal;
+  }
 }

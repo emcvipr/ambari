@@ -17,10 +17,12 @@ limitations under the License.
 
 """
 
-from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
-from resource_management import *
 import collections
 import json
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from ambari_commons.os_check import OSCheck
+from resource_management import *
 
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
@@ -30,6 +32,7 @@ jce_policy_zip = default("/hostLevelParams/jce_name", None) # None when jdk is a
 jce_location = config['hostLevelParams']['jdk_location']
 jdk_name = default("/hostLevelParams/jdk_name", None)
 java_home = config['hostLevelParams']['java_home']
+java_version = int(config['hostLevelParams']['java_version'])
 
 ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 
@@ -67,11 +70,24 @@ def is_secure_port(port):
   else:
     return False
 
-#hadoop params
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
+# hadoop default params
+mapreduce_libs_path = "/usr/lib/hadoop-mapreduce/*"
+hadoop_home = "/usr/lib/hadoop"
+hadoop_secure_dn_user = hdfs_user
+hadoop_dir = "/etc/hadoop"
+versioned_hdp_root = '/usr/hdp/current'
+hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
+hadoop_libexec_dir = conf_select.get_hadoop_dir("libexec")
+hadoop_conf_empty_dir = "/etc/hadoop/conf.empty"
+
+# HDP 2.2+ params
+if Script.is_hdp_stack_greater_or_equal("2.2"):
   mapreduce_libs_path = "/usr/hdp/current/hadoop-mapreduce-client/*"
-  hadoop_libexec_dir = "/usr/hdp/current/hadoop-client/libexec"
   hadoop_home = "/usr/hdp/current/hadoop-client"
+
+  # not supported in HDP 2.2+
+  hadoop_conf_empty_dir = None
+
   if not security_enabled:
     hadoop_secure_dn_user = '""'
   else:
@@ -89,23 +105,13 @@ if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
       hadoop_secure_dn_user = hdfs_user
     else:
       hadoop_secure_dn_user = '""'
-else:
-  mapreduce_libs_path = "/usr/lib/hadoop-mapreduce/*"
-  hadoop_libexec_dir = "/usr/lib/hadoop/libexec"
-  hadoop_home = "/usr/lib/hadoop"
-  hadoop_secure_dn_user = hdfs_user
-
-hadoop_dir = "/etc/hadoop"
-hadoop_conf_dir = "/etc/hadoop/conf"
-hadoop_conf_empty_dir = "/etc/hadoop/conf.empty"
-versioned_hdp_root = '/usr/hdp/current'
 
 #hadoop params
 hdfs_log_dir_prefix = config['configurations']['hadoop-env']['hdfs_log_dir_prefix']
 hadoop_pid_dir_prefix = config['configurations']['hadoop-env']['hadoop_pid_dir_prefix']
 hadoop_root_logger = config['configurations']['hadoop-env']['hadoop_root_logger']
 
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.0') >= 0 and compare_versions(hdp_stack_version, '2.1') < 0 and System.get_instance().os_family != "suse":
+if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.0') >= 0 and compare_versions(hdp_stack_version, '2.1') < 0 and not OSCheck.is_suse_family():
   # deprecated rhel jsvc_path
   jsvc_path = "/usr/libexec/bigtop-utils"
 else:
@@ -124,6 +130,7 @@ jtnode_heapsize =  "1024m"
 ttnode_heapsize = "1024m"
 
 dtnode_heapsize = config['configurations']['hadoop-env']['dtnode_heapsize']
+nfsgateway_heapsize = config['configurations']['hadoop-env']['nfsgateway_heapsize']
 mapred_pid_dir_prefix = default("/configurations/mapred-env/mapred_pid_dir_prefix","/var/run/hadoop-mapreduce")
 mapred_log_dir_prefix = default("/configurations/mapred-env/mapred_log_dir_prefix","/var/log/hadoop-mapreduce")
 hadoop_env_sh_template = config['configurations']['hadoop-env']['content']
@@ -177,3 +184,6 @@ user_to_gid_dict = collections.defaultdict(lambda:user_group)
 
 user_list = json.loads(config['hostLevelParams']['user_list'])
 group_list = json.loads(config['hostLevelParams']['group_list'])
+host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
+
+tez_am_view_acls = config['configurations']['tez-site']["tez.am.view-acls"]

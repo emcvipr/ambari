@@ -31,7 +31,8 @@ App.componentsStateMapper = App.QuickDataMapper.create({
     service_name: 'ServiceComponentInfo.service_name',
     installed_count: 'ServiceComponentInfo.installed_count',
     started_count: 'ServiceComponentInfo.started_count',
-    total_count: 'ServiceComponentInfo.total_count'
+    total_count: 'ServiceComponentInfo.total_count',
+    host_names: 'host_names'
   },
 
   slaveModel: App.SlaveComponent,
@@ -47,6 +48,11 @@ App.componentsStateMapper = App.QuickDataMapper.create({
       data_nodes_installed: 'INSTALLED_PATH',
       data_nodes_total: 'TOTAL_PATH'
     },
+    'NFS_GATEWAY': {
+      nfs_gateways_started: 'STARTED_PATH',
+      nfs_gateways_installed: 'INSTALLED_PATH',
+      nfs_gateways_total: 'TOTAL_PATH'
+    },
     'NODEMANAGER': {
       node_managers_started: 'STARTED_PATH',
       node_managers_installed: 'INSTALLED_PATH',
@@ -56,6 +62,11 @@ App.componentsStateMapper = App.QuickDataMapper.create({
       region_servers_started: 'STARTED_PATH',
       region_servers_installed: 'INSTALLED_PATH',
       region_servers_total: 'TOTAL_PATH'
+    },
+    'PHOENIX_QUERY_SERVER': {
+      phoenix_servers_started: 'STARTED_PATH',
+      phoenix_servers_installed: 'INSTALLED_PATH',
+      phoenix_servers_total: 'TOTAL_PATH'
     },
     'GANGLIA_MONITOR': {
       ganglia_monitors_started: 'STARTED_PATH',
@@ -145,10 +156,12 @@ App.componentsStateMapper = App.QuickDataMapper.create({
         var cacheService = App.cache['services'].findProperty('ServiceInfo.service_name', item.ServiceComponentInfo.service_name);
 
         if (item.ServiceComponentInfo.category === 'CLIENT') {
+          item.host_names = item.host_components.mapProperty('HostRoles.host_name');
           clients.push(this.parseIt(item, this.clientMap));
         }
         if (item.ServiceComponentInfo.category === 'SLAVE') {
           // for now map for slaves and clients are equal but it may vary in future.
+          item.host_names = item.host_components.mapProperty('HostRoles.host_name');
           slaves.push(this.parseIt(item, this.clientMap));
         }
 

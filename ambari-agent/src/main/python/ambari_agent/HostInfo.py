@@ -32,7 +32,6 @@ from ambari_commons import OSCheck, OSConst
 from ambari_commons.firewall import Firewall
 from ambari_commons.os_family_impl import OsFamilyImpl
 
-from resource_management.libraries.functions import packages_analyzer
 from ambari_agent.Hardware import Hardware
 from ambari_agent.HostCheckReportFileHandler import HostCheckReportFileHandler
 
@@ -72,10 +71,7 @@ class HostInfo(object):
     osType = OSCheck.get_os_family()
     for service in services:
       svcCheckResult = {}
-      if isinstance(service, dict):
-        serviceName = service[osType]
-      else:
-        serviceName = service
+      serviceName = service
       svcCheckResult['name'] = serviceName
       svcCheckResult['status'] = "UNKNOWN"
       svcCheckResult['desc'] = ""
@@ -101,6 +97,12 @@ class HostInfo(object):
     else:
       return self.current_umask
 
+  def checkFirewall(self):
+    return Firewall().getFirewallObject().check_firewall()
+
+  def getFirewallName(self):
+    return Firewall().getFirewallObject().get_firewall_name()
+
   def checkReverseLookup(self):
     """
     Check if host fqdn resolves to current host ip
@@ -114,6 +116,12 @@ class HostInfo(object):
     except socket.error:
       pass
     return False
+
+def get_ntp_service():
+  if OSCheck.is_redhat_family():
+    return "ntpd"
+  elif OSCheck.is_suse_family() or OSCheck.is_ubuntu_family():
+    return "ntp"
 
 
 @OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
@@ -129,11 +137,11 @@ class HostInfoLinux(HostInfo):
     "ganglia-web"
   ]
 
+
   # List of live services checked for on the host, takes a map of plan strings
   DEFAULT_LIVE_SERVICES = [
-    {OSConst.REDHAT_FAMILY: "ntpd", OSConst.SUSE_FAMILY: "ntp", OSConst.UBUNTU_FAMILY: "ntp"}
+    get_ntp_service()
   ]
-
   # Set of default users (need to be replaced with the configured user names)
   DEFAULT_USERS = [
     "hive", "ambari-qa", "oozie", "hbase", "hcat", "mapred",
@@ -229,9 +237,6 @@ class HostInfoLinux(HostInfo):
     else:
       return ""
 
-  def checkIptables(self):
-    return Firewall().getFirewallObject().check_iptables()
-
   def hadoopVarRunCount(self):
     if not os.path.exists('/var/run/hadoop'):
       return 0
@@ -277,7 +282,8 @@ class HostInfoLinux(HostInfo):
     dict['umask'] = str(self.getUMask())
 
     dict['transparentHugePage'] = self.getTransparentHugePage()
-    dict['iptablesIsRunning'] = self.checkIptables()
+    dict['firewallRunning'] = self.checkFirewall()
+    dict['firewallName'] = self.getFirewallName()
     dict['reverseLookup'] = self.checkReverseLookup()
     # If commands are in progress or components are already mapped to this host
     # Then do not perform certain expensive host checks
@@ -319,38 +325,26 @@ class HostInfoLinux(HostInfo):
 @OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
 class HostInfoWindows(HostInfo):
   SERVICE_STATUS_CMD = 'If ((Get-Service | Where-Object {{$_.Name -eq \'{0}\'}}).Status -eq \'Running\') {{echo "Running"; $host.SetShouldExit(0)}} Else {{echo "Stopped"; $host.SetShouldExit(1)}}'
-  GET_USERS_CMD = '$accounts=(Get-WmiObject -Class Win32_UserAccount -Namespace "root\cimv2" -Filter "LocalAccount=\'$True\'" -ComputerName "LocalHost" -ErrorAction Stop); foreach ($acc in $accounts) {echo $acc.Name}'
-  GET_JAVA_PROC_CMD = 'foreach ($process in (gwmi Win32_Process -Filter "name = \'java.exe\'")){echo $process.ProcessId;echo $process.CommandLine; echo $process.GetOwner().User}'
+  GET_USERS_CMD = '$accounts=(Get-WmiObject -Class Win32_UserAccount -Namespace "root\cimv2" -Filter "name = \'{0}\' and Disabled=\'False\'" -ErrorAction Stop); foreach ($acc in $accounts) {{Write-Host ($acc.Domain + "\\" + $acc.Name)}}'
+  GET_JAVA_PROC_CMD = 'foreach ($process in (gwmi Win32_Process -Filter "name = \'java.exe\'")){{echo $process.ProcessId;echo $process.CommandLine; echo $process.GetOwner().User}}'
   DEFAULT_LIVE_SERVICES = [
-    {OSConst.WINSRV_FAMILY: "W32Time"}
+    "W32Time"
   ]
-  DEFAULT_USERS = ["hadoop"]
+  DEFAULT_USERS = "hadoop"
 
-  def checkUsers(self, users, results):
-    get_users_cmd = ["powershell", '-noProfile', '-NonInteractive', '-nologo', "-Command", self.GET_USERS_CMD]
+  def checkUsers(self, user_mask, results):
+    get_users_cmd = ["powershell", '-noProfile', '-NonInteractive', '-nologo', "-Command", self.GET_USERS_CMD.format(user_mask)]
     try:
       osStat = subprocess.Popen(get_users_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
       out, err = osStat.communicate()
     except:
       raise Exception("Failed to get users.")
     for user in out.split(os.linesep):
-      if user in users:
-        result = {}
-        result['name'] = user
-        result['status'] = "Available"
-        results.append(result)
-
-  def checkIptables(self):
-    from ambari_commons.os_windows import run_powershell_script, CHECK_FIREWALL_SCRIPT
-
-    out = run_powershell_script(CHECK_FIREWALL_SCRIPT)
-    if out[0] != 0:
-      logger.warn("Unable to check firewall status:{0}".format(out[2]))
-      return False
-    profiles_status = [i for i in out[1].split("\n") if not i == ""]
-    if "1" in profiles_status:
-      return True
-    return False
+      result = {}
+      result['name'] = user
+      result['homeDir'] = ""
+      result['status'] = "Available"
+      results.append(result)
 
   def createAlerts(self, alerts):
     # TODO AMBARI-7849 Implement createAlerts for Windows
@@ -404,7 +398,8 @@ class HostInfoWindows(HostInfo):
 
     dict['umask'] = str(self.getUMask())
 
-    dict['iptablesIsRunning'] = self.checkIptables()
+    dict['firewallRunning'] = self.checkFirewall()
+    dict['firewallName'] = self.getFirewallName()
     dict['reverseLookup'] = self.checkReverseLookup()
     # If commands are in progress or components are already mapped to this host
     # Then do not perform certain expensive host checks

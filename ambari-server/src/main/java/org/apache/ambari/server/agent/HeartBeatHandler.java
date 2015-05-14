@@ -31,7 +31,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
-import com.google.common.reflect.TypeToken;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.HostNotFoundException;
 import org.apache.ambari.server.Role;
@@ -51,10 +50,13 @@ import org.apache.ambari.server.events.AlertReceivedEvent;
 import org.apache.ambari.server.events.HostComponentVersionEvent;
 import org.apache.ambari.server.events.publishers.AlertEventPublisher;
 import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
+import org.apache.ambari.server.events.publishers.VersionEventPublisher;
 import org.apache.ambari.server.metadata.ActionMetadata;
+import org.apache.ambari.server.orm.dao.HostDAO;
 import org.apache.ambari.server.orm.dao.KerberosPrincipalHostDAO;
-import org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile;
-import org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFileReader;
+import org.apache.ambari.server.orm.entities.HostEntity;
+import org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileReader;
+import org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileReaderFactory;
 import org.apache.ambari.server.serveraction.kerberos.KerberosServerAction;
 import org.apache.ambari.server.state.AgentVersion;
 import org.apache.ambari.server.state.Alert;
@@ -142,6 +144,9 @@ public class HeartBeatHandler {
   private ConfigHelper configHelper;
 
   @Inject
+  private HostDAO hostDAO;
+
+  @Inject
   private AlertDefinitionHash alertDefinitionHash;
 
   /**
@@ -153,11 +158,21 @@ public class HeartBeatHandler {
   @Inject
   private AmbariEventPublisher ambariEventPublisher;
 
+  @Inject
+  private VersionEventPublisher versionEventPublisher;
+
+
   /**
    * KerberosPrincipalHostDAO used to set and get Kerberos principal details
    */
   @Inject
   private KerberosPrincipalHostDAO kerberosPrincipalHostDAO;
+
+  /**
+   * KerberosIdentityDataFileReaderFactory used to create KerberosIdentityDataFileReader instances
+   */
+  @Inject
+  private KerberosIdentityDataFileReaderFactory kerberosIdentityDataFileReaderFactory;
 
   private Map<String, Long> hostResponseIds = new ConcurrentHashMap<String, Long>();
 
@@ -236,6 +251,11 @@ public class HeartBeatHandler {
       }
     }
 
+    if (heartbeat.getRecoveryReport() != null) {
+      RecoveryReport rr = heartbeat.getRecoveryReport();
+      processRecoveryReport(rr, hostname);
+    }
+
     try {
       if (heartbeat.getNodeStatus().getStatus().equals(HostStatus.Status.HEALTHY)) {
         hostObject.handleEvent(new HostHealthyHeartbeatEvent(hostname, now,
@@ -245,7 +265,7 @@ public class HeartBeatHandler {
             null));
       }
     } catch (InvalidStateTransitionException ex) {
-      LOG.warn("Asking agent to reregister due to " + ex.getMessage(), ex);
+      LOG.warn("Asking agent to re-register due to " + ex.getMessage(), ex);
       hostObject.setState(HostState.INIT);
       return createRegisterCommand();
     }
@@ -253,7 +273,7 @@ public class HeartBeatHandler {
     // Examine heartbeat for command reports
     processCommandReports(heartbeat, hostname, clusterFsm, now);
 
-    // Examine heartbeart for component live status reports
+    // Examine heartbeat for component live status reports
     processStatusReports(heartbeat, hostname, clusterFsm);
 
     // Calculate host status
@@ -290,8 +310,8 @@ public class HeartBeatHandler {
 
     if (null != heartbeat.getAlerts()) {
       for (Alert alert : heartbeat.getAlerts()) {
-        if (null == alert.getHost()) {
-          alert.setHost(hostname);
+        if (null == alert.getHostName()) {
+          alert.setHostName(hostname);
         }
 
         try {
@@ -306,6 +326,12 @@ public class HeartBeatHandler {
         }
       }
     }
+  }
+
+  protected void processRecoveryReport(RecoveryReport recoveryReport, String hostname) throws AmbariException {
+    LOG.debug("Received recovery report: " + recoveryReport.toString());
+    Host host = clusterFsm.getHost(hostname);
+    host.setRecoveryReport(recoveryReport);
   }
 
   protected void processHostStatus(HeartBeat heartbeat, String hostname) throws AmbariException {
@@ -434,6 +460,11 @@ public class HeartBeatHandler {
       LOG.debug("Received command report: " + report);
       // Fetch HostRoleCommand that corresponds to a given task ID
       HostRoleCommand hostRoleCommand = hostRoleCommandIterator.next();
+      HostEntity hostEntity = hostDAO.findByName(hostname);
+      if (hostEntity == null) {
+        LOG.error("Received a command report and was unable to retrieve HostEntity for hostname = " + hostname);
+        continue;
+      }
 
       // Send event for final command reports for actions
       if (RoleCommand.valueOf(report.getRoleCommand()) == RoleCommand.ACTIONEXECUTE &&
@@ -476,11 +507,11 @@ public class HeartBeatHandler {
             if (keytabs != null) {
               for (Map.Entry<String, String> entry : keytabs.entrySet()) {
                 String principal = entry.getKey();
-                if (!kerberosPrincipalHostDAO.exists(principal, hostname)) {
+                if (!kerberosPrincipalHostDAO.exists(principal, hostEntity.getHostId())) {
                   if (adding) {
-                    kerberosPrincipalHostDAO.create(principal, hostname);
+                    kerberosPrincipalHostDAO.create(principal, hostEntity.getHostId());
                   } else if ("_REMOVED_".equalsIgnoreCase(entry.getValue())) {
-                    kerberosPrincipalHostDAO.remove(principal, hostname);
+                    kerberosPrincipalHostDAO.remove(principal, hostEntity.getHostId());
                   }
                 }
               }
@@ -523,14 +554,13 @@ public class HeartBeatHandler {
                 //Json structure for component version was incorrect
                 //do nothing, pass this data further for processing
               }
-              if (structuredOutput != null && StringUtils.isNotBlank(structuredOutput.getVersion())) {
-                handleComponentVersionReceived(scHost, structuredOutput.getVersion());
-              }
-              // Safer to recalculate the version even if we don't detect a difference in the value.
-              // This is useful in case that a manual database edit is done while ambari-server is stopped.
-              // TODO should be included into handleComponentVersionReceived() after RU becomes stable
-              HostComponentVersionEvent event = new HostComponentVersionEvent(cl, scHost);
-              ambariEventPublisher.publish(event);
+
+              String newVersion = structuredOutput == null ? null : structuredOutput.getVersion();
+
+              // Pass true to always publish a version event.  It is safer to recalculate the version even if we don't
+              // detect a difference in the value.  This is useful in case that a manual database edit is done while
+              // ambari-server is stopped.
+              handleComponentVersionReceived(cl, scHost, newVersion, true);
             }
 
             // Updating stack version, if needed
@@ -676,12 +706,9 @@ public class HeartBeatHandler {
                     scHost.setProcesses(list);
                   }
                   if (extra.containsKey("version")) {
-                    boolean versionWasUpdated = handleComponentVersionReceived(scHost, extra.get("version").toString());
-                    if (versionWasUpdated) {
-                      // TODO should be included into handleComponentVersionReceived() after RU becomes stable
-                      HostComponentVersionEvent event = new HostComponentVersionEvent(cl, scHost);
-                      ambariEventPublisher.publish(event);
-                    }
+                    String version = extra.get("version").toString();
+
+                    handleComponentVersionReceived(cl, scHost, version, false);
                   }
 
                 } catch (Exception e) {
@@ -691,6 +718,9 @@ public class HeartBeatHandler {
                       " (" + e.getMessage() + ")");
                 }
               }
+
+              this.heartbeatMonitor.getAgentRequests()
+                  .setExecutionDetailsRequest(hostname, componentName, status.getSendExecCmdDet());
             } else {
               // TODO: What should be done otherwise?
             }
@@ -734,27 +764,40 @@ public class HeartBeatHandler {
   }
 
   /**
-   * Updates version of service component and sets upgrade state if needed.
+   * Updates the version of the given service component, sets the upgrade state (if needed)
+   * and publishes a version event through the version event publisher.
    *
-   * @param scHost service component host
-   * @param newVersion new version of service component
-   *
-   * @return true if component version was updated to new one
+   * @param cluster        the cluster
+   * @param scHost         service component host
+   * @param newVersion     new version of service component
+   * @param alwaysPublish  if true, always publish a version event; if false,
+   *                       only publish if the component version was updated
    */
-  private boolean handleComponentVersionReceived(ServiceComponentHost scHost, String newVersion) {
-    final String previousVersion = scHost.getVersion();
-    if (!StringUtils.equals(previousVersion, newVersion)) {
-      scHost.setVersion(newVersion);
-      if (previousVersion != null && !previousVersion.equalsIgnoreCase(State.UNKNOWN.toString())) {
-        scHost.setUpgradeState(UpgradeState.COMPLETE);
+  private void handleComponentVersionReceived(Cluster cluster, ServiceComponentHost scHost,
+                                              String newVersion, boolean alwaysPublish) {
+
+    boolean updated = false;
+
+    if (StringUtils.isNotBlank(newVersion)) {
+      final String previousVersion = scHost.getVersion();
+      if (!StringUtils.equals(previousVersion, newVersion)) {
+        scHost.setVersion(newVersion);
+        scHost.setStackVersion(cluster.getDesiredStackVersion());
+        if (previousVersion != null && !previousVersion.equalsIgnoreCase(State.UNKNOWN.toString())) {
+          scHost.setUpgradeState(UpgradeState.COMPLETE);
+        }
+        updated = true;
       }
-      return true;
     }
-    return false;
+
+    if (updated || alwaysPublish) {
+      HostComponentVersionEvent event = new HostComponentVersionEvent(cluster, scHost);
+      versionEventPublisher.publish(event);
+    }
   }
 
   /**
-   * Adds commands from action queue to a heartbeat responce
+   * Adds commands from action queue to a heartbeat response.
    */
   protected void sendCommands(String hostname, HeartBeatResponse response)
       throws AmbariException {
@@ -924,6 +967,11 @@ public class HeartBeatHandler {
     List<AlertDefinitionCommand> alertDefinitionCommands = getRegistrationAlertDefinitionCommands(hostname);
     response.setAlertDefinitionCommands(alertDefinitionCommands);
 
+    response.setRecoveryConfig(RecoveryConfig.getRecoveryConfig(config));
+    if(response.getRecoveryConfig() != null) {
+      LOG.debug("Recovery configuration set to " + response.getRecoveryConfig().toString());
+    }
+
     Long requestId = 0L;
     hostResponseIds.put(hostname, requestId);
     response.setResponseId(requestId);
@@ -933,6 +981,7 @@ public class HeartBeatHandler {
   /**
    * Annotate the response with some housekeeping details.
    * hasMappedComponents - indicates if any components are mapped to the host
+   * hasPendingTasks - indicates if any tasks are pending for the host (they may not be sent yet)
    * @param hostname
    * @param response
    * @throws org.apache.ambari.server.AmbariException
@@ -944,6 +993,11 @@ public class HeartBeatHandler {
         response.setHasMappedComponents(true);
         break;
       }
+    }
+
+    if(actionQueue.hasPendingTask(hostname)) {
+      LOG.debug("Host " + hostname + " has pending tasks");
+      response.setHasPendingTasks(true);
     }
   }
 
@@ -1039,18 +1093,18 @@ public class HeartBeatHandler {
   void injectKeytab(ExecutionCommand ec, String command, String targetHost) throws AmbariException {
     List<Map<String, String>> kcp = ec.getKerberosCommandParams();
     String dataDir = ec.getCommandParams().get(KerberosServerAction.DATA_DIRECTORY);
-    KerberosActionDataFileReader reader = null;
+    KerberosIdentityDataFileReader reader = null;
 
     try {
-      reader = new KerberosActionDataFileReader(new File(dataDir, KerberosActionDataFile.DATA_FILE_NAME));
+      reader = kerberosIdentityDataFileReaderFactory.createKerberosIdentityDataFileReader(new File(dataDir, KerberosIdentityDataFileReader.DATA_FILE_NAME));
 
       for (Map<String, String> record : reader) {
-        String hostName = record.get(KerberosActionDataFile.HOSTNAME);
+        String hostName = record.get(KerberosIdentityDataFileReader.HOSTNAME);
 
         if (targetHost.equalsIgnoreCase(hostName)) {
 
           if ("SET_KEYTAB".equalsIgnoreCase(command)) {
-            String keytabFilePath = record.get(KerberosActionDataFile.KEYTAB_FILE_PATH);
+            String keytabFilePath = record.get(KerberosIdentityDataFileReader.KEYTAB_FILE_PATH);
 
             if (keytabFilePath != null) {
 
@@ -1059,20 +1113,18 @@ public class HeartBeatHandler {
 
               if (keytabFile.canRead()) {
                 Map<String, String> keytabMap = new HashMap<String, String>();
-                String principal = record.get(KerberosActionDataFile.PRINCIPAL);
-                String isService = record.get(KerberosActionDataFile.SERVICE);
+                String principal = record.get(KerberosIdentityDataFileReader.PRINCIPAL);
+                String isService = record.get(KerberosIdentityDataFileReader.SERVICE);
 
-                keytabMap.put(KerberosActionDataFile.HOSTNAME, hostName);
-                keytabMap.put(KerberosActionDataFile.SERVICE, isService);
-                keytabMap.put(KerberosActionDataFile.COMPONENT, record.get(KerberosActionDataFile.COMPONENT));
-                keytabMap.put(KerberosActionDataFile.PRINCIPAL, principal);
-                keytabMap.put(KerberosActionDataFile.PRINCIPAL_CONFIGURATION, record.get(KerberosActionDataFile.PRINCIPAL_CONFIGURATION));
-                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_PATH, keytabFilePath);
-                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_OWNER_NAME, record.get(KerberosActionDataFile.KEYTAB_FILE_OWNER_NAME));
-                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_OWNER_ACCESS, record.get(KerberosActionDataFile.KEYTAB_FILE_OWNER_ACCESS));
-                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_GROUP_NAME, record.get(KerberosActionDataFile.KEYTAB_FILE_GROUP_NAME));
-                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_GROUP_ACCESS, record.get(KerberosActionDataFile.KEYTAB_FILE_GROUP_ACCESS));
-                keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION, record.get(KerberosActionDataFile.KEYTAB_FILE_CONFIGURATION));
+                keytabMap.put(KerberosIdentityDataFileReader.HOSTNAME, hostName);
+                keytabMap.put(KerberosIdentityDataFileReader.SERVICE, isService);
+                keytabMap.put(KerberosIdentityDataFileReader.COMPONENT, record.get(KerberosIdentityDataFileReader.COMPONENT));
+                keytabMap.put(KerberosIdentityDataFileReader.PRINCIPAL, principal);
+                keytabMap.put(KerberosIdentityDataFileReader.KEYTAB_FILE_PATH, keytabFilePath);
+                keytabMap.put(KerberosIdentityDataFileReader.KEYTAB_FILE_OWNER_NAME, record.get(KerberosIdentityDataFileReader.KEYTAB_FILE_OWNER_NAME));
+                keytabMap.put(KerberosIdentityDataFileReader.KEYTAB_FILE_OWNER_ACCESS, record.get(KerberosIdentityDataFileReader.KEYTAB_FILE_OWNER_ACCESS));
+                keytabMap.put(KerberosIdentityDataFileReader.KEYTAB_FILE_GROUP_NAME, record.get(KerberosIdentityDataFileReader.KEYTAB_FILE_GROUP_NAME));
+                keytabMap.put(KerberosIdentityDataFileReader.KEYTAB_FILE_GROUP_ACCESS, record.get(KerberosIdentityDataFileReader.KEYTAB_FILE_GROUP_ACCESS));
 
                 BufferedInputStream bufferedIn = new BufferedInputStream(new FileInputStream(keytabFile));
                 byte[] keytabContent = IOUtils.toByteArray(bufferedIn);
@@ -1085,11 +1137,11 @@ public class HeartBeatHandler {
           } else if ("REMOVE_KEYTAB".equalsIgnoreCase(command)) {
             Map<String, String> keytabMap = new HashMap<String, String>();
 
-            keytabMap.put(KerberosActionDataFile.HOSTNAME, hostName);
-            keytabMap.put(KerberosActionDataFile.SERVICE, record.get(KerberosActionDataFile.SERVICE));
-            keytabMap.put(KerberosActionDataFile.COMPONENT, record.get(KerberosActionDataFile.COMPONENT));
-            keytabMap.put(KerberosActionDataFile.PRINCIPAL, record.get(KerberosActionDataFile.PRINCIPAL));
-            keytabMap.put(KerberosActionDataFile.KEYTAB_FILE_PATH, record.get(KerberosActionDataFile.KEYTAB_FILE_PATH));
+            keytabMap.put(KerberosIdentityDataFileReader.HOSTNAME, hostName);
+            keytabMap.put(KerberosIdentityDataFileReader.SERVICE, record.get(KerberosIdentityDataFileReader.SERVICE));
+            keytabMap.put(KerberosIdentityDataFileReader.COMPONENT, record.get(KerberosIdentityDataFileReader.COMPONENT));
+            keytabMap.put(KerberosIdentityDataFileReader.PRINCIPAL, record.get(KerberosIdentityDataFileReader.PRINCIPAL));
+            keytabMap.put(KerberosIdentityDataFileReader.KEYTAB_FILE_PATH, record.get(KerberosIdentityDataFileReader.KEYTAB_FILE_PATH));
 
             kcp.add(keytabMap);
           }

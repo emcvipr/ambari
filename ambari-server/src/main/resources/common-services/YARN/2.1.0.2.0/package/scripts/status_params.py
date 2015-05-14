@@ -19,25 +19,40 @@ limitations under the License.
 """
 
 from resource_management import *
+from resource_management.libraries.functions import conf_select
+from ambari_commons import OSCheck
 
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
-mapred_user = config['configurations']['mapred-env']['mapred_user']
-yarn_user = config['configurations']['yarn-env']['yarn_user']
-yarn_pid_dir_prefix = config['configurations']['yarn-env']['yarn_pid_dir_prefix']
-mapred_pid_dir_prefix = config['configurations']['mapred-env']['mapred_pid_dir_prefix']
-yarn_pid_dir = format("{yarn_pid_dir_prefix}/{yarn_user}")
-mapred_pid_dir = format("{mapred_pid_dir_prefix}/{mapred_user}")
+if OSCheck.is_windows_family():
+  resourcemanager_win_service_name = 'resourcemanager'
+  nodemanager_win_service_name = 'nodemanager'
+  historyserver_win_service_name = 'jobhistoryserver'
+  timelineserver_win_service_name = 'timelineserver'
 
-resourcemanager_pid_file = format("{yarn_pid_dir}/yarn-{yarn_user}-resourcemanager.pid")
-nodemanager_pid_file = format("{yarn_pid_dir}/yarn-{yarn_user}-nodemanager.pid")
-yarn_historyserver_pid_file_old = format("{yarn_pid_dir}/yarn-{yarn_user}-historyserver.pid")
-yarn_historyserver_pid_file = format("{yarn_pid_dir}/yarn-{yarn_user}-timelineserver.pid")  # *-historyserver.pid is deprecated
-mapred_historyserver_pid_file = format("{mapred_pid_dir}/mapred-{mapred_user}-historyserver.pid")
+  service_map = {
+    'resourcemanager' : resourcemanager_win_service_name,
+    'nodemanager' : nodemanager_win_service_name,
+    'historyserver' : historyserver_win_service_name,
+    'timelineserver' : timelineserver_win_service_name
+  }
+else:
+  mapred_user = config['configurations']['mapred-env']['mapred_user']
+  yarn_user = config['configurations']['yarn-env']['yarn_user']
+  yarn_pid_dir_prefix = config['configurations']['yarn-env']['yarn_pid_dir_prefix']
+  mapred_pid_dir_prefix = config['configurations']['mapred-env']['mapred_pid_dir_prefix']
+  yarn_pid_dir = format("{yarn_pid_dir_prefix}/{yarn_user}")
+  mapred_pid_dir = format("{mapred_pid_dir_prefix}/{mapred_user}")
 
-# Security related/required params
-hadoop_conf_dir = "/etc/hadoop/conf"
-hostname = config['hostname']
-kinit_path_local = functions.get_kinit_path()
-security_enabled = config['configurations']['cluster-env']['security_enabled']
+  resourcemanager_pid_file = format("{yarn_pid_dir}/yarn-{yarn_user}-resourcemanager.pid")
+  nodemanager_pid_file = format("{yarn_pid_dir}/yarn-{yarn_user}-nodemanager.pid")
+  yarn_historyserver_pid_file_old = format("{yarn_pid_dir}/yarn-{yarn_user}-historyserver.pid")
+  yarn_historyserver_pid_file = format("{yarn_pid_dir}/yarn-{yarn_user}-timelineserver.pid")  # *-historyserver.pid is deprecated
+  mapred_historyserver_pid_file = format("{mapred_pid_dir}/mapred-{mapred_user}-historyserver.pid")
+
+  hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
+
+  hostname = config['hostname']
+  kinit_path_local = functions.get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
+  security_enabled = config['configurations']['cluster-env']['security_enabled']

@@ -33,15 +33,16 @@ from ambari_commons.exceptions import NonFatalException, FatalException
 from ambari_commons.os_utils import copy_files, find_in_path, is_root, remove_file, run_os_command
 from ambari_server.dbConfiguration import DBMSConfig, USERNAME_PATTERN, SETUP_DB_CONNECT_ATTEMPTS, \
     SETUP_DB_CONNECT_TIMEOUT, STORAGE_TYPE_LOCAL, DEFAULT_USERNAME, DEFAULT_PASSWORD
-from ambari_server.serverConfiguration import get_ambari_properties, get_value_from_properties, configDefaults, \
-    OS_TYPE, OS_FAMILY, AMBARI_PROPERTIES_FILE, RESOURCES_DIR_PROPERTY, \
+from ambari_server.serverConfiguration import encrypt_password, store_password_file, \
+    get_ambari_properties, get_resources_location, get_value_from_properties, configDefaults, \
+    OS_FAMILY, AMBARI_PROPERTIES_FILE, RESOURCES_DIR_PROPERTY, \
     JDBC_DATABASE_PROPERTY, JDBC_DATABASE_NAME_PROPERTY, JDBC_POSTGRES_SCHEMA_PROPERTY, \
     JDBC_HOSTNAME_PROPERTY, JDBC_PORT_PROPERTY, \
     JDBC_USER_NAME_PROPERTY, JDBC_PASSWORD_PROPERTY, JDBC_PASSWORD_FILENAME, \
     JDBC_DRIVER_PROPERTY, JDBC_URL_PROPERTY, \
     JDBC_RCA_USER_NAME_PROPERTY, JDBC_RCA_PASSWORD_ALIAS, JDBC_RCA_PASSWORD_FILE_PROPERTY, \
     JDBC_RCA_DRIVER_PROPERTY, JDBC_RCA_URL_PROPERTY, \
-    PERSISTENCE_TYPE_PROPERTY, encrypt_password, store_password_file
+    PERSISTENCE_TYPE_PROPERTY
 from ambari_server.userInput import get_YN_input, get_validated_string_input, read_password
 from ambari_server.utils import get_postgre_hba_dir, get_postgre_running_status
 
@@ -104,7 +105,7 @@ class LinuxDBMSConfig(DBMSConfig):
       if not self._configure_database_name():
         return False
 
-      # Username is common for Oracle/MySQL/Postgres
+      # Username is common for Oracle/MySQL/MSSQL/Postgres
       self.database_username = get_validated_string_input(
           'Username (' + self.database_username + '): ',
           self.database_username,
@@ -153,11 +154,7 @@ class LinuxDBMSConfig(DBMSConfig):
   def _install_jdbc_driver(self, properties, files_list):
     if type(files_list) is not int:
       print 'Copying JDBC drivers to server resources...'
-      try:
-        resources_dir = properties[RESOURCES_DIR_PROPERTY]
-      except KeyError:
-        print_error_msg("There is no value for " + RESOURCES_DIR_PROPERTY + "in " + AMBARI_PROPERTIES_FILE)
-        return False
+      resources_dir = get_resources_location(properties)
 
       db_name = self.dbms_full_name.lower()
       symlink_name = db_name + "-jdbc-driver.jar"
@@ -350,7 +347,7 @@ class PGConfig(LinuxDBMSConfig):
     self._is_user_changed = False
 
     if self.persistence_type == STORAGE_TYPE_LOCAL:
-      PGConfig.PG_STATUS_RUNNING = get_postgre_running_status(OS_TYPE)
+      PGConfig.PG_STATUS_RUNNING = get_postgre_running_status()
       PGConfig.PG_HBA_DIR = get_postgre_hba_dir(OS_FAMILY)
 
       PGConfig.PG_HBA_CONF_FILE = os.path.join(PGConfig.PG_HBA_DIR, "pg_hba.conf")
@@ -540,7 +537,7 @@ class PGConfig(LinuxDBMSConfig):
       return pg_status, 0, out, err
     else:
       # run initdb only on non ubuntu systems as ubuntu does not have initdb cmd.
-      if OS_TYPE != OSConst.OS_UBUNTU:
+      if not OSCheck.is_ubuntu_family():
         print "Running initdb: This may take upto a minute."
         retcode, out, err = run_os_command(PGConfig.PG_INITDB_CMD)
         if retcode == 0:
@@ -552,7 +549,7 @@ class PGConfig(LinuxDBMSConfig):
                                    stdin=subprocess.PIPE,
                                    stderr=subprocess.PIPE
         )
-        if OS_TYPE == OSConst.OS_SUSE:
+        if OSCheck.is_suse_family():
           time.sleep(20)
           result = process.poll()
           print_info_msg("Result of postgres start cmd: " + str(result))
@@ -871,3 +868,51 @@ class MySQLConfig(LinuxDBMSConfig):
 
 def createMySQLConfig(options, properties, storage_type, dbId):
   return MySQLConfig(options, properties, storage_type)
+
+
+class MSSQLConfig(LinuxDBMSConfig):
+  def __init__(self, options, properties, storage_type):
+    super(MSSQLConfig, self).__init__(options, properties, storage_type)
+
+    #Init the database configuration data here, if any
+    self.dbms = "mssql"
+    self.dbms_full_name = "Microsoft SQL Server"
+    self.driver_class_name = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+    self.driver_file_name = "sqljdbc4.jar"
+    self.driver_symlink_name = "mssql-jdbc-driver.jar"
+
+    self.database_storage_name = "Database"
+    self.database_port = DBMSConfig._init_member_with_prop_default(options, "database_port",
+                                                                   properties, JDBC_PORT_PROPERTY, "1433")
+
+    self.database_url_pattern = "jdbc:sqlserver://{0}:{1};databaseName={2}"
+    self.database_url_pattern_alt = "jdbc:sqlserver://{0}:{1};databaseName={2}"
+
+    self.JDBC_DRIVER_INSTALL_MSG = 'Before starting Ambari Server, ' \
+                                   'you must copy the {0} JDBC driver JAR file to {1}.'.format(
+      self.dbms_full_name, configDefaults.JAVA_SHARE_PATH)
+
+    self.init_script_file = "/var/lib/ambari-server/resources/Ambari-DDL-SQLServer-CREATE.sql"
+    self.drop_tables_script_file = "/var/lib/ambari-server/resources/Ambari-DDL-SQLServer-DROP.sql"
+    self.client_tool_usage_pattern = ''
+
+  #
+  # Private implementation
+  #
+  def _reset_remote_database(self):
+    super(MSSQLConfig, self)._reset_remote_database()
+
+    raise NonFatalException("Please replace '*' symbols with password before running DDL`s!")
+
+  def _is_jdbc_driver_installed(self, properties):
+    return LinuxDBMSConfig._find_jdbc_driver("*sqljdbc*.jar")
+
+  def _configure_database_name(self):
+    self.database_name = LinuxDBMSConfig._get_validated_db_name(self.database_storage_name, self.database_name)
+    return True
+
+  def _get_remote_script_line(self, scriptFile):
+    return scriptFile
+
+def createMSSQLConfig(options, properties, storage_type, dbId):
+  return MSSQLConfig(options, properties, storage_type)

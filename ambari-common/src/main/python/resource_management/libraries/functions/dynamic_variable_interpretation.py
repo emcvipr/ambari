@@ -23,6 +23,7 @@ import os
 import glob
 import re
 import tempfile
+import uuid
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.resources.copy_from_local import CopyFromLocal
@@ -101,16 +102,34 @@ def _copy_files(source_and_dest_pairs, component_user, file_owner, group_owner, 
                              mode=0555
         )
 
+        # Because CopyFromLocal does not guarantee synchronization, it's possible for two processes to first attempt to
+        # copy the file to a temporary location, then process 2 fails because the temporary file was already created by
+        # process 1, so process 2 tries to clean up by deleting the temporary file, and then process 1
+        # cannot finish the copy to the final destination, and both fail!
+        # For this reason, the file name on the destination must be unique, and we then rename it to the intended value.
+        # The rename operation is synchronized by the Namenode.
+        orig_dest_file_name = os.path.split(destination)[1]
+        unique_string = str(uuid.uuid4())[:8]
+        new_dest_file_name = orig_dest_file_name + "." + unique_string
+        new_destination = os.path.join(destination_dir, new_dest_file_name)
         CopyFromLocal(source,
                       mode=0444,
                       owner=file_owner,
                       group=group_owner,
                       user=params.hdfs_user,               # this will be the user to run the commands as
                       dest_dir=destination_dir,
+                      dest_file=new_dest_file_name,
                       kinnit_if_needed=kinit_if_needed,
                       hdfs_user=params.hdfs_user,
                       hadoop_bin_dir=params.hadoop_bin_dir,
                       hadoop_conf_dir=params.hadoop_conf_dir
+        )
+
+        mv_command = format("fs -mv {new_destination} {destination}")
+        ExecuteHadoop(mv_command,
+                      user=params.hdfs_user,
+                      bin_dir=params.hadoop_bin_dir,
+                      conf_dir=params.hadoop_conf_dir
         )
       except Exception, e:
         Logger.error("Failed to copy file. Source: %s, Destination: %s. Error: %s" % (source, destination, e.message))
@@ -118,13 +137,14 @@ def _copy_files(source_and_dest_pairs, component_user, file_owner, group_owner, 
   return return_value
 
 
-def copy_tarballs_to_hdfs(tarball_prefix, hdp_select_component_name, component_user, file_owner, group_owner):
+def copy_tarballs_to_hdfs(tarball_prefix, hdp_select_component_name, component_user, file_owner, group_owner, ignore_sysprep=False):
   """
   :param tarball_prefix: Prefix of the tarball must be one of tez, hive, mr, pig
   :param hdp_select_component_name: Component name to get the status to determine the version
   :param component_user: User that will execute the Hadoop commands, usually smokeuser
   :param file_owner: Owner of the files copied to HDFS (typically hdfs user)
   :param group_owner: Group owner of the files copied to HDFS (typically hadoop group)
+  :param ignore_sysprep: Ignore sysprep directives
   :return: Returns 0 on success, 1 if no files were copied, and in some cases may raise an exception.
 
   In order to call this function, params.py must have all of the following,
@@ -132,6 +152,10 @@ def copy_tarballs_to_hdfs(tarball_prefix, hdp_select_component_name, component_u
   hadoop_bin_dir, hadoop_conf_dir, and HdfsDirectory as a partial function.
   """
   import params
+
+  if not ignore_sysprep and hasattr(params, "host_sys_prepped") and params.host_sys_prepped:
+    Logger.info("Host is sys-prepped. Tarball %s will not be copied for %s." % (tarball_prefix, hdp_select_component_name))
+    return 0
 
   if not hasattr(params, "hdp_stack_version") or params.hdp_stack_version is None:
     Logger.warning("Could not find hdp_stack_version")

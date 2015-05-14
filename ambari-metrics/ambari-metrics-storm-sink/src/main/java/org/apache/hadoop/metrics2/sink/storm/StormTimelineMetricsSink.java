@@ -30,32 +30,31 @@ import org.apache.hadoop.metrics2.sink.timeline.AbstractTimelineMetricsSink;
 import org.apache.hadoop.metrics2.sink.timeline.UnableToConnectException;
 import org.apache.hadoop.metrics2.sink.timeline.cache.TimelineMetricsCache;
 import org.apache.hadoop.metrics2.sink.timeline.configuration.Configuration;
-import org.apache.hadoop.metrics2.sink.util.Servers;
 
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
+import static org.apache.hadoop.metrics2.sink.timeline.cache.TimelineMetricsCache.*;
+
 public class StormTimelineMetricsSink extends AbstractTimelineMetricsSink implements IMetricsConsumer {
-  private SocketAddress socketAddress;
   private String collectorUri;
   private TimelineMetricsCache metricsCache;
   private String hostname;
-
-  @Override
-  protected SocketAddress getServerSocketAddress() {
-    return socketAddress;
-  }
+  private int timeoutSeconds;
 
   @Override
   protected String getCollectorUri() {
     return collectorUri;
+  }
+
+  @Override
+  protected int getTimeoutSeconds() {
+    return timeoutSeconds;
   }
 
   @Override
@@ -68,17 +67,14 @@ public class StormTimelineMetricsSink extends AbstractTimelineMetricsSink implem
       throw new RuntimeException("Could not identify hostname.", e);
     }
     Configuration configuration = new Configuration("/storm-metrics2.properties");
+    timeoutSeconds = Integer.parseInt(configuration.getProperty(METRICS_POST_TIMEOUT_SECONDS,
+        String.valueOf(DEFAULT_POST_TIMEOUT_SECONDS)));
     int maxRowCacheSize = Integer.parseInt(configuration.getProperty(MAX_METRIC_ROW_CACHE_SIZE,
-        String.valueOf(TimelineMetricsCache.MAX_RECS_PER_NAME_DEFAULT)));
+        String.valueOf(MAX_RECS_PER_NAME_DEFAULT)));
     int metricsSendInterval = Integer.parseInt(configuration.getProperty(METRICS_SEND_INTERVAL,
-        String.valueOf(TimelineMetricsCache.MAX_EVICTION_TIME_MILLIS)));
+        String.valueOf(MAX_EVICTION_TIME_MILLIS)));
     metricsCache = new TimelineMetricsCache(maxRowCacheSize, metricsSendInterval);
     collectorUri = "http://" + configuration.getProperty(COLLECTOR_HOST_PROPERTY) + ":" + configuration.getProperty(COLLECTOR_PORT_PROPERTY) + "/ws/v1/timeline/metrics";
-    List<InetSocketAddress> socketAddresses =
-        Servers.parse(configuration.getProperty(configuration.getProperty(COLLECTOR_HOST_PROPERTY)), Integer.valueOf(configuration.getProperty(COLLECTOR_PORT_PROPERTY)));
-    if (socketAddresses != null && !socketAddresses.isEmpty()) {
-      socketAddress = socketAddresses.get(0);
-    }
   }
 
   @Override
@@ -134,7 +130,4 @@ public class StormTimelineMetricsSink extends AbstractTimelineMetricsSink implem
     this.metricsCache = metricsCache;
   }
 
-  public void setServerSocketAddress(SocketAddress socketAddress) {
-    this.socketAddress = socketAddress;
-  }
 }

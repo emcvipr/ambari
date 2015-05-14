@@ -18,6 +18,8 @@ limitations under the License.
 """
 
 import socket
+import re
+
 
 class StackAdvisor(object):
   """
@@ -465,11 +467,69 @@ class DefaultStackAdvisor(StackAdvisor):
   def getComponentLayoutValidations(self, services, hosts):
     return []
 
-  def getConfigurationClusterSummary(self, servicesList, hosts, components):
+  def getConfigurationClusterSummary(self, servicesList, hosts, components, services):
     pass
 
   def getConfigurationsValidationItems(self, services, hosts):
     return []
+
+  def recommendConfigGroupsConfigurations(self, recommendations, services, components, hosts,
+                            servicesList):
+    recommendations["recommendations"]["config-groups"] = []
+    for configGroup in services["config-groups"]:
+
+      # Override configuration with the config group values
+      cgServices = services.copy()
+      for configName in configGroup["configurations"].keys():
+        if configName in cgServices["configurations"]:
+          cgServices["configurations"][configName]["properties"].update(
+            configGroup["configurations"][configName]['properties'])
+        else:
+          cgServices["configurations"][configName] = \
+          configGroup["configurations"][configName]
+
+      # Override hosts with the config group hosts
+      cgHosts = {"items": [host for host in hosts["items"] if
+                           host["Hosts"]["host_name"] in configGroup["hosts"]]}
+
+      # Override clusterSummary
+      cgClusterSummary = self.getConfigurationClusterSummary(servicesList,
+                                                             cgHosts,
+                                                             components,
+                                                             cgServices)
+
+      configurations = {}
+
+      for service in servicesList:
+        calculation = self.getServiceConfigurationRecommender(service)
+        if calculation is not None:
+          calculation(configurations, cgClusterSummary, cgServices, cgHosts)
+
+      cgRecommendation = {
+        "configurations": {},
+        "dependent_configurations": {},
+        "hosts": configGroup["hosts"]
+      }
+
+      recommendations["recommendations"]["config-groups"].append(
+        cgRecommendation)
+
+      # Parse results.
+      for config in configurations.keys():
+        cgRecommendation["configurations"][config] = {}
+        cgRecommendation["dependent_configurations"][config] = {}
+        # property + property_attributes
+        for configElement in configurations[config].keys():
+          cgRecommendation["configurations"][config][configElement] = {}
+          cgRecommendation["dependent_configurations"][config][
+            configElement] = {}
+          for property, value in configurations[config][configElement].items():
+            if config in configGroup["configurations"]:
+              cgRecommendation["configurations"][config][configElement][
+                property] = value
+            else:
+              cgRecommendation["dependent_configurations"][config][
+                configElement][property] = value
 
   def recommendConfigurations(self, services, hosts):
     stackName = services["Versions"]["stack_name"]
@@ -480,7 +540,7 @@ class DefaultStackAdvisor(StackAdvisor):
                   for service in services["services"]
                   for component in service["components"]]
 
-    clusterSummary = self.getConfigurationClusterSummary(servicesList, hosts, components)
+    clusterSummary = self.getConfigurationClusterSummary(servicesList, hosts, components, services)
 
     recommendations = {
       "Versions": {"stack_name": stackName, "stack_version": stackVersion},
@@ -497,12 +557,17 @@ class DefaultStackAdvisor(StackAdvisor):
       }
     }
 
-    configurations = recommendations["recommendations"]["blueprint"]["configurations"]
+    # If recommendation for config groups
+    if "config-groups" in services:
+      self.recommendConfigGroupsConfigurations(recommendations, services, components, hosts,
+                                 servicesList)
+    else:
+      configurations = recommendations["recommendations"]["blueprint"]["configurations"]
 
-    for service in servicesList:
-      calculation = self.getServiceConfigurationRecommender(service)
-      if calculation is not None:
-        calculation(configurations, clusterSummary, services, hosts)
+      for service in servicesList:
+        calculation = self.getServiceConfigurationRecommender(service)
+        if calculation is not None:
+          calculation(configurations, clusterSummary, services, hosts)
 
     return recommendations
 
@@ -614,3 +679,80 @@ class DefaultStackAdvisor(StackAdvisor):
           if component["StackServiceComponents"]["component_name"] == componentName:
             return component["StackServiceComponents"]["hostnames"]
   pass
+
+  def recommendConfigurationDependencies(self, services, hosts):
+    result = self.recommendConfigurations(services, hosts)
+    return self.filterResult(result, services)
+
+  # returns recommendations only for changed and depended properties
+  def filterResult(self, result, services):
+    allRequestedProperties = self.getAllRequestedProperties(services)
+    self.filterConfigs(result['recommendations']['blueprint']['configurations'], allRequestedProperties)
+    if "config-groups" in services:
+      for configGroup in result['recommendations']["config-groups"]:
+        self.filterConfigs(configGroup["configurations"], allRequestedProperties)
+        self.filterConfigs(configGroup["dependent_configurations"], allRequestedProperties)
+    return result
+
+  def filterConfigs(self, configs, requestedProperties):
+
+    filteredConfigs = {}
+    for type, names in configs.items():
+      for name in names['properties']:
+        if type in requestedProperties.keys() and \
+                name in requestedProperties[type]:
+          if type not in filteredConfigs.keys():
+            filteredConfigs[type] = {'properties': {}}
+          filteredConfigs[type]['properties'][name] = \
+            configs[type]['properties'][name]
+      if 'property_attributes' in names.keys():
+        for name in names['property_attributes']:
+          if type in requestedProperties.keys() and \
+                  name in requestedProperties[type]:
+            if type not in filteredConfigs.keys():
+              filteredConfigs[type] = {'property_attributes': {}}
+            elif 'property_attributes' not in filteredConfigs[type].keys():
+              filteredConfigs[type]['property_attributes'] = {}
+            filteredConfigs[type]['property_attributes'][name] = \
+              configs[type]['property_attributes'][name]
+    configs.clear()
+    configs.update(filteredConfigs)
+
+  def getAllRequestedProperties(self, services):
+    affectedConfigs = self.getAffectedConfigs(services)
+    allRequestedProperties = {}
+    for config in affectedConfigs:
+      if config['type'] in allRequestedProperties:
+        allRequestedProperties[config['type']].append(config['name'])
+      else:
+        allRequestedProperties[config['type']] = [config['name']]
+    return allRequestedProperties
+
+  def getAffectedConfigs(self, services):
+    """returns properties dict including changed-configurations and depended-by configs"""
+    changedConfigs = services['changed-configurations']
+    allDependencies = []
+
+    for item in services['services']:
+      allDependencies.extend(item['configurations'])
+
+    dependencies = []
+
+    size = -1
+    while size != len(dependencies):
+      size = len(dependencies)
+      for config in allDependencies:
+        property = {
+          "type": re.sub('\.xml$', '', config['StackConfigurations']['type']),
+          "name": config['StackConfigurations']['property_name']
+        }
+        if property in dependencies or property in changedConfigs:
+          for dependedConfig in config['dependencies']:
+            dependency = {
+              "name": dependedConfig["StackConfigurationDependency"]["dependency_name"],
+              "type": dependedConfig["StackConfigurationDependency"]["dependency_type"]
+            }
+            if dependency not in dependencies:
+              dependencies.append(dependency)
+
+    return  dependencies

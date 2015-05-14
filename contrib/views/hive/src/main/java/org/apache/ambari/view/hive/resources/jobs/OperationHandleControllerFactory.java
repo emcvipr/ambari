@@ -18,35 +18,26 @@
 
 package org.apache.ambari.view.hive.resources.jobs;
 
-import org.apache.ambari.view.ViewContext;
 import org.apache.ambari.view.hive.persistence.utils.ItemNotFound;
+import org.apache.ambari.view.hive.resources.jobs.viewJobs.Job;
+import org.apache.ambari.view.hive.utils.SharedObjectsFactory;
 import org.apache.hive.service.cli.thrift.TOperationHandle;
 
-import java.util.HashMap;
-import java.util.Map;
-
 public class OperationHandleControllerFactory {
-  private ViewContext context;
-  private OperationHandleResourceManager operationHandlesStorage;
+  private SharedObjectsFactory connectionsFabric;
+  private IOperationHandleResourceManager operationHandlesStorage;
 
-  private OperationHandleControllerFactory(ViewContext context) {
-    this.context = context;
-    operationHandlesStorage = new OperationHandleResourceManager(context);
+  public OperationHandleControllerFactory(SharedObjectsFactory connectionsFabric) {
+    this.connectionsFabric = connectionsFabric;
+    operationHandlesStorage = new OperationHandleResourceManager(connectionsFabric);
   }
 
-  private static Map<String, OperationHandleControllerFactory> viewSingletonObjects = new HashMap<String, OperationHandleControllerFactory>();
-  public static OperationHandleControllerFactory getInstance(ViewContext context) {
-    if (!viewSingletonObjects.containsKey(context.getInstanceName()))
-      viewSingletonObjects.put(context.getInstanceName(), new OperationHandleControllerFactory(context));
-    return viewSingletonObjects.get(context.getInstanceName());
-  }
-
-  public OperationHandleController createControllerForHandle(TOperationHandle storedOperationHandle) {
-    return new OperationHandleController(context, storedOperationHandle, operationHandlesStorage);
+  public OperationHandleController createControllerForHandle(StoredOperationHandle storedOperationHandle) {
+    return new OperationHandleController(connectionsFabric, storedOperationHandle, operationHandlesStorage);
   }
 
   public OperationHandleController getHandleForJob(Job job) throws ItemNotFound {
-    TOperationHandle handle = operationHandlesStorage.getHandleForJob(job);
+    StoredOperationHandle handle = operationHandlesStorage.getHandleForJob(job);
     return createControllerForHandle(handle);
   }
 }

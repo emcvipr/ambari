@@ -18,22 +18,34 @@
 
 import Ember from 'ember';
 import constants from 'hive/utils/constants';
+import utils from 'hive/utils/functions';
 
 export default Ember.ObjectController.extend({
-  needs: [ constants.namingConventions.loadedFiles ],
+  needs: [ constants.namingConventions.queryTabs,
+           constants.namingConventions.loadedFiles ],
 
+  queryTabs: Ember.computed.alias('controllers.' + constants.namingConventions.queryTabs),
   files: Ember.computed.alias('controllers.' + constants.namingConventions.loadedFiles),
 
   reloadJobLogs: function (job) {
     var self = this,
         defer = Ember.RSVP.defer(),
-        handleError = function (err) {
-          self.send('addAlert', constants.namingConventions.alerts.error, err.responseText);
+        handleError = function (error) {
+          job.set('isRunning', false);
+
+          if (typeof error === "string") {
+            self.notify.error(error);
+          } else {
+            self.notify.error(error.responseJSON.message, error.responseJSON.trace);
+          }
           defer.reject();
         };
 
     job.reload().then(function () {
-      self.get('files').reload(job.get('logFile')).then(function (file) {
+      if (utils.insensitiveCompare(job.get('status'), constants.statuses.error)) {
+        handleError(job.get('statusMessage'));
+      } else {
+        self.get('files').reload(job.get('logFile')).then(function (file) {
         var fileContent = file.get('fileContent');
 
         if (fileContent) {
@@ -41,9 +53,10 @@ export default Ember.ObjectController.extend({
         }
 
         defer.resolve();
-      },function (err) {
-        handleError(err);
-      });
+        },function (err) {
+          handleError(err);
+        });
+      }
     }, function (err) {
       handleError(err);
     });
@@ -57,28 +70,30 @@ export default Ember.ObjectController.extend({
 
       this.reloadJobLogs(job).then(function () {
         var stillRunning = self.isJobRunning(job);
+        var currentContentId = self.get('content.id');
+        var currentActiveTab = self.get('queryTabs.activeTab.name');
 
         //if the current model is the same with the one displayed, continue reloading job
-        if (stillRunning && job.get('id') === self.get('content.id')) {
+        if (stillRunning && job.get('id') === currentContentId) {
           self.listenForUpdates(job);
         } else if (!stillRunning) {
           job.set('isRunning', undefined);
 
-          if (job.get('id') === self.get('content.id')) {
+          if (job.get('id') === currentContentId &&
+              currentActiveTab === constants.namingConventions.index) {
             self.transitionToRoute(constants.namingConventions.subroutes.jobResults);
           }
         }
       });
-    }, 2000);
+    }, 10000);
   },
 
   isJobRunning: function (job) {
-    var status = job.get('status');
-
-    return status !== constants.statuses.finished &&
-           status !== constants.statuses.canceled &&
-           status !== constants.statuses.closed &&
-           status !== constants.statuses.error;
+    return utils.insensitiveCompare(job.get('status'),
+                                    constants.statuses.unknown,
+                                    constants.statuses.initialized,
+                                    constants.statuses.running,
+                                    constants.statuses.pending);
   },
 
   getLogs: function () {

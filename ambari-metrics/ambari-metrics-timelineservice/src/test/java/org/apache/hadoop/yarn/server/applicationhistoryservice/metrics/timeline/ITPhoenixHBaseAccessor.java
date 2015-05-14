@@ -20,10 +20,17 @@ package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.Function;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.MetricClusterAggregate;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.MetricHostAggregate;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.TimelineClusterMetric;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.TimelineMetricAggregator;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.TimelineMetricAggregatorFactory;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.Condition;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.DefaultCondition;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -33,14 +40,14 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-
 import static junit.framework.Assert.assertEquals;
 import static junit.framework.Assert.assertTrue;
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixTransactSQL.METRICS_AGGREGATE_MINUTE_TABLE_NAME;
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.MetricTestHelper.prepareSingleTimelineMetric;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.MetricTestHelper.createEmptyTimelineClusterMetric;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.MetricTestHelper.createEmptyTimelineMetric;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.MetricTestHelper.createMetricHostAggregate;
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.MetricTestHelper.createEmptyTimelineClusterMetric;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.MetricTestHelper.prepareSingleTimelineMetric;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_AGGREGATE_MINUTE_TABLE_NAME;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_CLUSTER_AGGREGATE_TABLE_NAME;
 
 
 public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
@@ -79,20 +86,20 @@ public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
     long ctime = startTime;
     long minute = 60 * 1000;
     hdb.insertMetricRecords(prepareSingleTimelineMetric(ctime, "local1",
-        "disk_free", 1));
+      "disk_free", 1));
     hdb.insertMetricRecords(prepareSingleTimelineMetric(ctime, "local2",
-        "disk_free", 2));
+      "disk_free", 2));
     ctime += minute;
     hdb.insertMetricRecords(prepareSingleTimelineMetric(ctime, "local1",
-        "disk_free", 2));
+      "disk_free", 2));
     hdb.insertMetricRecords(prepareSingleTimelineMetric(ctime, "local2",
-        "disk_free", 1));
+      "disk_free", 1));
 
     // WHEN
     long endTime = ctime + minute;
-    PhoenixTransactSQL.Condition condition = new PhoenixTransactSQL.DefaultCondition(
-        Collections.singletonList("disk_free"), "local1", null, null, startTime,
-        endTime, Precision.SECONDS, null, true);
+    Condition condition = new DefaultCondition(
+      Collections.singletonList("disk_free"), "local1", null, null, startTime,
+      endTime, Precision.SECONDS, null, true);
     TimelineMetrics timelineMetrics = hdb.getMetricRecords(condition,
       singletonValueFunctionMap("disk_free"));
 
@@ -108,8 +115,8 @@ public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
   @Test
   public void testGetMetricRecordsMinutes() throws IOException, SQLException {
     // GIVEN
-    TimelineMetricAggregator aggregatorMinute = TimelineMetricAggregatorFactory
-        .createTimelineMetricAggregatorMinute(hdb, new Configuration());
+    TimelineMetricAggregator aggregatorMinute =
+      TimelineMetricAggregatorFactory.createTimelineMetricAggregatorMinute(hdb, new Configuration());
 
     long startTime = System.currentTimeMillis();
     long ctime = startTime;
@@ -125,7 +132,7 @@ public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
     assertTrue(success);
 
     // WHEN
-    PhoenixTransactSQL.Condition condition = new PhoenixTransactSQL.DefaultCondition(
+    Condition condition = new DefaultCondition(
         Collections.singletonList("disk_free"), "local1", null, null, startTime,
         endTime, Precision.MINUTES, null, false);
     TimelineMetrics timelineMetrics = hdb.getMetricRecords(condition,
@@ -145,8 +152,8 @@ public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
   @Test
   public void testGetMetricRecordsHours() throws IOException, SQLException {
     // GIVEN
-    TimelineMetricAggregator aggregator = TimelineMetricAggregatorFactory
-        .createTimelineMetricAggregatorHourly(hdb, new Configuration());
+    TimelineMetricAggregator aggregator =
+      TimelineMetricAggregatorFactory.createTimelineMetricAggregatorHourly(hdb, new Configuration());
 
     MetricHostAggregate expectedAggregate =
         createMetricHostAggregate(2.0, 0.0, 20, 15.0);
@@ -176,7 +183,7 @@ public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
     assertTrue(success);
 
     // WHEN
-    PhoenixTransactSQL.Condition condition = new PhoenixTransactSQL.DefaultCondition(
+    Condition condition = new DefaultCondition(
         Collections.singletonList("disk_used"), "test_host", "test_app", null,
         startTime, endTime, Precision.HOURS, null, true);
     TimelineMetrics timelineMetrics = hdb.getMetricRecords(condition,
@@ -196,8 +203,8 @@ public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
   @Test
   public void testGetClusterMetricRecordsSeconds() throws Exception {
     // GIVEN
-    TimelineMetricClusterAggregator agg =
-        new TimelineMetricClusterAggregator(hdb, new Configuration());
+    TimelineMetricAggregator agg =
+      TimelineMetricAggregatorFactory.createTimelineClusterAggregatorMinute(hdb, new Configuration());
 
     long startTime = System.currentTimeMillis();
     long ctime = startTime + 1;
@@ -217,7 +224,7 @@ public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
     assertTrue(success);
 
     // WHEN
-    PhoenixTransactSQL.Condition condition = new PhoenixTransactSQL.DefaultCondition(
+    Condition condition = new DefaultCondition(
         Collections.singletonList("disk_free"), null, null, null,
         startTime, endTime, Precision.SECONDS, null, true);
     TimelineMetrics timelineMetrics = hdb.getAggregateMetricRecords(condition,
@@ -233,10 +240,50 @@ public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
   }
 
   @Test
+  public void testGetClusterMetricRecordLatestWithFunction() throws Exception {
+    // GIVEN
+    TimelineMetricAggregator agg =
+      TimelineMetricAggregatorFactory.createTimelineClusterAggregatorMinute(hdb, new Configuration());
+
+    long startTime = System.currentTimeMillis();
+    long ctime = startTime + 1;
+    long minute = 60 * 1000;
+    hdb.insertMetricRecords(prepareSingleTimelineMetric(ctime, "local1",
+      "disk_free", 1));
+    hdb.insertMetricRecords(prepareSingleTimelineMetric(ctime, "local2",
+      "disk_free", 2));
+    ctime += minute;
+    hdb.insertMetricRecords(prepareSingleTimelineMetric(ctime, "local1",
+      "disk_free", 2));
+    hdb.insertMetricRecords(prepareSingleTimelineMetric(ctime, "local2",
+      "disk_free", 1));
+
+    long endTime = ctime + minute + 1;
+    boolean success = agg.doWork(startTime, endTime);
+    assertTrue(success);
+
+    // WHEN
+    Condition condition = new DefaultCondition(
+      Collections.singletonList("disk_free"), null, null, null,
+      null, null, Precision.SECONDS, null, true);
+    TimelineMetrics timelineMetrics = hdb.getAggregateMetricRecords(condition,
+      Collections.singletonMap("disk_free",
+        Collections.singletonList(new Function(Function.ReadFunction.SUM, null))));
+
+    //THEN
+    assertEquals(1, timelineMetrics.getMetrics().size());
+    TimelineMetric metric = timelineMetrics.getMetrics().get(0);
+
+    assertEquals("disk_free._sum", metric.getMetricName());
+    assertEquals(1, metric.getMetricValues().size());
+    assertEquals(3, metric.getMetricValues().values().iterator().next().intValue());
+  }
+
+  @Test
   public void testGetClusterMetricRecordsHours() throws Exception {
     // GIVEN
-    TimelineMetricClusterAggregatorHourly agg =
-        new TimelineMetricClusterAggregatorHourly(hdb, new Configuration());
+    TimelineMetricAggregator agg =
+      TimelineMetricAggregatorFactory.createTimelineClusterAggregatorHourly(hdb, new Configuration());
 
     long startTime = System.currentTimeMillis();
     long ctime = startTime;
@@ -259,7 +306,7 @@ public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
     assertTrue(success);
 
     // WHEN
-    PhoenixTransactSQL.Condition condition = new PhoenixTransactSQL.DefaultCondition(
+    Condition condition = new DefaultCondition(
         Collections.singletonList("disk_used"), null, null, null,
         startTime, ctime + minute, Precision.HOURS, null, true);
     TimelineMetrics timelineMetrics = hdb.getAggregateMetricRecords(condition,
@@ -275,9 +322,7 @@ public class ITPhoenixHBaseAccessor extends AbstractMiniHBaseClusterTest {
     assertEquals(2.0, metric.getMetricValues().values().iterator().next(), 0.00001);
   }
 
-  private Map<String, List<Function>> singletonValueFunctionMap(String
-                                                                  metricName) {
-    return Collections.singletonMap(metricName, Collections.singletonList
-      (new Function()));
+  private Map<String, List<Function>> singletonValueFunctionMap(String metricName) {
+    return Collections.singletonMap(metricName, Collections.singletonList(new Function()));
   }
 }

@@ -20,12 +20,10 @@ var App = require('app');
 
 App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageController.extend({
 
-  isReassign: true,
-
-  commands: ['stopServices', 'cleanMySqlServer', 'createHostComponents', 'putHostComponentsInMaintenanceMode', 'reconfigure', 'installHostComponents', 'startZooKeeperServers', 'startNameNode', 'deleteHostComponents', 'configureMySqlServer',
-  'startMySqlServer', 'startNewMySqlServer' , 'startServices'],
+  commands: ['stopRequiredServices', 'cleanMySqlServer', 'createHostComponents', 'putHostComponentsInMaintenanceMode', 'reconfigure', 'installHostComponents', 'startZooKeeperServers', 'startNameNode', 'deleteHostComponents', 'configureMySqlServer',
+  'startMySqlServer', 'startNewMySqlServer' , 'startRequiredServices'],
   // custom commands for Components with DB Configuration and Check
-  commandsForDB: ['createHostComponents', 'installHostComponents', 'configureMySqlServer', 'startMySqlServer', 'testDBConnection', 'stopServices', 'cleanMySqlServer', 'putHostComponentsInMaintenanceMode', 'reconfigure', 'deleteHostComponents', 'configureMySqlServer', 'startServices'],
+  commandsForDB: ['createHostComponents', 'installHostComponents', 'configureMySqlServer', 'startMySqlServer', 'testDBConnection', 'stopRequiredServices', 'cleanMySqlServer', 'putHostComponentsInMaintenanceMode', 'reconfigure', 'deleteHostComponents', 'configureMySqlServer', 'startRequiredServices'],
 
   clusterDeployState: 'REASSIGN_MASTER_INSTALLING',
 
@@ -41,7 +39,7 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
     'JOBTRACKER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
     'RESOURCEMANAGER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
     'APP_TIMELINE_SERVER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
-    'OOZIE_SERVER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM', 'HIVE'],
+    'OOZIE_SERVER': ['ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM', 'HIVE'],
     'WEBHCAT_SERVER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
     'HIVE_SERVER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
     'HIVE_METASTORE': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
@@ -101,6 +99,7 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
       },
       configs_Hadoop2: {
         'hdfs-site': {
+          'dfs.namenode.rpc-address': '<replace-value>:8020',
           'dfs.namenode.http-address': '<replace-value>:50070',
           'dfs.namenode.https-address': '<replace-value>:50470'
         },
@@ -328,9 +327,9 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
     if (this.get('content.hasManualSteps')) {
       if (this.get('content.reassign.component_name') === 'NAMENODE' && App.get('isHaEnabled')) {
         // Only for reassign NameNode with HA enabled
-        this.removeTasks(['deleteHostComponents', 'startServices']);
+        this.removeTasks(['deleteHostComponents', 'startRequiredServices']);
       } else {
-        this.removeTasks(['startZooKeeperServers', 'startNameNode', 'deleteHostComponents', 'startServices']);
+        this.removeTasks(['startZooKeeperServers', 'startNameNode', 'deleteHostComponents', 'startRequiredServices']);
       }
     } else {
       this.removeTasks(['startZooKeeperServers', 'startNameNode']);
@@ -405,39 +404,10 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
   },
 
   /**
-   * compute data for call to stop services
-   * @return {Object}
-   */
-  getStopServicesData: function () {
-    var data = {
-      "ServiceInfo": {
-        "state": "INSTALLED"
-      }
-    };
-    var unrelatedServices = this.get('unrelatedServicesMap')[this.get('content.reassign.component_name')];
-    if (unrelatedServices) {
-      var list = App.Service.find().mapProperty("serviceName").filter(function (s) {
-        return !unrelatedServices.contains(s)
-      }).join(',');
-      data.context = "Stop required services";
-      data.urlParams = "ServiceInfo/service_name.in(" + list + ")";
-    } else {
-      data.context = "Stop all services";
-    }
-    return data;
-  },
-
-  /**
    * make server call to stop services
    */
-  stopServices: function () {
-    App.ajax.send({
-      name: 'common.services.update',
-      sender: this,
-      data: this.getStopServicesData(),
-      success: 'startPolling',
-      error: 'onTaskError'
-    });
+  stopRequiredServices: function () {
+    this.stopServices(this.get('unrelatedServicesMap')[this.get('content.reassign.component_name')]);
   },
 
   createHostComponents: function () {
@@ -661,6 +631,9 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
     if (!App.get('isHaEnabled') && App.Service.find('HBASE').get('isLoaded')) {
       configs['hbase-site']['hbase.rootdir'] = configs['hbase-site']['hbase.rootdir'].replace(/\/\/[^\/]*/, '//' + targetHostName + ':8020');
     }
+    if (!App.get('isHaEnabled') && App.Service.find('ACCUMULO').get('isLoaded')) {
+      configs['accumulo-site']['instance.volumes'] = configs['accumulo-site']['instance.volumes'].replace(/\/\/[^\/]*/, '//' + targetHostName + ':8020');
+    }
   },
 
   /**
@@ -783,45 +756,13 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
   /**
    * make server call to start services
    */
-  startServices: function () {
-    App.ajax.send({
-      name: 'common.services.update',
-      sender: this,
-      data: this.getStartServicesData(),
-      success: 'startPolling',
-      error: 'onTaskError'
-    });
-  },
-
-  /**
-   * compute data for call to start services
-   * @return {Object}
-   */
-  getStartServicesData: function () {
+  startRequiredServices: function () {
     var unrelatedServices = this.get('unrelatedServicesMap')[this.get('content.reassign.component_name')];
-    var data = {};
-
     if (unrelatedServices) {
-      var list = App.Service.find().mapProperty("serviceName").filter(function (s) {
-        return !unrelatedServices.contains(s)
-      }).join(',');
-      data = {
-        "context": "Start required services",
-        "ServiceInfo": {
-          "state": "STARTED"
-        },
-        "urlParams": "ServiceInfo/service_name.in(" + list + ")"
-      };
+      this.startServices(false, unrelatedServices);
     } else {
-      data = {
-        "context": "Start all services",
-        "ServiceInfo": {
-          "state": "STARTED"
-        },
-        "urlParams": "params/run_smoke_test=true"
-      };
+      this.startServices(true);
     }
-    return data;
   },
 
   /**

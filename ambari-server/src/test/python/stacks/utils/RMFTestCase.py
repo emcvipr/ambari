@@ -26,6 +26,7 @@ import os
 import imp
 import sys
 import pprint
+import itertools
 from mock.mock import MagicMock, patch
 import platform
 
@@ -61,14 +62,17 @@ class RMFTestCase(TestCase):
                     # common mocks for all the scripts
                     config_overrides = None,
                     hdp_stack_version = None,
-                    shell_mock_value = (0, "OK."), 
+                    checked_call_mocks = itertools.cycle([(0, "OK.")]),
+                    call_mocks = itertools.cycle([(0, "OK.")]),
                     os_type=('Suse','11','Final'),
                     kinit_path_local="/usr/bin/kinit",
                     os_env={'PATH':'/bin'},
-                    target=TARGET_STACKS
+                    target=TARGET_STACKS,
+                    mocks_dict={},
+                    try_install=False
                     ):
     norm_path = os.path.normpath(path)
-    src_dir = RMFTestCase._getSrcFolder()
+    src_dir = RMFTestCase.get_src_folder()
     if target == self.TARGET_STACKS:
       stack_version = norm_path.split(os.sep)[0]
       base_path = os.path.join(src_dir, PATH_TO_STACKS)
@@ -119,36 +123,46 @@ class RMFTestCase(TestCase):
     if 'params' in sys.modules:  
       del(sys.modules["params"])
 
+    if 'params_windows' in sys.modules:
+      del(sys.modules["params_windows"])
+
+    if 'params_linux' in sys.modules:
+      del(sys.modules["params_linux"])
+
     # Reload status_params import, otherwise it won't change properties during next import
     if 'status_params' in sys.modules:
       del(sys.modules["status_params"])
 
-    # run
     with Environment(basedir, test_mode=True) as RMFTestCase.env:
-      with patch('resource_management.core.shell.checked_call', return_value=shell_mock_value): # we must always mock any shell calls
-        with patch.object(Script, 'get_config', return_value=self.config_dict): # mocking configurations
-          with patch.object(Script, 'get_tmp_dir', return_value="/tmp"):
-            with patch.object(Script, 'install_packages'):
-              with patch('resource_management.libraries.functions.get_kinit_path', return_value=kinit_path_local):
-                with patch.object(platform, 'linux_distribution', return_value=os_type):
-                  with patch.object(os, "environ", new=os_env):
-                    method(RMFTestCase.env)
+      with patch('resource_management.core.shell.checked_call', side_effect=checked_call_mocks) as mocks_dict['checked_call']:
+        with patch('resource_management.core.shell.call', side_effect=call_mocks) as mocks_dict['call']:
+          with patch.object(Script, 'get_config', return_value=self.config_dict) as mocks_dict['get_config']: # mocking configurations
+            with patch.object(Script, 'get_tmp_dir', return_value="/tmp") as mocks_dict['get_tmp_dir']:
+              with patch('resource_management.libraries.functions.get_kinit_path', return_value=kinit_path_local) as mocks_dict['get_kinit_path']:
+                with patch.object(platform, 'linux_distribution', return_value=os_type) as mocks_dict['linux_distribution']:
+                  with patch.object(os, "environ", new=os_env) as mocks_dict['environ']:
+                    if not try_install:
+                      with patch.object(Script, 'install_packages') as install_mock_value:
+                        method(RMFTestCase.env)
+                    else:
+                      method(RMFTestCase.env)
+
     sys.path.remove(scriptsdir)
   
   def getConfig(self):
     return self.config_dict
           
   @staticmethod
-  def _getSrcFolder():
+  def get_src_folder():
     return os.path.join(os.path.abspath(os.path.dirname(__file__)),os.path.normpath("../../../../"))
   
   @staticmethod
   def _getCommonServicesFolder():
-    return os.path.join(RMFTestCase._getSrcFolder(), PATH_TO_COMMON_SERVICES)
+    return os.path.join(RMFTestCase.get_src_folder(), PATH_TO_COMMON_SERVICES)
 
   @staticmethod
   def _getStackTestsFolder():
-    return os.path.join(RMFTestCase._getSrcFolder(), PATH_TO_STACK_TESTS)
+    return os.path.join(RMFTestCase.get_src_folder(), PATH_TO_STACK_TESTS)
 
   @staticmethod
   def _get_attr(module, attr):

@@ -19,19 +19,24 @@ limitations under the License.
 import os.path
 
 from resource_management import *
+from resource_management.core.logger import Logger
 from resource_management.core.exceptions import ComponentIsNotRunning
-
+from resource_management.libraries.functions.check_process_status import check_process_status
+from ambari_commons.os_family_impl import OsFamilyImpl, OsFamilyFuncImpl
+from ambari_commons import OSConst
 from utils import service, safe_zkfc_op
+from setup_ranger_hdfs import setup_ranger_hdfs
 
-
+@OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
 def namenode(action=None, do_format=True, rolling_restart=False, env=None):
-  import params
-  #we need this directory to be present before any action(HA manual steps for
-  #additional namenode)
   if action == "configure":
+    import params
+    #we need this directory to be present before any action(HA manual steps for
+    #additional namenode)
     create_name_dirs(params.dfs_name_dir)
-
-  if action == "start":
+  elif action == "start":
+    setup_ranger_hdfs()
+    import params
     if do_format:
       format_namenode()
       pass
@@ -48,18 +53,20 @@ def namenode(action=None, do_format=True, rolling_restart=False, env=None):
               group=params.user_group
     )
 
-    if params.dfs_ha_enabled:
-      # if the current host is the standby NameNode in an HA deployment
-      if params.hostname == params.dfs_ha_namenode_standby:
+    if params.dfs_ha_enabled and \
+      params.dfs_ha_namenode_standby is not None and \
+      params.hostname == params.dfs_ha_namenode_standby:
+        # if the current host is the standby NameNode in an HA deployment
         # run the bootstrap command, to start the NameNode in standby mode
         # this requires that the active NameNode is already up and running,
         # so this execute should be re-tried upon failure, up to a timeout
-        Execute("hdfs namenode -bootstrapStandby",
-          user = params.hdfs_user, tries=50)
+        success = bootstrap_standby_namenode(params)
+        if not success:
+          raise Fail("Could not bootstrap standby namenode")
 
     options = "-rollingUpgrade started" if rolling_restart else ""
 
-    if rolling_restart:    
+    if rolling_restart:
       # Must start Zookeeper Failover Controller if it exists on this host because it could have been killed in order to initiate the failover.
       safe_zkfc_op(action, env)
 
@@ -72,7 +79,6 @@ def namenode(action=None, do_format=True, rolling_restart=False, env=None):
       create_log_dir=True
     )
 
-
     if params.security_enabled:
       Execute(format("{kinit_path_local} -kt {hdfs_user_keytab} {hdfs_principal_name}"),
               user = params.hdfs_user)
@@ -82,7 +88,7 @@ def namenode(action=None, do_format=True, rolling_restart=False, env=None):
     else:
       dfs_check_nn_status_cmd = None
 
-    namenode_safe_mode_off = format("hadoop dfsadmin -safemode get | grep 'Safe mode is OFF'")
+    namenode_safe_mode_off = format("hadoop dfsadmin -fs {namenode_address} -safemode get | grep 'Safe mode is OFF'")
 
     # If HA is enabled and it is in standby, then stay in safemode, otherwise, leave safemode.
     leave_safe_mode = True
@@ -95,8 +101,10 @@ def namenode(action=None, do_format=True, rolling_restart=False, env=None):
       # First check if Namenode is not in 'safemode OFF' (equivalent to safemode ON), if so, then leave it
       code, out = shell.call(namenode_safe_mode_off)
       if code != 0:
-        leave_safe_mode_cmd = format("hdfs --config {hadoop_conf_dir} dfsadmin -safemode leave")
+        leave_safe_mode_cmd = format("hdfs --config {hadoop_conf_dir} dfsadmin -fs {namenode_address} -safemode leave")
         Execute(leave_safe_mode_cmd,
+                tries=10,
+                try_sleep=10,
                 user=params.hdfs_user,
                 path=[params.hadoop_bin_dir],
         )
@@ -110,14 +118,38 @@ def namenode(action=None, do_format=True, rolling_restart=False, env=None):
             only_if=dfs_check_nn_status_cmd #skip when HA not active
     )
     create_hdfs_directories(dfs_check_nn_status_cmd)
-
-  if action == "stop":
+  elif action == "stop":
+    import params
     service(
       action="stop", name="namenode", 
       user=params.hdfs_user
     )
+  elif action == "status":
+    import status_params
+    check_process_status(status_params.namenode_pid_file)
+  elif action == "decommission":
+    decommission()
 
-  if action == "decommission":
+@OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
+def namenode(action=None, do_format=True, rolling_restart=False, env=None):
+  if action == "configure":
+    pass
+  elif action == "start":
+    import params
+    #TODO: Replace with format_namenode()
+    namenode_format_marker = os.path.join(params.hadoop_conf_dir,"NN_FORMATTED")
+    if not os.path.exists(namenode_format_marker):
+      hadoop_cmd = "cmd /C %s" % (os.path.join(params.hadoop_home, "bin", "hadoop.cmd"))
+      Execute("%s namenode -format" % (hadoop_cmd))
+      open(namenode_format_marker, 'a').close()
+    Service(params.namenode_win_service_name, action=action)
+  elif action == "stop":
+    import params
+    Service(params.namenode_win_service_name, action=action)
+  elif action == "status":
+    import status_params
+    check_windows_service_status(status_params.namenode_win_service_name)
+  elif action == "decommission":
     decommission()
 
 def create_name_dirs(directories):
@@ -136,18 +168,21 @@ def create_name_dirs(directories):
 def create_hdfs_directories(check):
   import params
 
-  params.HdfsDirectory("/tmp",
-                       action="create_delayed",
+  params.HdfsResource("/tmp",
+                       type="directory",
+                       action="create_on_execute",
                        owner=params.hdfs_user,
                        mode=0777
   )
-  params.HdfsDirectory(params.smoke_hdfs_user_dir,
-                       action="create_delayed",
+  params.HdfsResource(params.smoke_hdfs_user_dir,
+                       type="directory",
+                       action="create_on_execute",
                        owner=params.smoke_user,
                        mode=params.smoke_hdfs_user_mode
   )
-  params.HdfsDirectory(None, action="create",
-                       only_if=check #skip creation when HA not active
+  params.HdfsResource(None, 
+                      action="execute",
+                      only_if=check #skip creation when HA not active
   )
 
 def format_namenode(force=None):
@@ -176,19 +211,25 @@ def format_namenode(force=None):
             recursive = True
           )
   else:
-    if params.dfs_ha_namenode_active is not None:
-      if params.hostname == params.dfs_ha_namenode_active:
-        # check and run the format command in the HA deployment scenario
-        # only format the "active" namenode in an HA deployment
-        Execute(format("yes Y | hdfs --config {hadoop_conf_dir} namenode -format"),
-                user = params.hdfs_user,
-                path = [params.hadoop_bin_dir]
-        )
-        for m_dir in mark_dir:
-          Directory(m_dir,
-            recursive = True
-        )
-
+    if params.dfs_ha_namenode_active is not None and \
+       params.hostname == params.dfs_ha_namenode_active:
+      # check and run the format command in the HA deployment scenario
+      # only format the "active" namenode in an HA deployment
+      if force:
+        ExecuteHadoop('namenode -format',
+                      kinit_override=True,
+                      bin_dir=params.hadoop_bin_dir,
+                      conf_dir=hadoop_conf_dir)
+      else:
+        if not is_namenode_formatted(params):
+          Execute(format("yes Y | hdfs --config {hadoop_conf_dir} namenode -format"),
+                  user = params.hdfs_user,
+                  path = [params.hadoop_bin_dir]
+          )
+          for m_dir in mark_dir:
+            Directory(m_dir,
+              recursive = True
+            )
 
 def is_namenode_formatted(params):
   old_mark_dirs = params.namenode_formatted_old_mark_dirs
@@ -241,8 +282,9 @@ def is_namenode_formatted(params):
       print format("ERROR: Namenode directory(s) is non empty. Will not format the namenode. List of non-empty namenode dirs {nn_name_dirs}")
       break
        
-  return marked    
-      
+  return marked
+
+@OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
 def decommission():
   import params
 
@@ -273,3 +315,43 @@ def decommission():
                   conf_dir=conf_dir,
                   kinit_override=True,
                   bin_dir=params.hadoop_bin_dir)
+
+@OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
+def decommission():
+  import params
+  hdfs_user = params.hdfs_user
+  conf_dir = params.hadoop_conf_dir
+
+  File(params.exclude_file_path,
+       content=Template("exclude_hosts_list.j2"),
+       owner=hdfs_user
+  )
+
+  if params.dfs_ha_enabled:
+    # due to a bug in hdfs, refreshNodes will not run on both namenodes so we
+    # need to execute each command scoped to a particular namenode
+    nn_refresh_cmd = format('cmd /c hadoop dfsadmin -fs hdfs://{namenode_rpc} -refreshNodes')
+  else:
+    nn_refresh_cmd = format('cmd /c hadoop dfsadmin -refreshNodes')
+  Execute(nn_refresh_cmd, user=hdfs_user)
+
+
+def bootstrap_standby_namenode(params):
+  try:
+    iterations = 50
+    bootstrap_cmd = "hdfs namenode -bootstrapStandby -nonInteractive"
+    Logger.info("Boostrapping standby namenode: %s" % (bootstrap_cmd))
+    for i in range(iterations):
+      Logger.info('Try %d out of %d' % (i+1, iterations))
+      code, out = shell.call(bootstrap_cmd, logoutput=False, user=params.hdfs_user)
+      if code == 0:
+        Logger.info("Standby namenode bootstrapped successfully")
+        return True
+      elif code == 5:
+        Logger.info("Standby namenode already bootstrapped")
+        return True
+      else:
+        Logger.warning('Bootstrap standby namenode failed with %d error code. Will retry' % (code))
+  except Exception as ex:
+    Logger.error('Bootstrap standby namenode threw an exception. Reason %s' %(str(ex)))
+  return False

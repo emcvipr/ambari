@@ -20,7 +20,7 @@ import Ember from 'ember';
 import constants from 'hive/utils/constants';
 
 export default Ember.Route.extend({
-  setupController: function() {
+  setupController: function () {
     var self = this;
 
     this.controllerFor(constants.namingConventions.databases).set('model', this.store.find(constants.namingConventions.database));
@@ -31,8 +31,10 @@ export default Ember.Route.extend({
   },
 
   actions: {
-    openModal: function(modalTemplate, options) {
+    openModal: function (modalTemplate, options) {
       this.controllerFor(modalTemplate).setProperties({
+        content: options.content || {},
+        message: options.message,
         heading: options.heading,
         text: options.text,
         defer: options.defer
@@ -51,12 +53,28 @@ export default Ember.Route.extend({
       });
     },
 
-    addAlert: function (type, message, title) {
-      this.controllerFor(constants.namingConventions.alerts).pushObject({
-        type: type,
-        title: title,
-        content: message
+    openOverlay: function (overlay) {
+      return this.render(overlay.template, {
+        outlet: overlay.outlet,
+        into: overlay.into
       });
+    },
+    closeOverlay: function (overlay) {
+      return this.disconnectOutlet({
+        outlet: overlay.outlet,
+        parentView: overlay.into
+      });
+    },
+
+    removeNotification: function (notification) {
+      this.notify.removeNotification(notification);
+    },
+
+    willTransition: function(transition) {
+      // close active overlay if we transition
+      this.controllerFor('queryTabs').setDefaultActive();
+
+      return transition;
     }
   }
 });

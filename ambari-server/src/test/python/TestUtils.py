@@ -20,66 +20,39 @@ import StringIO
 import sys
 from unittest import TestCase
 from mock.mock import patch, MagicMock
-
+from ambari_commons.os_check import OSCheck, OSConst
 
 utils = __import__('ambari_server.utils').utils
 
 
 class TestUtils(TestCase):
+
+  @patch.object(OSCheck, "get_os_family")
   @patch('os.listdir')
   @patch('os.path.isdir')
-  def test_get_ubuntu_pg_version(self, path_isdir_mock, os_listdir_mock):
+  def test_get_ubuntu_pg_version(self, path_isdir_mock, os_listdir_mock, get_os_family_mock):
+    get_os_family_mock.return_value = OSConst.UBUNTU_FAMILY
     path_isdir_mock.return_value = True
     os_listdir_mock.return_value = ['8.4', '9.1']
 
     self.assertEqual('9.1', utils.get_ubuntu_pg_version())
-
+    
+  @patch.object(OSCheck, "is_suse_family")
+  @patch.object(OSCheck, "is_ubuntu_family")
+  @patch.object(OSCheck, "is_redhat_family")
   @patch('ambari_server.utils.get_ubuntu_pg_version')
-  @patch('os.path.isfile')
-  @patch("subprocess.Popen")
-  def test_get_postgre_hba_dir(self, popenMock, os_path_is_fine_mock,
-                               get_ubuntu_pg_version_mock):
-    p = MagicMock()
-    utils.PG_HBA_INIT_FILES['ubuntu'] = '/tmp'
-    get_ubuntu_pg_version_mock.return_value = '9.1'
-    self.assertEqual('/tmp/9.1/main', utils.get_postgre_hba_dir('ubuntu'))
-
-    # ## Tests depends on postgres version ###
-    # 1) PGDATA=/var/lib/pgsql/data
-    os_path_is_fine_mock.return_value = True
-    utils.PG_HBA_ROOT_DEFAULT = '/def/dir'
-    p.communicate.return_value = ('/my/new/location\n', None)
-    p.returncode = 0
-    popenMock.return_value = p
-    self.assertEqual('/my/new/location', utils.get_postgre_hba_dir('redhat'))
-
-    # 2) No value set
-    os_path_is_fine_mock.return_value = True
-    utils.PG_HBA_ROOT_DEFAULT = '/def/dir'
-    p.communicate.return_value = ('\n', None)
-    p.returncode = 0
-    popenMock.return_value = p
-    self.assertEqual('/def/dir', utils.get_postgre_hba_dir('redhat'))
-
-    # 3) Value set - check diff systems
-    os_path_is_fine_mock.return_value = True
-    popenMock.reset()
-    p.communicate.return_value = (None, None)
-    utils.get_postgre_hba_dir('redhat')
-    popenMock.assert_called_with('alias exit=return; source /etc/rc.d/init.d/postgresql status &>/dev/null; echo $PGDATA', shell=True, stdin=-1, stderr=-1, stdout=-1)
-
-    popenMock.reset()
-    p.communicate.return_value = (None, None)
-    utils.get_postgre_hba_dir('suse')
-    popenMock.assert_called_with('alias exit=return; source /etc/init.d/postgresql status &>/dev/null; echo $PGDATA', shell=True, stdin=-1, stderr=-1, stdout=-1)
-
-  @patch('ambari_server.utils.get_ubuntu_pg_version')
-  def test_get_postgre_running_status(self, get_ubuntu_pg_version_mock):
+  def test_get_postgre_running_status(self, get_ubuntu_pg_version_mock, is_redhat_family, is_ubuntu_family, is_suse_family):
+    is_redhat_family.return_value = False
+    is_ubuntu_family.return_value = True
+    is_suse_family.return_value = False
     utils.PG_STATUS_RUNNING_DEFAULT = "red_running"
     get_ubuntu_pg_version_mock.return_value = '9.1'
 
-    self.assertEqual('9.1/main', utils.get_postgre_running_status('ubuntu'))
-    self.assertEqual('red_running', utils.get_postgre_running_status('redhat'))
+    self.assertEqual('9.1/main', utils.get_postgre_running_status())
+    is_redhat_family.return_value = True
+    is_ubuntu_family.return_value = False
+    is_suse_family.return_value = False
+    self.assertEqual('red_running', utils.get_postgre_running_status())
 
   @patch('os.path.isfile')
   def test_locate_file(self, isfile_mock):
@@ -218,3 +191,38 @@ class TestUtils(TestCase):
     isfile_mock.return_value = True
 
     self.assertEquals(utils.check_exitcode("/tmp/nofile"), 777)
+
+
+  def test_format_with_reload(self):
+    from resource_management.libraries.functions import format
+    from resource_management.libraries.functions.format import ConfigurationFormatter
+    from resource_management.core.environment import Environment
+
+    env = Environment()
+    env._instances.append(env)
+
+
+    # declare some environment variables
+    env_params = {}
+    env_params["envfoo"] = "env-foo1"
+    env_params["envbar"] = "env-bar1"
+    env.config.params = env_params
+
+    # declare some local variables
+    foo = "foo1"
+    bar = "bar1"
+
+    # make sure local variables and env variables work
+    message = "{foo} {bar} {envfoo} {envbar}"
+    formatted_message = format(message)
+    self.assertEquals("foo1 bar1 env-foo1 env-bar1", formatted_message)
+
+    # try the same thing with an instance; we pass in keyword args to be
+    # combined with the env params
+    formatter = ConfigurationFormatter()
+    formatted_message = formatter.format(message, foo="foo2", bar="bar2")
+    self.assertEquals("foo2 bar2 env-foo1 env-bar1", formatted_message)
+
+    # now supply keyword args to override env params
+    formatted_message = formatter.format(message, envfoo="foobar", envbar="foobarbaz", foo="foo3", bar="bar3")
+    self.assertEquals("foo3 bar3 foobar foobarbaz", formatted_message)

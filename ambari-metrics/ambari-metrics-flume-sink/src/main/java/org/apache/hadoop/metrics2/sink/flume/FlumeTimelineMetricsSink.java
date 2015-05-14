@@ -24,18 +24,15 @@ import org.apache.flume.Context;
 import org.apache.flume.FlumeException;
 import org.apache.flume.instrumentation.MonitorService;
 import org.apache.flume.instrumentation.util.JMXPollUtil;
+import org.apache.hadoop.metrics2.sink.timeline.AbstractTimelineMetricsSink;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
-import org.apache.hadoop.metrics2.sink.timeline.AbstractTimelineMetricsSink;
 import org.apache.hadoop.metrics2.sink.timeline.UnableToConnectException;
 import org.apache.hadoop.metrics2.sink.timeline.cache.TimelineMetricsCache;
 import org.apache.hadoop.metrics2.sink.timeline.configuration.Configuration;
-import org.apache.hadoop.metrics2.sink.util.Servers;
 
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,10 +44,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-
-
 public class FlumeTimelineMetricsSink extends AbstractTimelineMetricsSink implements MonitorService {
-  private SocketAddress socketAddress;
   private String collectorUri;
   private TimelineMetricsCache metricsCache;
   private ScheduledExecutorService scheduledExecutorService;
@@ -58,6 +52,7 @@ public class FlumeTimelineMetricsSink extends AbstractTimelineMetricsSink implem
   private String hostname;
   private final static String COUNTER_METRICS_PROPERTY = "counters";
   private final Set<String> counterMetrics = new HashSet<String>();
+  private int timeoutSeconds = 10;
 
   @Override
   public void start() {
@@ -86,6 +81,8 @@ public class FlumeTimelineMetricsSink extends AbstractTimelineMetricsSink implem
       throw new FlumeException("Could not identify hostname.", e);
     }
     Configuration configuration = new Configuration("/flume-metrics2.properties");
+    timeoutSeconds = Integer.parseInt(configuration.getProperty(METRICS_POST_TIMEOUT_SECONDS,
+        String.valueOf(DEFAULT_POST_TIMEOUT_SECONDS)));
     int maxRowCacheSize = Integer.parseInt(configuration.getProperty(MAX_METRIC_ROW_CACHE_SIZE,
         String.valueOf(TimelineMetricsCache.MAX_RECS_PER_NAME_DEFAULT)));
     int metricsSendInterval = Integer.parseInt(configuration.getProperty(METRICS_SEND_INTERVAL,
@@ -94,11 +91,6 @@ public class FlumeTimelineMetricsSink extends AbstractTimelineMetricsSink implem
     String collectorHostname = configuration.getProperty(COLLECTOR_HOST_PROPERTY);
     String port = configuration.getProperty(COLLECTOR_PORT_PROPERTY);
     collectorUri = "http://" + collectorHostname + ":" + port + "/ws/v1/timeline/metrics";
-    List<InetSocketAddress> socketAddresses =
-      Servers.parse(collectorHostname, Integer.valueOf(port));
-    if (socketAddresses != null && !socketAddresses.isEmpty()) {
-      socketAddress = socketAddresses.get(0);
-    }
     pollFrequency = Long.parseLong(configuration.getProperty("collectionFrequency"));
 
     String[] metrics = configuration.getProperty(COUNTER_METRICS_PROPERTY).trim().split(",");
@@ -106,13 +98,13 @@ public class FlumeTimelineMetricsSink extends AbstractTimelineMetricsSink implem
   }
 
   @Override
-  public SocketAddress getServerSocketAddress() {
-    return socketAddress;
+  public String getCollectorUri() {
+    return collectorUri;
   }
 
   @Override
-  public String getCollectorUri() {
-    return collectorUri;
+  protected int getTimeoutSeconds() {
+    return timeoutSeconds;
   }
 
   public void setPollFrequency(long pollFrequency) {

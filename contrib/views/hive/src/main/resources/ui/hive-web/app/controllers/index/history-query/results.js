@@ -18,9 +18,29 @@
 
 import Ember from 'ember';
 import constants from 'hive/utils/constants';
+import utils from 'hive/utils/functions';
 
 export default Ember.ObjectController.extend({
   cachedResults: [],
+  formattedResults: [],
+
+  processResults: function () {
+    var results = this.get('results');
+
+    if (!results || !results.schema || !results.rows) {
+      return;
+    }
+
+    var schema = results.schema.map(function (column) {
+      return {
+        name: column[0],
+        type: column[1],
+        index: column[2]
+      };
+    });
+
+    this.set('formattedResults', { schema: schema, rows: results.rows });
+  }.observes('results'),
 
   keepAlive: function (job) {
     Ember.run.later(this, function () {
@@ -51,7 +71,7 @@ export default Ember.ObjectController.extend({
   initResults: function () {
     var existingJob;
 
-    if (this.get('content.status') !== constants.statuses.finished) {
+    if (!utils.insensitiveCompare(this.get('content.status'), constants.statuses.succeeded)) {
       return;
     }
 
@@ -71,6 +91,20 @@ export default Ember.ObjectController.extend({
   disablePrevious: function () {
     return this.cachedResults.findBy('id', this.get('content.id')).results.indexOf(this.get('results')) <= 0;
   }.property('results'),
+
+  getResultsJson: function (job) {
+    var defer = Ember.RSVP.defer();
+    var url = this.container.lookup('adapter:application').buildURL();
+    url += '/' + constants.namingConventions.jobs + '/' + job.get('id') + '/results?first=true';
+
+    Ember.$.getJSON(url).then(function (results) {
+      defer.resolve(JSON.parse(results.rows[0][0]));
+    }, function (err) {
+      defer.reject(err);
+    });
+
+    return defer.promise;
+  },
 
   actions: {
     getNextPage: function (firstPage, job) {
@@ -114,6 +148,7 @@ export default Ember.ObjectController.extend({
         if (firstPage) {
           self.keepAlive(job || self.get('content'));
         }
+
       }, function (err) {
         self.set('error', err.responseText);
       });

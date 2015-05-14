@@ -191,6 +191,21 @@ Number.prototype.toDaysHoursMinutes = function () {
 
   return formatted;
 };
+
+
+/**
+ *
+ * @param bound1 {Number}
+ * @param bound2 {Number}
+ * @return {boolean}
+ */
+Number.prototype.isInRange = function (bound1, bound2) {
+  var upperBound, lowerBound;
+  upperBound = bound1 > bound2 ? bound1: bound2;
+  lowerBound = bound1 < bound2 ? bound1: bound2;
+  return this > lowerBound && this < upperBound;
+};
+
 /**
  Sort an array by the key specified in the argument.
  Handle only native js objects as element of array, not the Ember's object.
@@ -491,6 +506,15 @@ App.format = {
     if (result === ' Rebalancehdfs NameNode') {
        result = Em.I18n.t('services.service.actions.run.rebalanceHdfsNodes.title');
     }
+    if (result === " Startdemoldap Knox Gateway") {
+      result = Em.I18n.t('services.service.actions.run.startLdapKnox.title');
+    }
+    if (result === " Stopdemoldap Knox Gateway") {
+      result = Em.I18n.t('services.service.actions.run.stopLdapKnox.title');
+    }
+    if (result === ' Refreshqueues ResourceManager') {
+      result = Em.I18n.t('services.service.actions.run.yarnRefreshQueues.title');
+    }
     return result;
   },
 
@@ -552,6 +576,7 @@ App.format = {
  * @param {object} options
  */
 App.popover = function (self, options) {
+  if (!self) return;
   self.popover(options);
   self.on("remove", function () {
     $(this).trigger('mouseleave');

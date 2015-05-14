@@ -59,17 +59,6 @@ def hbase(name=None):
           owner = params.hadoop_user
     )
 
-  # File(format("{hbase_conf_dir}/hbase-env.cmd"),
-  #      owner = params.hadoop_user,
-  #      content=InlineTemplate(params.hbase_env_sh_template)
-  # )
-
-  # Metrics properties
-  # File(os.path.join(params.hbase_conf_dir, "hadoop-metrics2-hbase.properties"),
-  #      owner = params.hadoop_user,
-  #      content=Template("hadoop-metrics2-hbase.properties.j2")
-  # )
-
   hbase_TemplateConfig('regionservers', user=params.hadoop_user)
 
   if params.security_enabled:
@@ -129,6 +118,17 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
             group = params.user_group
   )
 
+  # Phoenix spool file dir if not /tmp
+  if not os.path.exists(params.phoenix_server_spool_dir):
+    Directory(params.phoenix_server_spool_dir,
+              owner=params.ams_user,
+              mode = 0755,
+              group=params.user_group,
+              cd_access="a",
+              recursive=True
+    )
+  pass
+
   if 'ams-hbase-policy' in params.config['configurations']:
     XmlConfig("hbase-policy.xml",
             conf_dir = params.hbase_conf_dir,
@@ -167,23 +167,25 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
     hbase_TemplateConfig( format("hbase_client_jaas.conf"), user=params.hbase_user)
     hbase_TemplateConfig( format("ams_zookeeper_jaas.conf"), user=params.hbase_user)
 
-  if name in ["master","regionserver"]:
+  if name == "master":
 
     if params.is_hbase_distributed:
 
-      params.HdfsDirectory(params.hbase_root_dir,
-                           action="create_delayed",
+      params.HdfsResource(params.hbase_root_dir,
+                           type="directory",
+                           action="create_on_execute",
                            owner=params.hbase_user,
                            mode=0775
       )
 
-      params.HdfsDirectory(params.hbase_staging_dir,
-                           action="create_delayed",
+      params.HdfsResource(params.hbase_staging_dir,
+                           type="directory",
+                           action="create_on_execute",
                            owner=params.hbase_user,
                            mode=0711
       )
 
-      params.HdfsDirectory(None, action="create")
+      params.HdfsResource(None, action="execute")
 
     else:
 

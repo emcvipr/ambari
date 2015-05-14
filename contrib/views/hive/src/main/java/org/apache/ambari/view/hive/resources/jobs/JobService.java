@@ -18,15 +18,16 @@
 
 package org.apache.ambari.view.hive.resources.jobs;
 
-import com.google.inject.Inject;
 import org.apache.ambari.view.ViewResourceHandler;
 import org.apache.ambari.view.hive.BaseService;
 import org.apache.ambari.view.hive.backgroundjobs.BackgroundJobController;
+import org.apache.ambari.view.hive.client.Connection;
 import org.apache.ambari.view.hive.client.Cursor;
+import org.apache.ambari.view.hive.client.HiveClientException;
 import org.apache.ambari.view.hive.persistence.utils.ItemNotFound;
-import org.apache.ambari.view.hive.persistence.utils.OnlyOwnersFilteringStrategy;
+import org.apache.ambari.view.hive.resources.jobs.atsJobs.IATSParser;
+import org.apache.ambari.view.hive.resources.jobs.viewJobs.*;
 import org.apache.ambari.view.hive.utils.*;
-import org.apache.ambari.view.hive.utils.HdfsApi;
 import org.apache.commons.beanutils.PropertyUtils;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
@@ -35,6 +36,7 @@ import org.json.simple.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.inject.Inject;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.*;
 import javax.ws.rs.core.*;
@@ -59,14 +61,36 @@ public class JobService extends BaseService {
   ViewResourceHandler handler;
 
   protected JobResourceManager resourceManager;
+  private IOperationHandleResourceManager opHandleResourceManager;
   protected final static Logger LOG =
       LoggerFactory.getLogger(JobService.class);
+  private Aggregator aggregator;
 
   protected synchronized JobResourceManager getResourceManager() {
     if (resourceManager == null) {
-      resourceManager = new JobResourceManager(context);
+      SharedObjectsFactory connectionsFactory = getSharedObjectsFactory();
+      resourceManager = new JobResourceManager(connectionsFactory, context);
     }
     return resourceManager;
+  }
+
+  protected IOperationHandleResourceManager getOperationHandleResourceManager() {
+    if (opHandleResourceManager == null) {
+      opHandleResourceManager = new OperationHandleResourceManager(getSharedObjectsFactory());
+    }
+    return opHandleResourceManager;
+  }
+
+  protected Aggregator getAggregator() {
+    if (aggregator == null) {
+      IATSParser atsParser = getSharedObjectsFactory().getATSParser();
+      aggregator = new Aggregator(getResourceManager(), getOperationHandleResourceManager(), atsParser);
+    }
+    return aggregator;
+  }
+
+  protected void setAggregator(Aggregator aggregator) {
+    this.aggregator = aggregator;
   }
 
   /**
@@ -77,7 +101,7 @@ public class JobService extends BaseService {
   @Produces(MediaType.APPLICATION_JSON)
   public Response getOne(@PathParam("jobId") String jobId) {
     try {
-      JobController jobController = getResourceManager().readController(Integer.valueOf(jobId));
+      JobController jobController = getResourceManager().readController(jobId);
 
       JSONObject jsonJob = jsonObjectFromJob(jobController);
 
@@ -92,7 +116,15 @@ public class JobService extends BaseService {
   }
 
   private JSONObject jsonObjectFromJob(JobController jobController) throws IllegalAccessException, NoSuchMethodException, InvocationTargetException {
-    Map createdJobMap = PropertyUtils.describe(jobController.getJob());
+    Job hiveJob = jobController.getJobPOJO();
+
+    Job mergedJob;
+    try {
+      mergedJob = getAggregator().readATSJob(hiveJob);
+    } catch (ItemNotFound itemNotFound) {
+      throw new ServiceFormattedException("E010 Job not found", itemNotFound);
+    }
+    Map createdJobMap = PropertyUtils.describe(mergedJob);
     createdJobMap.remove("class"); // no need to show Bean class on client
 
     JSONObject jobJson = new JSONObject();
@@ -108,9 +140,10 @@ public class JobService extends BaseService {
   @Produces("text/csv")
   public Response getResultsCSV(@PathParam("jobId") String jobId,
                                 @Context HttpServletResponse response,
+                                @QueryParam("fileName") String fileName,
                                 @QueryParam("columns") final String requestedColumns) {
     try {
-      JobController jobController = getResourceManager().readController(Integer.valueOf(jobId));
+      JobController jobController = getResourceManager().readController(jobId);
       final Cursor resultSet = jobController.getResults();
       resultSet.selectColumns(requestedColumns);
 
@@ -120,6 +153,13 @@ public class JobService extends BaseService {
           Writer writer = new BufferedWriter(new OutputStreamWriter(os));
           CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.DEFAULT);
           try {
+
+            try {
+              csvPrinter.printRecord(resultSet.getHeadersRow().getRow());
+            } catch (HiveClientException e) {
+              LOG.error("Error on reading results header", e);
+            }
+
             while (resultSet.hasNext()) {
               csvPrinter.printRecord(resultSet.next().getRow());
               writer.flush();
@@ -130,7 +170,13 @@ public class JobService extends BaseService {
         }
       };
 
-      return Response.ok(stream).build();
+      if (fileName == null || fileName.isEmpty()) {
+        fileName = "results.csv";
+      }
+
+      return Response.ok(stream).
+          header("Content-Disposition", String.format("attachment; filename=\"%s\"", fileName)).
+          build();
     } catch (WebApplicationException ex) {
       throw ex;
     } catch (ItemNotFound itemNotFound) {
@@ -153,7 +199,7 @@ public class JobService extends BaseService {
                                    @QueryParam("columns") final String requestedColumns,
                                    @Context HttpServletResponse response) {
     try {
-      final JobController jobController = getResourceManager().readController(Integer.valueOf(jobId));
+      final JobController jobController = getResourceManager().readController(jobId);
 
       String backgroundJobId = "csv" + String.valueOf(jobController.getJob().getId());
       if (commence != null && commence.equals("true")) {
@@ -167,7 +213,7 @@ public class JobService extends BaseService {
               Cursor resultSet = jobController.getResults();
               resultSet.selectColumns(requestedColumns);
 
-              FSDataOutputStream stream = HdfsApi.getInstance(context).create(targetFile, true);
+              FSDataOutputStream stream = getSharedObjectsFactory().getHdfsApi().create(targetFile, true);
               Writer writer = new BufferedWriter(new OutputStreamWriter(stream));
               CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.DEFAULT);
               try {
@@ -181,11 +227,11 @@ public class JobService extends BaseService {
               stream.close();
 
             } catch (IOException e) {
-              throw new ServiceFormattedException("Could not write CSV to HDFS for job#" + jobController.getJob().getId(), e);
+              throw new ServiceFormattedException("F010 Could not write CSV to HDFS for job#" + jobController.getJob().getId(), e);
             } catch (InterruptedException e) {
-              throw new ServiceFormattedException("Could not write CSV to HDFS for job#" + jobController.getJob().getId(), e);
+              throw new ServiceFormattedException("F010 Could not write CSV to HDFS for job#" + jobController.getJob().getId(), e);
             } catch (ItemNotFound itemNotFound) {
-              throw new NotFoundFormattedException("Job results are expired", itemNotFound);
+              throw new NotFoundFormattedException("E020 Job results are expired", itemNotFound);
             }
 
           }
@@ -225,7 +271,9 @@ public class JobService extends BaseService {
                              @QueryParam("searchId") String searchId,
                              @QueryParam("columns") final String requestedColumns) {
     try {
-      final JobController jobController = getResourceManager().readController(Integer.valueOf(jobId));
+      final JobController jobController = getResourceManager().readController(jobId);
+      if (!jobController.hasResults())
+        return ResultsPaginationController.emptyResponse().build();
 
       return ResultsPaginationController.getInstance(context)
            .request(jobId, searchId, true, fromBeginning, count,
@@ -267,6 +315,29 @@ public class JobService extends BaseService {
   }
 
   /**
+   * Get progress info
+   */
+  @GET
+  @Path("{jobId}/progress")
+  @Produces(MediaType.APPLICATION_JSON)
+  public Response getProgress(@PathParam("jobId") String jobId) {
+    try {
+      final JobController jobController = getResourceManager().readController(jobId);
+
+      ProgressRetriever.Progress progress = new ProgressRetriever(jobController.getJob(), getSharedObjectsFactory()).
+          getProgress();
+
+      return Response.ok(progress).build();
+    } catch (WebApplicationException ex) {
+      throw ex;
+    } catch (ItemNotFound itemNotFound) {
+      throw new NotFoundFormattedException(itemNotFound.getMessage(), itemNotFound);
+    } catch (Exception ex) {
+      throw new ServiceFormattedException(ex.getMessage(), ex);
+    }
+  }
+
+  /**
    * Delete single item
    */
   @DELETE
@@ -276,13 +347,13 @@ public class JobService extends BaseService {
     try {
       JobController jobController;
       try {
-        jobController = getResourceManager().readController(Integer.valueOf(id));
+        jobController = getResourceManager().readController(id);
       } catch (ItemNotFound itemNotFound) {
         throw new NotFoundFormattedException(itemNotFound.getMessage(), itemNotFound);
       }
       jobController.cancel();
       if (remove != null && remove.compareTo("true") == 0) {
-        getResourceManager().delete(Integer.valueOf(id));
+        getResourceManager().delete(id);
       }
 //      getResourceManager().delete(Integer.valueOf(queryId));
       return Response.status(204).build();
@@ -303,8 +374,10 @@ public class JobService extends BaseService {
   public Response getList() {
     try {
       LOG.debug("Getting all job");
-      List allJobs = getResourceManager().readAll(
-          new OnlyOwnersFilteringStrategy(this.context.getUsername()));  //TODO: move strategy to PersonalCRUDRM
+      List<Job> allJobs = getAggregator().readAll(context.getUsername());
+      for(Job job : allJobs) {
+        job.setSessionTag(null);
+      }
 
       JSONObject object = new JSONObject();
       object.put("jobs", allJobs);
@@ -330,6 +403,7 @@ public class JobService extends BaseService {
 
       JobController createdJobController = getResourceManager().readController(job.getId());
       createdJobController.submit();
+      getResourceManager().saveIfModified(createdJobController);
 
       response.setHeader("Location",
           String.format("%s/%s", ui.getAbsolutePath().toString(), job.getId()));
@@ -341,6 +415,52 @@ public class JobService extends BaseService {
       throw ex;
     } catch (ItemNotFound itemNotFound) {
       throw new NotFoundFormattedException(itemNotFound.getMessage(), itemNotFound);
+    } catch (Exception ex) {
+      throw new ServiceFormattedException(ex.getMessage(), ex);
+    }
+  }
+
+  /**
+   * Invalidate session
+   */
+  @DELETE
+  @Path("sessions/{sessionTag}")
+  public Response invalidateSession(@PathParam("sessionTag") String sessionTag) {
+    try {
+      Connection connection = getSharedObjectsFactory().getHiveConnection();
+      connection.invalidateSessionByTag(sessionTag);
+      return Response.ok().build();
+    } catch (WebApplicationException ex) {
+      throw ex;
+    } catch (Exception ex) {
+      throw new ServiceFormattedException(ex.getMessage(), ex);
+    }
+  }
+
+  /**
+   * Session status
+   */
+  @GET
+  @Path("sessions/{sessionTag}")
+  @Produces(MediaType.APPLICATION_JSON)
+  public Response sessionStatus(@PathParam("sessionTag") String sessionTag) {
+    try {
+      Connection connection = getSharedObjectsFactory().getHiveConnection();
+
+      JSONObject session = new JSONObject();
+      session.put("sessionTag", sessionTag);
+      try {
+        connection.getSessionByTag(sessionTag);
+        session.put("actual", true);
+      } catch (HiveClientException ex) {
+        session.put("actual", false);
+      }
+
+      JSONObject status = new JSONObject();
+      status.put("session", session);
+      return Response.ok(status).build();
+    } catch (WebApplicationException ex) {
+      throw ex;
     } catch (Exception ex) {
       throw new ServiceFormattedException(ex.getMessage(), ex);
     }

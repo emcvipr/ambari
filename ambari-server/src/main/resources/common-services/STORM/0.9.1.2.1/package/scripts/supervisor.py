@@ -21,19 +21,19 @@ limitations under the License.
 import sys
 from resource_management.libraries.functions import check_process_status
 from resource_management.libraries.script import Script
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions import format
 from resource_management.core.resources.system import Execute
 from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
-
 from storm import storm
 from service import service
+from ambari_commons import OSConst
+from ambari_commons.os_family_impl import OsFamilyImpl
+from resource_management.core.resources.service import Service
 
 
 class Supervisor(Script):
-
-  def get_stack_to_component(self):
-    return {"HDP": "storm-supervisor"}
-
   def install(self, env):
     self.install_packages(env)
     self.configure(env)
@@ -41,14 +41,41 @@ class Supervisor(Script):
   def configure(self, env):
     import params
     env.set_params(params)
-    storm()
+    storm("supervisor")
+
+
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class SupervisorWindows(Supervisor):
+  def start(self, env):
+    import status_params
+    env.set_params(status_params)
+    self.configure(env)
+    Service(status_params.supervisor_win_service_name, action="start")
+
+  def stop(self, env):
+    import status_params
+    env.set_params(status_params)
+    Service(status_params.supervisor_win_service_name, action="stop")
+
+  def status(self, env):
+    import status_params
+    from resource_management.libraries.functions.windows_service_utils import check_windows_service_status
+    env.set_params(status_params)
+    check_windows_service_status(status_params.supervisor_win_service_name)
+
+
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class SupervisorDefault(Supervisor):
+  def get_stack_to_component(self):
+    return {"HDP": "storm-supervisor"}
 
   def pre_rolling_restart(self, env):
     import params
     env.set_params(params)
 
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
-      Execute(format("hdp-select set storm-supervisor {version}"))
+      conf_select.select(params.stack_name, "storm", params.version)
+      hdp_select.select("storm-supervisor", params.version)
 
   def start(self, env, rolling_restart=False):
     import params
@@ -68,7 +95,6 @@ class Supervisor(Script):
   def status(self, env):
     import status_params
     env.set_params(status_params)
-
     check_process_status(status_params.pid_supervisor)
 
 

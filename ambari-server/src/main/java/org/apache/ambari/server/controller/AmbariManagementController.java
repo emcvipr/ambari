@@ -19,13 +19,16 @@
 package org.apache.ambari.server.controller;
 
 import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.RoleCommand;
 import org.apache.ambari.server.actionmanager.ActionManager;
+import org.apache.ambari.server.agent.ExecutionCommand;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.controller.internal.RequestStageContainer;
 import org.apache.ambari.server.metadata.RoleCommandOrder;
 import org.apache.ambari.server.scheduler.ExecutionScheduleManager;
 import org.apache.ambari.server.security.ldap.LdapBatchDto;
 import org.apache.ambari.server.security.ldap.LdapSyncDto;
+import org.apache.ambari.server.stageplanner.RoleGraphFactory;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.ConfigHelper;
@@ -521,6 +524,13 @@ public interface AmbariManagementController {
   public ConfigGroupFactory getConfigGroupFactory();
 
   /**
+   * Get the role graph factory for this management controller.
+   *
+   * @return the role graph factory
+   */
+  public RoleGraphFactory getRoleGraphFactory();
+
+  /**
     * Get the action manager for this management controller.
     *
     * @return the action manager
@@ -739,5 +749,38 @@ public interface AmbariManagementController {
    */
   List<ServiceOsSpecific.Package> getPackagesForServiceHost(ServiceInfo serviceInfo,
                                                             Map<String, String> hostParams, String osFamily);
+
+  /**
+   * Register a change in rack information for the hosts of the given cluster.
+   *
+   * @param clusterName  the name of the cluster
+   *
+   * @throws AmbariException if an error occurs during the rack change registration
+   */
+  public void registerRackChange(String clusterName) throws AmbariException;
+
+  /**
+   * Initialize cluster scoped widgets and widgetLayouts for different stack
+   * components.
+   *
+   * @param cluster @Cluster object
+   * @param service @Service object
+   */
+  public void initializeWidgetsAndLayouts(Cluster cluster, Service service) throws AmbariException;
+
+  /**
+   * Gets an execution command for host component life cycle command
+   * @return
+   */
+  public ExecutionCommand getExecutionCommand(Cluster cluster,
+                                              ServiceComponentHost scHost,
+                                              RoleCommand roleCommand) throws AmbariException;
+
+  /**
+   * Get configuration dependencies which are specific for a specific service configuration property
+   * @param requests
+   * @return
+   */
+  Set<StackConfigurationDependencyResponse> getStackConfigurationDependencies(Set<StackConfigurationDependencyRequest> requests) throws AmbariException;
 }
 

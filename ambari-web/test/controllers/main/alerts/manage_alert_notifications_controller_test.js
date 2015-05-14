@@ -169,7 +169,7 @@ describe('App.ManageAlertNotificationsController', function () {
 
   describe('#fillEditCreateInputs()', function () {
 
-    it("should map properties from selectedAlertNotification to inputFields (ambari.dispatch.recipients ignored)", function () {
+    it("should map properties from selectedAlertNotification to inputFields (ambari.dispatch.recipients ignored) - EMAIL", function () {
 
       controller.set('selectedAlertNotification', Em.Object.create({
         name: 'test_name',
@@ -252,6 +252,9 @@ describe('App.ManageAlertNotificationsController', function () {
         community: {
           value: ''
         },
+        host: {
+          value: ''
+        },
         port: {
           value: ''
         },
@@ -316,6 +319,9 @@ describe('App.ManageAlertNotificationsController', function () {
         version: {},
         OIDs: {},
         community: {},
+        host: {
+          value: 'test1@test.test, test2@test.test'
+        },
         port: {},
         customProperties: [
           {name: 'customName', value: 'customValue', defaultValue: 'customValue'}
@@ -324,6 +330,160 @@ describe('App.ManageAlertNotificationsController', function () {
 
     });
 
+    it("should map properties from selectedAlertNotification to inputFields (ambari.dispatch.recipients ignored) - SNMP", function () {
+
+      controller.set('selectedAlertNotification', Em.Object.create({
+        name: 'test_SNMP_name',
+        global: true,
+        description: 'test_description',
+        groups: ['test1', 'test2'],
+        type: 'SNMP',
+        alertStates: ['OK', 'UNKNOWN'],
+        properties: {
+          'ambari.dispatch.recipients': [
+            'c6401.ambari.apache.org',
+            'c6402.ambari.apache.org'
+          ],
+          'customName': 'customValue',
+          'ambari.dispatch.snmp.version': 'SNMPv1',
+          'ambari.dispatch.snmp.oids.trap': '1',
+          'ambari.dispatch.snmp.community': 'snmp',
+          'ambari.dispatch.snmp.port': 161
+
+        }
+      }));
+
+      controller.set('inputFields', Em.Object.create({
+        name: {
+          value: ''
+        },
+        groups: {
+          value: []
+        },
+        global: {
+          value: false
+        },
+        allGroups: {
+          value: false
+        },
+        method: {
+          value: ''
+        },
+        email: {
+          value: ''
+        },
+        severityFilter: {
+          value: []
+        },
+        description: {
+          value: ''
+        },
+        SMTPServer: {
+          value: ''
+        },
+        SMTPPort: {
+          value: ''
+        },
+        SMTPUseAuthentication: {
+          value: ''
+        },
+        SMTPUsername: {
+          value: ''
+        },
+        SMTPPassword: {
+          value: ''
+        },
+        retypeSMTPPassword: {
+          value: ''
+        },
+        SMTPSTARTTLS: {
+          value: ''
+        },
+        emailFrom: {
+          value: ''
+        },
+        version: {
+          value: ''
+        },
+        OIDs: {
+          value: ''
+        },
+        community: {
+          value: ''
+        },
+        host: {
+          value: ''
+        },
+        port: {
+          value: ''
+        },
+        customProperties: [
+          {name: 'customName', value: 'customValue1', defaultValue: 'customValue1'},
+          {name: 'customName2', value: 'customValue1', defaultValue: 'customValue1'}
+        ]
+      }));
+
+      controller.fillEditCreateInputs();
+
+      expect(JSON.stringify(controller.get('inputFields'))).to.equal(JSON.stringify({
+        name: {
+          value: 'test_SNMP_name'
+        },
+        groups: {
+          value: ['test1', 'test2']
+        },
+        global: {
+          value: true,
+          disabled: true
+        },
+        allGroups: {
+          value: 'all'
+        },
+        method: {
+          value: 'SNMP'
+        },
+        email: {
+          value: 'c6401.ambari.apache.org, c6402.ambari.apache.org'
+        },
+        severityFilter: {
+          value: ['OK', 'UNKNOWN']
+        },
+        description: {
+          value: 'test_description'
+        },
+        SMTPServer: {},
+        SMTPPort: {},
+        SMTPUseAuthentication: {
+          value: true
+        },
+        SMTPUsername: {},
+        SMTPPassword: {},
+        retypeSMTPPassword: {},
+        SMTPSTARTTLS: {
+          value: true
+        },
+        emailFrom: {},
+        version: {
+          value:'SNMPv1'
+        },
+        OIDs: {
+          value: '1'
+        },
+        community: {
+          value: 'snmp'
+        },
+        host: {
+          value: 'c6401.ambari.apache.org, c6402.ambari.apache.org'
+        },
+        port: {
+          value: 161
+        },
+        customProperties: [
+          {name: 'customName', value: 'customValue', defaultValue: 'customValue'}
+        ]
+      }));
+
+    })
   });
 
   describe("#showCreateEditPopup()", function () {
@@ -356,7 +516,8 @@ describe('App.ManageAlertNotificationsController', function () {
               global: {},
               allGroups: {},
               SMTPPassword: {},
-              retypeSMTPPassword: {}
+              retypeSMTPPassword: {},
+              method: {}
             }
           }),
           groupSelect: Em.Object.create({
@@ -458,6 +619,57 @@ describe('App.ManageAlertNotificationsController', function () {
           expect(view.get('controller.inputFields.retypeSMTPPassword.errorMsg')).to.equal(null);
           expect(view.get('parentView.hasErrors')).to.be.false;
 
+        });
+
+      });
+
+      describe('#methodObserver', function () {
+
+        var cases = [
+            {
+              method: 'EMAIL',
+              errors: ['portError', 'hostError'],
+              validators: ['emailToValidation', 'emailFromValidation', 'smtpPortValidation', 'retypePasswordValidation']
+            },
+            {
+              method: 'SNMP',
+              errors: ['emailToError', 'emailFromError', 'smtpPortError', 'passwordError'],
+              validators: ['portValidation', 'hostsValidation']
+            }
+          ],
+          validators = [];
+
+        before(function () {
+          cases.forEach(function (item) {
+            validators.pushObjects(item.validators);
+          });
+        });
+
+        beforeEach(function () {
+          validators.forEach(function (item) {
+            sinon.stub(view, item, Em.K);
+          });
+        });
+
+        afterEach(function () {
+          validators.forEach(function (item) {
+            view.get(item).restore();
+          });
+        });
+
+        cases.forEach(function (item) {
+          it(item.method, function () {
+            item.errors.forEach(function (errorName) {
+              view.set(errorName, true);
+            });
+            view.set('controller.inputFields.method.value', item.method);
+            item.errors.forEach(function (errorName) {
+              expect(view.get(errorName)).to.be.false;
+            });
+            validators.forEach(function (validatorName) {
+              expect(view.get(validatorName).calledOnce).to.equal(item.validators.contains(validatorName));
+            });
+          });
         });
 
       });

@@ -25,6 +25,8 @@ import threading
 import pprint
 import os
 import json
+from random import randint
+import time
 
 from AgentException import AgentException
 from LiveStatus import LiveStatus
@@ -53,6 +55,7 @@ class ActionQueue(threading.Thread):
 
   STATUS_COMMAND = 'STATUS_COMMAND'
   EXECUTION_COMMAND = 'EXECUTION_COMMAND'
+  AUTO_EXECUTION_COMMAND = 'AUTO_EXECUTION_COMMAND'
   BACKGROUND_EXECUTION_COMMAND = 'BACKGROUND_EXECUTION_COMMAND'
   ROLE_COMMAND_INSTALL = 'INSTALL'
   ROLE_COMMAND_START = 'START'
@@ -77,7 +80,9 @@ class ActionQueue(threading.Thread):
     self._stop = threading.Event()
     self.tmpdir = config.get('agent', 'prefix')
     self.customServiceOrchestrator = CustomServiceOrchestrator(config, controller)
-
+    self.parallel_execution = config.get_parallel_exec_option()
+    if self.parallel_execution == 1:
+      logger.info("Parallel execution is enabled, will start Agent commands in parallel")
 
   def stop(self):
     self._stop.set()
@@ -91,9 +96,8 @@ class ActionQueue(threading.Thread):
 
     for command in commands:
       logger.info("Adding " + command['commandType'] + " for service " + \
-                    command['serviceName'] + " of cluster " + \
-                    command['clusterName'] + " to the queue.")
-      logger.debug(pprint.pformat(command))
+                  command['serviceName'] + " of cluster " + \
+                  command['clusterName'] + " to the queue.")
       self.statusCommandQueue.put(command)
 
   def put(self, commands):
@@ -103,10 +107,10 @@ class ActionQueue(threading.Thread):
       if not command.has_key('clusterName'):
         command['clusterName'] = 'null'
 
-      logger.info("Adding " + command['commandType'] + " for service " + \
+      logger.info("Adding " + command['commandType'] + " for role " + \
+                  command['role'] + " for service " + \
                   command['serviceName'] + " of cluster " + \
                   command['clusterName'] + " to the queue.")
-      logger.debug(pprint.pformat(command))
       if command['commandType'] == self.BACKGROUND_EXECUTION_COMMAND :
         self.backgroundCommandQueue.put(self.createCommandHandle(command))
       else:
@@ -143,10 +147,22 @@ class ActionQueue(threading.Thread):
       self.processBackgroundQueueSafeEmpty();
       self.processStatusCommandQueueSafeEmpty();
       try:
-        command = self.commandQueue.get(True, self.EXECUTION_COMMAND_WAIT_TIME)
-        self.process_command(command)
+        if self.parallel_execution == 0:
+          command = self.commandQueue.get(True, self.EXECUTION_COMMAND_WAIT_TIME)
+          self.process_command(command)
+        else:
+          # If parallel execution is enabled, just kick off all available
+          # commands using separate threads
+          while (True):
+            command = self.commandQueue.get(True, self.EXECUTION_COMMAND_WAIT_TIME)
+            logger.info("Kicking off a thread for the command, id=" +
+                        str(command['commandId']) + " taskId=" + str(command['taskId']))
+            t = threading.Thread(target=self.process_command, args=(command,))
+            t.daemon = True
+            t.start()
       except (Queue.Empty):
         pass
+
   def processBackgroundQueueSafeEmpty(self):
     while not self.backgroundCommandQueue.empty():
       try:
@@ -172,12 +188,18 @@ class ActionQueue(threading.Thread):
     return command
 
   def process_command(self, command):
-    logger.debug("Took an element of Queue: " + pprint.pformat(command))
     # make sure we log failures
     commandType = command['commandType']
+    logger.debug("Took an element of Queue (command type = %s)." % commandType)
     try:
-      if commandType in [self.EXECUTION_COMMAND, self.BACKGROUND_EXECUTION_COMMAND]:
-        self.execute_command(command)
+      if commandType in [self.EXECUTION_COMMAND, self.BACKGROUND_EXECUTION_COMMAND, self.AUTO_EXECUTION_COMMAND]:
+        try:
+          if self.controller.recovery_manager.enabled():
+            self.controller.recovery_manager.start_execution_command()
+          self.execute_command(command)
+        finally:
+          if self.controller.recovery_manager.enabled():
+            self.controller.recovery_manager.stop_execution_command()
       elif commandType == self.STATUS_COMMAND:
         self.execute_status_command(command)
       else:
@@ -187,6 +209,15 @@ class ActionQueue(threading.Thread):
       traceback.print_exc()
       logger.warn(err)
 
+  def tasks_in_progress_or_pending(self):
+    return_val = False
+    if not self.commandQueue.empty():
+      return_val = True
+    if self.controller.recovery_manager.has_active_command():
+      return_val = True
+    return return_val
+    pass
+
   def execute_command(self, command):
     '''
     Executes commands of type EXECUTION_COMMAND
@@ -194,36 +225,71 @@ class ActionQueue(threading.Thread):
     clusterName = command['clusterName']
     commandId = command['commandId']
     isCommandBackground = command['commandType'] == self.BACKGROUND_EXECUTION_COMMAND
+    isAutoExecuteCommand = command['commandType'] == self.AUTO_EXECUTION_COMMAND
     message = "Executing command with id = {commandId} for role = {role} of " \
               "cluster {cluster}.".format(
               commandId = str(commandId), role=command['role'],
               cluster=clusterName)
     logger.info(message)
-    logger.debug(pprint.pformat(command))
 
     taskId = command['taskId']
     # Preparing 'IN_PROGRESS' report
     in_progress_status = self.commandStatuses.generate_report_template(command)
     # The path of the files that contain the output log and error log use a prefix that the agent advertises to the
     # server. The prefix is defined in agent-config.ini
-    in_progress_status.update({
-      'tmpout': self.tmpdir + os.sep + 'output-' + str(taskId) + '.txt',
-      'tmperr': self.tmpdir + os.sep + 'errors-' + str(taskId) + '.txt',
-      'structuredOut' : self.tmpdir + os.sep + 'structured-out-' + str(taskId) + '.json',
-      'status': self.IN_PROGRESS_STATUS
-    })
+    if not isAutoExecuteCommand:
+      in_progress_status.update({
+        'tmpout': self.tmpdir + os.sep + 'output-' + str(taskId) + '.txt',
+        'tmperr': self.tmpdir + os.sep + 'errors-' + str(taskId) + '.txt',
+        'structuredOut' : self.tmpdir + os.sep + 'structured-out-' + str(taskId) + '.json',
+        'status': self.IN_PROGRESS_STATUS
+      })
+    else:
+      in_progress_status.update({
+        'tmpout': self.tmpdir + os.sep + 'auto_output-' + str(taskId) + '.txt',
+        'tmperr': self.tmpdir + os.sep + 'auto_errors-' + str(taskId) + '.txt',
+        'structuredOut' : self.tmpdir + os.sep + 'auto_structured-out-' + str(taskId) + '.json',
+        'status': self.IN_PROGRESS_STATUS
+      })
+
     self.commandStatuses.put_command_status(command, in_progress_status)
 
-    # running command
-    commandresult = self.customServiceOrchestrator.runCommand(command,
-      in_progress_status['tmpout'], in_progress_status['tmperr'])
+    numAttempts = 0
+    maxAttempts = 1
+    retryAble = False
+    delay = 1
+    if 'commandParams' in command:
+      if 'command_retry_max_attempt_count' in command['commandParams']:
+        maxAttempts = int(command['commandParams']['command_retry_max_attempt_count'])
+      if 'command_retry_enabled' in command['commandParams']:
+        retryAble = command['commandParams']['command_retry_enabled'] == "true"
+    if isAutoExecuteCommand:
+      retryAble = False
+
+    logger.debug("Command execution metadata - retry enabled = {retryAble}, max attempt count = {maxAttemptCount}".
+                 format(retryAble = retryAble, maxAttemptCount = maxAttempts))
+    while numAttempts < maxAttempts:
+      numAttempts += 1
+      # running command
+      commandresult = self.customServiceOrchestrator.runCommand(command,
+        in_progress_status['tmpout'], in_progress_status['tmperr'],
+        override_output_files=numAttempts == 1, retry=numAttempts > 1)
 
 
-    # dumping results
-    if isCommandBackground:
-      return
-    else:
-      status = self.COMPLETED_STATUS if commandresult['exitcode'] == 0 else self.FAILED_STATUS
+      # dumping results
+      if isCommandBackground:
+        return
+      else:
+        status = self.COMPLETED_STATUS if commandresult['exitcode'] == 0 else self.FAILED_STATUS
+
+      if status != self.COMPLETED_STATUS and retryAble == True and maxAttempts > numAttempts:
+        delay = self.get_retry_delay(delay)
+        logger.info("Retrying command id {cid} after a wait of {delay}".format(cid = taskId, delay=delay))
+        time.sleep(delay)
+        continue
+      else:
+        break
+
     roleResult = self.commandStatuses.generate_report_template(command)
     roleResult.update({
       'stdout': commandresult['stdout'],
@@ -247,6 +313,17 @@ class ActionQueue(threading.Thread):
 
     # let ambari know that configuration tags were applied
     if status == self.COMPLETED_STATUS:
+      if self.controller.recovery_manager.enabled() and command.has_key('roleCommand'):
+        if command['roleCommand'] == self.ROLE_COMMAND_START:
+          self.controller.recovery_manager.update_current_status(command['role'], LiveStatus.LIVE_STATUS)
+        elif command['roleCommand'] == self.ROLE_COMMAND_STOP or command['roleCommand'] == self.ROLE_COMMAND_INSTALL:
+          self.controller.recovery_manager.update_current_status(command['role'], LiveStatus.DEAD_STATUS)
+        elif command['roleCommand'] == self.ROLE_COMMAND_CUSTOM_COMMAND:
+          if command['hostLevelParams'].has_key('custom_command') and \
+                  command['hostLevelParams']['custom_command'] == self.CUSTOM_COMMAND_RESTART:
+            self.controller.recovery_manager.update_current_status(command['role'], LiveStatus.LIVE_STATUS)
+      pass
+
       configHandler = ActualConfigHandler(self.config, self.configTags)
       #update
       if command.has_key('forceRefreshConfigTags') and len(command['forceRefreshConfigTags']) > 0  :
@@ -280,10 +357,18 @@ class ActionQueue(threading.Thread):
 
     self.commandStatuses.put_command_status(command, roleResult)
 
+  def get_retry_delay(self, last_delay):
+    """
+    Returns exponentially growing delay. The idea being if number of retries is high then the reason to retry
+    is probably a host or environment specific issue requiring longer waits
+    """
+    return last_delay * 2
+
   def command_was_canceled(self):
     self.customServiceOrchestrator
-  def on_background_command_complete_callback(self, process_condenced_result, handle):
-    logger.debug('Start callback: %s' % process_condenced_result)
+
+  def on_background_command_complete_callback(self, process_condensed_result, handle):
+    logger.debug('Start callback: %s' % process_condensed_result)
     logger.debug('The handle is: %s' % handle)
     status = self.COMPLETED_STATUS if handle.exitCode == 0 else self.FAILED_STATUS
 
@@ -298,10 +383,10 @@ class ActionQueue(threading.Thread):
     roleResult = self.commandStatuses.generate_report_template(handle.command)
 
     roleResult.update({
-      'stdout': process_condenced_result['stdout'] + aborted_postfix,
-      'stderr': process_condenced_result['stderr'] + aborted_postfix,
-      'exitCode': process_condenced_result['exitcode'],
-      'structuredOut': str(json.dumps(process_condenced_result['structuredOut'])) if 'structuredOut' in process_condenced_result else '',
+      'stdout': process_condensed_result['stdout'] + aborted_postfix,
+      'stderr': process_condensed_result['stderr'] + aborted_postfix,
+      'exitCode': process_condensed_result['exitcode'],
+      'structuredOut': str(json.dumps(process_condensed_result['structuredOut'])) if 'structuredOut' in process_condensed_result else '',
       'status': status,
     })
 
@@ -325,6 +410,7 @@ class ActionQueue(threading.Thread):
                               globalConfig, self.config, self.configTags)
 
       component_extra = None
+      request_execution_cmd = False
 
       # For custom services, responsibility to determine service status is
       # delegated to python scripts
@@ -333,13 +419,18 @@ class ActionQueue(threading.Thread):
 
       if component_status_result['exitcode'] == 0:
         component_status = LiveStatus.LIVE_STATUS
+        self.controller.recovery_manager.update_current_status(component, component_status)
       else:
         component_status = LiveStatus.DEAD_STATUS
+        self.controller.recovery_manager.update_current_status(component, component_status)
+        request_execution_cmd = self.controller.recovery_manager.requires_recovery(component)
 
       if component_status_result.has_key('structuredOut'):
         component_extra = component_status_result['structuredOut']
 
-      result = livestatus.build(forsed_component_status= component_status)
+      result = livestatus.build(forced_component_status= component_status)
+      if self.controller.recovery_manager.enabled():
+        result['sendExecCmdDet'] = str(request_execution_cmd)
 
       # Add security state to the result
       result['securityState'] = component_security_status_result

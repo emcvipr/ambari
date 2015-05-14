@@ -18,29 +18,48 @@
 
 package org.apache.ambari.server.orm.entities;
 
+import static org.apache.commons.lang.StringUtils.defaultString;
+
+import java.util.Collection;
+import java.util.Collections;
+
 import javax.persistence.Basic;
 import javax.persistence.CascadeType;
 import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.FetchType;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
 import javax.persistence.Id;
 import javax.persistence.JoinColumn;
 import javax.persistence.JoinTable;
 import javax.persistence.Lob;
 import javax.persistence.ManyToMany;
+import javax.persistence.NamedQueries;
+import javax.persistence.NamedQuery;
 import javax.persistence.OneToMany;
 import javax.persistence.OneToOne;
-import java.util.Collection;
-import java.util.Collections;
-
-import static org.apache.commons.lang.StringUtils.defaultString;
+import javax.persistence.TableGenerator;
 
 @javax.persistence.Table(name = "hosts")
 @Entity
+@TableGenerator(name = "host_id_generator",
+    table = "ambari_sequences", pkColumnName = "sequence_name", valueColumnName = "sequence_value"
+    , pkColumnValue = "host_id_seq"
+    , initialValue = 0
+)
+@NamedQueries({
+    @NamedQuery(name = "HostEntity.findByHostName", query = "SELECT host FROM HostEntity host WHERE host.hostName = :hostName"),
+})
 public class HostEntity implements Comparable<HostEntity> {
 
   @Id
-  @Column(name = "host_name", nullable = false, insertable = true, updatable = true)
+  @Column(name = "host_id", nullable = false, insertable = true, updatable = false)
+  @GeneratedValue(strategy = GenerationType.TABLE, generator = "host_id_generator")
+  private Long hostId;
+
+  @Column(name = "host_name", nullable = false, insertable = true, updatable = true, unique = true)
+  @Basic
   private String hostName;
 
   @Column(name = "ipv4", nullable = true, insertable = true, updatable = true)
@@ -114,17 +133,25 @@ public class HostEntity implements Comparable<HostEntity> {
 
   @ManyToMany
   @JoinTable(name = "ClusterHostMapping",
-      joinColumns = {@JoinColumn(name = "host_name", referencedColumnName = "host_name")},
+      joinColumns = {@JoinColumn(name = "host_id", referencedColumnName = "host_id")},
       inverseJoinColumns = {@JoinColumn(name = "cluster_id", referencedColumnName = "cluster_id")}
   )
   private Collection<ClusterEntity> clusterEntities;
 
-  @OneToOne(mappedBy = "hostEntity", cascade = CascadeType.REMOVE)
+  @OneToOne(mappedBy = "hostEntity", cascade = {CascadeType.REMOVE, CascadeType.PERSIST})
   private HostStateEntity hostStateEntity;
 
-  @OneToMany(mappedBy = "host", cascade = CascadeType.REMOVE)
+  @OneToMany(mappedBy = "hostEntity", cascade = CascadeType.REMOVE)
   private Collection<HostRoleCommandEntity> hostRoleCommandEntities;
-  
+
+  public Long getHostId() {
+    return hostId;
+  }
+
+  public void setHostId(Long hostId) {
+    this.hostId = hostId;
+  }
+
   public String getHostName() {
     return hostName;
   }
@@ -172,7 +199,7 @@ public class HostEntity implements Comparable<HostEntity> {
   public void setCpuCount(Integer cpuCount) {
     this.cpuCount = cpuCount;
   }
-  
+
   public Integer getPhCpuCount() {
     return phCpuCount;
   }
@@ -180,7 +207,7 @@ public class HostEntity implements Comparable<HostEntity> {
   public void setPhCpuCount(Integer phCpuCount) {
     this.phCpuCount = phCpuCount;
   }
-  
+
   public String getCpuInfo() {
     return defaultString(cpuInfo);
   }
@@ -247,24 +274,26 @@ public class HostEntity implements Comparable<HostEntity> {
 
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (o == null || getClass() != o.getClass()) return false;
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
 
     HostEntity that = (HostEntity) o;
 
-    if (!hostName.equals(that.hostName)) return false;
-
-    return true;
+    return hostId == that.hostId && hostName.equals(that.hostName);
   }
 
   @Override
   public int hashCode() {
-    return hostName.hashCode();
+    return (null == hostId ? 0 : hostId.hashCode());
   }
 
   @Override
   public int compareTo(HostEntity other) {
-    return this.hostName.compareTo(other.hostName);
+    return hostName.compareTo(other.hostName);
   }
 
   /**
@@ -357,8 +386,7 @@ public class HostEntity implements Comparable<HostEntity> {
     return hostVersionEntities;
   }
 
-  public void setHostVersionEntities(Collection<HostVersionEntity> hostVersionEntities) { 
+  public void setHostVersionEntities(Collection<HostVersionEntity> hostVersionEntities) {
     this.hostVersionEntities = hostVersionEntities;
   }
-
 }

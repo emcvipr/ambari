@@ -28,7 +28,6 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-import javax.naming.InvalidNameException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.util.Collections;
@@ -43,44 +42,6 @@ public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
   public TemporaryFolder folder = new TemporaryFolder();
 
   @Test
-  public void testCreateSecurePassword() throws Exception {
-
-    KerberosOperationHandler handler1 = createHandler();
-    KerberosOperationHandler handler2 = createHandler();
-
-    String password1 = handler1.createSecurePassword();
-    Assert.assertNotNull(password1);
-    Assert.assertEquals(KerberosOperationHandler.SECURE_PASSWORD_LENGTH, password1.length());
-
-    String password2 = handler2.createSecurePassword();
-    Assert.assertNotNull(password2);
-    Assert.assertEquals(KerberosOperationHandler.SECURE_PASSWORD_LENGTH, password2.length());
-
-    // Make sure the passwords are different... if they are the same, that indicated the random
-    // number generators are generating using the same pattern and that is not secure.
-    Assert.assertFalse((password1.equals(password2)));
-  }
-
-  @Test
-  public void testCreateSecurePasswordWithSize() throws Exception {
-    KerberosOperationHandler handler = createHandler();
-
-    String password;
-
-    password = handler.createSecurePassword(10);
-    Assert.assertNotNull(password);
-    Assert.assertEquals(10, password.length());
-
-    password = handler.createSecurePassword(0);
-    Assert.assertNotNull(password);
-    Assert.assertEquals(KerberosOperationHandler.SECURE_PASSWORD_LENGTH, password.length());
-
-    password = handler.createSecurePassword(-20);
-    Assert.assertNotNull(password);
-    Assert.assertEquals(KerberosOperationHandler.SECURE_PASSWORD_LENGTH, password.length());
-  }
-
-  @Test
   public void testCreateKeytabFileOneAtATime() throws Exception {
     KerberosOperationHandler handler = createHandler();
     File file = folder.newFile();
@@ -88,7 +49,7 @@ public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
     final String principal2 = "principal2@REALM.COM";
     int count;
 
-    Assert.assertTrue(handler.createKeytabFile(principal1, handler.createSecurePassword(), 0, file));
+    Assert.assertTrue(handler.createKeytabFile(principal1, "some password", 0, file));
 
     Keytab keytab = Keytab.read(file);
     Assert.assertNotNull(keytab);
@@ -103,7 +64,7 @@ public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
       Assert.assertEquals(principal1, entry.getPrincipalName());
     }
 
-    Assert.assertTrue(handler.createKeytabFile(principal2, handler.createSecurePassword(), 0, file));
+    Assert.assertTrue(handler.createKeytabFile(principal2, "some password", 0, file));
 
     keytab = Keytab.read(file);
     Assert.assertNotNull(keytab);
@@ -123,11 +84,11 @@ public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
     final String principal2 = "principal2@REALM.COM";
     Set<String> seenEntries = new HashSet<String>();
 
-    Assert.assertTrue(handler.createKeytabFile(principal1, handler.createSecurePassword(), 0, file));
-    Assert.assertTrue(handler.createKeytabFile(principal2, handler.createSecurePassword(), 0, file));
+    Assert.assertTrue(handler.createKeytabFile(principal1, "some password", 0, file));
+    Assert.assertTrue(handler.createKeytabFile(principal2, "some password", 0, file));
 
     // Attempt to add duplicate entries
-    Assert.assertTrue(handler.createKeytabFile(principal2, handler.createSecurePassword(), 0, file));
+    Assert.assertTrue(handler.createKeytabFile(principal2, "some password", 0, file));
 
     Keytab keytab = Keytab.read(file);
     Assert.assertNotNull(keytab);
@@ -150,7 +111,7 @@ public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
     final String principal1 = "principal1@REALM.COM";
 
     try {
-      handler.createKeytabFile(null, handler.createSecurePassword(), 0, file);
+      handler.createKeytabFile(null, "some password", 0, file);
       Assert.fail("KerberosOperationException not thrown with null principal");
     } catch (Throwable t) {
       Assert.assertEquals(KerberosOperationException.class, t.getClass());
@@ -164,7 +125,7 @@ public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
     }
 
     try {
-      handler.createKeytabFile(principal1, handler.createSecurePassword(), 0, null);
+      handler.createKeytabFile(principal1, "some password", 0, null);
       Assert.fail("KerberosOperationException not thrown with null file");
     } catch (Throwable t) {
       Assert.assertEquals(KerberosOperationException.class, t.getClass());
@@ -177,7 +138,7 @@ public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
     File file = folder.newFile();
     final String principal = "principal@REALM.COM";
 
-    Assert.assertTrue(handler.createKeytabFile(principal, handler.createSecurePassword(), 0, file));
+    Assert.assertTrue(handler.createKeytabFile(principal, "some password", 0, file));
 
     FileInputStream fis = new FileInputStream(file);
     byte[] data = new byte[(int) file.length()];
@@ -203,6 +164,29 @@ public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
         f.deleteOnExit();
       }
     }
+  }
+
+  @Test
+  public void testMergeKeytabs() throws KerberosOperationException {
+    KerberosOperationHandler handler = createHandler();
+
+    Keytab keytab1 = handler.createKeytab("principal@EXAMPLE.COM", "password", 1);
+    Keytab keytab2 = handler.createKeytab("principal@EXAMPLE.COM", "password1", 1);
+    Keytab keytab3 = handler.createKeytab("principal1@EXAMPLE.COM", "password", 4);
+
+    Keytab merged;
+
+    merged = handler.mergeKeytabs(keytab1, keytab2);
+    Assert.assertEquals(keytab1.getEntries().size(), merged.getEntries().size());
+
+    merged = handler.mergeKeytabs(keytab1, keytab3);
+    Assert.assertEquals(keytab1.getEntries().size() + keytab3.getEntries().size(), merged.getEntries().size());
+
+    merged = handler.mergeKeytabs(keytab2, keytab3);
+    Assert.assertEquals(keytab2.getEntries().size() + keytab3.getEntries().size(), merged.getEntries().size());
+
+    merged = handler.mergeKeytabs(keytab2, merged);
+    Assert.assertEquals(keytab2.getEntries().size() + keytab3.getEntries().size(), merged.getEntries().size());
   }
 
   @Test
@@ -318,6 +302,50 @@ public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
     handler.setAdministratorCredentials(credentials);
   }
 
+  @Test
+  public void testSetExecutableSearchPaths() throws KerberosOperationException {
+    KerberosOperationHandler handler = createHandler();
+
+    handler.setExecutableSearchPaths((String)null);
+    Assert.assertNull(handler.getExecutableSearchPaths());
+
+    handler.setExecutableSearchPaths((String[])null);
+    Assert.assertNull(handler.getExecutableSearchPaths());
+
+    handler.setExecutableSearchPaths("");
+    Assert.assertNotNull(handler.getExecutableSearchPaths());
+    Assert.assertEquals(0, handler.getExecutableSearchPaths().length);
+
+    handler.setExecutableSearchPaths(new String[0]);
+    Assert.assertNotNull(handler.getExecutableSearchPaths());
+    Assert.assertEquals(0, handler.getExecutableSearchPaths().length);
+
+    handler.setExecutableSearchPaths(new String[]{""});
+    Assert.assertNotNull(handler.getExecutableSearchPaths());
+    Assert.assertEquals(1, handler.getExecutableSearchPaths().length);
+
+    handler.setExecutableSearchPaths("/path1, path2, path3/");
+    Assert.assertNotNull(handler.getExecutableSearchPaths());
+    Assert.assertEquals(3, handler.getExecutableSearchPaths().length);
+    Assert.assertEquals("/path1", handler.getExecutableSearchPaths()[0]);
+    Assert.assertEquals("path2", handler.getExecutableSearchPaths()[1]);
+    Assert.assertEquals("path3/", handler.getExecutableSearchPaths()[2]);
+
+    handler.setExecutableSearchPaths("/path1, path2, ,path3/");
+    Assert.assertNotNull(handler.getExecutableSearchPaths());
+    Assert.assertEquals(3, handler.getExecutableSearchPaths().length);
+    Assert.assertEquals("/path1", handler.getExecutableSearchPaths()[0]);
+    Assert.assertEquals("path2", handler.getExecutableSearchPaths()[1]);
+    Assert.assertEquals("path3/", handler.getExecutableSearchPaths()[2]);
+
+    handler.setExecutableSearchPaths(new String[]{"/path1", "path2", "path3/"});
+    Assert.assertNotNull(handler.getExecutableSearchPaths());
+    Assert.assertEquals(3, handler.getExecutableSearchPaths().length);
+    Assert.assertEquals("/path1", handler.getExecutableSearchPaths()[0]);
+    Assert.assertEquals("path2", handler.getExecutableSearchPaths()[1]);
+    Assert.assertEquals("path3/", handler.getExecutableSearchPaths()[2]);
+  }
+
   private KerberosOperationHandler createHandler() throws KerberosOperationException {
     KerberosOperationHandler handler = new KerberosOperationHandler() {
 
@@ -325,6 +353,7 @@ public abstract class KerberosOperationHandlerTest extends EasyMockSupport {
       public void open(KerberosCredential administratorCredentials, String defaultRealm, Map<String, String> kerberosConfiguration) throws KerberosOperationException {
         setAdministratorCredentials(administratorCredentials);
         setDefaultRealm(defaultRealm);
+        setExecutableSearchPaths("/usr/bin, /usr/kerberos/bin, /usr/sbin");
       }
 
       @Override

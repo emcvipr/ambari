@@ -19,16 +19,23 @@ limitations under the License.
 """
 from resource_management import *
 
-def ranger_service(name):
+def ranger_service(name, action=None):
   import params
   
   if name == 'ranger_admin':
     no_op_test = format('ps -ef | grep proc_rangeradmin | grep -v grep')
-    Execute(format('{params.ranger_start}'), user=params.unix_user, not_if=no_op_test)
+    Execute(params.ranger_start, user=params.unix_user, not_if=no_op_test)
   elif name == 'ranger_usersync':
     no_op_test = format('ps -ef | grep proc_rangerusersync | grep -v grep')
-    # Usersync requires to be run as root.
-    Execute((params.usersync_start,), 
-            not_if=no_op_test,
-            sudo=True,
-    )
+    
+    if params.stack_is_hdp23_or_further:
+      Execute(params.usersync_start, 
+              not_if=no_op_test,
+              user=params.unix_user,
+      )
+    else:
+      # Usersync requires to be run as root for 2.2
+      Execute((params.usersync_start,), 
+              not_if=no_op_test,
+              sudo=True,
+      )

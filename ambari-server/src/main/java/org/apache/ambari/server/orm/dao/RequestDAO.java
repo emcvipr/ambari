@@ -18,27 +18,36 @@
 
 package org.apache.ambari.server.orm.dao;
 
-import com.google.inject.Inject;
-import com.google.inject.Provider;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
+import java.text.MessageFormat;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+
+import javax.persistence.EntityManager;
+import javax.persistence.TypedQuery;
 
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.orm.RequiresSession;
 import org.apache.ambari.server.orm.entities.RequestEntity;
 import org.apache.ambari.server.orm.entities.RequestResourceFilterEntity;
+import org.eclipse.persistence.config.HintValues;
+import org.eclipse.persistence.config.QueryHints;
 
-import javax.persistence.EntityManager;
-import javax.persistence.TypedQuery;
-
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+import com.google.inject.Inject;
+import com.google.inject.Provider;
+import com.google.inject.Singleton;
+import com.google.inject.persist.Transactional;
 
 @Singleton
 public class RequestDAO {
+  /**
+   * SQL template to retrieve all request IDs, sorted by the ID.
+   */
+  private final static String REQUEST_IDS_SORTED_SQL = "SELECT request.requestId FROM RequestEntity request ORDER BY request.requestId {0}";
+
   @Inject
   Provider<EntityManager> entityManagerProvider;
+
   @Inject
   DaoUtils daoUtils;
 
@@ -47,19 +56,53 @@ public class RequestDAO {
     return entityManagerProvider.get().find(RequestEntity.class, requestId);
   }
 
-  @RequiresSession
   public List<RequestEntity> findByPks(Collection<Long> requestIds) {
-    if (null == requestIds || 0 == requestIds.size())
+    return findByPks(requestIds, false);
+  }
+
+  /**
+   * Given a collection of request ids, load the corresponding entities
+   * @param requestIds  the collection of request ids
+   * @param refreshHint {@code true} to hint JPA that the list should be refreshed
+   * @return the list entities. An empty list if the requestIds are not provided
+   */
+  @RequiresSession
+  public List<RequestEntity> findByPks(Collection<Long> requestIds, boolean refreshHint) {
+    if (null == requestIds || 0 == requestIds.size()) {
       return Collections.emptyList();
-    
+    }
+
     TypedQuery<RequestEntity> query = entityManagerProvider.get().createQuery("SELECT request FROM RequestEntity request " +
         "WHERE request.requestId IN ?1", RequestEntity.class);
+
+    // !!! https://bugs.eclipse.org/bugs/show_bug.cgi?id=398067
+    // ensure that an associated entity with a JOIN is not stale
+    if (refreshHint) {
+      query.setHint(QueryHints.REFRESH, HintValues.TRUE);
+    }
+
     return daoUtils.selectList(query, requestIds);
   }
 
   @RequiresSession
   public List<RequestEntity> findAll() {
     return daoUtils.selectAll(entityManagerProvider.get(), RequestEntity.class);
+  }
+
+  @RequiresSession
+  public List<Long> findAllRequestIds(int limit, boolean ascending) {
+    String sort = "ASC";
+    if (!ascending) {
+      sort = "DESC";
+    }
+
+    String sql = MessageFormat.format(REQUEST_IDS_SORTED_SQL, sort);
+    TypedQuery<Long> query = entityManagerProvider.get().createQuery(sql,
+        Long.class);
+
+    query.setMaxResults(limit);
+
+    return daoUtils.selectList(query);
   }
 
   @RequiresSession

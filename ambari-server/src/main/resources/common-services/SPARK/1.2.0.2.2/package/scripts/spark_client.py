@@ -20,6 +20,8 @@ limitations under the License.
 
 import sys
 from resource_management import *
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 from resource_management.core.exceptions import ComponentIsNotRunning
 from resource_management.core.logger import Logger
@@ -28,6 +30,19 @@ from setup_spark import setup_spark
 
 
 class SparkClient(Script):
+  def install(self, env):
+    self.install_packages(env)
+    self.configure(env)
+
+  def configure(self, env):
+    import params
+    env.set_params(params)
+    
+    setup_spark(env, 'client', action = 'config')
+
+  def status(self, env):
+    raise ClientComponentHasNoStatus()
+  
   def get_stack_to_component(self):
     return {"HDP": "spark-client"}
 
@@ -36,21 +51,8 @@ class SparkClient(Script):
 
     env.set_params(params)
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
-      Execute(format("hdp-select set spark-client {version}"))
-
-  def install(self, env):
-    self.install_packages(env)
-    self.configure(env)
-
-  def configure(self, env):
-    import params
-
-    env.set_params(params)
-    setup_spark(env, 'client', action = 'config')
-
-  def status(self, env):
-    raise ClientComponentHasNoStatus()
-
+      conf_select.select(params.stack_name, "spark", params.version)
+      hdp_select.select("spark-client", params.version)
 
 if __name__ == "__main__":
   SparkClient().execute()

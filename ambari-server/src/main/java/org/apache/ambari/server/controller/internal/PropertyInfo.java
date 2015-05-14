@@ -26,6 +26,8 @@ public class PropertyInfo {
   private final boolean temporal;
   private final boolean pointInTime;
   private String amsId;
+  private boolean amsHostMetric;
+  private String unit;
 
   public PropertyInfo(String propertyId, boolean temporal, boolean pointInTime) {
     this.propertyId = propertyId;
@@ -51,5 +53,21 @@ public class PropertyInfo {
 
   public void setAmsId(String amsId) {
     this.amsId = amsId;
+  }
+
+  public boolean isAmsHostMetric() {
+    return amsHostMetric;
+  }
+
+  public void setAmsHostMetric(boolean amsHostMetric) {
+    this.amsHostMetric = amsHostMetric;
+  }
+
+  public String getUnit() {
+    return unit;
+  }
+
+  public void setUnit(String unit) {
+    this.unit = unit;
   }
 }

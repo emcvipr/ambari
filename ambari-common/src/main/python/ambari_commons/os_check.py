@@ -57,6 +57,7 @@ RESOURCES_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "resou
 OSFAMILY_JSON_RESOURCE = "os_family.json"
 JSON_OS_TYPE = "distro"
 JSON_OS_VERSION = "versions"
+JSON_EXTENDS = "extends"
 
 #windows family constants
 SYSTEM_WINDOWS = "Windows"
@@ -69,6 +70,17 @@ REL_2012R2 = "win2012serverr2"
 VER_NT_WORKSTATION = 1
 VER_NT_DOMAIN_CONTROLLER = 2
 VER_NT_SERVER = 3
+
+# Linux specific releases, caching them since they are execution invariants
+_IS_ORACLE_LINUX = os.path.exists('/etc/oracle-release')
+_IS_REDHAT_LINUX = os.path.exists('/etc/redhat-release')
+
+def _is_oracle_linux():
+  return _IS_ORACLE_LINUX
+
+def _is_redhat_linux():
+  return _IS_REDHAT_LINUX
+
 
 class OS_CONST_TYPE(type):
 
@@ -93,6 +105,9 @@ class OS_CONST_TYPE(type):
           'name': family,
           'os_list': json_data[family][JSON_OS_TYPE]
         }]
+        
+        if JSON_EXTENDS in json_data[family]:
+          cls.OS_FAMILY_COLLECTION[-1][JSON_EXTENDS] = json_data[family][JSON_EXTENDS]
     except:
       raise Exception("Couldn't load '%s' file" % OSFAMILY_JSON_RESOURCE)
 
@@ -148,10 +163,14 @@ class OSCheck:
 
       if PYTHON_VER < 26:
         distribution = platform.dist()
-      elif os.path.exists('/etc/redhat-release'):
+      elif _is_redhat_linux():
         distribution = platform.dist()
       else:
         distribution = platform.linux_distribution()
+
+    if distribution[0] == '' and platform.system().lower() == 'darwin':
+      # mac - used for unit tests
+      distribution = ("Darwin", "TestOnly", "1.1.1", "1.1.1", "1.1")
     
     return distribution
 
@@ -171,12 +190,14 @@ class OSCheck:
     operatingSystem = dist[0].lower()
 
     # special cases
-    if os.path.exists('/etc/oracle-release'):
+    if _is_oracle_linux():
       return 'oraclelinux'
     elif operatingSystem.startswith('suse linux enterprise server'):
       return 'sles'
     elif operatingSystem.startswith('red hat enterprise linux'):
       return 'redhat'
+    elif operatingSystem.startswith('darwin'):
+      return 'mac'
 
     if operatingSystem != '':
       return operatingSystem
@@ -198,6 +219,15 @@ class OSCheck:
         break
 
     return os_family.lower()
+
+  @staticmethod
+  def get_os_family_parent(os_family):
+    for os_family_item in OSConst.OS_FAMILY_COLLECTION:
+      if os_family_item['name'] == os_family:
+        if JSON_EXTENDS in os_family_item:
+          return os_family_item[JSON_EXTENDS]
+        else:
+          return None
 
   @staticmethod
   def get_os_version():
@@ -247,14 +277,9 @@ class OSCheck:
     """
      Return true if it is so or false if not
 
-     This is safe check for debian family, doesn't generate exception
+     This is safe check for ubuntu/debian families, doesn't generate exception
     """
-    try:
-      if OSCheck.get_os_family() == OSConst.UBUNTU_FAMILY:
-        return True
-    except Exception:
-      pass
-    return False
+    return OSCheck.is_in_family(OSCheck.get_os_family(), OSConst.UBUNTU_FAMILY)
 
   @staticmethod
   def is_suse_family():
@@ -263,12 +288,7 @@ class OSCheck:
 
      This is safe check for suse family, doesn't generate exception
     """
-    try:
-      if OSCheck.get_os_family() == OSConst.SUSE_FAMILY:
-        return True
-    except Exception:
-      pass
-    return False
+    return OSCheck.is_in_family(OSCheck.get_os_family(), OSConst.SUSE_FAMILY)
 
   @staticmethod
   def is_redhat_family():
@@ -277,12 +297,16 @@ class OSCheck:
 
      This is safe check for redhat family, doesn't generate exception
     """
+    return OSCheck.is_in_family(OSCheck.get_os_family(), OSConst.REDHAT_FAMILY)
+  
+  @staticmethod
+  def is_in_family(current_family, family):
     try:
-      if OSCheck.get_os_family() == OSConst.REDHAT_FAMILY:
+      if current_family == family or OSCheck.get_os_family_parent(current_family) and OSCheck.is_in_family(OSCheck.get_os_family_parent(current_family), family):
         return True
     except Exception:
       pass
-    return False
+    return False    
 
   @staticmethod
   def is_redhat7():

@@ -29,6 +29,7 @@ def setup_hadoop():
 
   Execute(("setenforce","0"),
           only_if="test -f /selinux/enforce",
+          not_if="(! which getenforce ) || (which getenforce && getenforce | grep -q Disabled)",
           sudo=True,
   )
 
@@ -66,10 +67,10 @@ def setup_hadoop():
          content=Template('commons-logging.properties.j2')
     )
 
-    health_check_template = "health_check-v2" #for stack 1 use 'health_check'
-    File(os.path.join(params.hadoop_conf_dir, "health_check"),
+    health_check_template_name = "health_check"
+    File(os.path.join(params.hadoop_conf_dir, health_check_template_name),
          owner=tc_owner,
-         content=Template(health_check_template + ".j2")
+         content=Template(health_check_template_name + ".j2")
     )
 
     log4j_filename = os.path.join(params.hadoop_conf_dir, "log4j.properties")
@@ -160,7 +161,7 @@ def install_snappy():
   so_src_dir_x64 = format("{hadoop_home}/lib64")
   so_src_x86 = format("{so_src_dir_x86}/{snappy_so}")
   so_src_x64 = format("{so_src_dir_x64}/{snappy_so}")
-  if params.has_namenode:
+  if params.has_namenode and params.create_lib_snappy_symlinks:
     Directory([so_target_dir_x86, so_target_dir_x64],
               recursive=True,
     )    

@@ -27,6 +27,7 @@ import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.TemporalInfo;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.apache.ambari.server.controller.utilities.StreamProvider;
+import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 import org.apache.http.client.utils.URIBuilder;
@@ -34,13 +35,13 @@ import org.codehaus.jackson.map.AnnotationIntrospector;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.map.ObjectReader;
 import org.codehaus.jackson.xc.JaxbAnnotationIntrospector;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.SocketTimeoutException;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -49,10 +50,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 import static org.apache.ambari.server.Role.HBASE_MASTER;
 import static org.apache.ambari.server.Role.HBASE_REGIONSERVER;
 import static org.apache.ambari.server.Role.METRICS_COLLECTOR;
+import static org.apache.ambari.server.controller.metrics.MetricsPaddingMethod.ZERO_PADDING_PARAM;
 import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService.TIMELINE_METRICS;
 import static org.codehaus.jackson.map.annotate.JsonSerialize.Inclusion;
 
@@ -62,6 +63,14 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
   private final static ObjectReader timelineObjectReader;
   private static final String METRIC_REGEXP_PATTERN = "\\([^)]*\\)";
   private static final int COLLECTOR_DEFAULT_PORT = 6188;
+  protected static enum AGGREGATE_FUNCTION_IDENTIFIER {
+    SUM,
+    MIN,
+    MAX,
+    AVG
+  }
+  protected static final EnumMap<AGGREGATE_FUNCTION_IDENTIFIER, String> aggregateFunctionIdentifierMap =
+    new EnumMap<AGGREGATE_FUNCTION_IDENTIFIER, String>(AGGREGATE_FUNCTION_IDENTIFIER.class);
 
   static {
     TIMELINE_APPID_MAP.put(HBASE_MASTER.name(), "HBASE");
@@ -74,6 +83,11 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
     //noinspection deprecation
     mapper.getSerializationConfig().setSerializationInclusion(Inclusion.NON_NULL);
     timelineObjectReader = mapper.reader(TimelineMetrics.class);
+
+    aggregateFunctionIdentifierMap.put(AGGREGATE_FUNCTION_IDENTIFIER.SUM, "._sum");
+    aggregateFunctionIdentifierMap.put(AGGREGATE_FUNCTION_IDENTIFIER.MIN, "._min");
+    aggregateFunctionIdentifierMap.put(AGGREGATE_FUNCTION_IDENTIFIER.MAX, "._max");
+    aggregateFunctionIdentifierMap.put(AGGREGATE_FUNCTION_IDENTIFIER.AVG, "._avg");
   }
 
   public AMSPropertyProvider(Map<String, Map<String, PropertyInfo>> componentPropertyInfoMap,
@@ -99,6 +113,32 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
   }
 
   /**
+   * Support properties with aggregate functions and metrics padding method.
+   */
+  @Override
+  public Set<String> checkPropertyIds(Set<String> propertyIds) {
+    for (String propertyId : propertyIds) {
+      if (propertyId.startsWith(ZERO_PADDING_PARAM)
+          || hasAggregateFunctionSuffix(propertyId)) {
+        propertyIds.remove(propertyId);
+      }
+    }
+    return propertyIds;
+  }
+
+  /**
+   * Check if property ends with a trailing suffix
+   */
+  protected boolean hasAggregateFunctionSuffix(String propertyId) {
+    for (String aggregateFunctionId : aggregateFunctionIdentifierMap.values()) {
+      if (propertyId.endsWith(aggregateFunctionId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * The information required to make a single call to the Metrics service.
    */
   class MetricsRequest {
@@ -107,6 +147,9 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
     private final Map<String, Set<String>> metrics = new HashMap<String, Set<String>>();
     private final URIBuilder uriBuilder;
     private final String dummyHostName = "__SummaryInfo__";
+    // Metrics with amsHostMetric = true
+    // Basically a host metric to be returned for a hostcomponent
+    private final Set<String> hostComponentHostMetrics = new HashSet<String>();
 
     private MetricsRequest(TemporalInfo temporalInfo, URIBuilder uriBuilder) {
       this.temporalInfo = temporalInfo;
@@ -135,6 +178,51 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
       propertyIds.add(id);
     }
 
+    public void putHosComponentHostMetric(String metric) {
+      if (metric != null) {
+        hostComponentHostMetrics.add(metric);
+      }
+    }
+
+    private TimelineMetrics getTimelineMetricsForSpec(String spec) {
+      TimelineMetrics timelineMetrics = null;
+
+      LOG.debug("Metrics request url = " + spec);
+      BufferedReader reader = null;
+      try {
+        reader = new BufferedReader(new InputStreamReader(streamProvider.readFrom(spec)));
+        timelineMetrics = timelineObjectReader.readValue(reader);
+        LOG.debug("Timeline metrics response => " + timelineMetrics);
+
+      } catch (IOException io) {
+        String errorMsg = "Error getting timeline metrics.";
+        if (LOG.isDebugEnabled()) {
+          LOG.error(errorMsg, io);
+        } else {
+          if (io instanceof SocketTimeoutException) {
+            errorMsg += " Can not connect to collector, socket error.";
+          }
+          LOG.error(errorMsg);
+        }
+      } finally {
+        if (reader != null) {
+          try {
+            reader.close();
+          } catch (IOException e) {
+            if (LOG.isWarnEnabled()) {
+              if (LOG.isDebugEnabled()) {
+                LOG.warn("Unable to close http input stream : spec=" + spec, e);
+              } else {
+                LOG.warn("Unable to close http input stream : spec=" + spec);
+              }
+            }
+          }
+        }
+      }
+
+      return timelineMetrics;
+    }
+
     /**
      * Populate the associated resources by making a call to the Metrics
      * service.
@@ -145,7 +233,7 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
     public Collection<Resource> populateResources() throws SystemException {
       // No open ended query support.
       if (temporalInfo != null && (temporalInfo.getStartTime() == null
-        || temporalInfo.getEndTime() == null)) {
+          || temporalInfo.getEndTime() == null)) {
         return Collections.emptySet();
       }
 
@@ -170,48 +258,35 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
             return Collections.emptySet();
           }
 
-          String spec = getSpec(hostname, resource);
+          TimelineMetrics timelineMetrics;
+          // Allow for multiple requests since host metrics for a
+          // hostcomponent need the HOST appId
+          if (hostComponentHostMetrics.isEmpty()) {
+            String spec = getSpec(hostname, resource);
+            timelineMetrics = getTimelineMetricsForSpec(spec);
+          } else {
+            Set<String> specs = getSpecsForHostComponentMetrics(hostname, resource);
+            timelineMetrics = new TimelineMetrics();
+            for (String spec : specs) {
+              if (!StringUtils.isEmpty(spec)) {
+                TimelineMetrics metrics = getTimelineMetricsForSpec(spec);
+                if (metrics != null) {
+                  timelineMetrics.getMetrics().addAll(metrics.getMetrics());
+                }
+              }
+            }
+          }
 
-          BufferedReader reader = null;
-          try {
-            LOG.debug("Metrics request url =" + spec);
-            reader = new BufferedReader(new InputStreamReader(streamProvider.readFrom(spec)));
+          Set<String> patterns = createPatterns(metrics.keySet());
 
-            TimelineMetrics timelineMetrics = timelineObjectReader.readValue(reader);
-            LOG.debug("Timeline metrics response => " + timelineMetrics);
-
-            Set<String> patterns = createPatterns(metrics.keySet());
-
+          if (timelineMetrics != null) {
             for (TimelineMetric metric : timelineMetrics.getMetrics()) {
               if (metric.getMetricName() != null
-                && metric.getMetricValues() != null
-                && checkMetricName(patterns, metric.getMetricName())) {
+                  && metric.getMetricValues() != null
+                  && checkMetricName(patterns, metric.getMetricName())) {
+                // Pad zeros or nulls if needed
+                metricsPaddingMethod.applyPaddingStrategy(metric, temporalInfo);
                 populateResource(resource, metric);
-              }
-            }
-
-          } catch (IOException io) {
-            String errorMsg = "Error getting timeline metrics.";
-            if (LOG.isDebugEnabled()) {
-              LOG.error(errorMsg, io);
-            } else {
-              if (io instanceof SocketTimeoutException) {
-                errorMsg += " Can not connect to collector, socket error.";
-              }
-              LOG.error(errorMsg);
-            }
-          } finally {
-            if (reader != null) {
-              try {
-                reader.close();
-              } catch (IOException e) {
-                if (LOG.isWarnEnabled()) {
-                  if (LOG.isDebugEnabled()) {
-                    LOG.warn("Unable to close http input stream : spec=" + spec, e);
-                  } else {
-                    LOG.warn("Unable to close http input stream : spec=" + spec);
-                  }
-                }
               }
             }
           }
@@ -221,8 +296,33 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
       return Collections.emptySet();
     }
 
-    private String getSpec(String hostname, Resource resource) {
-      String metricsParam = getSetString(processRegexps(metrics.keySet()), -1);
+    /**
+     * Return separate specs for : host component metrics and host component
+     * host metrics.
+     * @return @Set Urls
+     */
+    private Set<String> getSpecsForHostComponentMetrics(String hostname, Resource resource) {
+      Set<String> nonHostComponentMetrics = new HashSet<String>(metrics.keySet());
+      nonHostComponentMetrics.removeAll(hostComponentHostMetrics);
+
+      Set<String> specs = new HashSet<String>();
+      if (!hostComponentHostMetrics.isEmpty()) {
+        String hostComponentHostMetricParams = getSetString(processRegexps(hostComponentHostMetrics), -1);
+        setQueryParams(resource, hostComponentHostMetricParams, hostname, "HOST");
+        specs.add(uriBuilder.toString());
+      }
+
+      if (!nonHostComponentMetrics.isEmpty()) {
+        String nonHostComponentHostMetricParams = getSetString(processRegexps(nonHostComponentMetrics), -1);
+        setQueryParams(resource, nonHostComponentHostMetricParams, hostname, null);
+        specs.add(uriBuilder.toString());
+      }
+
+      return specs;
+    }
+
+    private void setQueryParams(Resource resource, String metricsParam,
+                                String hostname, String appId) {
       // Reuse uriBuilder
       uriBuilder.removeQuery();
 
@@ -234,12 +334,16 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
         uriBuilder.setParameter("hostname", hostname);
       }
 
-      String componentName = getComponentName(resource);
-      if (componentName != null && !componentName.isEmpty()) {
-        if (TIMELINE_APPID_MAP.containsKey(componentName)) {
-          componentName = TIMELINE_APPID_MAP.get(componentName);
+      if (appId != null) {
+        uriBuilder.setParameter("appId", appId);
+      } else {
+        String componentName = getComponentName(resource);
+        if (componentName != null && !componentName.isEmpty()) {
+          if (TIMELINE_APPID_MAP.containsKey(componentName)) {
+            componentName = TIMELINE_APPID_MAP.get(componentName);
+          }
+          uriBuilder.setParameter("appId", componentName);
         }
-        uriBuilder.setParameter("appId", componentName);
       }
 
       if (temporalInfo != null) {
@@ -253,6 +357,12 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
           uriBuilder.setParameter("endTime", String.valueOf(endTime));
         }
       }
+    }
+
+    private String getSpec(String hostname, Resource resource) {
+      String metricsParam = getSetString(processRegexps(metrics.keySet()), -1);
+
+      setQueryParams(resource, metricsParam, hostname, null);
 
       return uriBuilder.toString();
     }
@@ -342,8 +452,7 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
   public Set<Resource> populateResourcesWithProperties(Set<Resource> resources,
                Request request, Set<String> propertyIds) throws SystemException {
 
-    Map<String, Map<TemporalInfo, MetricsRequest>> requestMap =
-      getMetricsRequests(resources, request, propertyIds);
+    Map<String, Map<TemporalInfo, MetricsRequest>> requestMap = getMetricsRequests(resources, request, propertyIds);
 
     // For each cluster
     for (Map.Entry<String, Map<TemporalInfo, MetricsRequest>> clusterEntry : requestMap.entrySet()) {
@@ -423,12 +532,11 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
           updateComponentMetricMap(componentMetricMap, id);
         }
 
-        getPropertyInfoMap(componentName, id, propertyInfoMap);
+        updatePropertyInfoMap(componentName, id, propertyInfoMap);
 
         for (Map.Entry<String, PropertyInfo> entry : propertyInfoMap.entrySet()) {
           String propertyId = entry.getKey();
           PropertyInfo propertyInfo = entry.getValue();
-
           TemporalInfo temporalInfo = request.getTemporalInfo(id);
 
           if ((temporalInfo == null && propertyInfo.isPointInTime()) ||
@@ -443,6 +551,10 @@ public abstract class AMSPropertyProvider extends MetricsPropertyProvider {
             }
             metricsRequest.putResource(getHostName(resource), resource);
             metricsRequest.putPropertyId(propertyInfo.getPropertyId(), propertyId);
+            // If request is for a host metric we need to create multiple requests
+            if (propertyInfo.isAmsHostMetric()) {
+              metricsRequest.putHosComponentHostMetric(propertyInfo.getPropertyId());
+            }
           }
         }
       }

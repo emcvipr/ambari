@@ -19,6 +19,7 @@ limitations under the License.
 '''
 from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
+import json
 
 class TestSqoop(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "SQOOP/1.4.4.2.0/package"
@@ -57,6 +58,83 @@ class TestSqoop(RMFTestCase):
                               group = 'hadoop',)
     self.assertNoMoreResources()
 
+  def test_configure_add_jdbc(self):
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/secured.json"
+    with open(config_file, "r") as f:
+      loaded_json = json.load(f)
+
+    loaded_json['configurations']['sqoop-env']['jdbc_drivers'] = 'org.postgresql.Driver, oracle.jdbc.driver.OracleDriver'
 
 
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/sqoop_client.py",
+                       classname = "SqoopClient",
+                       command = "configure",
+                       config_dict = loaded_json,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+    )
+    self.assertResourceCalled('Link', '/usr/lib/sqoop/lib/mysql-connector-java.jar',
+                              to = '/usr/share/java/mysql-connector-java.jar',
+                              )
+    self.assertResourceCalled('File', '/usr/lib/sqoop/lib/ojdbc.jar',
+                              content = DownloadSource('http://c6401.ambari.apache.org:8080/resources//oracle-jdbc-driver.jar'),
+                              mode = 0644,
+                              )
+    self.assertResourceCalled('File', '/usr/lib/sqoop/lib/postgresql-jdbc.jar',
+                              content = DownloadSource('http://c6401.ambari.apache.org:8080/resources//postgres-jdbc-driver.jar'),
+                              mode = 0644,
+                              )
+    self.assertResourceCalled('Directory', '/usr/lib/sqoop/conf',
+                              owner = 'sqoop',
+                              group = 'hadoop',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('File', '/usr/lib/sqoop/conf/sqoop-env.sh',
+                              content = InlineTemplate(self.getConfig()['configurations']['sqoop-env']['content']),
+                              owner = 'sqoop',
+                              group = 'hadoop',
+                              )
+    self.assertResourceCalled('File', '/usr/lib/sqoop/conf/sqoop-env-template.sh',
+                              owner = 'sqoop',
+                              only_if = 'test -e /usr/lib/sqoop/conf/sqoop-env-template.sh',
+                              group = 'hadoop',
+                              )
+    self.assertResourceCalled('File', '/usr/lib/sqoop/conf/sqoop-site-template.xml',
+                              owner = 'sqoop',
+                              only_if = 'test -e /usr/lib/sqoop/conf/sqoop-site-template.xml',
+                              group = 'hadoop',
+                              )
+    self.assertResourceCalled('File', '/usr/lib/sqoop/conf/sqoop-site.xml',
+                              owner = 'sqoop',
+                              only_if = 'test -e /usr/lib/sqoop/conf/sqoop-site.xml',
+                              group = 'hadoop',
+                              )
+    self.assertNoMoreResources()
 
+
+  def test_pre_rolling_restart_23(self):
+    config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    version = '2.3.0.0-1234'
+    json_content['commandParams']['version'] = version
+
+    mocks_dict = {}
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/sqoop_client.py",
+                       classname = "SqoopClient",
+                       command = "pre_rolling_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES,
+                       call_mocks = [(0, None), (0, None)],
+                       mocks_dict = mocks_dict)
+
+    self.assertResourceCalled("Execute", "hdp-select set sqoop-client %s" % version)
+
+    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(
+      "conf-select create-conf-dir --package sqoop --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[0][0][0])
+    self.assertEquals(
+      "conf-select set-conf-dir --package sqoop --stack-version 2.3.0.0-1234 --conf-version 0",
+       mocks_dict['call'].call_args_list[1][0][0])

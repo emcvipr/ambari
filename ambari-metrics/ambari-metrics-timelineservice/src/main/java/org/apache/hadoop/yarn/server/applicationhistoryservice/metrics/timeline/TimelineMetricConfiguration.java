@@ -17,6 +17,7 @@
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -53,14 +54,24 @@ public class TimelineMetricConfiguration {
 
   public static final String PRECISION_TABLE_TTL =
     "timeline.metrics.host.aggregator.ttl";
+
   public static final String HOST_MINUTE_TABLE_TTL =
     "timeline.metrics.host.aggregator.minute.ttl";
+
+  public static final String HOST_DAILY_TABLE_TTL =
+    "timeline.metrics.host.aggregator.daily.ttl";
+
   public static final String HOST_HOUR_TABLE_TTL =
     "timeline.metrics.host.aggregator.hourly.ttl";
+
   public static final String CLUSTER_MINUTE_TABLE_TTL =
     "timeline.metrics.cluster.aggregator.minute.ttl";
+
   public static final String CLUSTER_HOUR_TABLE_TTL =
     "timeline.metrics.cluster.aggregator.hourly.ttl";
+
+  public static final String CLUSTER_DAILY_TABLE_TTL =
+    "timeline.metrics.cluster.aggregator.daily.ttl";
 
   public static final String CLUSTER_AGGREGATOR_TIMESLICE_INTERVAL =
     "timeline.metrics.cluster.aggregator.minute.timeslice.interval";
@@ -77,11 +88,17 @@ public class TimelineMetricConfiguration {
   public static final String HOST_AGGREGATOR_HOUR_SLEEP_INTERVAL =
     "timeline.metrics.host.aggregator.hourly.interval";
 
+  public static final String HOST_AGGREGATOR_DAILY_SLEEP_INTERVAL =
+    "timeline.metrics.host.aggregator.daily.interval";
+
   public static final String CLUSTER_AGGREGATOR_MINUTE_SLEEP_INTERVAL =
     "timeline.metrics.cluster.aggregator.minute.interval";
 
   public static final String CLUSTER_AGGREGATOR_HOUR_SLEEP_INTERVAL =
     "timeline.metrics.cluster.aggregator.hourly.interval";
+
+  public static final String CLUSTER_AGGREGATOR_DAILY_SLEEP_INTERVAL =
+    "timeline.metrics.cluster.aggregator.daily.interval";
 
   public static final String HOST_AGGREGATOR_MINUTE_CHECKPOINT_CUTOFF_MULTIPLIER =
     "timeline.metrics.host.aggregator.minute.checkpointCutOffMultiplier";
@@ -89,14 +106,17 @@ public class TimelineMetricConfiguration {
   public static final String HOST_AGGREGATOR_HOUR_CHECKPOINT_CUTOFF_MULTIPLIER =
     "timeline.metrics.host.aggregator.hourly.checkpointCutOffMultiplier";
 
+  public static final String HOST_AGGREGATOR_DAILY_CHECKPOINT_CUTOFF_MULTIPLIER =
+    "timeline.metrics.host.aggregator.daily.checkpointCutOffMultiplier";
+
   public static final String CLUSTER_AGGREGATOR_MINUTE_CHECKPOINT_CUTOFF_MULTIPLIER =
     "timeline.metrics.cluster.aggregator.minute.checkpointCutOffMultiplier";
 
   public static final String CLUSTER_AGGREGATOR_HOUR_CHECKPOINT_CUTOFF_MULTIPLIER =
     "timeline.metrics.cluster.aggregator.hourly.checkpointCutOffMultiplier";
 
-  public static final String CLUSTER_AGGREGATOR_HOUR_CHECKPOINT_CUTOFF_INTERVAL =
-    "timeline.metrics.cluster.aggregator.hourly.checkpointCutOffInterval";
+  public static final String CLUSTER_AGGREGATOR_DAILY_CHECKPOINT_CUTOFF_MULTIPLIER =
+    "timeline.metrics.cluster.aggregator.daily.checkpointCutOffMultiplier";
 
   public static final String GLOBAL_RESULT_LIMIT =
     "timeline.metrics.service.default.result.limit";
@@ -113,11 +133,17 @@ public class TimelineMetricConfiguration {
   public static final String HOST_AGGREGATOR_HOUR_DISABLED =
     "timeline.metrics.host.aggregator.hourly.disabled";
 
+  public static final String HOST_AGGREGATOR_DAILY_DISABLED =
+    "timeline.metrics.host.aggregator.hourly.disabled";
+
   public static final String CLUSTER_AGGREGATOR_MINUTE_DISABLED =
     "timeline.metrics.cluster.aggregator.minute.disabled";
 
   public static final String CLUSTER_AGGREGATOR_HOUR_DISABLED =
     "timeline.metrics.cluster.aggregator.hourly.disabled";
+
+  public static final String CLUSTER_AGGREGATOR_DAILY_DISABLED =
+    "timeline.metrics.cluster.aggregator.daily.disabled";
 
   public static final String DISABLE_APPLICATION_TIMELINE_STORE =
     "timeline.service.disable.application.timeline.store";
@@ -127,6 +153,11 @@ public class TimelineMetricConfiguration {
 
   public static final String TIMELINE_SERVICE_RPC_ADDRESS =
     "timeline.metrics.service.rpc.address";
+
+  public static final String CLUSTER_AGGREGATOR_APP_IDS =
+    "timeline.metrics.service.cluster.aggregator.appIds";
+
+  public static final String HOST_APP_ID = "HOST";
 
   private Configuration hbaseConf;
   private Configuration metricsConf;

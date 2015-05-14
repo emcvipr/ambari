@@ -41,11 +41,11 @@ import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.OrmTestHelper;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
-import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.Config;
 import org.apache.ambari.server.state.ConfigFactory;
 import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.state.HostState;
+import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponent;
 import org.apache.ambari.server.state.ServiceComponentHost;
@@ -88,7 +88,6 @@ public class TestHeartbeatMonitor {
     injector.getInstance(GuiceJpaInitializer.class);
     helper = injector.getInstance(OrmTestHelper.class);
     ambariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
-    ambariMetaInfo.init();
   }
 
   @After
@@ -107,6 +106,7 @@ public class TestHeartbeatMonitor {
   @Test
   public void testStateCommandsGeneration() throws AmbariException, InterruptedException,
           InvalidStateTransitionException {
+    StackId stackId = new StackId("HDP-0.1");
     Clusters clusters = injector.getInstance(Clusters.class);
     clusters.addHost(hostname1);
     setOsFamily(clusters.getHost(hostname1), "redhat", "6.3");
@@ -114,12 +114,11 @@ public class TestHeartbeatMonitor {
     clusters.addHost(hostname2);
     setOsFamily(clusters.getHost(hostname2), "redhat", "6.3");
     clusters.getHost(hostname2).persist();
-    clusters.addCluster(clusterName);
+    clusters.addCluster(clusterName, stackId);
     Cluster cluster = clusters.getCluster(clusterName);
-    StackId stackId = new StackId("HDP-0.1");
-    cluster.setDesiredStackVersion(stackId);
-    helper.getOrCreateRepositoryVersion(stackId.getStackName(), stackId.getStackVersion());
-    cluster.createClusterVersion(stackId.getStackName(), stackId.getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
+    helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
+    cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
+        RepositoryVersionState.UPGRADING);
     Set<String> hostNames = new HashSet<String>(){{
       add(hostname1);
       add(hostname2);
@@ -193,6 +192,7 @@ public class TestHeartbeatMonitor {
 
   @Test
   public void testStatusCommandForAnyComponents() throws Exception {
+    StackId stackId = new StackId("HDP-0.1");
     Clusters clusters = injector.getInstance(Clusters.class);
     clusters.addHost(hostname1);
     setOsFamily(clusters.getHost(hostname1), "redhat", "6.3");
@@ -200,12 +200,12 @@ public class TestHeartbeatMonitor {
     clusters.addHost(hostname2);
     setOsFamily(clusters.getHost(hostname2), "redhat", "6.3");
     clusters.getHost(hostname2).persist();
-    clusters.addCluster(clusterName);
+    clusters.addCluster(clusterName, stackId);
     Cluster cluster = clusters.getCluster(clusterName);
-    StackId stackId = new StackId("HDP-0.1");
-    cluster.setDesiredStackVersion(stackId);
-    helper.getOrCreateRepositoryVersion(stackId.getStackName(), stackId.getStackVersion());
-    cluster.createClusterVersion(stackId.getStackName(), stackId.getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
+
+    helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
+    cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
+        RepositoryVersionState.UPGRADING);
     Set<String> hostNames = new HashSet<String>() {{
       add(hostname1);
       add(hostname2);
@@ -245,6 +245,12 @@ public class TestHeartbeatMonitor {
     hdfs.getServiceComponent(Role.HDFS_CLIENT.name()).getServiceComponentHost(hostname1).setState(State.INSTALLED);
     hdfs.getServiceComponent(Role.HDFS_CLIENT.name()).getServiceComponentHost(hostname2).setState(State.INSTALLED);
 
+    hdfs.getServiceComponent(Role.DATANODE.name()).getServiceComponentHost(hostname1).setDesiredState(State.INSTALLED);
+    hdfs.getServiceComponent(Role.NAMENODE.name()).getServiceComponentHost(hostname1).setDesiredState(State.INSTALLED);
+    hdfs.getServiceComponent(Role.SECONDARY_NAMENODE.name()).getServiceComponentHost(hostname1).setDesiredState(State.INSTALLED);
+    hdfs.getServiceComponent(Role.HDFS_CLIENT.name()).getServiceComponentHost(hostname1).setDesiredState(State.INSTALLED);
+    hdfs.getServiceComponent(Role.HDFS_CLIENT.name()).getServiceComponentHost(hostname2).setDesiredState(State.INSTALLED);
+
     ActionQueue aq = new ActionQueue();
     ActionManager am = mock(ActionManager.class);
     HeartbeatMonitor hm = new HeartbeatMonitor(clusters, aq, am,
@@ -283,8 +289,10 @@ public class TestHeartbeatMonitor {
       containsSECONDARY_NAMENODEStatus |= cmd.getComponentName().
         equals("SECONDARY_NAMENODE");
       containsHDFS_CLIENTStatus |= cmd.getComponentName().equals
-        ("HDFS_CLIENT");
+          ("HDFS_CLIENT");
       assertTrue(cmd.getConfigurations().size() > 0);
+      assertEquals(State.INSTALLED, cmd.getDesiredState());
+      assertEquals(false, cmd.getHasStaleConfigs());
     }
     assertTrue(containsDATANODEStatus);
     assertTrue(containsNAMENODEStatus);
@@ -302,16 +310,17 @@ public class TestHeartbeatMonitor {
   @Test
   public void testHeartbeatStateCommandsEnqueueing() throws AmbariException, InterruptedException,
           InvalidStateTransitionException {
+    StackId stackId = new StackId("HDP-0.1");
     Clusters clusters = injector.getInstance(Clusters.class);
     clusters.addHost(hostname1);
     setOsFamily(clusters.getHost(hostname1), "redhat", "5.9");
     clusters.getHost(hostname1).persist();
-    clusters.addCluster(clusterName);
+    clusters.addCluster(clusterName, stackId);
     Cluster cluster = clusters.getCluster(clusterName);
-    StackId stackId = new StackId("HDP-0.1");
-    cluster.setDesiredStackVersion(stackId);
-    helper.getOrCreateRepositoryVersion(stackId.getStackName(), stackId.getStackVersion());
-    cluster.createClusterVersion(stackId.getStackName(), stackId.getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
+
+    helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
+    cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
+        RepositoryVersionState.UPGRADING);
 
     Set<String> hostNames = new HashSet<String>(){{
       add(hostname1);
@@ -412,17 +421,18 @@ public class TestHeartbeatMonitor {
   @Test
   public void testHeartbeatLossWithComponent() throws AmbariException, InterruptedException,
           InvalidStateTransitionException {
+    StackId stackId = new StackId("HDP-0.1");
     Clusters clusters = injector.getInstance(Clusters.class);
     clusters.addHost(hostname1);
     setOsFamily(clusters.getHost(hostname1), "redhat", "6.3");
     clusters.getHost(hostname1).persist();
 
-    clusters.addCluster(clusterName);
+    clusters.addCluster(clusterName, stackId);
     Cluster cluster = clusters.getCluster(clusterName);
-    StackId stackId = new StackId("HDP-0.1");
-    cluster.setDesiredStackVersion(stackId);
-    helper.getOrCreateRepositoryVersion(stackId.getStackName(), stackId.getStackVersion());
-    cluster.createClusterVersion(stackId.getStackName(), stackId.getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
+
+    helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
+    cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
+        RepositoryVersionState.UPGRADING);
 
     Set<String> hostNames = new HashSet<String>(){{
       add(hostname1);
@@ -526,6 +536,7 @@ public class TestHeartbeatMonitor {
   @Test
   public void testStateCommandsWithAlertsGeneration() throws AmbariException, InterruptedException,
           InvalidStateTransitionException {
+    StackId stackId = new StackId("HDP-2.0.7");
     Clusters clusters = injector.getInstance(Clusters.class);
 
     clusters.addHost(hostname1);
@@ -535,13 +546,14 @@ public class TestHeartbeatMonitor {
     clusters.addHost(hostname2);
     setOsFamily(clusters.getHost(hostname2), "redhat", "6.3");
     clusters.getHost(hostname2).persist();
-    clusters.addCluster(clusterName);
+    clusters.addCluster(clusterName, stackId);
 
     Cluster cluster = clusters.getCluster(clusterName);
-    StackId stackId = new StackId("HDP-2.0.7");
+
     cluster.setDesiredStackVersion(stackId);
-    helper.getOrCreateRepositoryVersion(stackId.getStackName(), stackId.getStackVersion());
-    cluster.createClusterVersion(stackId.getStackName(), stackId.getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
+    helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
+    cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
+        RepositoryVersionState.UPGRADING);
 
     Set<String> hostNames = new HashSet<String>(){{
       add(hostname1);

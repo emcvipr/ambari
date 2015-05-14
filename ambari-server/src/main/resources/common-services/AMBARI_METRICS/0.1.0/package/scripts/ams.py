@@ -73,6 +73,54 @@ def ams(name=None):
          content=InlineTemplate(params.ams_env_sh_template)
     )
 
+    ServiceConfig(params.ams_collector_win_service_name,
+                  action="change_user",
+                  username = params.ams_user,
+                  password = Script.get_password(params.ams_user))
+
+    if params.is_hbase_distributed:
+      # Configuration needed to support NN HA
+      XmlConfig("hdfs-site.xml",
+            conf_dir=params.ams_collector_conf_dir,
+            configurations=params.config['configurations']['hdfs-site'],
+            configuration_attributes=params.config['configuration_attributes']['hdfs-site'],
+            owner=params.ams_user,
+            group=params.user_group,
+            mode=0644
+      )
+
+      XmlConfig("hdfs-site.xml",
+            conf_dir=params.hbase_conf_dir,
+            configurations=params.config['configurations']['hdfs-site'],
+            configuration_attributes=params.config['configuration_attributes']['hdfs-site'],
+            owner=params.ams_user,
+            group=params.user_group,
+            mode=0644
+      )
+
+      XmlConfig("core-site.xml",
+                conf_dir=params.ams_collector_conf_dir,
+                configurations=params.config['configurations']['core-site'],
+                configuration_attributes=params.config['configuration_attributes']['core-site'],
+                owner=params.ams_user,
+                group=params.user_group,
+                mode=0644
+      )
+
+      XmlConfig("core-site.xml",
+                conf_dir=params.hbase_conf_dir,
+                configurations=params.config['configurations']['core-site'],
+                configuration_attributes=params.config['configuration_attributes']['core-site'],
+                owner=params.ams_user,
+                group=params.user_group,
+                mode=0644
+      )
+
+    else:
+      ServiceConfig(params.ams_embedded_hbase_win_service_name,
+                    action="change_user",
+                    username = params.ams_user,
+                    password = Script.get_password(params.ams_user))
     pass
 
   elif name == 'monitor':
@@ -111,6 +159,12 @@ def ams(name=None):
       template_tag=None
     )
 
+    ServiceConfig(params.ams_monitor_win_service_name,
+                  action="change_user",
+                  username = params.ams_user,
+                  password = Script.get_password(params.ams_user))
+
+
 @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
 def ams(name=None):
   import params
@@ -141,6 +195,10 @@ def ams(name=None):
     merged_ams_hbase_site.update(params.config['configurations']['ams-hbase-site'])
     if params.security_enabled:
       merged_ams_hbase_site.update(params.config['configurations']['ams-hbase-security-site'])
+
+    # Add phoenix client side overrides
+    merged_ams_hbase_site['phoenix.query.maxGlobalMemoryPercentage'] = str(params.phoenix_max_global_mem_percent)
+    merged_ams_hbase_site['phoenix.spool.directory'] = params.phoenix_client_spool_dir
 
     XmlConfig( "hbase-site.xml",
                conf_dir = params.ams_collector_conf_dir,
@@ -187,6 +245,55 @@ def ams(name=None):
          owner=params.ams_user,
          mode=0755
     )
+
+    # Phoenix spool file dir if not /tmp
+    if not os.path.exists(params.phoenix_client_spool_dir):
+      Directory(params.phoenix_client_spool_dir,
+                owner=params.ams_user,
+                mode = 0755,
+                group=params.user_group,
+                cd_access="a",
+                recursive=True
+      )
+    pass
+
+    if params.is_hbase_distributed:
+      # Configuration needed to support NN HA
+      XmlConfig("hdfs-site.xml",
+            conf_dir=params.ams_collector_conf_dir,
+            configurations=params.config['configurations']['hdfs-site'],
+            configuration_attributes=params.config['configuration_attributes']['hdfs-site'],
+            owner=params.ams_user,
+            group=params.user_group,
+            mode=0644
+      )
+
+      XmlConfig("hdfs-site.xml",
+            conf_dir=params.hbase_conf_dir,
+            configurations=params.config['configurations']['hdfs-site'],
+            configuration_attributes=params.config['configuration_attributes']['hdfs-site'],
+            owner=params.ams_user,
+            group=params.user_group,
+            mode=0644
+      )
+
+      XmlConfig("core-site.xml",
+                conf_dir=params.ams_collector_conf_dir,
+                configurations=params.config['configurations']['core-site'],
+                configuration_attributes=params.config['configuration_attributes']['core-site'],
+                owner=params.ams_user,
+                group=params.user_group,
+                mode=0644
+      )
+
+      XmlConfig("core-site.xml",
+                conf_dir=params.hbase_conf_dir,
+                configurations=params.config['configurations']['core-site'],
+                configuration_attributes=params.config['configuration_attributes']['core-site'],
+                owner=params.ams_user,
+                group=params.user_group,
+                mode=0644
+      )
 
     pass
 

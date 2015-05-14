@@ -127,7 +127,7 @@
   display: block;
   color: #888;
   text-align: center;
-  padding: 10px 0px;
+  padding: 10px 0;
   cursor: default;
 }
 
@@ -239,7 +239,7 @@
   margin-left: 20px;
   margin-right: 10px;
   border: none;
-  border-radius: 0px;
+  border-radius: 0;
 }
 .mainpage .panel-body #main-operations-boxes .thumbnail .title,
 .mainpage .panel-body #main-operations-boxes .thumbnail .description,
@@ -533,7 +533,7 @@ a.gotoinstance{
   padding-left: 33px;
   padding-top: 8px;
   padding-bottom: 8px;
-  margin: 0px;
+  margin: 0;
 }
 .left-navbar .panel-body li.active a{
   background: #666;
@@ -657,7 +657,6 @@ table.no-border tr td{
 }
 
 .property-form label{
-  width: 214px;
   word-wrap: break-word;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -1074,7 +1073,7 @@ button.btn.btn-xs{
   position: relative;
   border: 1px solid #c4c4c4;
   border-radius: 4px 0 0 4px;
-  box-shadow: 0 0px 4px #ebebeb;
+  box-shadow: 0 0 4px #ebebeb;
   width: 300px;
   background: white;
   margin-bottom: 20px;
@@ -1178,7 +1177,6 @@ button.btn.btn-xs{
   border-radius: 50%;
   vertical-align: middle;
   position: relative;
-  border-radius: 50%;
 }
 
 .viewstatus.pending:before, .viewstatus.pending:after{
@@ -1319,4 +1317,21 @@ accordion .panel-group .panel{
 }
 .verison-label-row .label {
   font-size: 100%;
+}
+
+.panel-body .sub-group {
+    margin-left: 10px;
+}
+.clusters-name-dropdown {
+  width: 200px;
+}
+.edit-view-custom-wrap {
+  padding-top: 0;
+  margin-top: -15px;
+}
+.panel-body .checkbox {
+  min-height: 20px;
+  padding-left: 20px;
+  margin-top: 10px;
+  margin-bottom: 10px;
 }

@@ -71,7 +71,8 @@ public class LatestRepoCallable implements Callable<Void> {
             LOOKUP_CONNECTION_TIMEOUT, LOOKUP_READ_TIMEOUT,
             null, null, null);
 
-        LOG.info("Loading latest URL info from " + sourceUri);
+        LOG.info("Loading latest URL info for stack " + stack.getName() + "-" +
+                stack.getVersion() + " from " + sourceUri);
         latestUrlMap = gson.fromJson(new InputStreamReader(
             streamProvider.readFrom(sourceUri)), type);
       } else {
@@ -83,12 +84,14 @@ public class LatestRepoCallable implements Callable<Void> {
         }
 
         if (jsonFile.exists()) {
-          LOG.info("Loading latest URL info from " + jsonFile);
+          LOG.info("Loading latest URL info for stack " + stack.getName() + "-" +
+                  stack.getVersion() + " from " + jsonFile);
           latestUrlMap = gson.fromJson(new FileReader(jsonFile), type);
         }
       }
     } catch (Exception e) {
-      LOG.error("Could not load the URI " + sourceUri + " (" + e.getMessage() + ")");
+      LOG.error("Could not load the URI for stack " + stack.getName() + "-" +
+              stack.getVersion() + " from " + sourceUri + " (" + e.getMessage() + ")");
       throw e;
     }
 
@@ -108,7 +111,8 @@ public class LatestRepoCallable implements Callable<Void> {
               // Agents do the reverse action (take the base url, and append <name>.repo)
 
               String repo_file_format;
-              if(ri.getOsType().equals("ubuntu12")) {
+              
+              if(os_family.isUbuntuFamily(ri.getOsType())) {
                 repo_file_format = "list";
               } else {
                 repo_file_format = "repo";

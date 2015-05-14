@@ -19,7 +19,21 @@ limitations under the License.
 """
 import os
 from resource_management import *
+from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
+from ambari_commons import OSConst
 
+@OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
+def oozie_service(action='start', rolling_restart=False):
+  import params
+
+  if action == 'start':
+    cmd = format("cmd /C \"cd /d {oozie_tmp_dir} && {oozie_home}\\bin\\ooziedb.cmd create -sqlfile oozie.sql -run\"")
+    Execute(cmd, user=params.oozie_user, ignore_failures=True)
+    Service(params.oozie_server_win_service_name, action="start")
+  elif action == 'stop':
+    Service(params.oozie_server_win_service_name, action="stop")
+
+@OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
 def oozie_service(action = 'start', rolling_restart=False):
   """
   Starts or stops the Oozie service
@@ -29,6 +43,8 @@ def oozie_service(action = 'start', rolling_restart=False):
   :return:
   """
   import params
+
+  environment={'OOZIE_CONFIG': params.conf_dir}
 
   if params.security_enabled:
     if params.oozie_principal is None:
@@ -74,13 +90,16 @@ def oozie_service(action = 'start', rolling_restart=False):
                                params.oozie_user)
       Execute( cmd2, user = params.oozie_user, not_if = not_if_command,
         path = params.execute_path )
-    
-    Execute( start_cmd, user = params.oozie_user, not_if = no_op_test )
+
+    # start oozie
+    Execute( start_cmd, environment=environment, user = params.oozie_user,
+      not_if = no_op_test )
 
   elif action == 'stop':
     stop_cmd  = format("cd {oozie_tmp_dir} && {oozie_home}/bin/oozie-stop.sh")
-    Execute(stop_cmd, only_if  = no_op_test, user = params.oozie_user)
-    File(params.pid_file, action = "delete")
 
-  
-  
+    # stop oozie
+    Execute(stop_cmd, environment=environment, only_if  = no_op_test,
+      user = params.oozie_user)
+
+    File(params.pid_file, action = "delete")

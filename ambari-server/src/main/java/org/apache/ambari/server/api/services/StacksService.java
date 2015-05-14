@@ -18,14 +18,8 @@
 
 package org.apache.ambari.server.api.services;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URLDecoder;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import javax.ws.rs.GET;
@@ -34,18 +28,11 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.PathSegment;
 import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriBuilder;
 import javax.ws.rs.core.UriInfo;
 
-import org.apache.ambari.server.api.predicate.QueryLexer;
 import org.apache.ambari.server.api.resources.ResourceInstance;
 import org.apache.ambari.server.controller.spi.Resource;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.utils.URLEncodedUtils;
-import org.apache.http.message.BasicNameValuePair;
 
 /**
  * Service for stacks management.
@@ -179,6 +166,31 @@ public class StacksService extends BaseService {
   }
 
   @GET
+  @Path("{stackName}/versions/{stackVersion}/services/{serviceName}/themes")
+  @Produces("text/plain")
+  public Response getStackServiceThemes(String body, @Context HttpHeaders headers,
+                                           @Context UriInfo ui, @PathParam("stackName") String stackName,
+                                           @PathParam("stackVersion") String stackVersion,
+                                           @PathParam("serviceName") String serviceName) {
+
+    return handleRequest(headers, body, ui, Request.Type.GET,
+      createStackServiceThemesResource(stackName, stackVersion, serviceName, null));
+  }
+
+  @GET
+  @Path("{stackName}/versions/{stackVersion}/services/{serviceName}/themes/{themeName}")
+  @Produces("text/plain")
+  public Response getStackServiceTheme(String body, @Context HttpHeaders headers,
+                                           @Context UriInfo ui, @PathParam("stackName") String stackName,
+                                           @PathParam("stackVersion") String stackVersion,
+                                           @PathParam("serviceName") String serviceName,
+                                           @PathParam("themeName") String themeName) {
+
+    return handleRequest(headers, body, ui, Request.Type.GET,
+      createStackServiceThemesResource(stackName, stackVersion, serviceName, themeName));
+  }
+
+  @GET
   @Path("{stackName}/versions/{stackVersion}/services/{serviceName}/artifacts/{artifactName}")
   @Produces("text/plain")
   public Response getStackServiceArtifact(String body, @Context HttpHeaders headers,
@@ -216,6 +228,19 @@ public class StacksService extends BaseService {
 
     return handleRequest(headers, body, ui, Request.Type.GET,
         createStackConfigurationResource(stackName, stackVersion, serviceName, propertyName));
+  }
+
+  @GET
+  @Path("{stackName}/versions/{stackVersion}/services/{serviceName}/configurations/{propertyName}/dependencies")
+  @Produces("text/plain")
+  public Response getStackConfigurationDependencies(String body, @Context HttpHeaders headers,
+                                        @Context UriInfo ui, @PathParam("stackName") String stackName,
+                                        @PathParam("stackVersion") String stackVersion,
+                                        @PathParam("serviceName") String serviceName,
+                                        @PathParam("propertyName") String propertyName) {
+
+    return handleRequest(headers, body, ui, Request.Type.GET,
+        createStackConfigurationDependencyResource(stackName, stackVersion, serviceName, propertyName));
   }
 
   @GET
@@ -301,6 +326,23 @@ public class StacksService extends BaseService {
     return new RepositoryVersionService(stackProperties);
   }
 
+  /**
+   * Handles ANY /{stackName}/versions/{stackVersion}/compatible_repository_versions.
+   *
+   * @param stackName stack name
+   * @param stackVersion stack version
+   * @return repository version service
+   */
+  @Path("{stackName}/versions/{stackVersion}/compatible_repository_versions")
+  public CompatibleRepositoryVersionService getCompatibleRepositoryVersionHandler(
+      @PathParam("stackName") String stackName,
+      @PathParam("stackVersion") String stackVersion) {
+    final Map<Resource.Type, String> stackProperties = new HashMap<Resource.Type, String>();
+    stackProperties.put(Resource.Type.Stack, stackName);
+    stackProperties.put(Resource.Type.StackVersion, stackVersion);
+    return new CompatibleRepositoryVersionService(stackProperties);
+  }
+
   ResourceInstance createStackServiceComponentResource(
       String stackName, String stackVersion, String serviceName, String componentName) {
 
@@ -336,6 +378,18 @@ public class StacksService extends BaseService {
     mapIds.put(Resource.Type.StackConfiguration, propertyName);
 
     return createResource(Resource.Type.StackConfiguration, mapIds);
+  }
+
+  ResourceInstance createStackConfigurationDependencyResource(String stackName,
+                                                              String stackVersion, String serviceName, String propertyName) {
+
+    Map<Resource.Type, String> mapIds = new HashMap<Resource.Type, String>();
+    mapIds.put(Resource.Type.Stack, stackName);
+    mapIds.put(Resource.Type.StackVersion, stackVersion);
+    mapIds.put(Resource.Type.StackService, serviceName);
+    mapIds.put(Resource.Type.StackConfiguration, propertyName);
+
+    return createResource(Resource.Type.StackConfigurationDependency, mapIds);
   }
 
   ResourceInstance createStackServiceResource(String stackName,
@@ -388,6 +442,17 @@ public class StacksService extends BaseService {
     mapIds.put(Resource.Type.StackArtifact, artifactName);
 
     return createResource(Resource.Type.StackArtifact, mapIds);
+  }
+
+  ResourceInstance createStackServiceThemesResource(String stackName, String stackVersion, String serviceName,
+                                                    String themeName) {
+    Map<Resource.Type, String> mapIds = new HashMap<Resource.Type, String>();
+    mapIds.put(Resource.Type.Stack, stackName);
+    mapIds.put(Resource.Type.StackVersion, stackVersion);
+    mapIds.put(Resource.Type.StackService, serviceName);
+    mapIds.put(Resource.Type.Theme, themeName);
+
+    return createResource(Resource.Type.Theme, mapIds);
   }
 
   ResourceInstance createStackResource(String stackName) {

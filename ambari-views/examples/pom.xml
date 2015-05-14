@@ -31,11 +31,16 @@
   <modules>
     <module>helloworld-view</module>
     <module>hello-servlet-view</module>
+    <module>hello-spring-view</module>
     <module>favorite-view</module>
     <module>phone-list-view</module>
     <module>calculator-view</module>
+    <module>cluster-view</module>
     <module>weather-view</module>
     <module>restricted-view</module>
+    <module>simple-view</module>
+    <module>property-view</module>
+    <module>property-validator-view</module>
   </modules>
   <properties>
     <ambari.dir>${project.parent.parent.basedir}</ambari.dir>

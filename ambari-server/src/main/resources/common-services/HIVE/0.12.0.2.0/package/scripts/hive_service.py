@@ -23,7 +23,23 @@ import sys
 import os
 import time
 from resource_management.core import shell
+from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
+from ambari_commons import OSConst
 
+
+@OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
+def hive_service(name, action='start', rolling_restart=False):
+  import params
+  if name == 'metastore':
+    if action == 'start' or action == 'stop':
+      Service(params.hive_metastore_win_service_name, action=action)
+
+  if name == 'hiveserver2':
+    if action == 'start' or action == 'stop':
+      Service(params.hive_server_win_service_name, action=action)
+
+
+@OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
 def hive_service(name, action='start', rolling_restart=False):
 
   import params
@@ -73,9 +89,7 @@ def hive_service(name, action='start', rolling_restart=False):
     # AMBARI-5800 - wait for the server to come up instead of just the PID existance
     if name == 'hiveserver2':
       SOCKET_WAIT_SECONDS = 120
-      address=params.hostname
-      port=int(params.hive_server_port)
-      
+
       start_time = time.time()
       end_time = start_time + SOCKET_WAIT_SECONDS
 
@@ -87,9 +101,11 @@ def hive_service(name, action='start', rolling_restart=False):
         kinitcmd=None
       while time.time() < end_time:
         try:
-          check_thrift_port_sasl(address, port, params.hive_server2_authentication,
+          check_thrift_port_sasl(params.hostname, params.hive_server_port, params.hive_server2_authentication,
                                  params.hive_server_principal, kinitcmd, params.smokeuser,
-                                 transport_mode=params.hive_transport_mode)
+                                 transport_mode=params.hive_transport_mode, http_endpoint=params.hive_http_endpoint,
+                                 ssl=params.hive_ssl, ssl_keystore=params.hive_ssl_keystore_path,
+                                 ssl_password=params.hive_ssl_keystore_password)
           is_service_socket_valid = True
           break
         except Exception, e:
@@ -97,10 +113,12 @@ def hive_service(name, action='start', rolling_restart=False):
 
       elapsed_time = time.time() - start_time
       
-      if is_service_socket_valid == False: 
-        raise Fail("Connection to Hive server %s on port %s failed after %d seconds" % (address, port, elapsed_time))
+      if not is_service_socket_valid:
+        raise Fail("Connection to Hive server %s on port %s failed after %d seconds" %
+                   (params.hostname, params.hive_server_port, elapsed_time))
       
-      print "Successfully connected to Hive at %s on port %s after %d seconds" % (address, port, elapsed_time)    
+      print "Successfully connected to Hive at %s on port %s after %d seconds" %\
+            (params.hostname, params.hive_server_port, elapsed_time)
             
   elif action == 'stop':
 
@@ -128,12 +146,16 @@ def hive_service(name, action='start', rolling_restart=False):
 
 def check_fs_root():
   import params  
-  fs_root_url = format("{fs_root}{hive_apps_whs_dir}")
   metatool_cmd = format("hive --config {hive_server_conf_dir} --service metatool")
-  cmd = format("{metatool_cmd} -listFSRoot 2>/dev/null | grep hdfs:// | grep -v '.db$'")
-  code, out = shell.call(cmd, user=params.hive_user, env={'PATH' : params.execute_path })
-  if code == 0 and fs_root_url.strip() != out.strip():
-    cmd = format("{metatool_cmd} -updateLocation {fs_root}{hive_apps_whs_dir} {out}")
+  cmd = as_user(format("{metatool_cmd} -listFSRoot", env={'PATH': params.execute_path}), params.hive_user) \
+        + format(" 2>/dev/null | grep hdfs:// | cut -f1,2,3 -d '/' | grep -v '{fs_root}' | head -1")
+  code, out = shell.call(cmd)
+
+  if code == 0 and out.strip() != "" and params.fs_root.strip() != out.strip():
+    out = out.strip()
+    cmd = format("{metatool_cmd} -updateLocation {fs_root} {out}")
     Execute(cmd,
-            environment= {'PATH' : params.execute_path },
-            user=params.hive_user)
+            user=params.hive_user,
+            environment={'PATH': params.execute_path}
+    )
+

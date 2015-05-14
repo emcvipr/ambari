@@ -42,6 +42,7 @@ import org.apache.ambari.server.controller.internal.ServiceResourceProvider;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.ResourceProvider;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.view.ViewRegistry;
 import org.junit.Assert;
@@ -62,7 +63,9 @@ public class BaseResourceDefinitionTest {
 
   @Before
   public void before() {
-    ViewRegistry.initInstance(new ViewRegistry());
+    AmbariEventPublisher publisher = createNiceMock(AmbariEventPublisher.class);
+    replay(publisher);
+    ViewRegistry.initInstance(new ViewRegistry(publisher));
   }
 
   @Test
@@ -103,7 +106,7 @@ public class BaseResourceDefinitionTest {
     
     processor.process(null, serviceNode, "http://c6401.ambari.apache.org:8080/api/v1/clusters/c1/services");
 
-    String href = serviceNode.getProperty("href");
+    String href = serviceNode.getStringProperty("href");
 
     Assert.assertEquals("http://c6401.ambari.apache.org:8080/api/v1/clusters/c1/services/Service1", href);
 
@@ -118,7 +121,7 @@ public class BaseResourceDefinitionTest {
 
     processor.process(null, configGroupNode, "http://c6401.ambari.apache.org:8080/api/v1/clusters/c1/config_groups");
 
-    href = configGroupNode.getProperty("href");
+    href = configGroupNode.getStringProperty("href");
 
     Assert.assertEquals("http://c6401.ambari.apache.org:8080/api/v1/clusters/c1/config_groups/2", href);
   }

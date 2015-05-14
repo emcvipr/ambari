@@ -46,9 +46,10 @@ import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.state.HostState;
-import org.apache.ambari.server.state.SecurityState;
 import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.State;
+import org.apache.ambari.server.topology.TopologyManager;
+import org.apache.ambari.server.utils.StageUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -64,8 +65,7 @@ import com.google.inject.Injector;
 import com.google.inject.persist.PersistService;
 
 @RunWith(MockitoJUnitRunner.class)
-public class
-    AmbariCustomCommandExecutionHelperTest {
+public class AmbariCustomCommandExecutionHelperTest {
   private Injector injector;
   private AmbariManagementController controller;
   private AmbariMetaInfo ambariMetaInfo;
@@ -93,22 +93,18 @@ public class
     controller = injector.getInstance(AmbariManagementController.class);
     clusters = injector.getInstance(Clusters.class);
     ambariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
-    ambariMetaInfo.init();
+    StageUtils.setTopologyManager(new TopologyManager());
   }
   @After
   public void teardown() {
     injector.getInstance(PersistService.class).stop();
   }
 
-
-  
-
-
   @SuppressWarnings("serial")
   @Test
   public void testRefreshQueueCustomCommand() {
     try {
-      createClusterFixture();
+      createClusterFixture("HDP-2.0.6");
       
       Map<String, String> requestProperties = new HashMap<String, String>() {
         {
@@ -152,53 +148,49 @@ public class
   }
 
   @Test
-  public void testHostsFilterHealthy(){
-    try {
-      createClusterFixture();
+  public void testHostsFilterHealthy() throws Exception {
+    createClusterFixture("HDP-2.0.6");
 
-      Map<String, String> requestProperties = new HashMap<String, String>() {
-        {
-          put("context" , "Restart all components for GANGLIA");
-          put("operation_level/level", "SERVICE");
-          put("operation_level/service_name", "GANGLIA");
-          put("operation_level/cluster_name", "c1");
-        }
-      };
+    Map<String, String> requestProperties = new HashMap<String, String>() {
+      {
+        put("context" , "Restart all components for GANGLIA");
+        put("operation_level/level", "SERVICE");
+        put("operation_level/service_name", "GANGLIA");
+        put("operation_level/cluster_name", "c1");
+      }
+    };
 
-      ExecuteActionRequest actionRequest = new ExecuteActionRequest(
-         "c1", "RESTART", null,
-         Arrays.asList(
-            new RequestResourceFilter("GANGLIA", "GANGLIA_SERVER", Collections.singletonList("c6401")),
-            new RequestResourceFilter("GANGLIA", "GANGLIA_MONITOR", Collections.singletonList("c6401")),
-            new RequestResourceFilter("GANGLIA", "GANGLIA_MONITOR", Collections.singletonList("c6402"))
-         ),
-         new RequestOperationLevel(Resource.Type.Service, "c1", "GANGLIA", null, null),
-         new HashMap<String, String>(){{}},
-         false);
+    ExecuteActionRequest actionRequest = new ExecuteActionRequest(
+       "c1", "RESTART", null,
+       Arrays.asList(
+          new RequestResourceFilter("GANGLIA", "GANGLIA_SERVER", Collections.singletonList("c6401")),
+          new RequestResourceFilter("GANGLIA", "GANGLIA_MONITOR", Collections.singletonList("c6401")),
+          new RequestResourceFilter("GANGLIA", "GANGLIA_MONITOR", Collections.singletonList("c6402"))
+       ),
+       new RequestOperationLevel(Resource.Type.Service, "c1", "GANGLIA", null, null),
+       new HashMap<String, String>(){{}},
+       false);
 
-      controller.createAction(actionRequest, requestProperties);
+    controller.createAction(actionRequest, requestProperties);
 
-      //clusters.getHost("c6402").setState(HostState.HEARTBEAT_LOST);
+    //clusters.getHost("c6402").setState(HostState.HEARTBEAT_LOST);
 
-      Mockito.verify(am, Mockito.times(1)).sendActions(requestCapture.capture(), any(ExecuteActionRequest.class));
+    Mockito.verify(am, Mockito.times(1)).sendActions(requestCapture.capture(), any(ExecuteActionRequest.class));
 
-      Request request = requestCapture.getValue();
-      Assert.assertNotNull(request);
-      Assert.assertNotNull(request.getStages());
-      Assert.assertEquals(1, request.getStages().size());
-      Stage stage = request.getStages().iterator().next();
+    Request request = requestCapture.getValue();
+    Assert.assertNotNull(request);
+    Assert.assertNotNull(request.getStages());
+    Assert.assertEquals(1, request.getStages().size());
+    Stage stage = request.getStages().iterator().next();
 
-       // Check if was generated command, one for each host
-      Assert.assertEquals(2, stage.getHostRoleCommands().size());
-    }catch (Exception e) {
-      Assert.fail(e.getMessage());
-    }
+     // Check if was generated command, one for each host
+    Assert.assertEquals(2, stage.getHostRoleCommands().size());
   }
 
   @Test
   public void testHostsFilterUnhealthyHost(){
     try {
-      createClusterFixture();
+      createClusterFixture("HDP-2.0.6");
 
       // Set custom status to host
       clusters.getHost("c6402").setState(HostState.HEARTBEAT_LOST);
@@ -242,7 +234,7 @@ public class
   @Test
   public void testHostsFilterUnhealthyComponent(){
     try {
-      createClusterFixture();
+      createClusterFixture("HDP-2.0.6");
 
       // Set custom status to host
       clusters.getCluster("c1").getService("GANGLIA").getServiceComponent("GANGLIA_MONITOR").getServiceComponentHost("c6402")
@@ -284,8 +276,19 @@ public class
     }
   }
 
-  private void createClusterFixture() throws AmbariException {
-    createCluster("c1");
+  @Test
+  public void testIsTopologyRefreshRequired() throws Exception {
+    AmbariCustomCommandExecutionHelper helper = injector.getInstance(AmbariCustomCommandExecutionHelper.class);
+
+    createClusterFixture("HDP-2.1.1");
+
+    Assert.assertTrue(helper.isTopologyRefreshRequired("START", "c1", "HDFS"));
+    Assert.assertTrue(helper.isTopologyRefreshRequired("RESTART", "c1", "HDFS"));
+    Assert.assertFalse(helper.isTopologyRefreshRequired("STOP", "c1", "HDFS"));
+  }
+
+  private void createClusterFixture(String stackVersion) throws AmbariException {
+    createCluster("c1", stackVersion);
     addHost("c6401","c1");
     addHost("c6402","c1");
     
@@ -312,8 +315,9 @@ public class
     setOsFamily(clusters.getHost(hostname), "redhat", "6.3");
     clusters.getHost(hostname).setState(HostState.HEALTHY);
     clusters.getHost(hostname).persist();
-    if (null != clusterName)
+    if (null != clusterName) {
       clusters.mapHostToCluster(hostname, clusterName);
+    }
   }
   private void setOsFamily(Host host, String osFamily, String osVersion) {
     Map<String, String> hostAttributes = new HashMap<String, String>();
@@ -323,9 +327,9 @@ public class
     host.setHostAttributes(hostAttributes);
   }
 
-  private void createCluster(String clusterName) throws AmbariException {
+  private void createCluster(String clusterName, String stackVersion) throws AmbariException {
     ClusterRequest r = new ClusterRequest(null, clusterName, State.INSTALLED.name(),
-        SecurityType.NONE, "HDP-2.0.6", null);
+        SecurityType.NONE, stackVersion, null);
     controller.createCluster(r);
   }
   

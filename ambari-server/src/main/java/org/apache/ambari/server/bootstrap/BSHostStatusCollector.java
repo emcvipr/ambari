@@ -36,8 +36,8 @@ import org.apache.commons.logging.LogFactory;
 class BSHostStatusCollector {
   private File requestIdDir;
   private List<BSHostStatus> hostStatus;
-  private static final String logFileFilter = ".log";
-  private static final String doneFileFilter = ".done";
+  public static final String logFileFilter = ".log";
+  public static final String doneFileFilter = ".done";
   private static Log LOG = LogFactory.getLog(BSHostStatusCollector.class);
 
   private List<String> hosts;
@@ -113,7 +113,8 @@ class BSHostStatusCollector {
           
           logString = sb.toString();
         } catch (IOException e) {
-          LOG.info("Error reading log file " + log);
+          LOG.info("Error reading log file " + log +
+                  ". Log file may be have not created yet");
         }
         finally {
           try {

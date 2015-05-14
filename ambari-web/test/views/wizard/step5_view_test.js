@@ -62,20 +62,22 @@ describe('App.SelectHostView', function() {
     });
   });
 
-  describe('#click', function() {
+  describe('#change', function() {
 
     beforeEach(function() {
       sinon.stub(view, 'initContent', Em.K);
+      sinon.stub(view, 'changeHandler', Em.K);
       models.setupStackServiceComponent();
     });
 
     afterEach(function() {
       view.initContent.restore();
+      view.changeHandler.restore();
       models.cleanStackServiceComponent();
     });
 
     it('should call initContent', function() {
-      view.click();
+      view.change();
       expect(view.initContent.calledOnce).to.be.true;
     });
   });

@@ -97,12 +97,12 @@ App.StackServiceComponent = DS.Model.extend({
 
   /** @property {Boolean} isAddableToHost - component can be added on host details page **/
   isAddableToHost: function() {
-    return ((this.get('isMasterAddableInstallerWizard') || (this.get('isSlave') && this.get('maxToInstall') > 2) || this.get('isClient')) && !this.get('isHAComponentOnly'));
+    return this.get('isMasterAddableInstallerWizard') || ((this.get('isNotAddableOnlyInInstall') || this.get('isSlave') || this.get('isClient')) && !this.get('isHAComponentOnly'));
   }.property('componentName'),
 
   /** @property {Boolean} isDeletable - component supports delete action **/
   isDeletable: function() {
-    var ignored = ['HBASE_MASTER'];
+    var ignored = [];
     return this.get('isAddableToHost') && !ignored.contains(this.get('componentName'));
   }.property('componentName'),
 
@@ -137,14 +137,21 @@ App.StackServiceComponent = DS.Model.extend({
 
   /**
    * Master component list that could be assigned for more than 1 host.
-   * Some components like NameNode and ResourceManager have range cardinality value
-   * like 1-2. We can assign only components with cardinality 1+/0+. Strict range value
-   * show that this components will be assigned for 2 hosts only if HA mode activated.
+   * Some components like NameNode and ResourceManager have range cardinality value, so they are excluded using isMasterAddableOnlyOnHA property
    *
    * @property {Boolean} isMasterAddableInstallerWizard
    **/
   isMasterAddableInstallerWizard: function() {
-    return this.get('isMaster') && this.get('isMultipleAllowed') && this.get('maxToInstall') > 2;
+    return this.get('isMaster') && this.get('isMultipleAllowed') && !this.get('isMasterAddableOnlyOnHA') && !this.get('isNotAddableOnlyInInstall');
+  }.property('componentName'),
+
+  /**
+   * Master components with cardinality more than 1 (n+ or n-n) that could not be added in wizards
+   * New instances of these components are added in appropriate HA wizards
+   * @property {Boolean} isMasterAddableOnlyOnHA
+   */
+  isMasterAddableOnlyOnHA: function () {
+    return ['NAMENODE', 'RESOURCEMANAGER', 'RANGER_ADMIN'].contains(this.get('componentName'));
   }.property('componentName'),
 
   /** @property {Boolean} isHAComponentOnly - Components that can be installed only if HA enabled **/
@@ -188,10 +195,9 @@ App.StackServiceComponent = DS.Model.extend({
     return !!App.StackServiceComponent.coHost[componentName];
   }.property('componentName'),
 
-  /** @property {Boolean} showAddBtnInInstall - show add button for this component on Assign Masters  **/
-  showAddBtnInInstall: function() {
-    var doNotShowList = ['HIVE_METASTORE', 'HIVE_SERVER'];
-    return !doNotShowList.contains(this.get('componentName'));
+  /** @property {Boolean} isNotAddableOnlyInInstall - is this component addable, except Install and Add Service Wizards  **/
+  isNotAddableOnlyInInstall: function() {
+    return ['HIVE_METASTORE', 'HIVE_SERVER', 'RANGER_KMS_SERVER'].contains(this.get('componentName'));
   }.property('componentName')
 
 });

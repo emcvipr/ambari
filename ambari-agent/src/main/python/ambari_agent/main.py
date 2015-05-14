@@ -148,17 +148,17 @@ def daemonize():
 def stop_agent():
 # stop existing Ambari agent
   pid = -1
+  runner = shellRunner()
   try:
     f = open(ProcessHelper.pidfile, 'r')
     pid = f.read()
     pid = int(pid)
     f.close()
-    runner = shellRunner()
     runner.run([AMBARI_SUDO_BINARY, 'kill', '-15', str(pid)])
     time.sleep(5)
     if os.path.exists(ProcessHelper.pidfile):
       raise Exception("PID file still exists.")
-    os._exit(0)
+    sys.exit(0)
   except Exception, err:
     if pid == -1:
       print ("Agent process is not running")
@@ -166,7 +166,7 @@ def stop_agent():
       res = runner.run([AMBARI_SUDO_BINARY, 'kill', '-9', str(pid)])
       if res['exitCode'] != 0:
         raise Exception("Error while performing agent stop. " + res['error'] + res['output'])
-    os._exit(1)
+    sys.exit(1)
 
 def reset_agent(options):
   try:
@@ -191,9 +191,9 @@ def reset_agent(options):
         os.rmdir(os.path.join(root, name))
   except Exception, err:
     print("A problem occurred while trying to reset the agent: " + str(err))
-    os._exit(1)
+    sys.exit(1)
 
-  os._exit(0)
+  sys.exit(0)
 
 # event - event, that will be passed to Controller and NetUtil to make able to interrupt loops form outside process
 # we need this for windows os, where no sigterm available
@@ -247,7 +247,7 @@ def main(heartbeat_stop_callback=None):
 
   update_log_level(config)
 
-  server_hostname = config.get('server', 'hostname')
+  server_hostname = hostname.server_hostname(config)
   server_url = config.get_api_url()
 
   if not OSCheck.get_os_family() == OSConst.WINSRV_FAMILY:

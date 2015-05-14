@@ -32,16 +32,18 @@ import ctypes
 import msvcrt
 
 import pywintypes
-import winerror
 import win32api
 import win32con
 import win32event
+import win32file
 import win32net
 import win32netcon
 import win32process
 import win32security
 import win32service
 import win32serviceutil
+import winerror
+import winioctlcon
 import wmi
 
 from ambari_commons.exceptions import FatalException
@@ -77,6 +79,159 @@ def symlink(source, link_name):
     raise ctypes.WinError()
 
 os.symlink = symlink
+
+# Win32file doesn't seem to have this attribute.
+FILE_ATTRIBUTE_REPARSE_POINT = 1024
+# To make things easier.
+REPARSE_FOLDER = (win32file.FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)
+
+# For the parse_reparse_buffer function
+SYMBOLIC_LINK = 'symbolic'
+MOUNTPOINT = 'mountpoint'
+GENERIC = 'generic'
+
+def islink(fpath):
+  """ Windows islink implementation. """
+  if win32file.GetFileAttributes(fpath) & REPARSE_FOLDER == REPARSE_FOLDER:
+    return True
+  return False
+
+os.path.islink = islink
+
+def _parse_reparse_buffer(original, reparse_type=SYMBOLIC_LINK):
+  """ Implementing the below in Python:
+
+  typedef struct _REPARSE_DATA_BUFFER {
+      ULONG  ReparseTag;
+      USHORT ReparseDataLength;
+      USHORT Reserved;
+      union {
+          struct {
+              USHORT SubstituteNameOffset;
+              USHORT SubstituteNameLength;
+              USHORT PrintNameOffset;
+              USHORT PrintNameLength;
+              ULONG Flags;
+              WCHAR PathBuffer[1];
+          } SymbolicLinkReparseBuffer;
+          struct {
+              USHORT SubstituteNameOffset;
+              USHORT SubstituteNameLength;
+              USHORT PrintNameOffset;
+              USHORT PrintNameLength;
+              WCHAR PathBuffer[1];
+          } MountPointReparseBuffer;
+          struct {
+              UCHAR  DataBuffer[1];
+          } GenericReparseBuffer;
+      } DUMMYUNIONNAME;
+  } REPARSE_DATA_BUFFER, *PREPARSE_DATA_BUFFER;
+
+  """
+  # Size of our data types
+  SZULONG = 4 # sizeof(ULONG)
+  SZUSHORT = 2 # sizeof(USHORT)
+
+  # Our structure.
+  # Probably a better way to iterate a dictionary in a particular order,
+  # but I was in a hurry, unfortunately, so I used pkeys.
+  buffer = {
+    'tag' : SZULONG,
+    'data_length' : SZUSHORT,
+    'reserved' : SZUSHORT,
+    SYMBOLIC_LINK : {
+      'substitute_name_offset' : SZUSHORT,
+      'substitute_name_length' : SZUSHORT,
+      'print_name_offset' : SZUSHORT,
+      'print_name_length' : SZUSHORT,
+      'flags' : SZULONG,
+      'buffer' : u'',
+      'pkeys' : [
+        'substitute_name_offset',
+        'substitute_name_length',
+        'print_name_offset',
+        'print_name_length',
+        'flags',
+        ]
+    },
+    MOUNTPOINT : {
+      'substitute_name_offset' : SZUSHORT,
+      'substitute_name_length' : SZUSHORT,
+      'print_name_offset' : SZUSHORT,
+      'print_name_length' : SZUSHORT,
+      'buffer' : u'',
+      'pkeys' : [
+        'substitute_name_offset',
+        'substitute_name_length',
+        'print_name_offset',
+        'print_name_length',
+        ]
+    },
+    GENERIC : {
+      'pkeys' : [],
+      'buffer': ''
+    }
+  }
+
+  # Header stuff
+  buffer['tag'] = original[:SZULONG]
+  buffer['data_length'] = original[SZULONG:SZUSHORT]
+  buffer['reserved'] = original[SZULONG+SZUSHORT:SZUSHORT]
+  original = original[8:]
+
+  # Parsing
+  k = reparse_type
+  for c in buffer[k]['pkeys']:
+    if type(buffer[k][c]) == int:
+      sz = buffer[k][c]
+      bytes = original[:sz]
+      buffer[k][c] = 0
+      for b in bytes:
+        n = ord(b)
+        if n:
+          buffer[k][c] += n
+      original = original[sz:]
+
+  # Using the offset and length's grabbed, we'll set the buffer.
+  buffer[k]['buffer'] = original
+  return buffer
+
+def readlink(fpath):
+  """ Windows readlink implementation. """
+  # This wouldn't return true if the file didn't exist, as far as I know.
+  if not islink(fpath):
+    return None
+
+  try:
+    # Open the file correctly depending on the string type.
+    if type(fpath) == unicode:
+      handle = win32file.CreateFileW(fpath, win32file.GENERIC_READ, 0, None, win32file.OPEN_EXISTING, win32file.FILE_FLAG_OPEN_REPARSE_POINT | win32file.FILE_FLAG_BACKUP_SEMANTICS, 0)
+    else:
+      handle = win32file.CreateFile(fpath, win32file.GENERIC_READ, 0, None, win32file.OPEN_EXISTING, win32file.FILE_FLAG_OPEN_REPARSE_POINT | win32file.FILE_FLAG_BACKUP_SEMANTICS, 0)
+
+    # MAXIMUM_REPARSE_DATA_BUFFER_SIZE = 16384 = (16*1024)
+    buffer = win32file.DeviceIoControl(handle, winioctlcon.FSCTL_GET_REPARSE_POINT, None, 16*1024)
+    # Above will return an ugly string (byte array), so we'll need to parse it.
+
+    # But first, we'll close the handle to our file so we're not locking it anymore.
+    win32file.CloseHandle(handle)
+
+    # Minimum possible length (assuming that the length of the target is bigger than 0)
+    if len(buffer) < 9:
+      return None
+    # Parse and return our result.
+    result = _parse_reparse_buffer(buffer)
+    offset = result[SYMBOLIC_LINK]['substitute_name_offset']
+    ending = offset + result[SYMBOLIC_LINK]['substitute_name_length']
+    rpath = result[SYMBOLIC_LINK]['buffer'][offset:ending].replace('\x00','')
+    if len(rpath) > 4 and rpath[0:4] == '\\??\\':
+      rpath = rpath[4:]
+    return rpath
+  except pywintypes.error, e:
+    raise OSError(e.winerror, e.strerror, fpath)
+
+os.readlink = readlink
+
 
 class OSVERSIONINFOEXW(ctypes.Structure):
     _fields_ = [('dwOSVersionInfoSize', ctypes.c_ulong),
@@ -182,7 +337,7 @@ def run_os_command_impersonated(cmd, user, password, domain='.'):
 
   return exitcode, out, err
 
-def os_run_os_command(cmd, env=None, shell=False):
+def os_run_os_command(cmd, env=None, shell=False, cwd=None):
   if isinstance(cmd,basestring):
     cmd = cmd.replace("\\", "\\\\")
     cmd = shlex.split(cmd)
@@ -191,6 +346,7 @@ def os_run_os_command(cmd, env=None, shell=False):
                              stdin=subprocess.PIPE,
                              stderr=subprocess.PIPE,
                              env=env,
+                             cwd=cwd,
                              shell=shell
   )
   (stdoutdata, stderrdata) = process.communicate()
@@ -460,6 +616,8 @@ class WinService(win32serviceutil.ServiceFramework):
               perfMonIni = None, perfMonDll = None):
     installArgs = [sys.argv[0], "--startup=" + startupMode]
     if username is not None and username:
+      if username.find('\\') == -1:
+        username = '.\\' + username
       installArgs.append("--username=" + username)
       if password is not None and password:
         installArgs.append("--password=" + password)
@@ -471,7 +629,7 @@ class WinService(win32serviceutil.ServiceFramework):
       installArgs.append("--perfmondll=" + perfMonDll)
     installArgs.append("install")
 
-    win32serviceutil.HandleCommandLine(cls, classPath, installArgs)
+    return win32serviceutil.HandleCommandLine(cls, classPath, installArgs)
 
   @classmethod
   def Start(cls, waitSecs = 30):
@@ -547,19 +705,35 @@ class UserHelper(object):
   USER_EXISTS = 1
   ACTION_FAILED = -1
 
-  def __init__(self):
-    self._policy = win32security.LsaOpenPolicy(None,
+  def __init__(self, userName):
+    self.domainName, self.userName = UserHelper.parse_user_name(userName)
+    if self.domainName:
+      self.dcName = win32net.NetGetDCName(None, self.domainName)
+    else:
+      self.dcName = None
+    self._policy = win32security.LsaOpenPolicy(self.dcName,
                                                win32security.POLICY_CREATE_ACCOUNT | win32security.POLICY_LOOKUP_NAMES)
 
-  def create_user(self, name, password, comment="Ambari user"):
+  @staticmethod
+  def parse_user_name(userName, defDomain=None):
+    domainName = defDomain
+    domainSepIndex = userName.find('\\')
+    if domainSepIndex != -1:
+      domainName = userName[0:domainSepIndex]
+      userName = userName[domainSepIndex + 1:]
+      if not domainName or domainName == '.' or domainName == win32api.GetComputerName():
+        domainName = defDomain
+    return (domainName, userName)
+
+  def create_user(self, password, comment="Ambari user"):
     user_info = {}
-    user_info['name'] = name
+    user_info['name'] = self.userName
     user_info['password'] = password
     user_info['priv'] = win32netcon.USER_PRIV_USER
     user_info['comment'] = comment
     user_info['flags'] = win32netcon.UF_NORMAL_ACCOUNT | win32netcon.UF_SCRIPT
     try:
-      win32net.NetUserAdd(None, 1, user_info)
+      win32net.NetUserAdd(self.dcName, 1, user_info)
     except pywintypes.error as e:
       if e.winerror == 2224:
         return UserHelper.USER_EXISTS, e.strerror
@@ -567,9 +741,19 @@ class UserHelper(object):
         return UserHelper.ACTION_FAILED, e.strerror
     return UserHelper.ACTION_OK, "User created."
 
-  def add_user_privilege(self, name, privilege):
+  def find_user(self):
     try:
-      acc_sid = win32security.LookupAccountName(None, name)[0]
+      user_info = win32net.NetUserGetInfo(self.dcName, self.userName, 0)
+    except pywintypes.error as e:
+      if e.winerror == 2221:
+        return False
+      else:
+        raise
+    return True
+
+  def add_user_privilege(self, privilege):
+    try:
+      acc_sid = win32security.LookupAccountName(self.dcName, self.userName)[0]
       win32security.LsaAddAccountRights(self._policy, acc_sid, (privilege,))
     except pywintypes.error as e:
       return UserHelper.ACTION_FAILED, e.strerror
@@ -577,7 +761,7 @@ class UserHelper(object):
 
   def remove_user_privilege(self, name, privilege):
     try:
-      acc_sid = win32security.LookupAccountName(None, name)[0]
+      acc_sid = win32security.LookupAccountName(self.dcName, self.userName)[0]
       win32security.LsaRemoveAccountRights(self._policy, acc_sid, 0, (privilege,))
     except pywintypes.error as e:
       return UserHelper.ACTION_FAILED, e.strerror

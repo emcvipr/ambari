@@ -31,6 +31,15 @@ else:
 config = Script.get_config()
 exec_tmp_dir = Script.get_tmp_dir()
 
+def get_combined_memory_mb(value1, value2):
+  try:
+    part1 = int(value1.strip()[:-1]) if value1.lower().strip()[-1:] == 'm' else int(value1)
+    part2 = int(value2.strip()[:-1]) if value2.lower().strip()[-1:] == 'm' else int(value2)
+    return str(part1 + part2) + 'm'
+  except:
+    return None
+pass
+
 #AMBARI_METRICS data
 ams_pid_dir = status_params.ams_collector_pid_dir
 
@@ -72,16 +81,33 @@ metric_prop_file_name = "hadoop-metrics2-hbase.properties"
 
 # not supporting 32 bit jdk.
 java64_home = config['hostLevelParams']['java_home']
+java_version = int(config['hostLevelParams']['java_version'])
+
+metrics_collector_heapsize = default('/configurations/ams-env/metrics_collector_heapsize', "512m")
+host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 
 hbase_log_dir = config['configurations']['ams-hbase-env']['hbase_log_dir']
 master_heapsize = config['configurations']['ams-hbase-env']['hbase_master_heapsize']
-
 regionserver_heapsize = config['configurations']['ams-hbase-env']['hbase_regionserver_heapsize']
-regionserver_xmn_max = config['configurations']['ams-hbase-env']['hbase_regionserver_xmn_max']
-regionserver_xmn_percent = config['configurations']['ams-hbase-env']['hbase_regionserver_xmn_ratio']
-regionserver_xmn_size = calc_xmn_from_xms(regionserver_heapsize, regionserver_xmn_percent, regionserver_xmn_max)
-# For embedded mode
-hbase_heapsize = master_heapsize
+
+regionserver_xmn_max = default('configurations/ams-hbase-env/hbase_regionserver_xmn_max', None)
+if regionserver_xmn_max:
+  regionserver_xmn_percent = config['configurations']['ams-hbase-env']['hbase_regionserver_xmn_ratio']
+  regionserver_xmn_size = calc_xmn_from_xms(regionserver_heapsize, regionserver_xmn_percent, regionserver_xmn_max)
+else:
+  regionserver_xmn_size = config['configurations']['ams-hbase-env']['regionserver_xmn_size']
+pass
+
+hbase_master_xmn_size = config['configurations']['ams-hbase-env']['hbase_master_xmn_size']
+hbase_master_maxperm_size = config['configurations']['ams-hbase-env']['hbase_master_maxperm_size']
+
+# Choose heap size for embedded mode as sum of master + regionserver
+if not is_hbase_distributed:
+  hbase_heapsize = get_combined_memory_mb(master_heapsize, regionserver_heapsize)
+  if hbase_heapsize is None:
+    hbase_heapsize = master_heapsize
+else:
+  hbase_heapsize = master_heapsize
 
 zookeeper_quorum_hosts = ','.join(ams_collector_hosts) if is_hbase_distributed else 'localhost'
 
@@ -91,6 +117,13 @@ hbase_tmp_dir = config['configurations']['ams-hbase-site']['hbase.tmp.dir']
 # TODO UPGRADE default, update site during upgrade
 _local_dir_conf = default('/configurations/ams-hbase-site/hbase.local.dir', "${hbase.tmp.dir}/local")
 local_dir = substitute_vars(_local_dir_conf, config['configurations']['ams-hbase-site'])
+
+phoenix_max_global_mem_percent = default('/configurations/ams-site/phoenix.query.maxGlobalMemoryPercentage', '20')
+phoenix_client_spool_dir = default('/configurations/ams-site/phoenix.spool.directory', '/tmp')
+phoenix_server_spool_dir = default('/configurations/ams-hbase-site/phoenix.spool.directory', '/tmp')
+# Substitute vars if present
+phoenix_client_spool_dir = substitute_vars(phoenix_client_spool_dir, config['configurations']['ams-hbase-site'])
+phoenix_server_spool_dir = substitute_vars(phoenix_server_spool_dir, config['configurations']['ams-hbase-site'])
 
 client_jaas_config_file = format("{hbase_conf_dir}/hbase_client_jaas.conf")
 master_jaas_config_file = format("{hbase_conf_dir}/hbase_master_jaas.conf")
@@ -149,20 +182,20 @@ hostname = config["hostname"]
 hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
 hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name']
-kinit_path_local = functions.get_kinit_path()
+kinit_path_local = functions.get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
 
 import functools
-# create partial functions with common arguments for every HdfsDirectory call
-# to create hdfs directory we need to call params.HdfsDirectory in code
-HdfsDirectory = functools.partial(
-  HdfsDirectory,
-  conf_dir=hadoop_conf_dir,
-  hdfs_user=hdfs_user,
+#create partial functions with common arguments for every HdfsResource call
+#to create/delete hdfs directory/file/copyfromlocal we need to call params.HdfsResource in code
+HdfsResource = functools.partial(
+  HdfsResource,
+  user=hdfs_user,
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,
-  bin_dir = hadoop_bin_dir
-)
+  hadoop_bin_dir = hadoop_bin_dir,
+  hadoop_conf_dir = hadoop_conf_dir
+ )
 
 
 

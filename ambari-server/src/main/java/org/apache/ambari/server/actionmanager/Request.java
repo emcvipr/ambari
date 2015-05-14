@@ -22,11 +22,15 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import com.google.inject.Inject;
 import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.StaticallyInject;
 import org.apache.ambari.server.controller.ExecuteActionRequest;
 import org.apache.ambari.server.controller.internal.RequestOperationLevel;
 import org.apache.ambari.server.controller.internal.RequestResourceFilter;
 import org.apache.ambari.server.controller.spi.Resource;
+import org.apache.ambari.server.orm.dao.HostDAO;
+import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.RequestEntity;
 import org.apache.ambari.server.orm.entities.RequestOperationLevelEntity;
 import org.apache.ambari.server.orm.entities.RequestResourceFilterEntity;
@@ -40,6 +44,7 @@ import com.google.gson.Gson;
 import com.google.inject.assistedinject.Assisted;
 import com.google.inject.assistedinject.AssistedInject;
 
+@StaticallyInject
 public class Request {
   private static final Logger LOG = LoggerFactory.getLogger(Request.class);
 
@@ -72,6 +77,9 @@ public class Request {
   private RequestType requestType;
 
   private Collection<Stage> stages = new ArrayList<Stage>();
+
+  @Inject
+  private static HostDAO hostDAO;
 
   @AssistedInject
   /**
@@ -157,7 +165,7 @@ public class Request {
 
     this.requestId = entity.getRequestId();
     this.clusterId = entity.getClusterId();
-    
+
     if (-1L != this.clusterId) {
       try {
         this.clusterName = clusters.getClusterById(this.clusterId).getClusterName();
@@ -185,31 +193,13 @@ public class Request {
       Stage stage = stageFactory.createExisting(stageEntity);
       stages.add(stage);
     }
-    Collection<RequestResourceFilterEntity> resourceFilterEntities = entity.getResourceFilterEntities();
-    if (resourceFilterEntities != null) {
-      this.resourceFilters = new ArrayList<RequestResourceFilter>();
-      for (RequestResourceFilterEntity resourceFilterEntity : resourceFilterEntities) {
-        RequestResourceFilter resourceFilter =
-          new RequestResourceFilter(
-            resourceFilterEntity.getServiceName(),
-            resourceFilterEntity.getComponentName(),
-            getHostsList(resourceFilterEntity.getHosts()));
-        this.resourceFilters.add(resourceFilter);
-      }
-    }
-    RequestOperationLevelEntity operationLevelEntity = entity.getRequestOperationLevel();
-    if (operationLevelEntity != null) {
-      this.operationLevel = new RequestOperationLevel(
-          Resource.Type.valueOf(operationLevelEntity.getLevel()),
-        operationLevelEntity.getClusterName(),
-        operationLevelEntity.getServiceName(),
-        operationLevelEntity.getHostComponentName(),
-        operationLevelEntity.getHostName()
-      );
-    }
+
+    resourceFilters = filtersFromEntity(entity);
+
+    operationLevel = operationLevelFromEntity(entity);
   }
 
-  private List<String> getHostsList(String hosts) {
+  private static List<String> getHostsList(String hosts) {
     List<String> hostList = new ArrayList<String>();
     if (hosts != null && !hosts.isEmpty()) {
       for (String host : hosts.split(",")) {
@@ -263,14 +253,17 @@ public class Request {
       requestEntity.setResourceFilterEntities(filterEntities);
     }
 
+
     if (operationLevel != null) {
-      RequestOperationLevelEntity operationLevelEntity =
-              new RequestOperationLevelEntity();
+      HostEntity hostEntity = hostDAO.findByName(operationLevel.getHostName());
+      Long hostId = hostEntity != null ? hostEntity.getHostId() : null;
+
+      RequestOperationLevelEntity operationLevelEntity = new RequestOperationLevelEntity();
       operationLevelEntity.setLevel(operationLevel.getLevel().toString());
       operationLevelEntity.setClusterName(operationLevel.getClusterName());
       operationLevelEntity.setServiceName(operationLevel.getServiceName());
       operationLevelEntity.setHostComponentName(operationLevel.getHostComponentName());
-      operationLevelEntity.setHostName(operationLevel.getHostName());
+      operationLevelEntity.setHostId(hostId);
       operationLevelEntity.setRequestEntity(requestEntity);
       operationLevelEntity.setRequestId(requestId);
       requestEntity.setRequestOperationLevel(operationLevelEntity);
@@ -404,5 +397,56 @@ public class Request {
 
   public void setExclusive(boolean isExclusive) {
     this.exclusive = isExclusive;
+  }
+
+  /**
+   * @param entity  the request entity
+   * @return a list of {@link RequestResourceFilter} from the entity, or {@code null}
+   *        if none are defined
+   */
+  public static List<RequestResourceFilter> filtersFromEntity (RequestEntity entity) {
+    List<RequestResourceFilter> resourceFilters = null;
+
+    Collection<RequestResourceFilterEntity> resourceFilterEntities = entity.getResourceFilterEntities();
+    if (resourceFilterEntities != null) {
+      resourceFilters = new ArrayList<RequestResourceFilter>();
+      for (RequestResourceFilterEntity resourceFilterEntity : resourceFilterEntities) {
+        RequestResourceFilter resourceFilter =
+          new RequestResourceFilter(
+            resourceFilterEntity.getServiceName(),
+            resourceFilterEntity.getComponentName(),
+            getHostsList(resourceFilterEntity.getHosts()));
+        resourceFilters.add(resourceFilter);
+      }
+    }
+
+    return resourceFilters;
+  }
+
+  /**
+   * @param entity  the request entity
+   * @return the {@link RequestOperationLevel} from the entity, or {@code null}
+   *        if none is defined
+   */
+  public static RequestOperationLevel operationLevelFromEntity(RequestEntity entity) {
+    RequestOperationLevel level = null;
+    RequestOperationLevelEntity operationLevelEntity = entity.getRequestOperationLevel();
+
+    if (operationLevelEntity != null) {
+      String hostName = null;
+      if (operationLevelEntity.getHostId() != null) {
+        HostEntity hostEntity = hostDAO.findById(operationLevelEntity.getHostId());
+        hostName = hostEntity.getHostName();
+      }
+
+      level = new RequestOperationLevel(
+          Resource.Type.valueOf(operationLevelEntity.getLevel()),
+          operationLevelEntity.getClusterName(),
+          operationLevelEntity.getServiceName(),
+          operationLevelEntity.getHostComponentName(),
+          hostName);
+    }
+
+    return level;
   }
 }

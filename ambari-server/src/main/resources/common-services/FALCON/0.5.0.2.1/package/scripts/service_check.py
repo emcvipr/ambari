@@ -18,16 +18,20 @@ limitations under the License.
 """
 
 from resource_management import *
-
+from ambari_commons import OSConst
+from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 
 class FalconServiceCheck(Script):
+  pass
 
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class FalconServiceCheckLinux(FalconServiceCheck):
   def service_check(self, env):
     import params
 
     env.set_params(params)
     if params.security_enabled:
-      Execute(format("{kinit_path_local} -kt {smokeuser_keytab} {smoke_user}"),
+      Execute(format("{kinit_path_local} -kt {smokeuser_keytab} {smokeuser_principal}"),
               user=params.smoke_user)
     Execute(format("{falcon_home}/bin/falcon admin -version"),
             user=params.smoke_user,
@@ -35,6 +39,15 @@ class FalconServiceCheck(Script):
             tries = 3,
             try_sleep = 20
     )
+
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class FalconServiceCheckWindows(FalconServiceCheck):
+  def service_check(self, env):
+    import params
+    env.set_params(params)
+    smoke_cmd = os.path.join(params.hdp_root,"Run-SmokeTests.cmd")
+    service = "FALCON"
+    Execute(format("cmd /C {smoke_cmd} {service}"), logoutput=True)
 
 if __name__ == "__main__":
   FalconServiceCheck().execute()

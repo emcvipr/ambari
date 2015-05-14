@@ -32,6 +32,7 @@ import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.RepositoryVersionState;
+import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.utils.StageUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,7 +79,6 @@ public class DistributeRepositoriesActionListener {
   }
 
   @Subscribe
-  // @AllowConcurrentEvents //TODO: is it thread safe?
   public void onActionFinished(ActionFinalReportReceivedEvent event) {
     // Check if it is "Distribute repositories/install packages" action.
     if (! event.getRole().equals(INSTALL_PACKAGES)) {
@@ -120,8 +120,9 @@ public class DistributeRepositoriesActionListener {
             // !!! getInstalledRepositoryVersion() from the agent is the one
             // entered in the UI.  getActualVersion() is computed.
 
+            StackId stackId = new StackId(structuredOutput.getStackId());
             RepositoryVersionEntity version = repoVersionDAO.findByStackAndVersion(
-                structuredOutput.getStackId(), structuredOutput.getInstalledRepositoryVersion());
+                stackId, structuredOutput.getInstalledRepositoryVersion());
 
             if (null != version) {
               LOG.info("Repository version {} was found, but {} is the actual value",
@@ -133,8 +134,9 @@ public class DistributeRepositoriesActionListener {
               repositoryVersion = structuredOutput.getActualVersion();
             } else {
               // !!! extra check that the actual version is correct
-              version = repoVersionDAO.findByStackAndVersion(
-                  structuredOutput.getStackId(), structuredOutput.getActualVersion());
+              stackId = new StackId(structuredOutput.getStackId());
+              version = repoVersionDAO.findByStackAndVersion(stackId,
+                  structuredOutput.getActualVersion());
 
               LOG.debug("Repository version {} was not found, check for {}.  Found={}",
                   structuredOutput.getInstalledRepositoryVersion(),
@@ -162,11 +164,13 @@ public class DistributeRepositoriesActionListener {
       // If we know exact host stack version, there will be single execution of a code below
       if (hostVersion.getState() == RepositoryVersionState.INSTALLING) {
         hostVersion.setState(newHostState);
-
+        hostVersionDAO.get().merge(hostVersion);
         // Update state of a cluster stack version
         try {
           Cluster cluster = clusters.get().getClusterById(clusterId);
-          cluster.recalculateClusterVersionState(hostVersion.getRepositoryVersion().getVersion());
+          cluster.recalculateClusterVersionState(
+              hostVersion.getRepositoryVersion().getStackId(),
+              hostVersion.getRepositoryVersion().getVersion());
         } catch (AmbariException e) {
           LOG.error("Cannot get cluster with Id " + clusterId.toString(), e);
         }

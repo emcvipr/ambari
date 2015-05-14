@@ -30,14 +30,11 @@ import org.apache.ambari.server.controller.ClusterRequest;
 import org.apache.ambari.server.controller.ConfigurationRequest;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
-import org.apache.ambari.server.orm.dao.ClusterDAO;
-import org.apache.ambari.server.orm.entities.ClusterEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.sql.SQLException;
@@ -67,6 +64,11 @@ public class UpgradeCatalogTest {
     }
 
     @Override
+    public void executePreDMLUpdates() throws AmbariException, SQLException {
+
+    }
+
+    @Override
     public void executeDMLUpdates() throws AmbariException, SQLException {
 
     }
@@ -85,8 +87,11 @@ public class UpgradeCatalogTest {
       // Add binding to each newly created catalog
       Multibinder<UpgradeCatalog> catalogBinder =
         Multibinder.newSetBinder(binder(), UpgradeCatalog.class);
-      catalogBinder.addBinding().to(UpgradeCatalog150.class);
       catalogBinder.addBinding().to(UpgradeCatalog149.class);
+      catalogBinder.addBinding().to(UpgradeCatalog150.class);
+      catalogBinder.addBinding().to(UpgradeCatalog170.class);
+      catalogBinder.addBinding().to(UpgradeCatalog200.class);
+      catalogBinder.addBinding().to(UpgradeCatalog210.class);
     }
   }
 
@@ -109,10 +114,9 @@ public class UpgradeCatalogTest {
     Set<UpgradeCatalog> upgradeCatalogSet = schemaUpgradeHelper.getAllUpgradeCatalogs();
 
     Assert.assertNotNull(upgradeCatalogSet);
-    Assert.assertEquals(2, upgradeCatalogSet.size());
+    Assert.assertEquals(5, upgradeCatalogSet.size());
 
-    List<UpgradeCatalog> upgradeCatalogs =
-      schemaUpgradeHelper.getUpgradePath(null, "1.5.1");
+    List<UpgradeCatalog> upgradeCatalogs = schemaUpgradeHelper.getUpgradePath(null, "1.5.1");
 
     Assert.assertNotNull(upgradeCatalogs);
     Assert.assertEquals(2, upgradeCatalogs.size());

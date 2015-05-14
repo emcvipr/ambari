@@ -224,7 +224,7 @@ public abstract class AbstractUpgradeCatalog implements UpgradeCatalog {
    * If xml owner service is not in the cluster, the configuration won't be added.
    *
    * @param configType Configuration type. (hdfs-site, etc.)
-   * @param properties Set property names.
+   * @param propertyNames Set property names.
    */
   protected void updateConfigurationPropertiesWithValuesFromXml(String configType,
       Set<String> propertyNames, boolean updateIfExists, boolean createNewConfigType) throws AmbariException {
@@ -372,6 +372,11 @@ public abstract class AbstractUpgradeCatalog implements UpgradeCatalog {
   }
 
   @Override
+  public void preUpgradeData() throws AmbariException, SQLException {
+    executePreDMLUpdates();
+  }
+
+  @Override
   public void upgradeData() throws AmbariException, SQLException {
     executeDMLUpdates();
     updateMetaInfoVersion(getTargetVersion());
@@ -379,11 +384,26 @@ public abstract class AbstractUpgradeCatalog implements UpgradeCatalog {
 
   protected abstract void executeDDLUpdates() throws AmbariException, SQLException;
 
+  /**
+   * Perform data insertion before running normal upgrade of data, requires started persist service
+   * @throws AmbariException
+   * @throws SQLException
+   */
+  protected abstract void executePreDMLUpdates() throws AmbariException, SQLException;
+
   protected abstract void executeDMLUpdates() throws AmbariException, SQLException;
 
   @Override
   public String toString() {
     return "{ upgradeCatalog: sourceVersion = " + getSourceVersion() + ", " +
       "targetVersion = " + getTargetVersion() + " }";
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public void onPostUpgrade() throws AmbariException, SQLException {
+    // NOOP
   }
 }

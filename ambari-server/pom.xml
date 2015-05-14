@@ -155,6 +155,7 @@
           <excludes>
             <exclude>pass.txt</exclude>
             <exclude>derby.log</exclude>
+            <exclude>src/test/resources/version</exclude>
             <exclude>src/test/resources/users.ldif</exclude>
             <exclude>src/test/resources/gsInstaller-hosts.txt</exclude>
             <exclude>src/test/resources/temporal_ganglia_data.txt</exclude>
@@ -166,6 +167,7 @@
             <exclude>src/main/resources/stacks/HDP/2.1.GlusterFS/services/YARN/package/templates/exclude_hosts_list.j2</exclude>
             <exclude>src/main/windows/ambari-server.cmd</exclude>
             <exclude>src/main/windows/ambari-server.ps1</exclude>
+            <exclude>src/main/package/choco/ambari-server.nuspec</exclude>
             <exclude>src/main/resources/common-services/AMBARI_METRICS/0.1.0/package/templates/smoketest_metrics.json.j2</exclude>
             <exclude>src/main/resources/common-services/HDFS/2.1.0.2.0/package/scripts/balancer-emulator/balancer-err.log</exclude>
             <exclude>src/main/resources/common-services/HDFS/2.1.0.2.0/package/scripts/balancer-emulator/balancer.log</exclude>
@@ -180,13 +182,11 @@
             <exclude>**/*.iml</exclude>
             <exclude>**/*.json</exclude>
             <exclude>**/*.sql</exclude>
-            <exclude>**/*.wxs</exclude>
             <exclude>**/repo_suse_rhel.j2</exclude>
             <exclude>**/repo_debian.j2</exclude>
             <exclude>**/cluster.properties.j2</exclude>
             <exclude>**/repo_ubuntu.j2</exclude>
             <exclude>**/.pydev*</exclude>
-
             <!--gitignore content -->
             <exclude>src/main/resources/db/newcerts/**</exclude>
 
@@ -486,6 +486,12 @@
               <groupname>root</groupname>
             </mapping>
             <mapping>
+              <directory>/var/lib/ambari-server/data/cache</directory>
+              <filemode>700</filemode>
+              <username>root</username>
+              <groupname>root</groupname>
+            </mapping>
+            <mapping>
               <directory>/var/lib/ambari-server/resources/apps</directory>
               <filemode>755</filemode>
               <username>root</username>
@@ -667,6 +673,7 @@
                 <path>/var/log/ambari-server</path>
                 <path>/var/lib/ambari-server/resources/upgrade</path>
                 <path>/var/lib/ambari-server/data/tmp</path>
+                <path>/var/lib/ambari-server/data/cache</path>
               </paths>
             </data>
             <!-- TODO: should be included all subdirs, if exists-->
@@ -1125,7 +1132,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
-        <version>1.2</version>
+        <version>1.2.1</version>
         <executions>
           <execution>
             <configuration>
@@ -1301,96 +1308,93 @@
         <fileextension.dot.shell-default>.cmd</fileextension.dot.shell-default>
         <path.python.1>${project.basedir}\..\ambari-common\src\main\python;${project.basedir}\..\ambari-agent\src\main\python;${project.basedir}\..\ambari-common\src\main\python\ambari_jinja2;${project.basedir}\..\ambari-common\src\main\python\ambari_commons;${project.basedir}\..\ambari-common\src\test\python;${project.basedir}\src\main\python;${project.basedir}\src\main\python\ambari-server-state;${project.basedir}\src\main\resources\custom_actions;${project.basedir}\src\main\resources\scripts;${project.basedir}\src\test\python</path.python.1>
         <assemblydescriptor>src/main/assemblies/server-windows.xml</assemblydescriptor>
+        <assemblybootstrap>src/main/assemblies/bootstrap-windows.xml</assemblybootstrap>
+        <assemblychocodescriptor>src/main/assemblies/server-windows-choco.xml</assemblychocodescriptor>
         <packagingFormat>jar</packagingFormat>
       </properties>
       <build>
         <plugins>
           <plugin>
-            <groupId>org.codehaus.mojo</groupId>
-            <artifactId>exec-maven-plugin</artifactId>
-            <version>1.2</version>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <configuration>
+              <descriptors>
+                <descriptor>../ambari-project/src/main/assemblies/empty.xml</descriptor>
+              </descriptors>
+            </configuration>
             <executions>
               <execution>
-                <id>run-heat</id>
-                <phase>package</phase>
+                <id>bootstrap-zip</id>
+                <phase>prepare-package</phase>
                 <goals>
-                  <goal>exec</goal>
+                  <goal>single</goal>
                 </goals>
                 <configuration>
-                  <executable>heat.exe</executable>
-                  <arguments>
-                    <argument>dir</argument>
-                    <argument>"."</argument>
-                    <argument>-dr</argument>
-                    <argument>"SERVER_INSTALL_DIRECTORY"</argument>
-                    <argument>-platform</argument>
-                    <argument>Win64</argument>
-                    <argument>-cg</argument>
-                    <argument>"AmbariServerGroup"</argument>
-                    <argument>-gg</argument>
-                    <argument>-ke</argument>
-                    <argument>-srd</argument>
-                    <argument>-o</argument>
-                    <argument>".\..\..\ambari-server-files.wxs"</argument>
-                  </arguments>
-                  <workingDirectory>target/ambari-server-${project.version}-dist/ambari-server-${project.version}</workingDirectory>
+                  <attach>false</attach>
+                  <finalName>bootstrap</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                  <tarLongFileMode>gnu</tarLongFileMode>
+                  <descriptors>
+                    <descriptor>${assemblybootstrap}</descriptor>
+                  </descriptors>
+                </configuration>
+              </execution>
+              <execution>
+                <id>build-tarball</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+                <configuration>
+                  <attach>false</attach>
+                  <appendAssemblyId>true</appendAssemblyId>
+                  <tarLongFileMode>gnu</tarLongFileMode>
+                  <descriptors>
+                    <descriptor>${assemblydescriptor}</descriptor>
+                  </descriptors>
+                </configuration>
+              </execution>
+              <execution>
+                <id>build-choco-dir</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+                <configuration>
+                  <attach>false</attach>
+                  <appendAssemblyId>true</appendAssemblyId>
+                  <tarLongFileMode>gnu</tarLongFileMode>
+                  <descriptors>
+                    <descriptor>${assemblychocodescriptor}</descriptor>
+                  </descriptors>
                 </configuration>
               </execution>
             </executions>
           </plugin>
           <plugin>
-            <groupId>org.apache.npanday.plugins</groupId>
-            <artifactId>wix-maven-plugin</artifactId>
-            <version>1.4.0-incubating</version>
-            <extensions>true</extensions>
-            <configuration>
-              <sourceFiles>
-                <sourceFile>target/ambari-server.wxs</sourceFile>
-                <sourceFile>target/ambari-server-files.wxs</sourceFile>
-              </sourceFiles>
-              <outputDirectory>target</outputDirectory>
-              <objectFiles>
-                <objectFile>target/ambari-server.wixobj</objectFile>
-                <objectFile>target/ambari-server-files.wixobj</objectFile>
-              </objectFiles>
-              <outputFile>target/ambari-server-${project.version}.msi</outputFile>
-              <extensions>
-                <extension>WixUIExtension</extension>
-              </extensions>
-            </configuration>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>1.2.1</version>
             <executions>
               <execution>
-                <id>wix-candle</id>
+                <id>build-choco-package</id>
                 <phase>package</phase>
                 <goals>
-                  <goal>candle</goal>
+                  <goal>exec</goal>
                 </goals>
                 <configuration>
-                  <arguments>-arch x64</arguments>
-                </configuration>
-              </execution>
-              <execution>
-                <id>wix-light</id>
-                <phase>package</phase>
-                <goals>
-                  <goal>light</goal>
-                </goals>
-                <configuration>
-                  <arguments>-b ${basedir}/target/ambari-server-${project.version}-dist/ambari-server-${project.version}</arguments>
+                  <executable>choco.exe</executable>
+                  <arguments>
+                    <argument>pack</argument>
+                    <argument>--version=${project.version}</argument>
+                    <argument>${basedir}/target/ambari-server-${project.version}-choco/ambari-server.nuspec</argument>
+                  </arguments>
+                  <workingDirectory>target/ambari-server-${project.version}-choco</workingDirectory>
                 </configuration>
               </execution>
             </executions>
           </plugin>
         </plugins>
       </build>
-      <dependencies>
-        <dependency>
-          <groupId>org.apache.npanday.plugins</groupId>
-          <artifactId>wix-maven-plugin</artifactId>
-          <version>1.4.0-incubating</version>
-          <scope>test</scope>
-        </dependency>
-      </dependencies>
     </profile>
     <profile>
       <id>linux</id>
@@ -1556,6 +1560,24 @@
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-webapp</artifactId>
     </dependency>
+    <!--jsp support for jetty -->
+    <dependency>
+      <groupId>org.mortbay.jetty</groupId>
+      <artifactId>jsp-api-2.1-glassfish</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.mortbay.jetty</groupId>
+      <artifactId>jsp-2.1-glassfish</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.ant</groupId>
+      <artifactId>ant</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.ant</groupId>
+      <artifactId>ant-launcher</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-server</artifactId>
@@ -1765,6 +1787,11 @@
       <groupId>org.apache.ambari</groupId>
       <artifactId>ambari-metrics-common</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
+      <version>2.1.4</version>
     </dependency>
   </dependencies>
 

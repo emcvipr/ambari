@@ -18,7 +18,7 @@
 
 var App = require('app');
 require('utils/helper');
-require('models/service_config');
+require('models/configs/objects/service_config_category');
 
 /**
  * This model loads all services supported by the stack
@@ -37,6 +37,7 @@ App.StackService = DS.Model.extend({
   isSelected: DS.attr('boolean', {defaultValue: true}),
   isInstalled: DS.attr('boolean', {defaultValue: false}),
   isInstallable: DS.attr('boolean', {defaultValue: true}),
+  isServiceWithWidgets: DS.attr('boolean', {defaultValue: false}),
   stack: DS.belongsTo('App.Stack'),
   serviceComponents: DS.hasMany('App.StackServiceComponent'),
   configs: DS.attr('array'),
@@ -88,7 +89,7 @@ App.StackService = DS.Model.extend({
       skipServices.push('GANGLIA');
     }
     if(App.router.get('clusterInstallCompleted') != true){
-      skipServices.push('RANGER');
+      skipServices.push('RANGER', 'RANGER_KMS');
     }
     return skipServices.contains(this.get('serviceName'));
   }.property('serviceName'),
@@ -101,7 +102,7 @@ App.StackService = DS.Model.extend({
 
   // Is the service required for reporting host metrics
   isHostMetricsService: function () {
-      var services = ['GANGLIA'];
+      var services = ['GANGLIA', 'AMBARI_METRICS'];
       return services.contains(this.get('serviceName'));
   }.property('serviceName'),
 
@@ -152,6 +153,10 @@ App.StackService = DS.Model.extend({
 
   customReviewHandler: function () {
     return App.StackService.reviewPageHandlers[this.get('serviceName')];
+  }.property('serviceName'),
+
+  hasHeatmapSection: function() {
+    return ['HDFS', 'YARN', 'HBASE'].contains(this.get('serviceName'));
   }.property('serviceName'),
 
   /**
@@ -223,7 +228,8 @@ App.StackService.configCategories = function () {
         App.ServiceConfigCategory.create({ name: 'NAMENODE', displayName: 'NameNode'}),
         App.ServiceConfigCategory.create({ name: 'SECONDARY_NAMENODE', displayName: 'Secondary NameNode'}),
         App.ServiceConfigCategory.create({ name: 'DATANODE', displayName: 'DataNode'}),
-        App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'})
+        App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'}),
+        App.ServiceConfigCategory.create({ name: 'NFS_GATEWAY', displayName: 'NFS Gateway'})
       ]);
       break;
     case 'GLUSTERFS':
@@ -333,6 +339,11 @@ App.StackService.configCategories = function () {
         App.ServiceConfigCategory.create({ name: 'UnixAuthenticationSettings', displayName: 'Unix Authentication Settings'}),
         App.ServiceConfigCategory.create({ name: 'ADSettings', displayName: 'AD Settings'}),
         App.ServiceConfigCategory.create({ name: 'LDAPSettings', displayName: 'LDAP Settings'})
+      ]);
+      break;
+    case 'ACCUMULO':
+      serviceConfigCategories.pushObjects([
+        App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'})
       ]);
       break;
     case 'PIG':

@@ -20,12 +20,34 @@ limitations under the License.
 
 import sys
 from resource_management import *
-
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from hbase import hbase
+from ambari_commons import OSCheck, OSConst
+from ambari_commons.os_family_impl import OsFamilyImpl
 
-         
+
 class HbaseClient(Script):
+  def install(self, env):
+    self.install_packages(env)
+    self.configure(env)
 
+  def configure(self, env):
+    import params
+    env.set_params(params)
+    hbase(name='client')
+
+  def status(self, env):
+    raise ClientComponentHasNoStatus()
+
+
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class HbaseClientWindows(HbaseClient):
+  pass
+
+
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class HbaseClientDefault(HbaseClient):
   def get_stack_to_component(self):
     return {"HDP": "hbase-client"}
 
@@ -34,25 +56,14 @@ class HbaseClient(Script):
     env.set_params(params)
 
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
-      Execute(format("hdp-select set hbase-client {version}"))
+      conf_select.select(params.stack_name, "hbase", params.version)
+      hdp_select.select("hbase-client", params.version)
 
-      # set all of the hadoop clientss since hbase client is upgraded as part
+      # set all of the hadoop clients since hbase client is upgraded as part
       # of the final "CLIENTS" group and we need to ensure that hadoop-client
       # is also set
-      Execute(format("hdp-select set hadoop-client {version}"))
-
-  def install(self, env):
-    self.install_packages(env)
-    self.configure(env)
-    
-  def configure(self, env):
-    import params
-    env.set_params(params)
-    
-    hbase(name='client')
-
-  def status(self, env):
-    raise ClientComponentHasNoStatus()
+      conf_select.select(params.stack_name, "hadoop", params.version)
+      hdp_select.select("hadoop-client", params.version)
 
 
 if __name__ == "__main__":

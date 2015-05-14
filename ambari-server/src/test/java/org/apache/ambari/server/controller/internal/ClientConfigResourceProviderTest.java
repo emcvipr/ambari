@@ -27,7 +27,6 @@ import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.apache.ambari.server.state.*;
 import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.utils.StageUtils;
-import org.easymock.EasyMock;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -39,10 +38,8 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.io.PrintWriter;
-import java.lang.reflect.Method;
 import java.util.*;
-import static org.apache.ambari.server.configuration.Configuration.AMBARI_PYTHON_WRAP_DEFAULT;
-import static org.apache.ambari.server.configuration.Configuration.SERVER_TMP_DIR_DEFAULT;
+
 import org.apache.ambari.server.stack.StackManager;
 
 import static org.easymock.EasyMock.*;
@@ -239,6 +236,8 @@ public class ClientConfigResourceProviderTest {
     expect(configMap.get(Configuration.SERVER_TMP_DIR_KEY)).andReturn(Configuration.SERVER_TMP_DIR_DEFAULT);
     expect(configMap.get(Configuration.AMBARI_PYTHON_WRAP_KEY)).andReturn(Configuration.AMBARI_PYTHON_WRAP_DEFAULT);
     expect(configuration.getConfigsMap()).andReturn(returnConfigMap);
+    expect(configuration.getJavaVersion()).andReturn(8);
+    expect(configuration.areHostsSysPrepped()).andReturn("false");
     expect(configuration.getExternalScriptTimeout()).andReturn(Integer.parseInt(Configuration.EXTERNAL_SCRIPT_TIMEOUT_DEFAULT));
     Map<String,String> props = new HashMap<String, String>();
     props.put(Configuration.HIVE_METASTORE_PASSWORD_PROPERTY, "pass");
@@ -266,7 +265,7 @@ public class ClientConfigResourceProviderTest {
     Map<String, Host> stringHostMap = new HashMap<String, Host>();
     stringHostMap.put(hostName, host);
     clusterHostInfo.put("all_hosts",all_hosts);
-    expect(StageUtils.getClusterHostInfo(stringHostMap,cluster)).andReturn(clusterHostInfo);
+    expect(StageUtils.getClusterHostInfo(cluster)).andReturn(clusterHostInfo);
 
     expect(stackId.getStackName()).andReturn(stackName).anyTimes();
     expect(stackId.getStackVersion()).andReturn(stackVersion).anyTimes();
@@ -281,7 +280,6 @@ public class ClientConfigResourceProviderTest {
     expect(ambariMetaInfo.getStackRoot()).andReturn(stackRootFile);
     expect(cluster.getConfig("hive-site", null)).andReturn(clusterConfig);
     expect(cluster.getDesiredConfigs()).andReturn(desiredConfigMap);
-    expect(clusters.getHostsForCluster(clusterName)).andReturn(hosts);
     expect(clusters.getHost(hostName)).andReturn(host);
 
     HashMap<String, String> rcaParams = new HashMap<String, String>();
@@ -440,6 +438,8 @@ public class ClientConfigResourceProviderTest {
     expect(configMap.get(Configuration.AMBARI_PYTHON_WRAP_KEY)).andReturn(Configuration.AMBARI_PYTHON_WRAP_DEFAULT);
     expect(configuration.getConfigsMap()).andReturn(returnConfigMap);
     expect(configuration.getCommonServicesPath()).andReturn(commonServicesPath);
+    expect(configuration.getJavaVersion()).andReturn(8);
+    expect(configuration.areHostsSysPrepped()).andReturn("false");
     expect(configuration.getExternalScriptTimeout()).andReturn(Integer.parseInt(Configuration.EXTERNAL_SCRIPT_TIMEOUT_DEFAULT));
     Map<String,String> props = new HashMap<String, String>();
     props.put(Configuration.HIVE_METASTORE_PASSWORD_PROPERTY, "pass");
@@ -467,7 +467,7 @@ public class ClientConfigResourceProviderTest {
     Map<String, Host> stringHostMap = new HashMap<String, Host>();
     stringHostMap.put(hostName, host);
     clusterHostInfo.put("all_hosts",all_hosts);
-    expect(StageUtils.getClusterHostInfo(stringHostMap,cluster)).andReturn(clusterHostInfo);
+    expect(StageUtils.getClusterHostInfo(cluster)).andReturn(clusterHostInfo);
 
     expect(stackId.getStackName()).andReturn(stackName).anyTimes();
     expect(stackId.getStackVersion()).andReturn(stackVersion).anyTimes();
@@ -482,7 +482,6 @@ public class ClientConfigResourceProviderTest {
     expect(ambariMetaInfo.getStackRoot()).andReturn(stackRootFile);
     expect(cluster.getConfig("hive-site", null)).andReturn(clusterConfig);
     expect(cluster.getDesiredConfigs()).andReturn(desiredConfigMap);
-    expect(clusters.getHostsForCluster(clusterName)).andReturn(hosts);
     expect(clusters.getHost(hostName)).andReturn(host);
 
     HashMap<String, String> rcaParams = new HashMap<String, String>();

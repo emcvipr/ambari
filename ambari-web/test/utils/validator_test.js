@@ -393,6 +393,7 @@ describe('validator', function () {
         { value: 'a1[1]asd[1]', expected: true },
         { value: 'a1[1]asd[1][', expected: false },
         { value: 'a1[1|1]asd[1]', expected: true },
+        { value: '/a1[1|1]asd[1]', expected: true },
         { value: 'a1-2!', expected: true },
         { value: '|a1-2', expected: false },
         { value: '[a1', expected: false },
@@ -403,6 +404,23 @@ describe('validator', function () {
     tests.forEach(function(test) {
       it(message.format(test.value, (test.expected) ? 'valid' : 'not valid'), function() {
         expect(validator.isValidMatchesRegexp(test.value)).to.equal(test.expected);
+      })
+    });
+  });
+
+  describe('#isValidURL', function() {
+    var tests = [
+      {m:'"http://apache.org" - valid',i:'http://apache.org',e:true},
+      {m:'"http://ambari.apache.org" - valid',i:'http://ambari.apache.org',e:true},
+      {m:'"https://ambari.apache.org" - valid',i:'https://ambari.apache.org',e:true},
+      {m:'"htp://ambari.apache.org." - invalid',i:'.htp://ambari.apache.org.',e:false},
+      {m:'"ambari.apache.org" - invalid',i:'ambari.apache.org',e:false},
+      {m:'"www.ambari.apache.org" - invalid',i:'www.ambari.apache.org',e:false},
+      {m:'"" - invalid',i:'',e:false}
+    ];
+    tests.forEach(function(test) {
+      it(test.m + ' ', function () {
+        expect(validator.isValidURL(test.i)).to.equal(test.e);
       })
     });
   });

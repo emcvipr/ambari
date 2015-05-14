@@ -17,16 +17,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 """
-
-from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from ambari_commons.os_check import OSCheck
+from resource_management.libraries.functions import format
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.default import default
-from resource_management import *
-from ambari_commons import OSCheck
+from resource_management.libraries.functions import get_kinit_path
+from resource_management.libraries.script.script import Script
 
 if OSCheck.is_windows_family():
   from params_windows import *
 else:
   from params_linux import *
+
+host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 
 # server configurations
 config = Script.get_config()
@@ -40,17 +44,18 @@ stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
 #hadoop params
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
+slider_bin_dir = "/usr/lib/slider/bin"
+if Script.is_hdp_stack_greater_or_equal("2.2"):
   slider_bin_dir = '/usr/hdp/current/slider-client/bin'
-else:
-  slider_bin_dir = "/usr/lib/slider/bin"
 
-hadoop_conf_dir = "/etc/hadoop/conf"
+hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
+slider_conf_dir = "/usr/hdp/current/slider-client/conf"
+
 smokeuser = config['configurations']['cluster-env']['smokeuser']
 smokeuser_principal = config['configurations']['cluster-env']['smokeuser_principal_name']
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 smokeuser_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
-kinit_path_local = functions.get_kinit_path()
+kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
 slider_env_sh_template = config['configurations']['slider-env']['content']
 
 java64_home = config['hostLevelParams']['java_home']

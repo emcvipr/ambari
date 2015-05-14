@@ -20,9 +20,9 @@ package org.apache.ambari.view.hive.resources.jobs;
 
 import org.apache.ambari.view.hive.ServiceTestUtils;
 import org.apache.ambari.view.hive.BaseHiveTest;
+import org.apache.ambari.view.hive.resources.jobs.viewJobs.JobImpl;
 import org.apache.ambari.view.hive.utils.HdfsApiMock;
 import org.apache.ambari.view.hive.client.Connection;
-import org.apache.ambari.view.hive.client.ConnectionPool;
 import org.apache.ambari.view.hive.client.HiveClientException;
 import org.apache.ambari.view.hive.resources.savedQueries.SavedQuery;
 import org.apache.ambari.view.hive.resources.savedQueries.SavedQueryService;
@@ -53,7 +53,12 @@ public class JobServiceTest extends BaseHiveTest {
   @AfterClass
   public static void shutDown() throws Exception {
     BaseHiveTest.shutDown(); // super
-    HdfsApi.dropAllConnections(); //cleanup API connection
+  }
+
+  @Override
+  @After
+  public void tearDown() throws Exception {
+    jobService.getSharedObjectsFactory().clear(HdfsApi.class);
   }
 
   @Override
@@ -65,7 +70,13 @@ public class JobServiceTest extends BaseHiveTest {
 
     Connection hiveConnection = configureHiveConnectionMock();
 
-    ConnectionPool.setInstance(context, hiveConnection);
+    jobService.getSharedObjectsFactory().setInstance(Connection.class, hiveConnection);
+    jobService.setAggregator(
+        new Aggregator(
+            jobService.getResourceManager(),
+            jobService.getOperationHandleResourceManager(),
+            new AggregatorTest.MockATSParser())
+    );
   }
 
   @Test
@@ -76,7 +87,6 @@ public class JobServiceTest extends BaseHiveTest {
     JobService.JobRequest jobCreationRequest = new JobService.JobRequest();
     jobCreationRequest.job = new JobImpl();
     jobCreationRequest.job.setQueryId(savedQueryForJob.getId());
-
 
     Response response = jobService.create(jobCreationRequest,
         ServiceTestUtils.getResponseWithLocation(), ServiceTestUtils.getDefaultUriInfo());
@@ -113,7 +123,7 @@ public class JobServiceTest extends BaseHiveTest {
   public void createJobNoSource() throws IOException, InterruptedException {
     HdfsApi hdfsApi = createNiceMock(HdfsApi.class);
     expect(hdfsApi.mkdir(anyString())).andReturn(true).anyTimes();
-    HdfsApi.setInstance(context, hdfsApi);
+    jobService.getSharedObjectsFactory().setInstance(HdfsApi.class, hdfsApi);
     replay(hdfsApi);
 
     JobService.JobRequest request = new JobService.JobRequest();
@@ -126,14 +136,17 @@ public class JobServiceTest extends BaseHiveTest {
         ServiceTestUtils.getResponseWithLocation(), ServiceTestUtils.getDefaultUriInfo());
   }
 
-
-
   private Connection configureHiveConnectionMock() throws HiveClientException {
     TGetOperationStatusResp statusResp = getOperationStatusResp();
     TOperationHandle operationHandle = getExecutionOperationHandle();
 
     Connection connection = createNiceMock(Connection.class);
-    expect(connection.executeAsync(anyString())).andReturn(operationHandle).anyTimes();
+    TSessionHandle sessionHandle = new TSessionHandle();
+    THandleIdentifier handleIdentifier = new THandleIdentifier();
+    handleIdentifier.setGuid(new byte[]{1,2,3,4,5,6,7,8});
+    sessionHandle.setSessionId(handleIdentifier);
+    expect(connection.openSession()).andReturn(sessionHandle).anyTimes();
+    expect(connection.executeAsync((TSessionHandle) anyObject(), anyString())).andReturn(operationHandle).anyTimes();
     expect(connection.getLogs(anyObject(TOperationHandle.class))).andReturn("some logs").anyTimes();
     expect(connection.getOperationStatus(anyObject(TOperationHandle.class))).andReturn(statusResp).anyTimes();
 
@@ -196,7 +209,7 @@ public class JobServiceTest extends BaseHiveTest {
   private HdfsApiMock setupHdfsApiMock() throws IOException, InterruptedException {
     HdfsApiMock hdfsApiMock = new HdfsApiMock("select * from Z");
     HdfsApi hdfsApi = hdfsApiMock.getHdfsApi();
-    HdfsApi.setInstance(context, hdfsApi);
+    jobService.getSharedObjectsFactory().setInstance(HdfsApi.class, hdfsApi);
     replay(hdfsApi);
     return hdfsApiMock;
   }

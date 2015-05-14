@@ -25,6 +25,7 @@ import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.agent.AgentEnv;
 import org.apache.ambari.server.agent.DiskInfo;
 import org.apache.ambari.server.agent.HostInfo;
+import org.apache.ambari.server.agent.RecoveryReport;
 import org.apache.ambari.server.controller.HostResponse;
 import org.apache.ambari.server.orm.entities.HostVersionEntity;
 import org.apache.ambari.server.state.fsm.InvalidStateTransitionException;
@@ -155,7 +156,7 @@ public interface Host {
   public void setOsInfo(String osInfo);
 
   /**
-   * Get the OS Type: RHEL5/RHEL6/CentOS5/...
+   * Get the OS Type: RHEL6/CentOS6/...
    * Defined and match-able OS type
    * @return the osType
    */
@@ -163,7 +164,6 @@ public interface Host {
   
   /**
    * Get the os Family: 
-   * redhat5: for centos5, rhel5, oraclelinux5 ..
    * redhat6: for centos6, rhel6, oraclelinux6 ..
    * ubuntu12 : for ubuntu12
    * suse11: for sles11, suse11 ..
@@ -192,6 +192,17 @@ public interface Host {
    * @return the healthStatus
    */
   public HostHealthStatus getHealthStatus();
+
+  /**
+   * Get detailed recovery report for the host
+   * @return
+   */
+  public RecoveryReport getRecoveryReport();
+
+  /**
+   * Set detailed recovery report for the host
+   */
+  public void setRecoveryReport(RecoveryReport recoveryReport);
 
   /**
    * @param healthStatus the healthStatus to set

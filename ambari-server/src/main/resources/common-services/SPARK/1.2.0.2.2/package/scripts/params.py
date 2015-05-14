@@ -18,11 +18,29 @@ limitations under the License.
 
 """
 
-from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
-from resource_management.libraries.functions.default import default
-from resource_management import *
-from setup_spark import *
+
 import status_params
+
+from setup_spark import *
+
+from resource_management import *
+import resource_management.libraries.functions
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import format
+from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions.default import default
+from resource_management.libraries.functions import get_kinit_path
+from resource_management.libraries.script.script import Script
+
+
+# a map of the Ambari role to the component name
+# for use with /usr/hdp/current/<component>
+SERVER_ROLE_DIRECTORY_MAP = {
+  'SPARK_JOBHISTORYSERVER' : 'spark-historyserver',
+  'SPARK_CLIENT' : 'spark-client'
+}
+
+component_directory = Script.get_component_from_role(SERVER_ROLE_DIRECTORY_MAP, "SPARK_CLIENT")
 
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
@@ -30,6 +48,7 @@ tmp_dir = Script.get_tmp_dir()
 stack_name = default("/hostLevelParams/stack_name", None)
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 
 # New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade
 version = default("/commandParams/version", None)
@@ -41,29 +60,22 @@ version = default("/commandParams/version", None)
 # Commenting out for time being
 #stack_is_hdp22_or_further = hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2.1.0') >= 0
 
-stack_is_hdp22_or_further = hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0
+spark_conf = '/etc/spark/conf'
+hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
+hadoop_bin_dir = conf_select.get_hadoop_dir("bin")
 
-if stack_is_hdp22_or_further:
+if Script.is_hdp_stack_greater_or_equal("2.2"):
   hadoop_home = "/usr/hdp/current/hadoop-client"
-  hadoop_bin_dir = "/usr/hdp/current/hadoop-client/bin"
-  spark_conf = '/etc/spark/conf'
+  spark_conf = format("/usr/hdp/current/{component_directory}/conf")
   spark_log_dir = config['configurations']['spark-env']['spark_log_dir']
   spark_pid_dir = status_params.spark_pid_dir
-  spark_role_root = "spark-client"
+  spark_home = format("/usr/hdp/current/{component_directory}")
+  tez_tar_source = config['configurations']['cluster-env']['tez_tar_source']
+  tez_tar_destination = config['configurations']['cluster-env']['tez_tar_destination_folder'] + "/" + os.path.basename(tez_tar_source)
 
-  command_role = default("/role", "")
-
-  if command_role == "SPARK_CLIENT":
-    spark_role_root = "spark-client"
-  elif command_role == "SPARK_JOBHISTORYSERVER":
-    spark_role_root = "spark-historyserver"
-
-  spark_home = format("/usr/hdp/current/{spark_role_root}")
-else:
-  pass
 
 java_home = config['hostLevelParams']['java_home']
-hadoop_conf_dir = "/etc/hadoop/conf"
+
 hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name']
 hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
@@ -90,23 +102,10 @@ else:
   spark_history_server_host = "localhost"
 
 # spark-defaults params
+spark_hive_sec_authorization_enabled = "false"
 spark_yarn_historyServer_address = default(spark_history_server_host, "localhost")
 
-spark_yarn_applicationMaster_waitTries = default(
-  "/configurations/spark-defaults/spark.yarn.applicationMaster.waitTries", '10')
-spark_yarn_submit_file_replication = default("/configurations/spark-defaults/spark.yarn.submit.file.replication", '3')
-spark_yarn_preserve_staging_files = default("/configurations/spark-defaults/spark.yarn.preserve.staging.files", "false")
-spark_yarn_scheduler_heartbeat_interval = default(
-  "/configurations/spark-defaults/spark.yarn.scheduler.heartbeat.interval-ms", "5000")
-spark_yarn_queue = default("/configurations/spark-defaults/spark.yarn.queue", "default")
-spark_yarn_containerLauncherMaxThreads = default(
-  "/configurations/spark-defaults/spark.yarn.containerLauncherMaxThreads", "25")
-spark_yarn_max_executor_failures = default("/configurations/spark-defaults/spark.yarn.max.executor.failures", "3")
-spark_yarn_executor_memoryOverhead = default("/configurations/spark-defaults/spark.yarn.executor.memoryOverhead", "384")
-spark_yarn_driver_memoryOverhead = default("/configurations/spark-defaults/spark.yarn.driver.memoryOverhead", "384")
-spark_history_provider = default("/configurations/spark-defaults/spark.history.provider",
-                                 "org.apache.spark.deploy.yarn.history.YarnHistoryProvider")
-spark_history_ui_port = default("/configurations/spark-defaults/spark.history.ui.port", "18080")
+spark_history_ui_port = config['configurations']['spark-defaults']['spark.history.ui.port']
 
 spark_env_sh = config['configurations']['spark-env']['content']
 spark_log4j_properties = config['configurations']['spark-log4j-properties']['content']
@@ -116,7 +115,7 @@ spark_javaopts_properties = config['configurations']['spark-javaopts-properties'
 hive_server_host = default("/clusterHostInfo/hive_server_host", [])
 is_hive_installed = not len(hive_server_host) == 0
 
-hdp_full_version = get_hdp_version()
+hdp_full_version = functions.get_hdp_version('spark-client')
 
 spark_driver_extraJavaOptions = str(config['configurations']['spark-defaults']['spark.driver.extraJavaOptions'])
 if spark_driver_extraJavaOptions.find('-Dhdp.version') == -1:
@@ -131,23 +130,42 @@ if spark_javaopts_properties.find('-Dhdp.version') == -1:
   spark_javaopts_properties = spark_javaopts_properties+ ' -Dhdp.version=' + str(hdp_full_version)
 
 security_enabled = config['configurations']['cluster-env']['security_enabled']
-kinit_path_local = functions.get_kinit_path()
+kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
 spark_kerberos_keytab =  config['configurations']['spark-defaults']['spark.history.kerberos.keytab']
 spark_kerberos_principal =  config['configurations']['spark-defaults']['spark.history.kerberos.principal']
+
+spark_hive_properties = {
+  'hive.metastore.uris': config['configurations']['hive-site']['hive.metastore.uris']
+}
+
 if security_enabled:
   spark_principal = spark_kerberos_principal.replace('_HOST',spark_history_server_host.lower())
+  
+  if is_hive_installed:
+    spark_hive_properties.update({
+      'hive.metastore.sasl.enabled': str(config['configurations']['hive-site']['hive.metastore.sasl.enabled']).lower(),
+      'hive.metastore.kerberos.keytab.file': config['configurations']['hive-site']['hive.metastore.kerberos.keytab.file'],
+      'hive.server2.authentication.spnego.principal': config['configurations']['hive-site']['hive.server2.authentication.spnego.principal'],
+      'hive.server2.authentication.spnego.keytab': config['configurations']['hive-site']['hive.server2.authentication.spnego.keytab'],
+      'hive.metastore.kerberos.principal': config['configurations']['hive-site']['hive.metastore.kerberos.principal'],
+      'hive.server2.authentication.kerberos.principal': config['configurations']['hive-site']['hive.server2.authentication.kerberos.principal'],
+      'hive.server2.authentication.kerberos.keytab': config['configurations']['hive-site']['hive.server2.authentication.kerberos.keytab'],
+      'hive.security.authorization.enabled': spark_hive_sec_authorization_enabled,
+      'hive.server2.enable.doAs': str(config['configurations']['hive-site']['hive.server2.enable.doAs']).lower()
+    })
+  
 
 
 
 import functools
-#create partial functions with common arguments for every HdfsDirectory call
-#to create hdfs directory we need to call params.HdfsDirectory in code
-HdfsDirectory = functools.partial(
-  HdfsDirectory,
-  conf_dir=hadoop_conf_dir,
-  hdfs_user=hdfs_user,
+#create partial functions with common arguments for every HdfsResource call
+#to create/delete hdfs directory/file/copyfromlocal we need to call params.HdfsResource in code
+HdfsResource = functools.partial(
+  HdfsResource,
+  user=hdfs_user,
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,
-  bin_dir = hadoop_bin_dir
-)
+  hadoop_bin_dir = hadoop_bin_dir,
+  hadoop_conf_dir = hadoop_conf_dir
+ )

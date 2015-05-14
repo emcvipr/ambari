@@ -17,90 +17,70 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 """
+import os
 from resource_management.libraries.script import Script
-from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.functions.default import default
+
+# a map of the Ambari role to the component name
+# for use with /usr/hdp/current/<component>
+SERVER_ROLE_DIRECTORY_MAP = {
+  'RANGER_ADMIN' : 'ranger-admin',
+  'RANGER_USERSYNC' : 'ranger-usersync'
+}
+
+component_directory = Script.get_component_from_role(SERVER_ROLE_DIRECTORY_MAP, "RANGER_ADMIN")
 
 config  = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
 stack_name = default("/hostLevelParams/stack_name", None)
 version = default("/commandParams/version", None)
+host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
-stack_is_hdp22_or_further = hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0
+xml_configurations_supported = config['configurations']['ranger-env']['xml_configurations_supported']
+
+stack_is_hdp22_or_further = Script.is_hdp_stack_greater_or_equal("2.2")
+stack_is_hdp23_or_further = Script.is_hdp_stack_greater_or_equal("2.3")
 
 if stack_is_hdp22_or_further:
   ranger_home    = '/usr/hdp/current/ranger-admin'
-  ranger_conf    = '/etc/ranger/admin/conf'
+  ranger_conf    = '/usr/hdp/current/ranger-admin/conf'
   ranger_stop    = '/usr/bin/ranger-admin-stop'
   ranger_start   = '/usr/bin/ranger-admin-start'
   usersync_home  = '/usr/hdp/current/ranger-usersync'
   usersync_start = '/usr/bin/ranger-usersync-start'
   usersync_stop  = '/usr/bin/ranger-usersync-stop'
+  ranger_ugsync_conf = '/etc/ranger/usersync/conf'
+  
+usersync_services_file = "/usr/hdp/current/ranger-usersync/ranger-usersync-services.sh"
 
 java_home = config['hostLevelParams']['java_home']
-unix_user  = default("/configurations/ranger-env/ranger_user", "ranger")
-unix_group = default("/configurations/ranger-env/ranger_group", "ranger")
+unix_user  = config['configurations']['ranger-env']['ranger_user']
+unix_group = config['configurations']['ranger-env']['ranger_group']
+ranger_pid_dir = config['configurations']['ranger-env']['ranger_pid_dir']
+usersync_log_dir = config['configurations']['ranger-env']['ranger_usersync_log_dir']
 
 ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 
-# admin-properties
-db_flavor = default("/configurations/admin-properties/DB_FLAVOR", "MYSQL")
-sql_command_invoker = default("/configurations/admin-properties/SQL_COMMAND_INVOKER", "mysql")
-sql_connector_jar = default("/configurations/admin-properties/SQL_CONNECTOR_JAR", "/usr/share/java/mysql-connector-java.jar")
-db_root_user = default("/configurations/admin-properties/db_root_user", "root")
-db_root_password = default("/configurations/admin-properties/db_root_password", " ")
-db_host = default("/configurations/admin-properties/db_host", "localhost")
-db_name = default("/configurations/admin-properties/db_name", "ranger")
-db_user = default("/configurations/admin-properties/db_user", "rangeradmin")
-db_password = default("/configurations/admin-properties/db_password", "rangeradmin")
-audit_db_name = default("/configurations/admin-properties/audit_db_name", "ranger_audit")
-audit_db_user = default("/configurations/admin-properties/audit_db_user", "rangerlogger")
-audit_db_password = default("/configurations/admin-properties/audit_db_password", "rangerlogger")
-policymgr_external_url = default("/configurations/admin-properties/policymgr_external_url", "http://localhost:6080")
-policymgr_http_enabled = default("/configurations/admin-properties/policymgr_http_enabled", "true")
-authentication_method = default("/configurations/admin-properties/authentication_method", "UNIX")
-remoteLoginEnabled = default("/configurations/admin-properties/remoteLoginEnabled", "true")
-authServiceHostName = default("/configurations/admin-properties/authServiceHostName", "localhost")
-authServicePort = default("/configurations/admin-properties/authServicePort", "5151")
-xa_ldap_url = default("/configurations/admin-properties/xa_ldap_url", "ldap://71.127.43.33:389")
-xa_ldap_userDNpattern = default("/configurations/admin-properties/xa_ldap_userDNpattern", "uid={0},ou=users,dc=xasecure,dc=net")
-xa_ldap_groupSearchBase = default("/configurations/admin-properties/xa_ldap_groupSearchBase", "ou=groups,dc=xasecure,dc=net")
-xa_ldap_groupSearchFilter = default("/configurations/admin-properties/xa_ldap_groupSearchFilter", "(member=uid={0},ou=users,dc=xasecure,dc=net)")
-xa_ldap_groupRoleAttribute = default("/configurations/admin-properties/xa_ldap_groupRoleAttribute", "cn")
-xa_ldap_ad_domain = default("/configurations/admin-properties/xa_ldap_ad_domain", "xasecure.net")
-xa_ldap_ad_url = default("/configurations/admin-properties/xa_ldap_ad_url", "ldap://ad.xasecure.net:389")
+db_flavor =  (config['configurations']['admin-properties']['DB_FLAVOR']).lower()
+usersync_exturl =  config['configurations']['admin-properties']['policymgr_external_url']
+ranger_host = config['clusterHostInfo']['ranger_admin_hosts'][0]
+ranger_external_url = config['configurations']['admin-properties']['policymgr_external_url']
+ranger_db_name = config['configurations']['admin-properties']['db_name']
+ranger_auditdb_name = config['configurations']['admin-properties']['audit_db_name']
 
-# usersync-properties
-sync_source = default("/configurations/usersync-properties/SYNC_SOURCE", "unix")
-min_unix_user_id_to_sync = default("/configurations/usersync-properties/MIN_UNIX_USER_ID_TO_SYNC", "1000")
-sync_interval = default("/configurations/usersync-properties/SYNC_INTERVAL", "1")
-sync_ldap_url = default("/configurations/usersync-properties/SYNC_LDAP_URL", "ldap://localhost:389")
-sync_ldap_bind_dn = default("/configurations/usersync-properties/SYNC_LDAP_BIND_DN", "cn=admin,dc=xasecure,dc=net")
-sync_ldap_bind_password = default("/configurations/usersync-properties/SYNC_LDAP_BIND_PASSWORD", "admin321")
-cred_keystore_filename = default("/configurations/usersync-properties/CRED_KEYSTORE_FILENAME", "/usr/lib/xausersync/.jceks/xausersync.jceks")
-sync_ldap_user_search_base = default("/configurations/usersync-properties/SYNC_LDAP_USER_SEARCH_BASE", "ou=users,dc=xasecure,dc=net")
-sync_ldap_user_search_scope = default("/configurations/usersync-properties/SYNC_LDAP_USER_SEARCH_SCOPE", "sub")
-sync_ldap_user_object_class = default("/configurations/usersync-properties/SYNC_LDAP_USER_OBJECT_CLASS", "person")
-sync_ldap_user_search_filter = default("/configurations/usersync-properties/SYNC_LDAP_USER_SEARCH_FILTER", "-")
-sync_ldap_user_name_attribute = default("/configurations/usersync-properties/SYNC_LDAP_USER_NAME_ATTRIBUTE", "cn")
-sync_ldap_user_group_name_attribute = default("/configurations/usersync-properties/SYNC_LDAP_USER_GROUP_NAME_ATTRIBUTE", "memberof,ismemberof")
-sync_ldap_username_case_conversion = default("/configurations/usersync-properties/SYNC_LDAP_USERNAME_CASE_CONVERSION", "lower")
-sync_ldap_groupname_case_conversion = default("/configurations/usersync-properties/SYNC_LDAP_GROUPNAME_CASE_CONVERSION", "lower")
-logdir = default("/configurations/usersync-properties/logdir", "logs")
-
-# ranger-site
-http_enabled = default("/configurations/ranger-site/HTTP_ENABLED", "true")
-http_service_port = default("/configurations/ranger-site/HTTP_SERVICE_PORT", "6080")
-https_service_port = default("/configurations/ranger-site/HTTPS_SERVICE_PORT", "6182")
-https_attrib_keystoreFile = default("/configurations/ranger-site/HTTPS_KEYSTORE_FILE", "/etc/ranger/admin/keys/server.jks")
-https_attrib_keystorePass = default("/configurations/ranger-site/HTTPS_KEYSTORE_PASS", "ranger")
-https_attrib_keyAlias = default("/configurations/ranger-site/HTTPS_KEY_ALIAS", "mykey")
-https_attrib_clientAuth = default("/configurations/ranger-site/HTTPS_CLIENT_AUTH", "want")
+sql_command_invoker = config['configurations']['admin-properties']['SQL_COMMAND_INVOKER']
+db_root_user = config['configurations']['admin-properties']['db_root_user']
+db_root_password = unicode(config['configurations']['admin-properties']['db_root_password'])
+db_host =  config['configurations']['admin-properties']['db_host']
+ranger_db_user = config['configurations']['admin-properties']['db_user']
+ranger_audit_db_user = config['configurations']['admin-properties']['audit_db_user']
+ranger_db_password = unicode(config['configurations']['admin-properties']['db_password'])
 
 #ranger-env properties
 oracle_home = default("/configurations/ranger-env/oracle_home", "-")
@@ -114,8 +94,37 @@ if db_flavor and db_flavor.lower() == 'mysql':
 elif db_flavor and db_flavor.lower() == 'oracle':
   jdbc_jar_name = "ojdbc6.jar"
   jdbc_symlink_name = "oracle-jdbc-driver.jar"
+elif db_flavor and db_flavor.lower() == 'postgres':
+  jdbc_jar_name = "postgresql.jar"
+  jdbc_symlink_name = "postgres-jdbc-driver.jar"
+elif db_flavor and db_flavor.lower() == 'sqlserver':
+  jdbc_jar_name = "sqljdbc4.jar"
+  jdbc_symlink_name = "mssql-jdbc-driver.jar"
 
 downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 
 driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
 driver_curl_target = format("{java_share_dir}/{jdbc_jar_name}")
+
+#for db connection
+check_db_connection_jar_name = "DBConnectionVerification.jar"
+check_db_connection_jar = format("/usr/lib/ambari-agent/{check_db_connection_jar_name}")
+ranger_jdbc_connection_url = config["configurations"]["ranger-env"]["ranger_jdbc_connection_url"]
+ranger_jdbc_driver = config["configurations"]["ranger-env"]["ranger_jdbc_driver"]
+
+ranger_credential_provider_path = config["configurations"]["ranger-admin-site"]["ranger.credential.provider.path"]
+ranger_jpa_jdbc_credential_alias = config["configurations"]["ranger-admin-site"]["ranger.jpa.jdbc.credential.alias"]
+ranger_ambari_db_password = unicode(config["configurations"]["admin-properties"]["db_password"])
+
+ranger_jpa_audit_jdbc_credential_alias = config["configurations"]["ranger-admin-site"]["ranger.jpa.audit.jdbc.credential.alias"]
+ranger_ambari_audit_db_password = unicode(config["configurations"]["admin-properties"]["audit_db_password"])
+
+ugsync_jceks_path = config["configurations"]["ranger-ugsync-site"]["ranger.usersync.credstore.filename"]
+cred_lib_path = os.path.join(ranger_home,"cred","lib","*")
+cred_setup_prefix = format('python {ranger_home}/ranger_credential_helper.py -l "{cred_lib_path}"')
+ranger_audit_source_type = config["configurations"]["ranger-admin-site"]["ranger.audit.source.type"]
+if xml_configurations_supported:
+  ranger_usersync_keystore_password = unicode(config["configurations"]["ranger-ugsync-site"]["ranger.usersync.keystore.password"])
+  ranger_usersync_ldap_ldapbindpassword = unicode(config["configurations"]["ranger-ugsync-site"]["ranger.usersync.ldap.ldapbindpassword"])
+  ranger_usersync_truststore_password = unicode(config["configurations"]["ranger-ugsync-site"]["ranger.usersync.truststore.password"])
+

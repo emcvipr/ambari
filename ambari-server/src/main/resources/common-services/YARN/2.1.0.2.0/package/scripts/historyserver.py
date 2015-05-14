@@ -20,28 +20,50 @@ Ambari Agent
 """
 
 from resource_management import *
-from resource_management.libraries.functions.dynamic_variable_interpretation import copy_tarballs_to_hdfs
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.functions.security_commons import build_expectations, \
   cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties, \
   FILE_TYPE_XML
-
 from yarn import yarn
 from service import service
+from ambari_commons import OSConst
+from ambari_commons.os_family_impl import OsFamilyImpl
+
 
 class HistoryServer(Script):
-
-  def get_stack_to_component(self):
-    return {"HDP": "hadoop-mapreduce-historyserver"}
-
   def install(self, env):
     self.install_packages(env)
+
+  def stop(self, env, rolling_restart=False):
+    import params
+    env.set_params(params)
+    service('historyserver', action='stop', serviceName='mapreduce')
 
   def configure(self, env):
     import params
     env.set_params(params)
     yarn(name="historyserver")
+
+
+@OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
+class HistoryserverWindows(HistoryServer):
+  def start(self, env):
+    import params
+    env.set_params(params)
+    self.configure(env)
+    service('historyserver', action='start', serviceName='mapreduce')
+
+  def status(self, env):
+    service('historyserver', action='status')
+
+
+@OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
+class HistoryServerDefault(HistoryServer):
+  def get_stack_to_component(self):
+    return {"HDP": "hadoop-mapreduce-historyserver"}
 
   def pre_rolling_restart(self, env):
     Logger.info("Executing Rolling Upgrade pre-restart")
@@ -49,21 +71,36 @@ class HistoryServer(Script):
     env.set_params(params)
 
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
-      Execute(format("hdp-select set hadoop-mapreduce-historyserver {version}"))
-      copy_tarballs_to_hdfs('mapreduce', 'hadoop-mapreduce-historyserver', params.mapred_user, params.hdfs_user, params.user_group)
+      conf_select.select(params.stack_name, "hadoop", params.version)
+      hdp_select.select("hadoop-mapreduce-historyserver", params.version)
+      params.HdfsResource(InlineTemplate(params.mapreduce_tar_destination).get_content(),
+                          type="file",
+                          action="create_on_execute",
+                          source=params.mapreduce_tar_source,
+                          owner=params.hdfs_user,
+                          group=params.user_group,
+                          mode=0444,
+      )
+      params.HdfsResource(None, action="execute")
+
 
   def start(self, env, rolling_restart=False):
     import params
     env.set_params(params)
     self.configure(env) # FOR SECURITY
-    copy_tarballs_to_hdfs('mapreduce', 'hadoop-mapreduce-historyserver', params.mapred_user, params.hdfs_user, params.user_group)
+    
+    if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
+      params.HdfsResource(InlineTemplate(params.mapreduce_tar_destination).get_content(),
+                          type="file",
+                          action="create_on_execute",
+                          source=params.mapreduce_tar_source,
+                          owner=params.hdfs_user,
+                          group=params.user_group,
+                          mode=0444,
+      )
+      params.HdfsResource(None, action="execute")
+
     service('historyserver', action='start', serviceName='mapreduce')
-
-
-  def stop(self, env, rolling_restart=False):
-    import params
-    env.set_params(params)
-    service('historyserver', action='stop', serviceName='mapreduce')
 
   def status(self, env):
     import status_params
@@ -125,6 +162,7 @@ class HistoryServer(Script):
         self.put_structured_out({"securityState": "UNSECURED"})
     else:
       self.put_structured_out({"securityState": "UNSECURED"})
+
 
 if __name__ == "__main__":
   HistoryServer().execute()

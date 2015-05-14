@@ -25,8 +25,9 @@ import unittest
 from mock.mock import patch, MagicMock
 from ambari_agent import ProcessHelper
 
-from only_for_platform import only_for_platform, PLATFORM_LINUX
-@only_for_platform(PLATFORM_LINUX)
+from only_for_platform import not_for_platform, PLATFORM_WINDOWS
+
+@not_for_platform(PLATFORM_WINDOWS)
 class TestProcessHelper(unittest.TestCase):
 
   @patch.object(ProcessHelper, "getTempFiles")
@@ -47,13 +48,13 @@ class TestProcessHelper(unittest.TestCase):
     self.assertFalse(os.path.exists(tf3.name))
 
 
-  @patch("os._exit")
+  @patch("sys.exit")
   @patch.object(ProcessHelper, "_clean")
-  def test_stopAgent(self, _clean_mock, exitMock):
+  def test_stopAgent(self, _clean_mock, sys_exit_mock):
 
     ProcessHelper.stopAgent()
     self.assertTrue(_clean_mock.called)
-    self.assertTrue(exitMock.called)
+    self.assertTrue(sys_exit_mock.called)
 
 
   @patch("os.execvp")

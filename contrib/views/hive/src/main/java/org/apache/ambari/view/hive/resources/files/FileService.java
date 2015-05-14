@@ -18,17 +18,20 @@
 
 package org.apache.ambari.view.hive.resources.files;
 
-import com.google.inject.Inject;
+import com.jayway.jsonpath.JsonPath;
 import org.apache.ambari.view.ViewContext;
 import org.apache.ambari.view.ViewResourceHandler;
 import org.apache.ambari.view.hive.BaseService;
 import org.apache.ambari.view.hive.utils.*;
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileAlreadyExistsException;
 import org.json.simple.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.inject.Inject;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.*;
 import javax.ws.rs.core.Context;
@@ -37,6 +40,9 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.util.HashMap;
 
 /**
  * File access resource
@@ -51,6 +57,9 @@ import java.io.IOException;
  *      update file content
  */
 public class FileService extends BaseService {
+  public static final String FAKE_FILE = "fakefile://";
+  public static final String JSON_PATH_FILE = "jsonpath:";
+
   @Inject
   ViewResourceHandler handler;
 
@@ -66,17 +75,30 @@ public class FileService extends BaseService {
   public Response getFilePage(@PathParam("filePath") String filePath, @QueryParam("page") Long page) throws IOException, InterruptedException {
     LOG.debug("Reading file " + filePath);
     try {
-      FilePaginator paginator = new FilePaginator(filePath, context);
+      FileResource file = new FileResource();
 
       if (page == null)
         page = 0L;
 
-      FileResource file = new FileResource();
-      file.setFilePath(filePath);
-      file.setFileContent(paginator.readPage(page));
-      file.setHasNext(paginator.pageCount() > page + 1);
-      file.setPage(page);
-      file.setPageCount(paginator.pageCount());
+      if (filePath.startsWith(FAKE_FILE)) {
+        if (page > 1)
+          throw new IllegalArgumentException("There's only one page in fake files");
+
+        String encodedContent = filePath.substring(FAKE_FILE.length());
+        String content = new String(Base64.decodeBase64(encodedContent));
+
+        fillFakeFileObject(filePath, file, content);
+      } else if (filePath.startsWith(JSON_PATH_FILE)) {
+        if (page > 1)
+          throw new IllegalArgumentException("There's only one page in fake files");
+
+        String content = getJsonPathContentByUrl(filePath);
+        fillFakeFileObject(filePath, file, content);
+      } else  {
+        FilePaginator paginator = new FilePaginator(filePath, getSharedObjectsFactory().getHdfsApi());
+
+        fillRealFileObject(filePath, page, file, paginator);
+      }
 
       JSONObject object = new JSONObject();
       object.put("file", file);
@@ -92,6 +114,35 @@ public class FileService extends BaseService {
     }
   }
 
+  protected String getJsonPathContentByUrl(String filePath) throws IOException {
+    URL url = new URL(filePath.substring(JSON_PATH_FILE.length()));
+
+    InputStream responseInputStream = context.getURLStreamProvider().readFrom(url.toString(), "GET",
+        null, new HashMap<String, String>());
+    String response = IOUtils.toString(responseInputStream);
+
+    for (String ref : url.getRef().split("!")) {
+      response = JsonPath.read(response, ref);
+    }
+    return response;
+  }
+
+  public void fillRealFileObject(String filePath, Long page, FileResource file, FilePaginator paginator) throws IOException, InterruptedException {
+    file.setFilePath(filePath);
+    file.setFileContent(paginator.readPage(page));
+    file.setHasNext(paginator.pageCount() > page + 1);
+    file.setPage(page);
+    file.setPageCount(paginator.pageCount());
+  }
+
+  public void fillFakeFileObject(String filePath, FileResource file, String content) {
+    file.setFilePath(filePath);
+    file.setFileContent(content);
+    file.setHasNext(false);
+    file.setPage(0);
+    file.setPageCount(1);
+  }
+
   /**
    * Delete single item
    */
@@ -100,7 +151,7 @@ public class FileService extends BaseService {
   public Response deleteFile(@PathParam("filePath") String filePath) throws IOException, InterruptedException {
     try {
       LOG.debug("Deleting file " + filePath);
-      if (getHdfsApi().delete(filePath, false)) {
+      if (getSharedObjectsFactory().getHdfsApi().delete(filePath, false)) {
         return Response.status(204).build();
       }
       throw new NotFoundFormattedException("FileSystem.delete returned false", null);
@@ -121,7 +172,7 @@ public class FileService extends BaseService {
                              @PathParam("filePath") String filePath) throws IOException, InterruptedException {
     try {
       LOG.debug("Rewriting file " + filePath);
-      FSDataOutputStream output = getHdfsApi().create(filePath, true);
+      FSDataOutputStream output = getSharedObjectsFactory().getHdfsApi().create(filePath, true);
       output.writeBytes(request.file.getFileContent());
       output.close();
       return Response.status(204).build();
@@ -143,13 +194,13 @@ public class FileService extends BaseService {
     try {
       LOG.debug("Creating file " + request.file.getFilePath());
       try {
-        FSDataOutputStream output = getHdfsApi().create(request.file.getFilePath(), false);
+        FSDataOutputStream output = getSharedObjectsFactory().getHdfsApi().create(request.file.getFilePath(), false);
         if (request.file.getFileContent() != null) {
           output.writeBytes(request.file.getFileContent());
         }
         output.close();
       } catch (FileAlreadyExistsException ex) {
-        throw new ServiceFormattedException(ex.getMessage(), ex, 400);
+        throw new ServiceFormattedException("F020 File already exists", ex, 400);
       }
       response.setHeader("Location",
           String.format("%s/%s", ui.getAbsolutePath().toString(), request.file.getFilePath()));

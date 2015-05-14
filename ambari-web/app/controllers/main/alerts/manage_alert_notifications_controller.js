@@ -131,6 +131,11 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
       value: '',
       defaultValue: ''
     },
+    host: {
+      label: Em.I18n.t('alerts.actions.manage_alert_notifications_popup.host'),
+      value: '',
+      defaultValue: ''
+    },
     port: {
       label: Em.I18n.t('alerts.actions.manage_alert_notifications_popup.port'),
       value: '',
@@ -207,6 +212,8 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
     'ambari.dispatch.recipients',
     'ambari.dispatch.snmp.community',
     'ambari.dispatch.snmp.oids.trap',
+    'ambari.dispatch.snmp.oids.subject',
+    'ambari.dispatch.snmp.oids.body',
     'ambari.dispatch.snmp.port',
     'ambari.dispatch.snmp.version',
     'mail.smtp.auth',
@@ -215,6 +222,37 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
     'mail.smtp.port',
     'mail.smtp.starttls.enable'
   ],
+
+  validationMap: {
+    EMAIL: [
+      {
+        errorKey: 'emailToError',
+        validator: 'emailToValidation'
+      },
+      {
+        errorKey: 'emailFromError',
+        validator: 'emailFromValidation'
+      },
+      {
+        errorKey: 'smtpPortError',
+        validator: 'smtpPortValidation'
+      },
+      {
+        errorKey: 'passwordError',
+        validator: 'retypePasswordValidation'
+      }
+    ],
+    SNMP: [
+      {
+        errorKey: 'portError',
+        validator: 'portValidation'
+      },
+      {
+        errorKey: 'hostError',
+        validator: 'hostsValidation'
+      }
+    ]
+  },
 
   /**
    * Load all Alert Notifications from server
@@ -299,6 +337,8 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
     inputFields.set('version.value', selectedAlertNotification.get('properties')['ambari.dispatch.snmp.version']);
     inputFields.set('OIDs.value', selectedAlertNotification.get('properties')['ambari.dispatch.snmp.oids.trap']);
     inputFields.set('community.value', selectedAlertNotification.get('properties')['ambari.dispatch.snmp.community']);
+    inputFields.set('host.value', selectedAlertNotification.get('properties')['ambari.dispatch.recipients'] ?
+      selectedAlertNotification.get('properties')['ambari.dispatch.recipients'].join(', ') : '');
     inputFields.set('port.value', selectedAlertNotification.get('properties')['ambari.dispatch.snmp.port']);
     inputFields.set('severityFilter.value', selectedAlertNotification.get('alertStates'));
     inputFields.set('global.value', selectedAlertNotification.get('global'));
@@ -342,6 +382,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
           this.emailToValidation();
           this.emailFromValidation();
           this.smtpPortValidation();
+          this.hostsValidation();
           this.portValidation();
           this.retypePasswordValidation();
         },
@@ -349,6 +390,23 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
         isEmailMethodSelected: function () {
           return this.get('controller.inputFields.method.value') === 'EMAIL';
         }.property('controller.inputFields.method.value'),
+
+        methodObserver: function () {
+          var currentMethod = this.get('controller.inputFields.method.value'),
+            validationMap = self.get('validationMap');
+          self.get('methods').forEach(function (method) {
+            var validations = validationMap[method];
+            if (method == currentMethod) {
+              validations.mapProperty('validator').forEach(function (key) {
+                this.get(key).call(this);
+              }, this);
+            } else {
+              validations.mapProperty('errorKey').forEach(function (key) {
+                this.set(key, false);
+              }, this);
+            }
+          }, this);
+        }.observes('controller.inputFields.method.value'),
 
         nameValidation: function () {
           var newName = this.get('controller.inputFields.name.value').trim();
@@ -384,17 +442,12 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
         }.observes('controller.inputFields.name.value'),
 
         emailToValidation: function () {
-          var inputValue = this.get('controller.inputFields.email.value').trim(),
-              emailsTo = inputValue.split(','),
-              emailToError = false,
-              i = emailsTo.length,
-              emailTo;
-          while (i--) {
-            emailTo = emailsTo[i];
-            if (emailTo && !validator.isValidEmail(emailTo.trim())) {
-              emailToError = true;
-              break;
-            }
+          var emailToError = false;
+          if (this.get('isEmailMethodSelected')) {
+            var inputValues = this.get('controller.inputFields.email.value').trim().split(',');
+            emailToError = inputValues.some(function(emailTo) {
+              return emailTo && !validator.isValidEmail(emailTo.trim());
+            })
           }
           this.set('emailToError', emailToError);
           this.set('controller.inputFields.email.errorMsg', emailToError ? Em.I18n.t('alerts.notifications.error.email') : null);
@@ -422,6 +475,20 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
           }
         }.observes('controller.inputFields.SMTPPort.value'),
 
+        hostsValidation: function() {
+          var inputValue = this.get('controller.inputFields.host.value').trim(),
+            hostError = false;;
+          if (!this.get('isEmailMethodSelected')) {
+            var array = inputValue.split(',');
+            hostError = array.some(function(hostname) {
+              return hostname && !validator.isHostname(hostname.trim());
+            });
+            hostError = hostError || inputValue==='';
+          }
+          this.set('hostError', hostError);
+          this.set('controller.inputFields.host.errorMsg', hostError ? Em.I18n.t('alerts.notifications.error.host') : null);
+        }.observes('controller.inputFields.host.value'),
+
         portValidation: function () {
           var value = this.get('controller.inputFields.port.value');
           if (value && (!validator.isValidInt(value) || value < 0)) {
@@ -447,9 +514,9 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
 
         setParentErrors: function () {
           var hasErrors = this.get('nameError') || this.get('emailToError') || this.get('emailFromError') ||
-            this.get('smtpPortError') || this.get('portError') || this.get('passwordError');
+            this.get('smtpPortError') || this.get('hostError') || this.get('portError') || this.get('passwordError');
           this.set('parentView.hasErrors', hasErrors);
-        }.observes('nameError', 'emailToError', 'emailFromError', 'smtpPortError', 'portError', 'passwordError'),
+        }.observes('nameError', 'emailToError', 'emailFromError', 'smtpPortError', 'hostError', 'portError', 'passwordError'),
 
 
         groupsSelectView: Em.Select.extend({
@@ -586,7 +653,10 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
     } else {
       properties['ambari.dispatch.snmp.version'] = inputFields.get('version.value');
       properties['ambari.dispatch.snmp.oids.trap'] = inputFields.get('OIDs.value');
+      properties['ambari.dispatch.snmp.oids.subject'] = inputFields.get('OIDs.value');
+      properties['ambari.dispatch.snmp.oids.body'] = inputFields.get('OIDs.value');
       properties['ambari.dispatch.snmp.community'] = inputFields.get('community.value');
+      properties['ambari.dispatch.recipients'] = inputFields.get('host.value').replace(/\s/g, '').split(',');
       properties['ambari.dispatch.snmp.port'] = inputFields.get('port.value');
     }
     inputFields.get('customProperties').forEach(function (customProperty) {

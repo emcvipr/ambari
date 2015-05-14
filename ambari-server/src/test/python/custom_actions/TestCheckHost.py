@@ -32,6 +32,7 @@ from unittest import TestCase
 from check_host import CheckHost
 
 from only_for_platform import only_for_platform, get_platform, PLATFORM_LINUX, PLATFORM_WINDOWS
+from ambari_agent.HostCheckReportFileHandler import HostCheckReportFileHandler
 
 if get_platform() != PLATFORM_WINDOWS:
   os_distro_value = ('Suse','11','Final')
@@ -39,7 +40,10 @@ else:
   os_distro_value = ('win2012serverr2','6.3','WindowsServer')
 
 
+@patch.object(HostCheckReportFileHandler, "writeHostChecksCustomActionsFile", new=MagicMock())
+@patch.object(HostCheckReportFileHandler, "resolve_ambari_config", new=MagicMock())
 class TestCheckHost(TestCase):
+  current_dir = os.path.dirname(os.path.realpath(__file__))
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch("os.path.isfile")
   @patch.object(Script, 'get_config')
@@ -55,8 +59,6 @@ class TestCheckHost(TestCase):
     checkHost = CheckHost()
     checkHost.actionexecute(None)
 
-    print os_isfile_mock.call_args
-    self.assertEquals(os_isfile_mock.call_args[0][0], '/tmp/ambari-agent/hostcheck_custom_actions.result')
     self.assertEquals(structured_out_mock.call_args[0][0], {'java_home_check': {'message': 'Java home exists!',
                                                                                 'exit_code': 0}})
     # test, java home doesn't exist
@@ -65,7 +67,6 @@ class TestCheckHost(TestCase):
 
     checkHost.actionexecute(None)
 
-    self.assertEquals(os_isfile_mock.call_args[0][0], '/tmp/ambari-agent/hostcheck_custom_actions.result')
     self.assertEquals(structured_out_mock.call_args[0][0], {'java_home_check': {"message": "Java home doesn't exist!",
                                                                                 "exit_code" : 1}})
 
@@ -186,7 +187,7 @@ class TestCheckHost(TestCase):
   @patch("resource_management.libraries.script.Script.put_structured_out")
   def testHostResolution(self, structured_out_mock, get_tmp_dir_mock, mock_config, mock_socket):
     mock_socket.return_value = "192.168.1.1"    
-    jsonFilePath = os.path.join("../resources/custom_actions", "check_host_ip_addresses.json")
+    jsonFilePath = os.path.join(TestCheckHost.current_dir+"/../../resources/custom_actions", "check_host_ip_addresses.json")
     
     with open(jsonFilePath, "r") as jsonFile:
       jsonPayload = json.load(jsonFile)
@@ -225,7 +226,7 @@ class TestCheckHost(TestCase):
   @patch.object(Script, 'get_tmp_dir')
   @patch("resource_management.libraries.script.Script.put_structured_out")
   def testInvalidCheck(self, structured_out_mock, get_tmp_dir_mock, mock_config):
-    jsonFilePath = os.path.join("../resources/custom_actions", "invalid_check.json")
+    jsonFilePath = os.path.join(TestCheckHost.current_dir+"/../../resources/custom_actions", "invalid_check.json")
     
     with open(jsonFilePath, "r") as jsonFile:
       jsonPayload = json.load(jsonFile)
@@ -250,13 +251,13 @@ class TestCheckHost(TestCase):
   @patch('ambari_agent.HostInfo.HostInfoLinux.checkLiveServices')
   @patch('ambari_agent.HostInfo.HostInfoLinux.getUMask')
   @patch('ambari_agent.HostInfo.HostInfoLinux.getTransparentHugePage')
-  @patch('ambari_agent.HostInfo.HostInfoLinux.checkIptables')
+  @patch('ambari_agent.HostInfo.HostInfoLinux.checkFirewall')
   @patch('ambari_agent.HostInfo.HostInfoLinux.checkReverseLookup')
   @patch('time.time')
-  def testLastAgentEnv(self, time_mock, checkReverseLookup_mock, checkIptables_mock, getTransparentHugePage_mock,
+  def testLastAgentEnv(self, time_mock, checkReverseLookup_mock, checkFirewall_mock, getTransparentHugePage_mock,
                        getUMask_mock, checkLiveServices_mock, javaProcs_mock, put_structured_out_mock,
                        get_tmp_dir_mock, get_config_mock, systemmock):
-    jsonFilePath = os.path.join("../resources/custom_actions", "check_last_agent_env.json")
+    jsonFilePath = os.path.join(TestCheckHost.current_dir+"/../../resources/custom_actions", "check_last_agent_env.json")
     with open(jsonFilePath, "r") as jsonFile:
       jsonPayload = json.load(jsonFile)
 
@@ -269,7 +270,7 @@ class TestCheckHost(TestCase):
     # ensure the correct function was called
     self.assertTrue(time_mock.called)
     self.assertTrue(checkReverseLookup_mock.called)
-    self.assertTrue(checkIptables_mock.called)
+    self.assertTrue(checkFirewall_mock.called)
     self.assertTrue(getTransparentHugePage_mock.called)
     self.assertTrue(getUMask_mock.called)
     self.assertTrue(checkLiveServices_mock.called)
@@ -279,7 +280,8 @@ class TestCheckHost(TestCase):
     last_agent_env_check_result = put_structured_out_mock.call_args[0][0]
     self.assertTrue('last_agent_env_check' in last_agent_env_check_result)
     self.assertTrue('hostHealth' in last_agent_env_check_result['last_agent_env_check'])
-    self.assertTrue('iptablesIsRunning' in last_agent_env_check_result['last_agent_env_check'])
+    self.assertTrue('firewallRunning' in last_agent_env_check_result['last_agent_env_check'])
+    self.assertTrue('firewallName' in last_agent_env_check_result['last_agent_env_check'])
     self.assertTrue('reverseLookup' in last_agent_env_check_result['last_agent_env_check'])
     self.assertTrue('alternatives' in last_agent_env_check_result['last_agent_env_check'])
     self.assertTrue('umask' in last_agent_env_check_result['last_agent_env_check'])

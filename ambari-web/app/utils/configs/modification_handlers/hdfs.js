@@ -21,12 +21,6 @@ require('utils/configs/modification_handlers/modification_handler');
 module.exports = App.ServiceConfigModificationHandler.create({
   serviceId : 'HDFS',
 
-  getConfig : function(allConfigs, configName, configFilename, configServiceName) {
-    return allConfigs.findProperty("serviceName", configServiceName).get("configs").find(function(config) {
-      return configName == config.get('name') && (configFilename == null || configFilename == config.get('filename'));
-    });
-  },
-
   getDependentConfigChanges : function(changedConfig, selectedServices, allConfigs, securityEnabled) {
     var affectedProperties = [];
     var newValue = changedConfig.get("value");
@@ -34,11 +28,14 @@ module.exports = App.ServiceConfigModificationHandler.create({
     var affectedPropertyName = changedConfig.get("name");
     if (affectedPropertyName == rangerPluginEnabledName) {
       var configDfsPermissionsEnabled = this.getConfig(allConfigs, 'dfs.permissions.enabled', 'hdfs-site.xml', 'HDFS');
+      var configAttributesProviderClass = this.getConfig(allConfigs, 'dfs.namenode.inode.attributes.provider.class', 'hdfs-site.xml', 'HDFS');
+      var isAttributesProviderClassSet = typeof configAttributesProviderClass !== 'undefined';
 
       var rangerPluginEnabled = newValue == "Yes";
       var newDfsPermissionsEnabled = rangerPluginEnabled ? "true" : "true";
+      var newAttributesProviderClass = 'org.apache.ranger.authorization.hadoop.RangerHdfsAuthorizer';
 
-      // Add Hive-Ranger configs
+      // Add HDFS-Ranger configs
       if (configDfsPermissionsEnabled != null && newDfsPermissionsEnabled !== configDfsPermissionsEnabled.get('value')) {
         affectedProperties.push({
           serviceName : "HDFS",
@@ -50,6 +47,21 @@ module.exports = App.ServiceConfigModificationHandler.create({
           changedPropertyName : rangerPluginEnabledName,
           removed : false,
           filename : 'hdfs-site.xml'
+        });
+      }
+      if (rangerPluginEnabled && (!isAttributesProviderClassSet || newAttributesProviderClass != configAttributesProviderClass.get('value'))) {
+        affectedProperties.push({
+          serviceName : "HDFS",
+          sourceServiceName : "HDFS",
+          propertyName : 'dfs.namenode.inode.attributes.provider.class',
+          propertyDisplayName : 'dfs.namenode.inode.attributes.provider.class',
+          newValue : newAttributesProviderClass,
+          curValue : isAttributesProviderClassSet ? configAttributesProviderClass.get('value') : '',
+          changedPropertyName : rangerPluginEnabledName,
+          removed : false,
+          isNewProperty : !isAttributesProviderClassSet,
+          filename : 'hdfs-site.xml',
+          categoryName: 'Custom hdfs-site'
         });
       }
     }

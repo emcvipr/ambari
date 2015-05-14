@@ -30,6 +30,9 @@ PROVIDERS = dict(
   ubuntu=dict(
     Repository="resource_management.libraries.providers.repository.UbuntuRepositoryProvider",
   ),
+  debian=dict(
+    Repository="resource_management.libraries.providers.repository.UbuntuRepositoryProvider",
+  ),
   winsrv=dict(
     Msi="resource_management.libraries.providers.msi.MsiProvider"
   ),
@@ -39,7 +42,7 @@ PROVIDERS = dict(
     XmlConfig="resource_management.libraries.providers.xml_config.XmlConfigProvider",
     PropertiesFile="resource_management.libraries.providers.properties_file.PropertiesFileProvider",
     MonitorWebserver="resource_management.libraries.providers.monitor_webserver.MonitorWebserverProvider",
-    HdfsDirectory="resource_management.libraries.providers.hdfs_directory.HdfsDirectoryProvider",
-    CopyFromLocal="resource_management.libraries.providers.copy_from_local.CopyFromLocalProvider"
+    HdfsResource="resource_management.libraries.providers.hdfs_resource.HdfsResourceProvider",
+    ModifyPropertiesFile="resource_management.libraries.providers.modify_properties_file.ModifyPropertiesFileProvider"
   ),
 )

@@ -1083,28 +1083,28 @@ describe('App.WizardStep3Controller', function () {
           Em.Object.create({bootStatus: 'REGISTERED'}),
           Em.Object.create({bootStatus: 'RUNNING'})
         ],
-        e: {isSubmitDisabled: false, isRetryDisabled: true}
+        e: {isSubmitDisabled: false}
       },
       {
         bootHosts: [
           Em.Object.create({bootStatus: 'FAILED'}),
           Em.Object.create({bootStatus: 'RUNNING'})
         ],
-        e: {isSubmitDisabled: true, isRetryDisabled: false}
+        e: {isSubmitDisabled: true}
       },
       {
         bootHosts: [
           Em.Object.create({bootStatus: 'FAILED'}),
           Em.Object.create({bootStatus: 'REGISTERED'})
         ],
-        e: {isSubmitDisabled: false, isRetryDisabled: false}
+        e: {isSubmitDisabled: false}
       },
       {
         bootHosts: [
           Em.Object.create({bootStatus: 'RUNNING'}),
           Em.Object.create({bootStatus: 'RUNNING'})
         ],
-        e: {isSubmitDisabled: true, isRetryDisabled: true}
+        e: {isSubmitDisabled: true}
       }
     ]);
     tests.forEach(function (test) {
@@ -1112,7 +1112,6 @@ describe('App.WizardStep3Controller', function () {
         c.reopen({bootHosts: test.bootHosts});
         c.stopRegistration();
         expect(c.get('isSubmitDisabled')).to.equal(test.e.isSubmitDisabled);
-        expect(c.get('isRetryDisabled')).to.equal(test.e.isRetryDisabled);
       });
     });
 
@@ -1707,8 +1706,8 @@ describe('App.WizardStep3Controller', function () {
     it('should parse firewall warnings', function () {
 
       var items = [
-        {Hosts: {host_name: 'c1', last_agent_env: {iptablesIsRunning: true}}},
-        {Hosts: {host_name: 'c2', last_agent_env: {iptablesIsRunning: false}}}
+        {Hosts: {host_name: 'c1', last_agent_env: {firewallRunning: true, firewallName: "iptables"}}},
+        {Hosts: {host_name: 'c2', last_agent_env: {firewallRunning: false, firewallName: "iptables"}}}
       ];
 
       c.parseWarnings({items: items});
@@ -1722,8 +1721,8 @@ describe('App.WizardStep3Controller', function () {
     it('should parse firewall warnings (2)', function () {
 
       var items = [
-        {Hosts: {host_name: 'c1', last_agent_env: {iptablesIsRunning: true}}},
-        {Hosts: {host_name: 'c2', last_agent_env: {iptablesIsRunning: true}}}
+        {Hosts: {host_name: 'c1', last_agent_env: {firewallRunning: true, firewallName: "iptables"}}},
+        {Hosts: {host_name: 'c2', last_agent_env: {firewallRunning: true, firewallName: "iptables"}}}
       ];
 
       c.parseWarnings({items: items});
@@ -2177,6 +2176,7 @@ describe('App.WizardStep3Controller', function () {
             total_mem: 12345,
             os_type: 't1',
             os_arch: 'os1',
+            os_family: 'osf1',
             ip: '0.0.0.0',
             disk_info: [
               {mountpoint: '/boot'},
@@ -2190,6 +2190,7 @@ describe('App.WizardStep3Controller', function () {
       expect(host.get('cpu')).to.equal(2);
       expect(host.get('os_type')).to.equal('t1');
       expect(host.get('os_arch')).to.equal('os1');
+      expect(host.get('os_family')).to.equal('osf1')
       expect(host.get('ip')).to.equal('0.0.0.0');
       expect(host.get('memory')).to.equal('12345.00');
       expect(host.get('disk_info.length')).to.equal(2);

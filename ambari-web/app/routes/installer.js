@@ -235,6 +235,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
         servicesMasters: [],
         isInitialLayout: true
       });
+      controller.set('stackConfigsLoaded', false);
       controller.setCurrentStep('5');
       controller.loadAllPriorSteps().done(function () {
         controller.connectOutlet('wizardStep5', controller.get('content'));
@@ -305,7 +306,10 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
         controller.connectOutlet('wizardStep7', controller.get('content'));
       });
     },
-    back: Em.Router.transitionTo('step6'),
+    back: function (router) {
+      var step = router.get('installerController.content.skipSlavesStep') ? 'step5' : 'step6';
+      router.transitionTo(step);
+    },
     next: function (router) {
       var controller = router.get('installerController');
       var wizardStep7Controller = router.get('wizardStep7Controller');
@@ -347,15 +351,17 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
     route: '/step9',
     connectOutlets: function (router, context) {
       console.log('in installer.step9:connectOutlets');
-      var controller = router.get('installerController');
+      var controller = router.get('installerController'),
+          wizardStep9Controller = router.get('wizardStep9Controller');
       controller.setCurrentStep('9');
       controller.loadAllPriorSteps().done(function () {
-        if (!App.get('testMode')) {
-          controller.setLowerStepsDisable(9);
-        }
-        var wizardStep9Controller = router.get('wizardStep9Controller');
-        wizardStep9Controller.set('wizardController', controller);
-        controller.connectOutlet('wizardStep9', controller.get('content'));
+        wizardStep9Controller.loadDoServiceChecksFlag().done(function () {
+          if (!App.get('testMode')) {
+            controller.setLowerStepsDisable(9);
+          }
+          wizardStep9Controller.set('wizardController', controller);
+          controller.connectOutlet('wizardStep9', controller.get('content'));
+        });
       });
     },
     back: Em.Router.transitionTo('step8'),
@@ -378,8 +384,9 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
       }
     },
     unroutePath: function (router, context) {
-      // exclusion for transition to Admin View
-      if (context === '/adminView') {
+      // exclusion for transition to Admin view or Views view
+      if (context === '/adminView' ||
+          context === '/main/views.index') {
         this._super(router, context);
       } else {
         return false;

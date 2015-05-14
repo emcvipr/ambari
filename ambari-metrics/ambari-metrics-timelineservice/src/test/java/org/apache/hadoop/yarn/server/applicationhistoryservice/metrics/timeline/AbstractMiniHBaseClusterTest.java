@@ -19,6 +19,8 @@ package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.IntegrationTestingUtility;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.ConnectionProvider;
 import org.apache.phoenix.hbase.index.write.IndexWriterUtils;
 import org.apache.phoenix.query.BaseTest;
 import org.apache.phoenix.query.QueryServices;
@@ -37,7 +39,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixTransactSQL.LOG;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.LOG;
 import static org.apache.phoenix.util.TestUtil.TEST_PROPERTIES;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -48,11 +50,11 @@ public abstract class AbstractMiniHBaseClusterTest extends BaseTest {
   @BeforeClass
   public static void doSetup() throws Exception {
     Map<String, String> props = getDefaultProps();
+    props.put(IntegrationTestingUtility.IS_DISTRIBUTED_CLUSTER, "false");
     props.put(QueryServices.QUEUE_SIZE_ATTRIB, Integer.toString(5000));
     props.put(IndexWriterUtils.HTABLE_THREAD_KEY, Integer.toString(100));
     // Make a small batch size to test multiple calls to reserve sequences
-    props.put(QueryServices.SEQUENCE_CACHE_SIZE_ATTRIB,
-      Long.toString(BATCH_SIZE));
+    props.put(QueryServices.SEQUENCE_CACHE_SIZE_ATTRIB, Long.toString(BATCH_SIZE));
     // Must update config before starting server
     setUpTestDriver(new ReadOnlyProps(props.entrySet().iterator()));
   }

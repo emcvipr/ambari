@@ -27,7 +27,20 @@ CREATE SCHEMA ambari AUTHORIZATION :username;
 ALTER SCHEMA ambari OWNER TO :username;
 ALTER ROLE :username SET search_path TO 'ambari';
 
+-- DEVELOPER COMMENT
+-- Ambari is transitioning to make the host_id the FK instead of the host_name.
+-- Please do not remove lines that are related to this change and are being staged.
+
 ------create tables and grant privileges to db user---------
+CREATE TABLE ambari.stack(
+  stack_id BIGINT NOT NULL,
+  stack_name VARCHAR(255) NOT NULL,
+  stack_version VARCHAR(255) NOT NULL,
+  PRIMARY KEY (stack_id),
+  CONSTRAINT unq_stack UNIQUE(stack_name,stack_version)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.stack TO :username;
+
 CREATE TABLE ambari.clusters (
   cluster_id BIGINT NOT NULL,
   resource_id BIGINT NOT NULL,
@@ -36,8 +49,9 @@ CREATE TABLE ambari.clusters (
   provisioning_state VARCHAR(255) NOT NULL DEFAULT 'INIT',
   security_type VARCHAR(32) NOT NULL DEFAULT 'NONE',
   desired_cluster_state VARCHAR(255) NOT NULL,
-  desired_stack_version VARCHAR(255) NOT NULL,
-  PRIMARY KEY (cluster_id));
+  desired_stack_id BIGINT NOT NULL,
+  PRIMARY KEY (cluster_id),
+  FOREIGN KEY (desired_stack_id) REFERENCES ambari.stack(stack_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.clusters TO :username;
 
 CREATE TABLE ambari.clusterconfig (
@@ -46,10 +60,12 @@ CREATE TABLE ambari.clusterconfig (
   version BIGINT NOT NULL,
   type_name VARCHAR(255) NOT NULL,
   cluster_id BIGINT NOT NULL,
+  stack_id BIGINT NOT NULL,
   config_data TEXT NOT NULL,
-  config_attributes VARCHAR(32000),
+  config_attributes TEXT,
   create_timestamp BIGINT NOT NULL,
-  PRIMARY KEY (config_id));
+  PRIMARY KEY (config_id),
+  FOREIGN KEY (stack_id) REFERENCES ambari.stack(stack_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.clusterconfig TO :username;
 
 CREATE TABLE ambari.clusterconfigmapping (
@@ -68,16 +84,18 @@ CREATE TABLE ambari.serviceconfig (
   service_name VARCHAR(255) NOT NULL,
   version BIGINT NOT NULL,
   create_timestamp BIGINT NOT NULL,
+  stack_id BIGINT NOT NULL,
   user_name VARCHAR(255) NOT NULL DEFAULT '_db',
   group_id BIGINT,
   note TEXT,
-  PRIMARY KEY (service_config_id));
+  PRIMARY KEY (service_config_id),
+  FOREIGN KEY (stack_id) REFERENCES ambari.stack(stack_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.serviceconfig TO :username;
 
 CREATE TABLE ambari.serviceconfighosts (
   service_config_id BIGINT NOT NULL,
-  hostname VARCHAR(255) NOT NULL,
-  PRIMARY KEY(service_config_id, hostname));
+  host_id BIGINT NOT NULL,
+  PRIMARY KEY(service_config_id, host_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.serviceconfighosts TO :username;
 
 CREATE TABLE ambari.serviceconfigmapping (
@@ -96,8 +114,9 @@ GRANT ALL PRIVILEGES ON TABLE ambari.clusterservices TO :username;
 CREATE TABLE ambari.clusterstate (
   cluster_id BIGINT NOT NULL,
   current_cluster_state VARCHAR(255) NOT NULL,
-  current_stack_version VARCHAR(255) NOT NULL,
-  PRIMARY KEY (cluster_id));
+  current_stack_id BIGINT NOT NULL,
+  PRIMARY KEY (cluster_id),
+  FOREIGN KEY (current_stack_id) REFERENCES ambari.stack(stack_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.clusterstate TO :username;
 
 CREATE TABLE ambari.cluster_version (
@@ -114,31 +133,34 @@ GRANT ALL PRIVILEGES ON TABLE ambari.cluster_version TO :username;
 CREATE TABLE ambari.hostcomponentdesiredstate (
   cluster_id BIGINT NOT NULL,
   component_name VARCHAR(255) NOT NULL,
-  desired_stack_version VARCHAR(255) NOT NULL,
+  desired_stack_id BIGINT NOT NULL,
   desired_state VARCHAR(255) NOT NULL,
-  host_name VARCHAR(255) NOT NULL,
+  host_id BIGINT NOT NULL,
   service_name VARCHAR(255) NOT NULL,
   admin_state VARCHAR(32),
   maintenance_state VARCHAR(32) NOT NULL,
   security_state VARCHAR(32) NOT NULL DEFAULT 'UNSECURED',
   restart_required SMALLINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (cluster_id, component_name, host_name, service_name));
+  PRIMARY KEY (cluster_id, component_name, host_id, service_name),
+  FOREIGN KEY (desired_stack_id) REFERENCES ambari.stack(stack_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.hostcomponentdesiredstate TO :username;
 
 CREATE TABLE ambari.hostcomponentstate (
   cluster_id BIGINT NOT NULL,
   component_name VARCHAR(255) NOT NULL,
   version VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',
-  current_stack_version VARCHAR(255) NOT NULL,
+  current_stack_id BIGINT NOT NULL,
   current_state VARCHAR(255) NOT NULL,
-  host_name VARCHAR(255) NOT NULL,
+  host_id BIGINT NOT NULL,
   service_name VARCHAR(255) NOT NULL,
   upgrade_state VARCHAR(32) NOT NULL DEFAULT 'NONE',
   security_state VARCHAR(32) NOT NULL DEFAULT 'UNSECURED',
-  PRIMARY KEY (cluster_id, component_name, host_name, service_name));
+  PRIMARY KEY (cluster_id, component_name, host_id, service_name),
+  FOREIGN KEY (current_stack_id) REFERENCES ambari.stack(stack_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.hostcomponentstate TO :username;
 
 CREATE TABLE ambari.hosts (
+  host_id BIGINT NOT NULL,
   host_name VARCHAR(255) NOT NULL,
   cpu_count INTEGER NOT NULL,
   ph_cpu_count INTEGER,
@@ -154,7 +176,7 @@ CREATE TABLE ambari.hosts (
   os_type VARCHAR(255) NOT NULL,
   rack_info VARCHAR(255) NOT NULL,
   total_mem BIGINT NOT NULL,
-  PRIMARY KEY (host_name));
+  PRIMARY KEY (host_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.hosts TO :username;
 
 CREATE TABLE ambari.hoststate (
@@ -162,16 +184,16 @@ CREATE TABLE ambari.hoststate (
   available_mem BIGINT NOT NULL,
   current_state VARCHAR(255) NOT NULL,
   health_status VARCHAR(255),
-  host_name VARCHAR(255) NOT NULL,
+  host_id BIGINT NOT NULL,
   time_in_state BIGINT NOT NULL,
   maintenance_state VARCHAR(512),
-  PRIMARY KEY (host_name));
+  PRIMARY KEY (host_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.hoststate TO :username;
 
 CREATE TABLE ambari.host_version (
   id BIGINT NOT NULL,
-  host_name VARCHAR(255) NOT NULL,
   repo_version_id BIGINT NOT NULL,
+  host_id BIGINT NOT NULL,
   state VARCHAR(32) NOT NULL,
   PRIMARY KEY (id));
 GRANT ALL PRIVILEGES ON TABLE ambari.host_version TO :username;
@@ -179,21 +201,23 @@ GRANT ALL PRIVILEGES ON TABLE ambari.host_version TO :username;
 CREATE TABLE ambari.servicecomponentdesiredstate (
   component_name VARCHAR(255) NOT NULL,
   cluster_id BIGINT NOT NULL,
-  desired_stack_version VARCHAR(255) NOT NULL,
+  desired_stack_id BIGINT NOT NULL,
   desired_state VARCHAR(255) NOT NULL,
   service_name VARCHAR(255) NOT NULL,
-  PRIMARY KEY (component_name, cluster_id, service_name));
+  PRIMARY KEY (component_name, cluster_id, service_name),
+  FOREIGN KEY (desired_stack_id) REFERENCES ambari.stack(stack_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.servicecomponentdesiredstate TO :username;
 
 CREATE TABLE ambari.servicedesiredstate (
   cluster_id BIGINT NOT NULL,
   desired_host_role_mapping INTEGER NOT NULL,
-  desired_stack_version VARCHAR(255) NOT NULL,
+  desired_stack_id BIGINT NOT NULL,
   desired_state VARCHAR(255) NOT NULL,
   service_name VARCHAR(255) NOT NULL,
   maintenance_state VARCHAR(32) NOT NULL,
   security_state VARCHAR(32) NOT NULL DEFAULT 'UNSECURED',
-  PRIMARY KEY (cluster_id, service_name));
+  PRIMARY KEY (cluster_id, service_name),
+  FOREIGN KEY (desired_stack_id) REFERENCES ambari.stack(stack_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.servicedesiredstate TO :username;
 
 CREATE TABLE ambari.users (
@@ -204,6 +228,7 @@ CREATE TABLE ambari.users (
   create_time TIMESTAMP DEFAULT NOW(),
   user_password VARCHAR(255),
   active INTEGER NOT NULL DEFAULT 1,
+  active_widget_layouts VARCHAR(1024) DEFAULT NULL,
   PRIMARY KEY (user_id),
   UNIQUE (ldap_user, user_name));
 GRANT ALL PRIVILEGES ON TABLE ambari.users TO :username;
@@ -237,7 +262,7 @@ CREATE TABLE ambari.host_role_command (
   retry_allowed SMALLINT DEFAULT 0 NOT NULL,
   event VARCHAR(32000) NOT NULL,
   exitcode INTEGER NOT NULL,
-  host_name VARCHAR(255) NOT NULL,
+  host_id BIGINT NOT NULL,
   last_attempt_time BIGINT NOT NULL,
   request_id BIGINT NOT NULL,
   role VARCHAR(255),
@@ -309,14 +334,14 @@ CREATE TABLE ambari.requestoperationlevel (
   cluster_name VARCHAR(255),
   service_name VARCHAR(255),
   host_component_name VARCHAR(255),
-  host_name VARCHAR(255),
+  host_id BIGINT NULL,      -- unlike most host_id columns, this one allows NULLs because the request can be at the service level
   PRIMARY KEY (operation_level_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.requestoperationlevel TO :username;
 
 CREATE TABLE ambari.ClusterHostMapping (
   cluster_id BIGINT NOT NULL,
-  host_name VARCHAR(255) NOT NULL,
-  PRIMARY KEY (cluster_id, host_name));
+  host_id BIGINT NOT NULL,
+  PRIMARY KEY (cluster_id, host_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.ClusterHostMapping TO :username;
 
 CREATE TABLE ambari.key_value_store (
@@ -327,14 +352,14 @@ GRANT ALL PRIVILEGES ON TABLE ambari.key_value_store TO :username;
 
 CREATE TABLE ambari.hostconfigmapping (
   cluster_id BIGINT NOT NULL,
-  host_name VARCHAR(255) NOT NULL,
+  host_id BIGINT NOT NULL,
   type_name VARCHAR(255) NOT NULL,
   version_tag VARCHAR(255) NOT NULL,
   service_name VARCHAR(255),
   create_timestamp BIGINT NOT NULL,
   selected INTEGER NOT NULL DEFAULT 0,
   user_name VARCHAR(255) NOT NULL DEFAULT '_db',
-  PRIMARY KEY (cluster_id, host_name, type_name, create_timestamp));
+  PRIMARY KEY (cluster_id, host_id, type_name, create_timestamp));
 GRANT ALL PRIVILEGES ON TABLE ambari.hostconfigmapping TO :username;
 
 CREATE TABLE ambari.metainfo (
@@ -371,8 +396,8 @@ GRANT ALL PRIVILEGES ON TABLE ambari.confgroupclusterconfigmapping TO :username;
 
 CREATE TABLE ambari.configgrouphostmapping (
   config_group_id BIGINT NOT NULL,
-  host_name VARCHAR(255) NOT NULL,
-  PRIMARY KEY(config_group_id, host_name));
+  host_id BIGINT NOT NULL,
+  PRIMARY KEY(config_group_id, host_id));
 GRANT ALL PRIVILEGES ON TABLE ambari.configgrouphostmapping TO :username;
 
 CREATE TABLE ambari.requestschedule (
@@ -413,9 +438,9 @@ GRANT ALL PRIVILEGES ON TABLE ambari.requestschedulebatchrequest TO :username;
 
 CREATE TABLE ambari.blueprint (
   blueprint_name VARCHAR(255) NOT NULL,
-  stack_name VARCHAR(255) NOT NULL,
-  stack_version VARCHAR(255) NOT NULL,
-  PRIMARY KEY(blueprint_name));
+  stack_id BIGINT NOT NULL,
+  PRIMARY KEY(blueprint_name),
+  FOREIGN KEY (stack_id) REFERENCES ambari.stack(stack_id));
 
 CREATE TABLE ambari.hostgroup (
   blueprint_name VARCHAR(255) NOT NULL,
@@ -433,7 +458,7 @@ CREATE TABLE ambari.blueprint_configuration (
   blueprint_name varchar(255) NOT NULL,
   type_name varchar(255) NOT NULL,
   config_data TEXT NOT NULL,
-  config_attributes varchar(32000),
+  config_attributes TEXT,
   PRIMARY KEY(blueprint_name, type_name));
 
 CREATE TABLE ambari.hostgroup_configuration (
@@ -441,7 +466,7 @@ CREATE TABLE ambari.hostgroup_configuration (
   hostgroup_name VARCHAR(255) NOT NULL,
   type_name VARCHAR(255) NOT NULL,
   config_data TEXT NOT NULL,
-  config_attributes varchar(32000),
+  config_attributes TEXT,
   PRIMARY KEY(blueprint_name, hostgroup_name, type_name));
 
 GRANT ALL PRIVILEGES ON TABLE ambari.blueprint TO :username;
@@ -449,13 +474,6 @@ GRANT ALL PRIVILEGES ON TABLE ambari.hostgroup TO :username;
 GRANT ALL PRIVILEGES ON TABLE ambari.hostgroup_component TO :username;
 GRANT ALL PRIVILEGES ON TABLE ambari.blueprint_configuration TO :username;
 GRANT ALL PRIVILEGES ON TABLE ambari.hostgroup_configuration TO :username;
-
-CREATE TABLE ambari.artifact (
-  artifact_name VARCHAR(255) NOT NULL,
-  artifact_data TEXT NOT NULL,
-  foreign_keys VARCHAR(255) NOT NULL,
-  PRIMARY KEY (artifact_name, foreign_keys));
-GRANT ALL PRIVILEGES ON TABLE ambari.artifact TO :username;
 
 CREATE TABLE ambari.viewmain (
   view_name VARCHAR(255) NOT NULL,
@@ -490,6 +508,7 @@ CREATE TABLE ambari.viewinstance (
   icon VARCHAR(255),
   icon64 VARCHAR(255),
   xml_driven CHAR(1),
+  cluster_handle VARCHAR(255),
   PRIMARY KEY(view_instance_id));
 
 CREATE TABLE ambari.viewinstanceproperty (
@@ -506,6 +525,7 @@ CREATE TABLE ambari.viewparameter (
   label VARCHAR(255),
   placeholder VARCHAR(255),
   default_value VARCHAR(2000),
+  cluster_config VARCHAR(255),
   required CHAR(1),
   masked CHAR(1),
   PRIMARY KEY(view_name, name));
@@ -578,27 +598,141 @@ GRANT ALL PRIVILEGES ON TABLE ambari.adminpermission TO :username;
 GRANT ALL PRIVILEGES ON TABLE ambari.adminprivilege TO :username;
 
 CREATE TABLE ambari.repo_version (
-  repo_version_id BIGINT,
-  stack VARCHAR(255) NOT NULL,
+  repo_version_id BIGINT NOT NULL,
+  stack_id BIGINT NOT NULL,
   version VARCHAR(255) NOT NULL,
   display_name VARCHAR(128) NOT NULL,
   upgrade_package VARCHAR(255) NOT NULL,
   repositories TEXT NOT NULL,
-  PRIMARY KEY(repo_version_id)
+  PRIMARY KEY(repo_version_id),
+  FOREIGN KEY (stack_id) REFERENCES ambari.stack(stack_id)
 );
 GRANT ALL PRIVILEGES ON TABLE ambari.repo_version TO :username;
+
+CREATE TABLE ambari.artifact (
+  artifact_name VARCHAR(255) NOT NULL,
+  artifact_data TEXT NOT NULL,
+  foreign_keys VARCHAR(255) NOT NULL,
+  PRIMARY KEY (artifact_name, foreign_keys));
+GRANT ALL PRIVILEGES ON TABLE ambari.artifact TO :username;
+
+CREATE TABLE ambari.widget (
+  id BIGINT NOT NULL,
+  widget_name VARCHAR(255) NOT NULL,
+  widget_type VARCHAR(255) NOT NULL,
+  metrics TEXT,
+  time_created BIGINT NOT NULL,
+  author VARCHAR(255),
+  description VARCHAR(255),
+  default_section_name VARCHAR(255),
+  scope VARCHAR(255),
+  widget_values TEXT,
+  properties TEXT,
+  cluster_id BIGINT NOT NULL,
+  PRIMARY KEY(id)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.widget TO :username;
+
+CREATE TABLE ambari.widget_layout (
+  id BIGINT NOT NULL,
+  layout_name VARCHAR(255) NOT NULL,
+  section_name VARCHAR(255) NOT NULL,
+  scope VARCHAR(255) NOT NULL,
+  user_name VARCHAR(255) NOT NULL,
+  display_name VARCHAR(255),
+  cluster_id BIGINT NOT NULL,
+  PRIMARY KEY(id)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.widget_layout TO :username;
+
+CREATE TABLE ambari.widget_layout_user_widget (
+  widget_layout_id BIGINT NOT NULL,
+  widget_id BIGINT NOT NULL,
+  widget_order smallint,
+  PRIMARY KEY(widget_layout_id, widget_id)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.widget_layout_user_widget TO :username;
+
+CREATE TABLE ambari.topology_request (
+  id BIGINT NOT NULL,
+  action VARCHAR(255) NOT NULL,
+  cluster_name VARCHAR(100) NOT NULL,
+  bp_name VARCHAR(100) NOT NULL,
+  cluster_properties TEXT,
+  cluster_attributes TEXT,
+  description VARCHAR(1024),
+  PRIMARY KEY (id)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.topology_request TO :username;
+
+CREATE TABLE ambari.topology_hostgroup (
+  id BIGINT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  group_properties TEXT,
+  group_attributes TEXT,
+  request_id BIGINT NOT NULL,
+  PRIMARY KEY(id)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.topology_hostgroup TO :username;
+
+CREATE TABLE ambari.topology_host_info (
+  id BIGINT NOT NULL,
+  group_id BIGINT NOT NULL,
+  fqdn VARCHAR(255),
+  host_count INTEGER,
+  predicate VARCHAR(2048),
+  PRIMARY KEY (id)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.topology_host_info TO :username;
+
+CREATE TABLE ambari.topology_logical_request (
+  id BIGINT NOT NULL,
+  request_id BIGINT NOT NULL,
+  description VARCHAR(1024),
+  PRIMARY KEY (id)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.topology_logical_request TO :username;
+
+CREATE TABLE ambari.topology_host_request (
+  id BIGINT NOT NULL,
+  logical_request_id BIGINT NOT NULL,
+  group_id BIGINT NOT NULL,
+  stage_id BIGINT NOT NULL,
+  host_name VARCHAR(255),
+  PRIMARY KEY (id)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.topology_host_request TO :username;
+
+CREATE TABLE ambari.topology_host_task (
+  id BIGINT NOT NULL,
+  host_request_id BIGINT NOT NULL,
+  type VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.topology_host_task TO :username;
+
+CREATE TABLE ambari.topology_logical_task (
+  id BIGINT NOT NULL,
+  host_task_id BIGINT NOT NULL,
+  physical_task_id BIGINT,
+  component VARCHAR(255) NOT NULL,
+  PRIMARY KEY (id)
+);
+GRANT ALL PRIVILEGES ON TABLE ambari.topology_logical_task TO :username;
 
 --------altering tables by creating unique constraints----------
 ALTER TABLE ambari.clusterconfig ADD CONSTRAINT UQ_config_type_tag UNIQUE (cluster_id, type_name, version_tag);
 ALTER TABLE ambari.clusterconfig ADD CONSTRAINT UQ_config_type_version UNIQUE (cluster_id, type_name, version);
+ALTER TABLE ambari.hosts ADD CONSTRAINT UQ_hosts_host_name UNIQUE (host_name);
 ALTER TABLE ambari.viewinstance ADD CONSTRAINT UQ_viewinstance_name UNIQUE (view_name, name);
 ALTER TABLE ambari.viewinstance ADD CONSTRAINT UQ_viewinstance_name_id UNIQUE (view_instance_id, view_name, name);
 ALTER TABLE ambari.serviceconfig ADD CONSTRAINT UQ_scv_service_version UNIQUE (cluster_id, service_name, version);
 ALTER TABLE ambari.adminpermission ADD CONSTRAINT UQ_perm_name_resource_type_id UNIQUE (permission_name, resource_type_id);
 ALTER TABLE ambari.repo_version ADD CONSTRAINT UQ_repo_version_display_name UNIQUE (display_name);
-ALTER TABLE ambari.repo_version ADD CONSTRAINT UQ_repo_version_stack_version UNIQUE (stack, version);
+ALTER TABLE ambari.repo_version ADD CONSTRAINT UQ_repo_version_stack_version UNIQUE (stack_id, version);
 
 --------altering tables by creating foreign keys----------
+-- Note, Oracle has a limitation of 32 chars in the FK name, and we should use the same FK name in all DB types.
 ALTER TABLE ambari.members ADD CONSTRAINT FK_members_group_id FOREIGN KEY (group_id) REFERENCES ambari.groups (group_id);
 ALTER TABLE ambari.members ADD CONSTRAINT FK_members_user_id FOREIGN KEY (user_id) REFERENCES ambari.users (user_id);
 ALTER TABLE ambari.clusterconfig ADD CONSTRAINT FK_clusterconfig_cluster_id FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
@@ -607,28 +741,28 @@ ALTER TABLE ambari.clusterconfigmapping ADD CONSTRAINT clusterconfigmappingclust
 ALTER TABLE ambari.clusterstate ADD CONSTRAINT FK_clusterstate_cluster_id FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
 ALTER TABLE ambari.cluster_version ADD CONSTRAINT FK_cluster_version_cluster_id FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
 ALTER TABLE ambari.cluster_version ADD CONSTRAINT FK_cluster_version_repovers_id FOREIGN KEY (repo_version_id) REFERENCES ambari.repo_version (repo_version_id);
-ALTER TABLE ambari.hostcomponentdesiredstate ADD CONSTRAINT hstcmponentdesiredstatehstname FOREIGN KEY (host_name) REFERENCES ambari.hosts (host_name);
+ALTER TABLE ambari.hostcomponentdesiredstate ADD CONSTRAINT FK_hcdesiredstate_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
 ALTER TABLE ambari.hostcomponentdesiredstate ADD CONSTRAINT hstcmpnntdesiredstatecmpnntnme FOREIGN KEY (component_name, cluster_id, service_name) REFERENCES ambari.servicecomponentdesiredstate (component_name, cluster_id, service_name);
 ALTER TABLE ambari.hostcomponentstate ADD CONSTRAINT hstcomponentstatecomponentname FOREIGN KEY (component_name, cluster_id, service_name) REFERENCES ambari.servicecomponentdesiredstate (component_name, cluster_id, service_name);
-ALTER TABLE ambari.hostcomponentstate ADD CONSTRAINT hostcomponentstate_host_name FOREIGN KEY (host_name) REFERENCES ambari.hosts (host_name);
-ALTER TABLE ambari.hoststate ADD CONSTRAINT FK_hoststate_host_name FOREIGN KEY (host_name) REFERENCES ambari.hosts (host_name);
-ALTER TABLE ambari.host_version ADD CONSTRAINT FK_host_version_host_name FOREIGN KEY (host_name) REFERENCES ambari.hosts (host_name);
+ALTER TABLE ambari.hostcomponentstate ADD CONSTRAINT FK_hostcomponentstate_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
+ALTER TABLE ambari.hoststate ADD CONSTRAINT FK_hoststate_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
+ALTER TABLE ambari.host_version ADD CONSTRAINT FK_host_version_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
 ALTER TABLE ambari.host_version ADD CONSTRAINT FK_host_version_repovers_id FOREIGN KEY (repo_version_id) REFERENCES ambari.repo_version (repo_version_id);
 ALTER TABLE ambari.servicecomponentdesiredstate ADD CONSTRAINT srvccmponentdesiredstatesrvcnm FOREIGN KEY (service_name, cluster_id) REFERENCES ambari.clusterservices (service_name, cluster_id);
 ALTER TABLE ambari.servicedesiredstate ADD CONSTRAINT servicedesiredstateservicename FOREIGN KEY (service_name, cluster_id) REFERENCES ambari.clusterservices (service_name, cluster_id);
 ALTER TABLE ambari.execution_command ADD CONSTRAINT FK_execution_command_task_id FOREIGN KEY (task_id) REFERENCES ambari.host_role_command (task_id);
 ALTER TABLE ambari.host_role_command ADD CONSTRAINT FK_host_role_command_stage_id FOREIGN KEY (stage_id, request_id) REFERENCES ambari.stage (stage_id, request_id);
-ALTER TABLE ambari.host_role_command ADD CONSTRAINT FK_host_role_command_host_name FOREIGN KEY (host_name) REFERENCES ambari.hosts (host_name);
+ALTER TABLE ambari.host_role_command ADD CONSTRAINT FK_host_role_command_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
 ALTER TABLE ambari.role_success_criteria ADD CONSTRAINT role_success_criteria_stage_id FOREIGN KEY (stage_id, request_id) REFERENCES ambari.stage (stage_id, request_id);
 ALTER TABLE ambari.stage ADD CONSTRAINT FK_stage_request_id FOREIGN KEY (request_id) REFERENCES ambari.request (request_id);
 ALTER TABLE ambari.request ADD CONSTRAINT FK_request_schedule_id FOREIGN KEY (request_schedule_id) REFERENCES ambari.requestschedule (schedule_id);
-ALTER TABLE ambari.ClusterHostMapping ADD CONSTRAINT ClusterHostMapping_cluster_id FOREIGN KEY (host_name) REFERENCES ambari.hosts (host_name);
-ALTER TABLE ambari.ClusterHostMapping ADD CONSTRAINT ClusterHostMapping_host_name FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
+ALTER TABLE ambari.ClusterHostMapping ADD CONSTRAINT FK_clhostmapping_cluster_id FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
+ALTER TABLE ambari.ClusterHostMapping ADD CONSTRAINT FK_clusterhostmapping_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
 ALTER TABLE ambari.hostconfigmapping ADD CONSTRAINT FK_hostconfmapping_cluster_id FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
-ALTER TABLE ambari.hostconfigmapping ADD CONSTRAINT FK_hostconfmapping_host_name FOREIGN KEY (host_name) REFERENCES ambari.hosts (host_name);
+ALTER TABLE ambari.hostconfigmapping ADD CONSTRAINT FK_hostconfmapping_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
 ALTER TABLE ambari.configgroup ADD CONSTRAINT FK_configgroup_cluster_id FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
 ALTER TABLE ambari.configgrouphostmapping ADD CONSTRAINT FK_cghm_cgid FOREIGN KEY (config_group_id) REFERENCES ambari.configgroup (group_id);
-ALTER TABLE ambari.configgrouphostmapping ADD CONSTRAINT FK_cghm_hname FOREIGN KEY (host_name) REFERENCES ambari.hosts (host_name);
+ALTER TABLE ambari.configgrouphostmapping ADD CONSTRAINT FK_cghm_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
 ALTER TABLE ambari.requestschedulebatchrequest ADD CONSTRAINT FK_rsbatchrequest_schedule_id FOREIGN KEY (schedule_id) REFERENCES ambari.requestschedule (schedule_id);
 ALTER TABLE ambari.hostgroup ADD CONSTRAINT FK_hg_blueprint_name FOREIGN KEY (blueprint_name) REFERENCES ambari.blueprint(blueprint_name);
 ALTER TABLE ambari.hostgroup_component ADD CONSTRAINT FK_hgc_blueprint_name FOREIGN KEY (blueprint_name, hostgroup_name) REFERENCES ambari.hostgroup (blueprint_name, name);
@@ -646,7 +780,8 @@ ALTER TABLE ambari.confgroupclusterconfigmapping ADD CONSTRAINT FK_confg FOREIGN
 ALTER TABLE ambari.confgroupclusterconfigmapping ADD CONSTRAINT FK_cgccm_gid FOREIGN KEY (config_group_id) REFERENCES ambari.configgroup (group_id);
 ALTER TABLE ambari.serviceconfigmapping ADD CONSTRAINT FK_scvm_scv FOREIGN KEY (service_config_id) REFERENCES ambari.serviceconfig(service_config_id);
 ALTER TABLE ambari.serviceconfigmapping ADD CONSTRAINT FK_scvm_config FOREIGN KEY (config_id) REFERENCES ambari.clusterconfig(config_id);
-ALTER TABLE ambari.serviceconfighosts ADD CONSTRAINT  FK_scvhosts_scv FOREIGN KEY (service_config_id) REFERENCES ambari.serviceconfig(service_config_id);
+ALTER TABLE ambari.serviceconfighosts ADD CONSTRAINT FK_scvhosts_scv FOREIGN KEY (service_config_id) REFERENCES ambari.serviceconfig(service_config_id);
+ALTER TABLE ambari.serviceconfighosts ADD CONSTRAINT FK_scvhosts_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts(host_id);
 ALTER TABLE ambari.adminresource ADD CONSTRAINT FK_resource_resource_type_id FOREIGN KEY (resource_type_id) REFERENCES ambari.adminresourcetype(resource_type_id);
 ALTER TABLE ambari.adminprincipal ADD CONSTRAINT FK_principal_principal_type_id FOREIGN KEY (principal_type_id) REFERENCES ambari.adminprincipaltype(principal_type_id);
 ALTER TABLE ambari.adminpermission ADD CONSTRAINT FK_permission_resource_type_id FOREIGN KEY (resource_type_id) REFERENCES ambari.adminresourcetype(resource_type_id);
@@ -658,6 +793,16 @@ ALTER TABLE ambari.adminprivilege ADD CONSTRAINT FK_privilege_principal_id FOREI
 ALTER TABLE ambari.users ADD CONSTRAINT FK_users_principal_id FOREIGN KEY (principal_id) REFERENCES ambari.adminprincipal(principal_id);
 ALTER TABLE ambari.groups ADD CONSTRAINT FK_groups_principal_id FOREIGN KEY (principal_id) REFERENCES ambari.adminprincipal(principal_id);
 ALTER TABLE ambari.clusters ADD CONSTRAINT FK_clusters_resource_id FOREIGN KEY (resource_id) REFERENCES ambari.adminresource(resource_id);
+ALTER TABLE ambari.widget_layout_user_widget ADD CONSTRAINT FK_widget_layout_id FOREIGN KEY (widget_layout_id) REFERENCES ambari.widget_layout(id);
+ALTER TABLE ambari.widget_layout_user_widget ADD CONSTRAINT FK_widget_id FOREIGN KEY (widget_id) REFERENCES ambari.widget(id);
+ALTER TABLE ambari.topology_hostgroup ADD CONSTRAINT FK_hostgroup_req_id FOREIGN KEY (request_id) REFERENCES ambari.topology_request(id);
+ALTER TABLE ambari.topology_host_info ADD CONSTRAINT FK_hostinfo_group_id FOREIGN KEY (group_id) REFERENCES ambari.topology_hostgroup(id);
+ALTER TABLE ambari.topology_logical_request ADD CONSTRAINT FK_logicalreq_req_id FOREIGN KEY (request_id) REFERENCES ambari.topology_request(id);
+ALTER TABLE ambari.topology_host_request ADD CONSTRAINT FK_hostreq_logicalreq_id FOREIGN KEY (logical_request_id) REFERENCES ambari.topology_logical_request(id);
+ALTER TABLE ambari.topology_host_request ADD CONSTRAINT FK_hostreq_group_id FOREIGN KEY (group_id) REFERENCES ambari.topology_hostgroup(id);
+ALTER TABLE ambari.topology_host_task ADD CONSTRAINT FK_hosttask_req_id FOREIGN KEY (host_request_id) REFERENCES ambari.topology_host_request (id);
+ALTER TABLE ambari.topology_logical_task ADD CONSTRAINT FK_ltask_hosttask_id FOREIGN KEY (host_task_id) REFERENCES ambari.topology_host_task (id);
+ALTER TABLE ambari.topology_logical_task ADD CONSTRAINT FK_ltask_hrc_id FOREIGN KEY (physical_task_id) REFERENCES ambari.host_role_command (task_id);
 
 -- Kerberos
 CREATE TABLE ambari.kerberos_principal (
@@ -670,18 +815,13 @@ GRANT ALL PRIVILEGES ON TABLE ambari.kerberos_principal TO :username;
 
 CREATE TABLE ambari.kerberos_principal_host (
   principal_name VARCHAR(255) NOT NULL,
-  host_name VARCHAR(255) NOT NULL,
-  PRIMARY KEY(principal_name, host_name)
+  host_id BIGINT NOT NULL,
+  PRIMARY KEY(principal_name, host_id)
 );
 GRANT ALL PRIVILEGES ON TABLE ambari.kerberos_principal_host TO :username;
 
-ALTER TABLE ambari.kerberos_principal_host
-ADD CONSTRAINT FK_krb_pr_host_hostname
-FOREIGN KEY (host_name) REFERENCES ambari.hosts (host_name) ON DELETE CASCADE;
-
-ALTER TABLE ambari.kerberos_principal_host
-ADD CONSTRAINT FK_krb_pr_host_principalname
-FOREIGN KEY (principal_name) REFERENCES ambari.kerberos_principal (principal_name) ON DELETE CASCADE;
+ALTER TABLE ambari.kerberos_principal_host ADD CONSTRAINT FK_krb_pr_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
+ALTER TABLE ambari.kerberos_principal_host ADD CONSTRAINT FK_krb_pr_host_principalname FOREIGN KEY (principal_name) REFERENCES ambari.kerberos_principal (principal_name);
 -- Kerberos (end)
 
 -- Alerting Framework
@@ -850,6 +990,8 @@ BEGIN;
 INSERT INTO ambari.ambari_sequences (sequence_name, sequence_value)
   SELECT 'cluster_id_seq', 1
   UNION ALL
+  SELECT 'host_id_seq', 0
+  UNION ALL
   SELECT 'user_id_seq', 2
   UNION ALL
   SELECT 'group_id_seq', 1
@@ -908,7 +1050,27 @@ INSERT INTO ambari.ambari_sequences (sequence_name, sequence_value)
   union all
   select 'upgrade_group_id_seq', 0 
   union all
-  select 'upgrade_item_id_seq', 0;
+  select 'widget_id_seq', 0
+  union all
+  select 'widget_layout_id_seq', 0
+  union all
+  select 'upgrade_item_id_seq', 0
+  union all
+  select 'stack_id_seq', 0
+  union all
+  select 'topology_host_info_id_seq', 0
+  union all
+  select 'topology_host_request_id_seq', 0
+  union all
+  select 'topology_host_task_id_seq', 0
+  union all
+  select 'topology_logical_request_id_seq', 0
+  union all
+  select 'topology_logical_task_id_seq', 0
+  union all
+  select 'topology_request_id_seq', 0
+  union all
+  select 'topology_host_group_id_seq', 0;
 
 INSERT INTO ambari.adminresourcetype (resource_type_id, resource_type_name)
   SELECT 1, 'AMBARI'

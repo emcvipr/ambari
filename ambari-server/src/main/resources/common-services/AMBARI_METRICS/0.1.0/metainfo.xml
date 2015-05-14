@@ -65,7 +65,7 @@
 
       <osSpecifics>
         <osSpecific>
-          <osFamily>redhat5,redhat6,suse11</osFamily>
+          <osFamily>redhat7,redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>ambari-metrics-collector</name>
@@ -82,7 +82,7 @@
           </packages>
         </osSpecific>
         <osSpecific>
-          <osFamily>ubuntu12</osFamily>
+          <osFamily>debian7,ubuntu12,ubuntu14</osFamily>
           <packages>
             <package>
               <name>ambari-metrics-assembly</name>
@@ -96,13 +96,13 @@
           <osFamily>winsrv6</osFamily>
           <packages>
             <package>
-              <name>ambari-metrics-collector.msi</name>
+              <name>ambari-metrics-collector</name>
             </package>
             <package>
-              <name>ambari-metrics-monitor.msi</name>
+              <name>ambari-metrics-monitor</name>
             </package>
             <package>
-              <name>ambari-metrics-hadoop-sink.msi</name>
+              <name>ambari-metrics-hadoop-sink</name>
             </package>
           </packages>
         </osSpecific>
@@ -121,12 +121,17 @@
       <configuration-dependencies>
         <config-type>ams-site</config-type>
         <config-type>ams-log4j</config-type>
+        <config-type>ams-env</config-type>
         <config-type>ams-hbase-policy</config-type>
         <config-type>ams-hbase-site</config-type>
         <config-type>ams-hbase-security-site</config-type>
         <config-type>ams-hbase-env</config-type>
         <config-type>ams-hbase-log4j</config-type>
       </configuration-dependencies>
+
+      <excluded-config-types>
+        <config-type>storm-site</config-type>
+      </excluded-config-types>
 
     </service>
   </services>

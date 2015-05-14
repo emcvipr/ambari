@@ -47,6 +47,8 @@ import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.state.HostState;
 import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.State;
+import org.apache.ambari.server.topology.TopologyManager;
+import org.apache.ambari.server.utils.StageUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -98,7 +100,7 @@ public class BackgroundCustomCommandExecutionTest {
     Assert.assertEquals("src/main/resources/custom_action_definitions", configuration.getCustomActionDefinitionPath());
     
     ambariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
-    ambariMetaInfo.init();
+    StageUtils.setTopologyManager(new TopologyManager());
   }
   @After
   public void teardown() {
@@ -167,8 +169,9 @@ public class BackgroundCustomCommandExecutionTest {
     setOsFamily(clusters.getHost(hostname), "redhat", "6.3");
     clusters.getHost(hostname).setState(HostState.HEALTHY);
     clusters.getHost(hostname).persist();
-    if (null != clusterName)
+    if (null != clusterName) {
       clusters.mapHostToCluster(hostname, clusterName);
+    }
   }
   private void setOsFamily(Host host, String osFamily, String osVersion) {
     Map<String, String> hostAttributes = new HashMap<String, String>();

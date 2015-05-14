@@ -19,24 +19,70 @@
 import Typeahead from 'ember-cli-selectize/components/ember-selectize';
 import Ember from 'ember';
 
-export default Typeahead.extend({
-  didInsertElement: function() {
+export default Typeahead.extend(Ember.I18n.TranslateableProperties, {
+  didInsertElement: function () {
     this._super();
 
-    if(!this.get('selection') && this.get('content.firstObject')) {
+    if (!this.get('selection') && this.get('content.firstObject')) {
       this.set('selection', this.get('content.firstObject'));
     }
 
     this.selectize.on('dropdown_close', Ember.$.proxy(this.onClose, this));
   },
 
-  onClose: function() {
-    if(!this.get('selection') && this.get('prevSelection')) {
+  removeExcludedObserver: function () {
+    var options = this.get('content');
+
+    if (!options) {
+      options = this.removeExcluded(true);
+      this.set('content', options);
+    } else {
+      this.removeExcluded();
+    }
+  }.observes('excluded.@each.key').on('init'),
+
+  removeExcluded: function (shouldReturn) {
+    var excluded        = this.get('excluded') || [];
+    var options         = this.get('options');
+    var selection       = this.get('selection');
+    var objectToModify  = this.get('content');
+    var objectsToRemove = [];
+    var objectsToAdd    = [];
+
+    if (!options) {
+      return;
+    }
+
+    if (shouldReturn) {
+      objectToModify = Ember.copy(options);
+    }
+
+    var valuePath = this.get('optionValuePath');
+    var selectionName = selection ? selection[valuePath] : selection;
+
+    if (options) {
+      options.forEach(function (option) {
+        if (excluded.contains(option) && option.name !== selectionName) {
+          objectsToRemove.push(option);
+        } else if (!objectToModify.contains(option)) {
+          objectsToAdd.push(option);
+        }
+      });
+    }
+
+    objectToModify.removeObjects(objectsToRemove);
+    objectToModify.pushObjects(objectsToAdd);
+
+    return objectToModify;
+  },
+
+  onClose: function () {
+    if (!this.get('selection') && this.get('prevSelection')) {
       this.set('selection', this.get('prevSelection'));
     }
   },
 
-  _onItemAdd: function(value) {
+  _onItemAdd: function (value) {
     this._super(value);
 
     this.set('prevSelection', this.get('selection'));

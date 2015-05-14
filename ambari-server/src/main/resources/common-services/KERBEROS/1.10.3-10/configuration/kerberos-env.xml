@@ -29,6 +29,25 @@
     <value>mit-kdc</value>
   </property>
 
+  <property>
+    <name>manage_identities</name>
+    <description>
+      Indicates whether the Ambari user and service Kerberos identities (principals and keytab files)
+      should be managed (created, deleted, updated, etc...) by Ambari or managed manually.
+    </description>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>install_packages</name>
+    <description>
+      Indicates whether Ambari should install the Kerberos client package(s) or not. If not, it is
+      expected that Kerberos utility programs (such as kadmin, kinit, klist, and kdestroy) are
+      compatible with MIT Kerberos 5 version 1.10.3 in command line options and behaviors.
+    </description>
+    <value>true</value>
+  </property>
+
   <property require-input="true">
     <name>ldap_url</name>
     <description>
@@ -61,8 +80,79 @@
     <value/>
   </property>
 
+  <property require-input="true">
+    <name>kdc_host</name>
+    <description>
+      The IP address or FQDN for the KDC host. Optionally a port number may be included.
+    </description>
+    <value/>
+  </property>
 
-    <property require-input="true">
+  <property>
+    <name>admin_server_host</name>
+    <description>
+      The IP address or FQDN for the KDC Kerberos administrative host. Optionally a port number may be included.
+    </description>
+    <value/>
+  </property>
+
+  <property>
+    <name>executable_search_paths</name>
+    <description>
+      A comma-delimited list of search paths to use to find Kerberos utilities like kadmin and kinit.
+    </description>
+    <value>/usr/bin, /usr/kerberos/bin, /usr/sbin, /usr/lib/mit/bin, /usr/lib/mit/sbin</value>
+  </property>
+
+  <property>
+    <name>password_length</name>
+    <description>
+      The length required length for generated passwords.
+    </description>
+    <value>20</value>
+  </property>
+
+  <property>
+    <name>password_min_lowercase_letters</name>
+    <description>
+      The minimum number of lowercase letters (a-z) required in generated passwords
+    </description>
+    <value>1</value>
+  </property>
+
+  <property>
+    <name>password_min_uppercase_letters</name>
+    <description>
+      The minimum number of uppercase letters (A-Z) required in generated passwords
+    </description>
+    <value>1</value>
+  </property>
+
+  <property>
+    <name>password_min_digits</name>
+    <description>
+      The minimum number of digits (0-9) required in generated passwords
+    </description>
+    <value>1</value>
+  </property>
+
+  <property>
+    <name>password_min_punctuation</name>
+    <description>
+      The minimum number of punctuation characters (?.!$%^*()-_+=~) required in generated passwords
+    </description>
+    <value>1</value>
+  </property>
+
+  <property>
+    <name>password_min_whitespace</name>
+    <description>
+      The minimum number of whitespace characters required in generated passwords
+    </description>
+    <value>0</value>
+  </property>
+
+  <property require-input="true">
     <name>create_attributes_template</name>
     <description>
       A Velocity template to use to generate a JSON-formatted document containing the set of

@@ -17,14 +17,12 @@
  */
 package org.apache.ambari.server.events;
 
-import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import junit.framework.Assert;
 
-import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.OrmTestHelper;
@@ -42,6 +40,7 @@ import org.apache.ambari.server.state.ServiceComponentHostFactory;
 import org.apache.ambari.server.state.ServiceFactory;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.State;
+import org.apache.ambari.server.utils.EventBusSynchronizer;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -66,7 +65,6 @@ public class EventsTest {
   private ServiceFactory m_serviceFactory;
   private ServiceComponentFactory m_componentFactory;
   private ServiceComponentHostFactory m_schFactory;
-  private AmbariEventPublisher m_eventPublisher;
   private MockEventListener m_listener;
   private OrmTestHelper m_helper;
 
@@ -78,19 +76,12 @@ public class EventsTest {
     m_injector = Guice.createInjector(new InMemoryDefaultTestModule());
     m_injector.getInstance(GuiceJpaInitializer.class);
 
-    m_eventPublisher = m_injector.getInstance(AmbariEventPublisher.class);
-    EventBus synchronizedBus = new EventBus();
-
     m_helper = m_injector.getInstance(OrmTestHelper.class);
 
     // register mock listener
+    EventBus synchronizedBus = EventBusSynchronizer.synchronizeAmbariEventPublisher(m_injector);
     m_listener = m_injector.getInstance(MockEventListener.class);
     synchronizedBus.register(m_listener);
-
-    // !!! need a synchronous op for testing
-    Field field = AmbariEventPublisher.class.getDeclaredField("m_eventBus");
-    field.setAccessible(true);
-    field.set(m_eventPublisher, synchronizedBus);
 
     m_clusters = m_injector.getInstance(Clusters.class);
     m_serviceFactory = m_injector.getInstance(ServiceFactory.class);
@@ -98,7 +89,9 @@ public class EventsTest {
     m_schFactory = m_injector.getInstance(ServiceComponentHostFactory.class);
 
     m_clusterName = "foo";
-    m_clusters.addCluster(m_clusterName);
+    StackId stackId = new StackId("HDP", "2.0.6");
+
+    m_clusters.addCluster(m_clusterName, stackId);
     m_clusters.addHost(HOSTNAME);
 
     Host host = m_clusters.getHost(HOSTNAME);
@@ -111,10 +104,11 @@ public class EventsTest {
 
     m_cluster = m_clusters.getCluster(m_clusterName);
     Assert.assertNotNull(m_cluster);
-    StackId stackId = new StackId("HDP", "2.0.6");
+
     m_cluster.setDesiredStackVersion(stackId);
-    m_helper.getOrCreateRepositoryVersion(stackId.getStackName(), stackId.getStackVersion());
-    m_cluster.createClusterVersion(stackId.getStackName(), stackId.getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
+    m_helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
+    m_cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
+        RepositoryVersionState.UPGRADING);
 
     m_clusters.mapHostToCluster(HOSTNAME, m_clusterName);
   }

@@ -21,10 +21,13 @@ package org.apache.ambari.server.api.services.stackadvisor;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.ambari.server.api.services.stackadvisor.recommendations.RecommendationResponse;
+import org.apache.ambari.server.state.PropertyDependencyInfo;
 import org.apache.commons.lang.StringUtils;
 
 /**
@@ -41,6 +44,8 @@ public class StackAdvisorRequest {
   private Map<String, Set<String>> hostComponents = new HashMap<String, Set<String>>();
   private Map<String, Set<String>> hostGroupBindings = new HashMap<String, Set<String>>();
   private Map<String, Map<String, Map<String, String>>> configurations = new HashMap<String, Map<String, Map<String, String>>>();
+  private List<PropertyDependencyInfo> changedConfigurations = new LinkedList<PropertyDependencyInfo>();
+  private Set<RecommendationResponse.ConfigGroup> configGroups;
 
   public String getStackName() {
     return stackName;
@@ -84,6 +89,22 @@ public class StackAdvisorRequest {
 
   public Map<String, Map<String, Map<String, String>>> getConfigurations() {
     return configurations;
+  }
+
+  public List<PropertyDependencyInfo> getChangedConfigurations() {
+    return changedConfigurations;
+  }
+
+  public void setChangedConfigurations(List<PropertyDependencyInfo> changedConfigurations) {
+    this.changedConfigurations = changedConfigurations;
+  }
+
+  public Set<RecommendationResponse.ConfigGroup> getConfigGroups() {
+    return configGroups;
+  }
+
+  public void setConfigGroups(Set<RecommendationResponse.ConfigGroup> configGroups) {
+    this.configGroups = configGroups;
   }
 
   private StackAdvisorRequest(String stackName, String stackVersion) {
@@ -140,13 +161,27 @@ public class StackAdvisorRequest {
       return this;
     }
 
+    public StackAdvisorRequestBuilder withChangedConfigurations(
+      List<PropertyDependencyInfo> changedConfigurations) {
+      this.instance.changedConfigurations = changedConfigurations;
+      return this;
+    }
+
+    public StackAdvisorRequestBuilder withConfigGroups(
+      Set<RecommendationResponse.ConfigGroup> configGroups) {
+      this.instance.configGroups = configGroups;
+      return this;
+    }
+
     public StackAdvisorRequest build() {
       return this.instance;
     }
   }
 
   public enum StackAdvisorRequestType {
-    HOST_GROUPS("host_groups"), CONFIGURATIONS("configurations");
+    HOST_GROUPS("host_groups"),
+    CONFIGURATIONS("configurations"),
+    CONFIGURATION_DEPENDENCIES("configuration-dependencies");
 
     private String type;
 

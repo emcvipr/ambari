@@ -18,7 +18,27 @@
 
 package org.apache.ambari.server.controller.internal;
 
-import com.google.inject.Injector;
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.createMock;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.eq;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.verify;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.controller.MaintenanceStateHelper;
 import org.apache.ambari.server.controller.RequestStatusResponse;
@@ -32,6 +52,7 @@ import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.ResourceProvider;
 import org.apache.ambari.server.controller.utilities.PredicateBuilder;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.orm.dao.HostVersionDAO;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Service;
@@ -39,32 +60,12 @@ import org.apache.ambari.server.state.ServiceComponent;
 import org.apache.ambari.server.state.ServiceComponentHost;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.State;
+import org.apache.ambari.server.state.UpgradeState;
 import org.easymock.EasyMock;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import static org.easymock.EasyMock.anyObject;
-import static org.easymock.EasyMock.createMock;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.eq;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.verify;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import com.google.inject.Injector;
 
 /**
  * HostComponentResourceProvider tests.
@@ -93,7 +94,7 @@ public class HostComponentResourceProviderTest {
         anyObject(Map.class),
         eq(managementController))).
         andReturn(hostComponentResourceProvider).anyTimes();
-    
+
 
     // replay
     replay(managementController, response, resourceProviderFactory);
@@ -134,7 +135,7 @@ public class HostComponentResourceProviderTest {
     AmbariManagementController managementController = createMock(AmbariManagementController.class);
     ResourceProviderFactory resourceProviderFactory = createNiceMock(ResourceProviderFactory.class);
     ResourceProvider hostComponentResourceProvider = createNiceMock(HostComponentResourceProvider.class);
-    
+
     AbstractControllerResourceProvider.init(resourceProviderFactory);
 
     Set<ServiceComponentHostResponse> allResponse = new HashSet<ServiceComponentHostResponse>();
@@ -146,6 +147,7 @@ public class HostComponentResourceProviderTest {
     allResponse.add(new ServiceComponentHostResponse(
         "Cluster100", "Service100", "Component101", "Host100", State.INSTALLED.toString(), stackId.getStackId(), State.STARTED.toString(),
         stackId2.getStackId(), null));
+
     allResponse.add(new ServiceComponentHostResponse(
         "Cluster100", "Service100", "Component102", "Host100", State.INSTALLED.toString(), stackId.getStackId(), State.STARTED.toString(),
         stackId2.getStackId(), null));
@@ -160,13 +162,16 @@ public class HostComponentResourceProviderTest {
         HostComponentResourceProvider.HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID, State.STARTED.toString());
     expectedNameValues.put(
         HostComponentResourceProvider.HOST_COMPONENT_DESIRED_STACK_ID_PROPERTY_ID, stackId2.getStackId());
+    expectedNameValues.put(
+        HostComponentResourceProvider.HOST_COMPONENT_UPGRADE_STATE, UpgradeState.NONE.name());
+
 
     // set expectations
     expect(resourceProviderFactory.getHostComponentResourceProvider(anyObject(Set.class),
         anyObject(Map.class),
         eq(managementController))).
         andReturn(hostComponentResourceProvider).anyTimes();
-    
+
     Set<String> propertyIds = new HashSet<String>();
 
     propertyIds.add(HostComponentResourceProvider.HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID);
@@ -179,9 +184,9 @@ public class HostComponentResourceProviderTest {
     Predicate predicate = new PredicateBuilder().property(
         HostComponentResourceProvider.HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID).equals("Cluster100").toPredicate();
     Request request = PropertyHelper.getReadRequest(propertyIds);
-    
+
     Set<Resource> hostsComponentResources = new HashSet<Resource>();
-    
+
     Resource hostsComponentResource1 = new ResourceImpl(Resource.Type.HostComponent);
     hostsComponentResource1.setProperty(HostComponentResourceProvider.HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID, "Cluster100");
     hostsComponentResource1.setProperty(HostComponentResourceProvider.HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "Host100");
@@ -191,6 +196,8 @@ public class HostComponentResourceProviderTest {
     hostsComponentResource1.setProperty(HostComponentResourceProvider.HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID, State.STARTED.name());
     hostsComponentResource1.setProperty(HostComponentResourceProvider.HOST_COMPONENT_STACK_ID_PROPERTY_ID, stackId.getStackId());
     hostsComponentResource1.setProperty(HostComponentResourceProvider.HOST_COMPONENT_DESIRED_STACK_ID_PROPERTY_ID, stackId2.getStackId());
+    hostsComponentResource1.setProperty(HostComponentResourceProvider.HOST_COMPONENT_UPGRADE_STATE, UpgradeState.NONE.name());
+
     Resource hostsComponentResource2 = new ResourceImpl(Resource.Type.HostComponent);
     hostsComponentResource2.setProperty(HostComponentResourceProvider.HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID, "Cluster100");
     hostsComponentResource2.setProperty(HostComponentResourceProvider.HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "Host100");
@@ -200,6 +207,8 @@ public class HostComponentResourceProviderTest {
     hostsComponentResource2.setProperty(HostComponentResourceProvider.HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID, State.STARTED.name());
     hostsComponentResource2.setProperty(HostComponentResourceProvider.HOST_COMPONENT_STACK_ID_PROPERTY_ID, stackId.getStackId());
     hostsComponentResource2.setProperty(HostComponentResourceProvider.HOST_COMPONENT_DESIRED_STACK_ID_PROPERTY_ID, stackId2.getStackId());
+    hostsComponentResource2.setProperty(HostComponentResourceProvider.HOST_COMPONENT_UPGRADE_STATE, UpgradeState.NONE.name());
+
     Resource hostsComponentResource3 = new ResourceImpl(Resource.Type.HostComponent);
     hostsComponentResource3.setProperty(HostComponentResourceProvider.HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID, "Cluster100");
     hostsComponentResource3.setProperty(HostComponentResourceProvider.HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "Host100");
@@ -209,10 +218,12 @@ public class HostComponentResourceProviderTest {
     hostsComponentResource3.setProperty(HostComponentResourceProvider.HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID, State.STARTED.name());
     hostsComponentResource3.setProperty(HostComponentResourceProvider.HOST_COMPONENT_STACK_ID_PROPERTY_ID, stackId.getStackId());
     hostsComponentResource3.setProperty(HostComponentResourceProvider.HOST_COMPONENT_DESIRED_STACK_ID_PROPERTY_ID, stackId2.getStackId());
+    hostsComponentResource3.setProperty(HostComponentResourceProvider.HOST_COMPONENT_UPGRADE_STATE, UpgradeState.NONE.name());
+
     hostsComponentResources.add(hostsComponentResource1);
     hostsComponentResources.add(hostsComponentResource2);
     hostsComponentResources.add(hostsComponentResource3);
-    
+
     expect(hostComponentResourceProvider.getResources(eq(request), eq(predicate))).andReturn(hostsComponentResources).anyTimes();
 
     // replay
@@ -250,6 +261,7 @@ public class HostComponentResourceProviderTest {
     Resource.Type type = Resource.Type.HostComponent;
 
     AmbariManagementController managementController = createMock(AmbariManagementController.class);
+    HostVersionDAO hostVersionDAO = createMock(HostVersionDAO.class);
     RequestStatusResponse response = createNiceMock(RequestStatusResponse.class);
     ResourceProviderFactory resourceProviderFactory = createNiceMock(ResourceProviderFactory.class);
     Injector injector = createNiceMock(Injector.class);
@@ -298,10 +310,12 @@ public class HostComponentResourceProviderTest {
     stageContainer.persist();
     expect(stageContainer.getRequestStatusResponse()).andReturn(response).once();
 
-    HostComponentResourceProvider provider =
+    TestHostComponentResourceProvider provider =
         new TestHostComponentResourceProvider(PropertyHelper.getPropertyIds(type),
             PropertyHelper.getKeyPropertyIds(type),
-            managementController, injector, maintenanceStateHelper);
+            managementController, injector);
+    provider.setFieldValue("maintenanceStateHelper", maintenanceStateHelper);
+    provider.setFieldValue("hostVersionDAO", hostVersionDAO);
 
     expect(resourceProviderFactory.getHostComponentResourceProvider(anyObject(Set.class),
         anyObject(Map.class),
@@ -328,127 +342,13 @@ public class HostComponentResourceProviderTest {
     Resource responseResource = requestStatus.getRequestResource();
     assertEquals("response msg", responseResource.getPropertyValue(PropertyHelper.getPropertyId("Requests", "message")));
     assertEquals(1000L, responseResource.getPropertyValue(PropertyHelper.getPropertyId("Requests", "id")));
-    assertEquals("InProgress", responseResource.getPropertyValue(PropertyHelper.getPropertyId("Requests", "status")));
+    assertEquals("Accepted", responseResource.getPropertyValue(PropertyHelper.getPropertyId("Requests", "status")));
     assertTrue(requestStatus.getAssociatedResources().isEmpty());
 
     // verify
     verify(managementController, response, resourceProviderFactory, stageContainer);
   }
 
-  @Test
-  public void testInstallAndStart() throws Exception {
-    Resource.Type type = Resource.Type.HostComponent;
-
-    AmbariManagementController managementController = createMock(AmbariManagementController.class);
-    RequestStatusResponse response = createNiceMock(RequestStatusResponse.class);
-    ResourceProviderFactory resourceProviderFactory = createNiceMock(ResourceProviderFactory.class);
-    Injector injector = createNiceMock(Injector.class);
-    Clusters clusters = createNiceMock(Clusters.class);
-    Cluster cluster = createNiceMock(Cluster.class);
-    Service service = createNiceMock(Service.class);
-    ServiceComponent component = createNiceMock(ServiceComponent.class);
-    ServiceComponent clientComponent = createNiceMock(ServiceComponent.class);
-    ServiceComponentHost componentHost = createNiceMock(ServiceComponentHost.class);
-    ServiceComponentHost clientComponentHost = createNiceMock(ServiceComponentHost.class);
-    RequestStageContainer stageContainer = createNiceMock(RequestStageContainer.class);
-    MaintenanceStateHelper maintenanceStateHelper = createNiceMock(MaintenanceStateHelper.class);
-
-    Collection<String> hosts = new HashSet<String>();
-    hosts.add("Host100");
-
-    Map<String, String> mapRequestProps = new HashMap<String, String>();
-    mapRequestProps.put("context", "Install and start components on added hosts");
-
-    Set<ServiceComponentHostResponse> nameResponse = new HashSet<ServiceComponentHostResponse>();
-    nameResponse.add(new ServiceComponentHostResponse(
-        "Cluster102", "Service100", "Component100", "Host100", "INIT", "", "INIT", "", null));
-    nameResponse.add(new ServiceComponentHostResponse(
-        "Cluster102", "Service100", "some-client", "Host100", "INIT", "", "INIT", "", null));
-    Set<ServiceComponentHostResponse> nameResponse2 = new HashSet<ServiceComponentHostResponse>();
-    nameResponse2.add(new ServiceComponentHostResponse(
-        "Cluster102", "Service100", "Component100", "Host100", "INIT", "", "INSTALLED", "", null));
-    nameResponse2.add(new ServiceComponentHostResponse(
-        "Cluster102", "Service100", "some-client", "Host100", "INIT", "", "INSTALLED", "", null));
-
-
-    // set expectations
-    expect(managementController.getClusters()).andReturn(clusters).anyTimes();
-    expect(managementController.findServiceName(cluster, "Component100")).andReturn("Service100").anyTimes();
-    expect(managementController.findServiceName(cluster, "some-client")).andReturn("Service100").anyTimes();
-    expect(clusters.getCluster("Cluster102")).andReturn(cluster).anyTimes();
-    expect(cluster.getService("Service100")).andReturn(service).anyTimes();
-    expect(service.getServiceComponent("Component100")).andReturn(component).anyTimes();
-    expect(service.getServiceComponent("some-client")).andReturn(clientComponent).anyTimes();
-    expect(component.getServiceComponentHost("Host100")).andReturn(componentHost).anyTimes();
-    expect(component.getName()).andReturn("Component100").anyTimes();
-    expect(clientComponent.getServiceComponentHost("Host100")).andReturn(clientComponentHost).anyTimes();
-    expect(clientComponent.getName()).andReturn("some-client").anyTimes();
-    expect(clientComponent.isClientComponent()).andReturn(true).anyTimes();
-    // actual state is always INIT until stages actually execute
-    expect(componentHost.getState()).andReturn(State.INIT).anyTimes();
-    expect(componentHost.getHostName()).andReturn("Host100").anyTimes();
-    expect(componentHost.getServiceComponentName()).andReturn("Component100").anyTimes();
-    expect(clientComponentHost.getState()).andReturn(State.INIT).anyTimes();
-    expect(clientComponentHost.getHostName()).andReturn("Host100").anyTimes();
-    expect(clientComponentHost.getServiceComponentName()).andReturn("some-client").anyTimes();
-    expect(response.getMessage()).andReturn("response msg").anyTimes();
-
-    //Cluster is default type.  Maintenance mode is not being tested here so the default is returned.
-    expect(maintenanceStateHelper.isOperationAllowed(Resource.Type.Cluster, componentHost)).andReturn(true).anyTimes();
-    expect(maintenanceStateHelper.isOperationAllowed(Resource.Type.Cluster, clientComponentHost)).andReturn(true).anyTimes();
-
-    //todo: can we change to prevent having to call twice?
-    expect(managementController.getHostComponents(
-        EasyMock.<Set<ServiceComponentHostRequest>>anyObject())).andReturn(nameResponse);
-    expect(managementController.getHostComponents(
-        EasyMock.<Set<ServiceComponentHostRequest>>anyObject())).andReturn(nameResponse2);
-
-    Map<String, Map<State, List<ServiceComponentHost>>> changedHosts =
-        new HashMap<String, Map<State, List<ServiceComponentHost>>>();
-
-    changedHosts.put("Component100", Collections.singletonMap(State.INSTALLED, Collections.singletonList(componentHost)));
-    changedHosts.put("some-client", Collections.singletonMap(State.INSTALLED, Collections.singletonList(clientComponentHost)));
-
-    Map<String, Map<State, List<ServiceComponentHost>>> changedHosts2 =
-        new HashMap<String, Map<State, List<ServiceComponentHost>>>();
-    List<ServiceComponentHost> changedComponentHosts2 = Collections.singletonList(componentHost);
-    changedHosts2.put("Component100", Collections.singletonMap(State.STARTED, changedComponentHosts2));
-
-    expect(managementController.addStages(null, cluster, mapRequestProps, null, null, null, changedHosts,
-        Collections.<ServiceComponentHost>emptyList(), false, false)).andReturn(stageContainer).once();
-
-    expect(managementController.addStages(stageContainer, cluster, mapRequestProps, null, null, null, changedHosts2,
-        Collections.<ServiceComponentHost>emptyList(), false, false)).andReturn(stageContainer).once();
-
-    stageContainer.persist();
-    expect(stageContainer.getProjectedState("Host100", "Component100")).andReturn(State.INSTALLED).once();
-    expect(stageContainer.getRequestStatusResponse()).andReturn(response).once();
-
-    HostComponentResourceProvider provider =
-        new TestHostComponentResourceProvider(PropertyHelper.getPropertyIds(type),
-            PropertyHelper.getKeyPropertyIds(type),
-            managementController, injector, maintenanceStateHelper);
-
-    expect(resourceProviderFactory.getHostComponentResourceProvider(anyObject(Set.class),
-        anyObject(Map.class),
-        eq(managementController))).
-        andReturn(provider).anyTimes();
-
-    // replay
-    replay(managementController, response, resourceProviderFactory, clusters, cluster, service,
-        component, componentHost, stageContainer, maintenanceStateHelper, clientComponent,
-        clientComponentHost);
-
-    Map<String, Object> properties = new LinkedHashMap<String, Object>();
-    properties.put(HostComponentResourceProvider.HOST_COMPONENT_STATE_PROPERTY_ID, "STARTED");
-
-    RequestStatusResponse requestResponse = provider.installAndStart("Cluster102", hosts);
-
-    assertSame(response, requestResponse);
-    // verify
-    verify(managementController, response, resourceProviderFactory, stageContainer,
-        clientComponent, clientComponentHost);
-  }
 
   @Test
   public void testDeleteResources() throws Exception {
@@ -457,8 +357,8 @@ public class HostComponentResourceProviderTest {
     AmbariManagementController managementController = createMock(AmbariManagementController.class);
     RequestStatusResponse response = createNiceMock(RequestStatusResponse.class);
     Injector injector = createNiceMock(Injector.class);
-    
-    HostComponentResourceProvider provider = 
+
+    HostComponentResourceProvider provider =
         new HostComponentResourceProvider(PropertyHelper.getPropertyIds(type),
         PropertyHelper.getKeyPropertyIds(type),
         managementController, injector);
@@ -546,11 +446,13 @@ public class HostComponentResourceProviderTest {
                                                            Map<String, String> requestProperties,
                                                            boolean runSmokeTest) throws Exception {
     Resource.Type type = Resource.Type.HostComponent;
-    HostComponentResourceProvider provider =
+    TestHostComponentResourceProvider provider =
         new TestHostComponentResourceProvider(PropertyHelper.getPropertyIds(type),
             PropertyHelper.getKeyPropertyIds(type),
-            controller, injector, injector.getInstance(MaintenanceStateHelper.class)
-        );
+            controller, injector);
+    provider.setFieldValue("maintenanceStateHelper", injector.getInstance(MaintenanceStateHelper.class));
+    provider.setFieldValue("hostVersionDAO", injector.getInstance(HostVersionDAO.class));
+
     RequestStageContainer requestStages = provider.updateHostComponents(null, requests, requestProperties, runSmokeTest);
     requestStages.persist();
     return requestStages.getRequestStatusResponse();
@@ -566,16 +468,16 @@ public class HostComponentResourceProviderTest {
      * @param managementController the management controller
      */
     public TestHostComponentResourceProvider(Set<String> propertyIds, Map<Resource.Type, String> keyPropertyIds,
-                                             AmbariManagementController managementController, Injector injector,
-                                             MaintenanceStateHelper maintenanceStateHelper) throws Exception {
-
+                                             AmbariManagementController managementController, Injector injector) throws Exception {
       super(propertyIds, keyPropertyIds, managementController, injector);
-
-      Class<?> c = getClass().getSuperclass();
-
-      Field f = c.getDeclaredField("maintenanceStateHelper");
-      f.setAccessible(true);
-      f.set(this, maintenanceStateHelper);
     }
+
+    public void setFieldValue(String fieldName, Object fieldValue) throws Exception {
+      Class<?> c = getClass().getSuperclass();
+      Field f = c.getDeclaredField(fieldName);
+      f.setAccessible(true);
+      f.set(this, fieldValue);
+    }
+
   }
 }

@@ -52,7 +52,9 @@ App.MainHostDetailsView = Em.View.extend({
       {action: 'stopAllComponents', liClass: (this.get('controller.content.isNotHeartBeating')?'disabled':'enabled'), cssClass: 'icon-stop', 'label': this.t('hosts.host.details.stopAllComponents')},
       {action: 'restartAllComponents', liClass: (this.get('controller.content.isNotHeartBeating')?'disabled':'enabled'), cssClass: 'icon-repeat', 'label': this.t('hosts.host.details.restartAllComponents')},
       {action: 'onOffPassiveModeForHost', liClass:'', cssClass: 'icon-medkit', active:this.get('isActive'), 'label': this.t('passiveState.turn' + onOff)},
-      {action: 'deleteHost', liClass:'', cssClass: 'icon-remove', 'label': this.t('hosts.host.details.deleteHost')}];
+      {action: 'deleteHost', liClass:'', cssClass: 'icon-remove', 'label': this.t('hosts.host.details.deleteHost')},
+      {action: 'setRackId', liClass:'', cssClass: 'icon-gear', 'label': this.t('hosts.host.details.setRackId')}
+    ];
   }.property('controller.content','isActive', 'controller.content.isNotHeartBeating'),
   didInsertElement: function() {
     var self = this;

@@ -64,4 +64,13 @@ module.exports = {
       }
     return sorted;
   },
+
+  utf8ToB64: function(stringToEncode) {
+    return window.btoa(unescape(encodeURIComponent(stringToEncode)));
+  },
+
+  b64ToUtf8: function(stringTodecode) {
+    return decodeURIComponent(escape(window.atob(stringTodecode)));
+  }
+  
 };

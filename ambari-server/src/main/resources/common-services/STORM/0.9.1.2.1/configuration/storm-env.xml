@@ -37,6 +37,11 @@
     <value>/var/run/storm</value>
     <description></description>
   </property>
+  <property>
+    <name>jmxremote_port</name>
+    <value>56431</value>
+    <description></description>
+  </property>
   
   <!-- storm-env.sh -->
   <property>
@@ -50,7 +55,17 @@
 # The java implementation to use.
 export JAVA_HOME={{java64_home}}
 
+# Storm log folder
+export STORM_LOG_DIR={{log_dir}}
+
 # export STORM_CONF_DIR=""
     </value>
   </property>
+
+   <property>
+     <name>nimbus_seeds_supported</name>
+     <value>false</value>
+     <description></description>
+   </property>
+
 </configuration>

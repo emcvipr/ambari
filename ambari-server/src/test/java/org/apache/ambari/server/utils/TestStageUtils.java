@@ -97,8 +97,6 @@ public class TestStageUtils {
     injector.getInstance(GuiceJpaInitializer.class);
     serviceComponentHostFactory = injector.getInstance(ServiceComponentHostFactory.class);
     ambariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
-    ambariMetaInfo.init();
-
   }
 
 
@@ -204,8 +202,8 @@ public class TestStageUtils {
         null,
         8673);
 
-    fsm.addCluster("c1");
-    fsm.getCluster("c1").setDesiredStackVersion(new StackId(STACK_ID));
+    StackId stackId = new StackId(STACK_ID);
+    fsm.addCluster("c1", stackId);
 
     int index = 0;
 
@@ -258,7 +256,7 @@ public class TestStageUtils {
 
     //Get cluster host info
     Map<String, Set<String>> info =
-        StageUtils.getClusterHostInfo(fsm.getHostsForCluster("c1"), fsm.getCluster("c1"));
+        StageUtils.getClusterHostInfo(fsm.getCluster("c1"));
 
     //All hosts present in cluster host info
     Set<String> allHosts = info.get(HOSTS_LIST);

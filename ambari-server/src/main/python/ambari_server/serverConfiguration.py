@@ -80,18 +80,12 @@ JAVA_HOME_PROPERTY = "java.home"
 JDK_NAME_PROPERTY = "jdk.name"
 JCE_NAME_PROPERTY = "jce.name"
 
-DEFAULT_JDK16_LOCATION = "/usr/jdk64/jdk1.6.0_31"
-JDK_NAMES = ["jdk-7u67-linux-x64.tar.gz", "jdk-6u31-linux-x64.bin"]
-
-#JCE Policy files
-JCE_POLICY_FILENAMES = ["UnlimitedJCEPolicyJDK7.zip", "jce_policy-6.zip"]
-
 # JDBC
-JDBC_PATTERNS = {"oracle": "*ojdbc*.jar", "mysql": "*mysql*.jar"}
+JDBC_PATTERNS = {"oracle": "*ojdbc*.jar", "mysql": "*mysql*.jar", "mssql": "*sqljdbc*.jar"}
 
 #TODO property used incorrectly in local case, it was meant to be dbms name, not postgres database name,
 # has workaround for now, as we don't need dbms name if persistence_type=local
-JDBC_DATABASE_PROPERTY = "server.jdbc.database"                 # E.g., embedded|oracle|mysql|postgres|sqlserver
+JDBC_DATABASE_PROPERTY = "server.jdbc.database"                 # E.g., embedded|oracle|mysql|mssql|postgres
 JDBC_DATABASE_NAME_PROPERTY = "server.jdbc.database_name"       # E.g., ambari. Not used on Windows.
 JDBC_HOSTNAME_PROPERTY = "server.jdbc.hostname"
 JDBC_PORT_PROPERTY = "server.jdbc.port"
@@ -132,12 +126,8 @@ JDBC_RCA_USE_INTEGRATED_AUTH_PROPERTY = "server.jdbc.rca.use.integrated.auth"
 
 ### # End Windows-specific # ###
 
-SERVICE_USERNAME_KEY = "TMP_AMBARI_USERNAME"
-SERVICE_PASSWORD_KEY = "TMP_AMBARI_PASSWORD"
-
 # resources repo configuration
 RESOURCES_DIR_PROPERTY = "resources.dir"
-RESOURCES_DIR_DEFAULT = "resources"
 
 # stack repo upgrade
 STACK_LOCATION_KEY = 'metadata.path'
@@ -318,10 +308,12 @@ class ServerConfigDefaultsLinux(ServerConfigDefaults):
       ("/etc/ambari-server/conf/password.dat", "640", "{0}", False),
       ("/var/lib/ambari-server/keys/pass.txt", "600", "{0}", False),
       ("/etc/ambari-server/conf/ldap-password.dat", "640", "{0}", False),
-      ("/var/run/ambari-server/stack-recommendations/", "644", "{0}", True),
+      ("/var/run/ambari-server/stack-recommendations/", "744", "{0}", True),
       ("/var/run/ambari-server/stack-recommendations/", "755", "{0}", False),
       ("/var/lib/ambari-server/data/tmp/", "644", "{0}", True),
       ("/var/lib/ambari-server/data/tmp/", "755", "{0}", False),
+      ("/var/lib/ambari-server/data/cache/", "600", "{0}", True),
+      ("/var/lib/ambari-server/data/cache/", "700", "{0}", False),
       # Also, /etc/ambari-server/conf/password.dat
       # is generated later at store_password_file
     ]
@@ -341,7 +333,7 @@ class ServerConfigDefaultsLinux(ServerConfigDefaults):
     self.MESSAGE_ERROR_SETUP_NOT_ROOT = "Ambari-server setup should be run with root-level privileges"
     self.MESSAGE_ERROR_RESET_NOT_ROOT = "Ambari-server reset should be run with root-level privileges"
     self.MESSAGE_ERROR_UPGRADE_NOT_ROOT = "Ambari-server upgrade must be run with root-level privileges"
-    self.MESSAGE_CHECK_FIREWALL = "Checking iptables..."
+    self.MESSAGE_CHECK_FIREWALL = "Checking firewall status..."
 
 configDefaults = ServerConfigDefaults()
 
@@ -496,6 +488,8 @@ def get_db_type(properties):
       db_type = "oracle"
     elif "mysql" in jdbc_url:
       db_type = "mysql"
+    elif "sqlserver" in jdbc_url:
+      db_type = "mssql"
     elif "derby" in jdbc_url:
       db_type = "derby"
 
@@ -512,7 +506,7 @@ def check_database_name_property(upgrade=False):
     return -1
 
   version = get_ambari_version(properties)
-  if upgrade and (properties[JDBC_DATABASE_PROPERTY] not in ["postgres", "oracle", "mysql", "derby"]
+  if upgrade and (properties[JDBC_DATABASE_PROPERTY] not in ["postgres", "oracle", "mysql", "mssql", "derby"]
                     or properties.has_key(JDBC_RCA_SCHEMA_PROPERTY)):
     # This code exists for historic reasons in which property names changed from Ambari 1.6.1 to 1.7.0
     persistence_type = properties[PERSISTENCE_TYPE_PROPERTY]
@@ -523,7 +517,7 @@ def check_database_name_property(upgrade=False):
 
       # If DB type is missing, attempt to reconstruct it from the JDBC URL
       db_type = properties[JDBC_DATABASE_PROPERTY]
-      if db_type is None or db_type.strip().lower() not in ["postgres", "oracle", "mysql", "derby"]:
+      if db_type is None or db_type.strip().lower() not in ["postgres", "oracle", "mysql", "mssql", "derby"]:
         db_type = get_db_type(properties)
         if db_type:
           write_property(JDBC_DATABASE_PROPERTY, db_type)
@@ -780,8 +774,13 @@ def update_ambari_properties():
 
   # Previous config file does not exist
   if (not prev_conf_file) or (prev_conf_file is None):
-    print_warning_msg("Can not find ambari.properties.backup file from previous version, skipping import of settings")
+    print_warning_msg("Can not find %s file from previous version, skipping import of settings" % configDefaults.AMBARI_PROPERTIES_BACKUP_FILE)
     return 0
+
+  # ambari.properties file does not exists
+  if conf_file is None:
+    print_error_msg("Can't find %s file" % AMBARI_PROPERTIES_FILE)
+    return -1
 
   try:
     old_properties = Properties()
@@ -795,10 +794,10 @@ def update_ambari_properties():
     new_properties.load(open(conf_file))
 
     for prop_key, prop_value in old_properties.getPropertyDict().items():
-      if ("agent.fqdn.service.url" == prop_key):
-        #BUG-7179 what is agent.fqdn property in ambari.props?
+      if "agent.fqdn.service.url" == prop_key:
+        # BUG-7179 what is agent.fqdn property in ambari.props?
         new_properties.process_pair(GET_FQDN_SERVICE_URL, prop_value)
-      elif ("server.os_type" == prop_key):
+      elif "server.os_type" == prop_key:
         new_properties.process_pair(OS_TYPE_PROPERTY, OS_FAMILY + OS_VERSION)
       else:
         new_properties.process_pair(prop_key, prop_value)
@@ -806,17 +805,10 @@ def update_ambari_properties():
     # Adding custom user name property if it is absent
     # In previous versions without custom user support server was started as
     # "root" anyway so it's a reasonable default
-    if not NR_USER_PROPERTY in new_properties.keys():
+    if NR_USER_PROPERTY not in new_properties.keys():
       new_properties.process_pair(NR_USER_PROPERTY, "root")
 
-    isJDK16Installed = new_properties.get_property(JAVA_HOME_PROPERTY) == DEFAULT_JDK16_LOCATION
-    if not JDK_NAME_PROPERTY in new_properties.keys() and isJDK16Installed:
-      new_properties.process_pair(JDK_NAME_PROPERTY, JDK_NAMES[1])
-
-    if not JCE_NAME_PROPERTY in new_properties.keys() and isJDK16Installed:
-      new_properties.process_pair(JCE_NAME_PROPERTY, JCE_POLICY_FILENAMES[1])
-
-    if not OS_FAMILY_PROPERTY in new_properties.keys():
+    if OS_FAMILY_PROPERTY not in new_properties.keys():
       new_properties.process_pair(OS_FAMILY_PROPERTY, OS_FAMILY + OS_VERSION)
 
     new_properties.store(open(conf_file, 'w'))
@@ -826,8 +818,8 @@ def update_ambari_properties():
     return -1
 
   timestamp = datetime.datetime.now()
-  format = '%Y%m%d%H%M%S'
-  os.rename(prev_conf_file, prev_conf_file + '.' + timestamp.strftime(format))
+  fmt = '%Y%m%d%H%M%S'
+  os.rename(prev_conf_file, prev_conf_file + '.' + timestamp.strftime(fmt))
 
   return 0
 
@@ -1013,6 +1005,7 @@ def get_share_jars():
   share_jars = ""
   file_list = []
   file_list.extend(glob.glob(configDefaults.JAVA_SHARE_PATH + os.sep + "*mysql*"))
+  file_list.extend(glob.glob(configDefaults.JAVA_SHARE_PATH + os.sep + "*sqljdbc*"))
   file_list.extend(glob.glob(configDefaults.JAVA_SHARE_PATH + os.sep + "*ojdbc*"))
   if len(file_list) > 0:
     share_jars = string.join(file_list, os.pathsep)
@@ -1100,9 +1093,27 @@ def get_java_exe_path():
 
 
 #
+# Server resource files location
+#
+def get_resources_location(properties):
+  err = 'Invalid directory'
+  try:
+    resources_dir = properties[RESOURCES_DIR_PROPERTY]
+    if not resources_dir:
+      resources_dir = configDefaults.SERVER_RESOURCES_DIR
+  except (KeyError), e:
+    err = 'Property ' + str(e) + ' is not defined at ' + properties.fileName
+    resources_dir = configDefaults.SERVER_RESOURCES_DIR
+
+  if not os.path.exists(os.path.abspath(resources_dir)):
+    msg = 'Resources dir ' + resources_dir + ' is incorrectly configured: ' + err
+    raise FatalException(1, msg)
+
+  return resources_dir
+
+#
 # Stack upgrade
 #
-
 def get_stack_location(properties):
   stack_location = properties[STACK_LOCATION_KEY]
   if stack_location is None:

@@ -33,6 +33,8 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -46,6 +48,7 @@ import static org.mockito.Mockito.mock;
 public class AMSPropertyProviderTest {
   private static final String PROPERTY_ID1 = PropertyHelper.getPropertyId("metrics/cpu", "cpu_user");
   private static final String PROPERTY_ID2 = PropertyHelper.getPropertyId("metrics/memory", "mem_free");
+  private static final String PROPERTY_ID3 = PropertyHelper.getPropertyId("metrics/dfs/datanode", "blocks_replicated");
   private static final String CLUSTER_NAME_PROPERTY_ID = PropertyHelper.getPropertyId("HostRoles", "cluster_name");
   private static final String HOST_NAME_PROPERTY_ID = PropertyHelper.getPropertyId("HostRoles", "host_name");
   private static final String COMPONENT_NAME_PROPERTY_ID = PropertyHelper.getPropertyId("HostRoles", "component_name");
@@ -54,10 +57,9 @@ public class AMSPropertyProviderTest {
   private static final String SINGLE_HOST_METRICS_FILE_PATH = FILE_PATH_PREFIX + "single_host_metric.json";
   private static final String MULTIPLE_HOST_METRICS_FILE_PATH = FILE_PATH_PREFIX + "multiple_host_metrics.json";
   private static final String SINGLE_COMPONENT_METRICS_FILE_PATH = FILE_PATH_PREFIX + "single_component_metrics.json";
-  private static final String MULTIPLE_COMPONENT_METRICS_FILE_PATH = FILE_PATH_PREFIX + "multiple_component_metrics.json";
-  private static final String CLUSTER_REPORT_METRICS_FILE_PATH = FILE_PATH_PREFIX + "cluster_report_metrics.json";
   private static final String MULTIPLE_COMPONENT_REGEXP_METRICS_FILE_PATH = FILE_PATH_PREFIX + "multiple_component_regexp_metrics.json";
   private static final String EMBEDDED_METRICS_FILE_PATH = FILE_PATH_PREFIX + "embedded_host_metric.json";
+  private static final String AGGREGATE_METRICS_FILE_PATH = FILE_PATH_PREFIX + "aggregate_component_metric.json";
 
   @Test
   public void testPopulateResourcesForSingleHostMetric() throws Exception {
@@ -98,8 +100,7 @@ public class AMSPropertyProviderTest {
   }
 
   @Test
-  public void testPopulateResourcesForSingleHostMetricPointInTime() throws
-    Exception {
+  public void testPopulateResourcesForSingleHostMetricPointInTime() throws Exception {
 
     // given
     TestStreamProvider streamProvider = new TestStreamProvider(SINGLE_HOST_METRICS_FILE_PATH);
@@ -176,7 +177,6 @@ public class AMSPropertyProviderTest {
     uriBuilder2.addParameter("metricNames", "mem_free,cpu_user");
     uriBuilder2.addParameter("hostname", "h1");
     uriBuilder2.addParameter("appId", "HOST");
-    System.out.println(streamProvider.getLastSpec());
     Assert.assertTrue(uriBuilder.toString().equals(streamProvider.getLastSpec())
         || uriBuilder2.toString().equals(streamProvider.getLastSpec()));
     Double val1 = (Double) res.getPropertyValue(PROPERTY_ID1);
@@ -184,7 +184,6 @@ public class AMSPropertyProviderTest {
     Double val2 = (Double)res.getPropertyValue(PROPERTY_ID2);
     Assert.assertEquals(2.47025664E8, val2, 0.1);
   }
-
 
   @Test
   public void testPopulateResourcesForMultipleHostMetrics() throws Exception {
@@ -236,7 +235,6 @@ public class AMSPropertyProviderTest {
     Assert.assertEquals(86, val.length);
   }
 
-
   @Test
   public void testPopulateResourcesForRegexpMetrics() throws Exception {
     TestStreamProvider streamProvider = new TestStreamProvider(MULTIPLE_COMPONENT_REGEXP_METRICS_FILE_PATH);
@@ -247,7 +245,7 @@ public class AMSPropertyProviderTest {
         new HashMap<String, Map<String, PropertyInfo>>() {{
       put("RESOURCEMANAGER", new HashMap<String, PropertyInfo>() {{
         put("metrics/yarn/Queue/$1.replaceAll(\"([.])\",\"/\")/AvailableMB",
-            new PropertyInfo("yarn.QueueMetrics.(.+).AvailableMB", true, false));
+            new PropertyInfo("yarn.QueueMetrics.Queue=(.+).AvailableMB", true, false));
       }});
     }};
 
@@ -276,12 +274,12 @@ public class AMSPropertyProviderTest {
     Map<String, Object> properties = PropertyHelper.getProperties(resources.iterator().next());
     Assert.assertNotNull(properties);
     URIBuilder uriBuilder = AMSPropertyProvider.getAMSUriBuilder("localhost", 8188);
-    uriBuilder.addParameter("metricNames", "yarn.QueueMetrics.%.AvailableMB");
+    uriBuilder.addParameter("metricNames", "yarn.QueueMetrics.Queue=root.AvailableMB");
     uriBuilder.addParameter("appId", "RESOURCEMANAGER");
     uriBuilder.addParameter("startTime", "1416528819369");
     uriBuilder.addParameter("endTime", "1416528819569");
     Assert.assertEquals(uriBuilder.toString(), streamProvider.getLastSpec());
-    Number[][] val = (Number[][]) res.getPropertyValue("metrics/yarn/Queue/Queue=root/AvailableMB");
+    Number[][] val = (Number[][]) res.getPropertyValue("metrics/yarn/Queue/root/AvailableMB");
     Assert.assertEquals(238, val.length);
   }
 
@@ -366,7 +364,145 @@ public class AMSPropertyProviderTest {
     uriBuilder.addParameter("endTime", "1421697600");
     Assert.assertEquals(uriBuilder.toString(), streamProvider.getLastSpec());
     Number[][] val = (Number[][]) res.getPropertyValue(propertyId);
-    Assert.assertEquals(188, val.length);
+    Assert.assertEquals(189, val.length);
+  }
+
+  @Test
+  public void testAggregateFunctionForComponentMetrics() throws Exception {
+    TestStreamProvider streamProvider = new TestStreamProvider(AGGREGATE_METRICS_FILE_PATH);
+    TestMetricHostProvider metricHostProvider = new TestMetricHostProvider();
+    ComponentSSLConfiguration sslConfiguration = mock(ComponentSSLConfiguration.class);
+
+    Map<String, Map<String, PropertyInfo>> propertyIds =
+      PropertyHelper.getMetricPropertyIds(Resource.Type.Component);
+
+    AMSComponentPropertyProvider propertyProvider = new AMSComponentPropertyProvider(
+      propertyIds,
+      streamProvider,
+      sslConfiguration,
+      metricHostProvider,
+      CLUSTER_NAME_PROPERTY_ID,
+      COMPONENT_NAME_PROPERTY_ID
+    );
+
+    String propertyId = PropertyHelper.getPropertyId("metrics/rpc", "NumOpenConnections._sum");
+    Resource resource = new ResourceImpl(Resource.Type.Component);
+    resource.setProperty(COMPONENT_NAME_PROPERTY_ID, "HBASE_REGIONSERVER");
+    Map<String, TemporalInfo> temporalInfoMap = new HashMap<String, TemporalInfo>();
+    temporalInfoMap.put(propertyId, new TemporalInfoImpl(1429824611300L, 1429825241400L, 1L));
+    Request request = PropertyHelper.getReadRequest(
+      Collections.singleton(propertyId), temporalInfoMap);
+    Set<Resource> resources =
+      propertyProvider.populateResources(Collections.singleton(resource), request, null);
+    Assert.assertEquals(1, resources.size());
+    Resource res = resources.iterator().next();
+    Map<String, Object> properties = PropertyHelper.getProperties(resources.iterator().next());
+    Assert.assertNotNull(properties);
+    URIBuilder uriBuilder = AMSPropertyProvider.getAMSUriBuilder("localhost", 8188);
+    uriBuilder.addParameter("metricNames", "rpc.rpc.NumOpenConnections._sum");
+    uriBuilder.addParameter("appId", "HBASE");
+    uriBuilder.addParameter("startTime", "1429824611300");
+    uriBuilder.addParameter("endTime", "1429825241400");
+    Assert.assertEquals(uriBuilder.toString(), streamProvider.getLastSpec());
+    Number[][] val = (Number[][]) res.getPropertyValue(propertyId);
+    Assert.assertEquals(32, val.length);
+  }
+
+  static class TestStreamProviderForHostComponentHostMetricsTest extends TestStreamProvider {
+    String hostMetricFilePath = FILE_PATH_PREFIX + "single_host_metric.json";
+    String hostComponentMetricFilePath = FILE_PATH_PREFIX + "single_host_component_metrics.json";
+    Set<String> specs = new HashSet<String>();
+
+    public TestStreamProviderForHostComponentHostMetricsTest(String fileName) {
+      super(fileName);
+    }
+
+    @Override
+    public InputStream readFrom(String spec) throws IOException {
+      if (spec.contains("HOST")) {
+        this.fileName = hostMetricFilePath;
+      } else {
+        this.fileName = hostComponentMetricFilePath;
+      }
+
+      specs.add(spec);
+
+      return super.readFrom(spec);
+    }
+
+    public Set<String> getAllSpecs() {
+      return specs;
+    }
+  }
+
+  @Test
+  public void testPopulateResourcesForHostComponentHostMetrics() throws Exception {
+    TestStreamProviderForHostComponentHostMetricsTest streamProvider =
+      new TestStreamProviderForHostComponentHostMetricsTest(null);
+    TestMetricHostProvider metricHostProvider = new TestMetricHostProvider();
+    ComponentSSLConfiguration sslConfiguration = mock(ComponentSSLConfiguration.class);
+
+    Map<String, Map<String, PropertyInfo>> propertyIds = PropertyHelper.getMetricPropertyIds(Resource.Type.HostComponent);
+    AMSPropertyProvider propertyProvider = new AMSHostComponentPropertyProvider(
+      propertyIds,
+      streamProvider,
+      sslConfiguration,
+      metricHostProvider,
+      CLUSTER_NAME_PROPERTY_ID,
+      HOST_NAME_PROPERTY_ID,
+      COMPONENT_NAME_PROPERTY_ID
+    );
+
+    Resource resource = new ResourceImpl(Resource.Type.Host);
+    resource.setProperty(HOST_NAME_PROPERTY_ID, "h1");
+    resource.setProperty(COMPONENT_NAME_PROPERTY_ID, "DATANODE");
+    Map<String, TemporalInfo> temporalInfoMap = new HashMap<String, TemporalInfo>();
+    temporalInfoMap.put(PROPERTY_ID1, new TemporalInfoImpl(1416445244701L, 1416445251802L, 1L));
+    temporalInfoMap.put(PROPERTY_ID3, new TemporalInfoImpl(1416445244701L, 1416445251802L, 1L));
+    Request request = PropertyHelper.getReadRequest(
+      new HashSet<String>() {{ add(PROPERTY_ID1); add(PROPERTY_ID3); }},
+      temporalInfoMap);
+    Set<Resource> resources =
+      propertyProvider.populateResources(Collections.singleton(resource), request, null);
+    Assert.assertEquals(1, resources.size());
+    Resource res = resources.iterator().next();
+    Map<String, Object> properties = PropertyHelper.getProperties(resources.iterator().next());
+    Assert.assertNotNull(properties);
+
+    Set<String> specs = streamProvider.getAllSpecs();
+    Assert.assertEquals(2, specs.size());
+    String hostMetricSpec = null;
+    String hostComponentMetricsSpec = null;
+    for (String spec : specs) {
+      if (spec.contains("HOST")) {
+        hostMetricSpec = spec;
+      } else {
+        hostComponentMetricsSpec = spec;
+      }
+    }
+    Assert.assertNotNull(hostMetricSpec);
+    Assert.assertNotNull(hostComponentMetricsSpec);
+    // Verify calls
+    URIBuilder uriBuilder1 = AMSPropertyProvider.getAMSUriBuilder("localhost", 8188);
+    uriBuilder1.addParameter("metricNames", "dfs.datanode.BlocksReplicated");
+    uriBuilder1.addParameter("hostname", "h1");
+    uriBuilder1.addParameter("appId", "DATANODE");
+    uriBuilder1.addParameter("startTime", "1416445244701");
+    uriBuilder1.addParameter("endTime", "1416445251802");
+    Assert.assertEquals(uriBuilder1.toString(), hostComponentMetricsSpec);
+
+    URIBuilder uriBuilder2 = AMSPropertyProvider.getAMSUriBuilder("localhost", 8188);
+    uriBuilder2.addParameter("metricNames", "cpu_user");
+    uriBuilder2.addParameter("hostname", "h1");
+    uriBuilder2.addParameter("appId", "HOST");
+    uriBuilder2.addParameter("startTime", "1416445244701");
+    uriBuilder2.addParameter("endTime", "1416445251802");
+    Assert.assertEquals(uriBuilder2.toString(), hostMetricSpec);
+
+    Number[][] val = (Number[][]) res.getPropertyValue(PROPERTY_ID1);
+    Assert.assertEquals(111, val.length);
+    val = (Number[][]) res.getPropertyValue(PROPERTY_ID3);
+    Assert.assertEquals(8, val.length);
   }
 
   public static class TestMetricHostProvider implements MetricHostProvider {

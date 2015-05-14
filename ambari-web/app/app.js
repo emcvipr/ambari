@@ -34,6 +34,7 @@ module.exports = Em.Application.create({
   }),
   isAdmin: false,
   isOperator: false,
+  isPermissionDataLoaded: false,
 
   /**
    * state of stack upgrade process
@@ -161,6 +162,10 @@ module.exports = Em.Application.create({
     return (this.get('currentStackVersion') || this.get('defaultStackVersion')).replace(regExp, '');
   }.property('currentStackVersion', 'defaultStackVersion', 'currentStackName'),
 
+  isHadoop23Stack: function () {
+    return (stringUtils.compareVersions(this.get('currentStackVersionNumber'), "2.3") > -1);
+  }.property('currentStackVersionNumber'),
+
   isHadoop22Stack: function () {
     return (stringUtils.compareVersions(this.get('currentStackVersionNumber'), "2.2") > -1);
   }.property('currentStackVersionNumber'),
@@ -178,6 +183,16 @@ module.exports = Em.Application.create({
   }.property('currentStackName'),
 
   /**
+   * when working with enhanced configs we should rely on stack version
+   * as version that is below 2.2 doesn't supports it
+   * even if flag <code>supports.enhancedConfigs<code> is true
+   * @type {boolean}
+   */
+  isClusterSupportsEnhancedConfigs: function() {
+    return this.get('isHadoop22Stack') && this.get('supports.enhancedConfigs');
+  }.property('isHadoop22Stack', 'supports.enhancedConfigs'),
+
+  /**
    * If NameNode High Availability is enabled
    * Based on <code>clusterStatus.isInstalled</code>, stack version, <code>SNameNode</code> availability
    *
@@ -190,7 +205,7 @@ module.exports = Em.Application.create({
 
   /**
    * If ResourceManager High Availability is enabled
-   * Based on number of ResourceManager components host components installed
+   * Based on number of ResourceManager host components installed
    *
    * @type {bool}
    */
@@ -199,6 +214,21 @@ module.exports = Em.Application.create({
     var rmStackComponent = App.StackServiceComponent.find().findProperty('componentName','RESOURCEMANAGER');
     if (rmStackComponent && rmStackComponent.get('isMultipleAllowed')) {
       result = this.HostComponent.find().filterProperty('componentName', 'RESOURCEMANAGER').length > 1;
+    }
+    return result;
+  }.property('router.clusterController.isLoaded', 'isStackServicesLoaded'),
+
+  /**
+   * If Ranger Admin High Availability is enabled
+   * Based on number of Ranger Admin host components installed
+   *
+   * @type {bool}
+   */
+  isRAHaEnabled: function () {
+    var result = false;
+    var raStackComponent = App.StackServiceComponent.find().findProperty('componentName','RANGER_ADMIN');
+    if (raStackComponent && raStackComponent.get('isMultipleAllowed')) {
+      result = App.HostComponent.find().filterProperty('componentName', 'RANGER_ADMIN').length > 1;
     }
     return result;
   }.property('router.clusterController.isLoaded', 'isStackServicesLoaded'),
@@ -229,6 +259,10 @@ module.exports = Em.Application.create({
 
     noConfigTypes: function () {
       return App.StackService.find().filterProperty('isNoConfigTypes').mapProperty('serviceName');
+    }.property('App.router.clusterController.isLoaded'),
+
+    servicesWithHeatmapTab: function () {
+      return App.StackService.find().filterProperty('hasHeatmapSection').mapProperty('serviceName');
     }.property('App.router.clusterController.isLoaded'),
 
     monitoring: function () {
@@ -286,7 +320,7 @@ module.exports = Em.Application.create({
     }.property('App.router.clusterController.isLoaded'),
 
     addableMasterInstallerWizard: function () {
-      return App.StackServiceComponent.find().filterProperty('isMasterAddableInstallerWizard').filterProperty('showAddBtnInInstall').mapProperty('componentName')
+      return App.StackServiceComponent.find().filterProperty('isMasterAddableInstallerWizard').mapProperty('componentName')
     }.property('App.router.clusterController.isLoaded'),
 
     multipleMasters: function () {

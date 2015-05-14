@@ -18,10 +18,10 @@
 
 package org.apache.ambari.view.hive;
 
-import com.google.inject.Inject;
 import org.apache.ambari.view.ViewContext;
 import org.apache.ambari.view.ViewResourceHandler;
 
+import javax.inject.Inject;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
@@ -66,7 +66,7 @@ public class HelpService extends BaseService {
   public Response testStorage(){
     TestBean test = new TestBean();
     test.someData = "hello world";
-    getStorage().store(TestBean.class, test);
+    getSharedObjectsFactory().getStorage().store(TestBean.class, test);
     return Response.ok("OK").build();
   }
 }

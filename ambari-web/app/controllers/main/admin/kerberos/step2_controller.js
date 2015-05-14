@@ -21,7 +21,14 @@ require('controllers/wizard/step7_controller');
 
 App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
   name: "kerberosWizardStep2Controller",
+
   isKerberosWizard: true,
+
+  kdcTypesValues: {
+    'mit-kdc'         : Em.I18n.t('admin.kerberos.wizard.step1.option.kdc'),
+    'active-directory': Em.I18n.t('admin.kerberos.wizard.step1.option.ad'),
+    'none'            : Em.I18n.t('admin.kerberos.wizard.step1.option.manual')
+  },
 
   selectedServiceNames: ['KERBEROS'],
 
@@ -91,7 +98,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     App.config.setPreDefinedServiceConfigs(this.get('addMiscTabToPage'));
     //STEP 4: Add advanced configs
     App.config.addAdvancedConfigs(configs, advancedConfigs);
-    this.showAdConfigs(configs);
+    this.filterConfigs(configs);
     this.applyServicesConfigs(configs, storedConfigs);
   },
 
@@ -99,13 +106,18 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
    * Make Active Directory specific configs visible if user has selected AD option
    * @param configs
    */
-  showAdConfigs: function (configs) {
+  filterConfigs: function (configs) {
     var kdcType = this.get('content.kerberosOption');
-    var configNames = ['ldap_url', 'container_dn'];
+    var configNames = ['ldap_url', 'container_dn', 'create_attributes_template'];
     configNames.forEach(function (_configName) {
       var config = configs.findProperty('name', _configName);
       config.isVisible = kdcType === Em.I18n.t('admin.kerberos.wizard.step1.option.ad');
     }, this);
+    if (kdcType === Em.I18n.t('admin.kerberos.wizard.step1.option.manual')) {
+      var host = configs.findProperty('name', 'kdc_host');
+      host.isRequiredByAgent = false;
+      host.isVisible = false;
+    }
   },
 
   submit: function () {
@@ -248,14 +260,32 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
       }
     }, this);
     this.tweakKdcTypeValue(properties);
+    this.tweakManualKdcProperties(properties);
     return {"type": site, "tag": tag, "properties": properties};
   },
 
   tweakKdcTypeValue: function (properties) {
-    if (properties['kdc_type'] === Em.I18n.t('admin.kerberos.wizard.step1.option.kdc')) {
-      properties['kdc_type'] = "mit-kdc";
-    } else if (properties['kdc_type'] === Em.I18n.t('admin.kerberos.wizard.step1.option.ad')) {
-      properties['kdc_type'] = "active-directory";
+    for (var prop in this.get('kdcTypesValues')) {
+      if (this.get('kdcTypesValues').hasOwnProperty(prop)) {
+        if (this.get('kdcTypesValues')[prop] === properties['kdc_type']) {
+          properties['kdc_type'] = prop;
+        }
+      }
+    }
+  },
+
+  tweakManualKdcProperties: function (properties) {
+    var kerberosWizardController = this.controllers.get('kerberosWizardController');
+    if (properties['kdc_type'] === 'none' || kerberosWizardController.get('skipClientInstall')) {
+      if (properties.hasOwnProperty('manage_identities')) {
+        properties['manage_identities'] = 'false';
+      }
+      if (properties.hasOwnProperty('install_packages')) {
+        properties['install_packages'] = 'false';
+      }
+      if (properties.hasOwnProperty('manage_krb5_conf')) {
+        properties['manage_krb5_conf'] = 'false';
+      }
     }
   },
 
@@ -282,7 +312,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
   },
 
   /**
-   * shows popup with to warn user  
+   * shows popup with to warn user
    * @param primary
    */
   showConnectionInProgressPopup: function(primary) {
@@ -291,4 +321,3 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     App.showConfirmationPopup(primary, msg, null, null, primaryText)
   }
 });
-

@@ -419,6 +419,22 @@ public class ClusterService extends BaseService {
   }
 
   /**
+   * Get the host Kerberos identity resource without specifying the parent host component.
+   * Allows accessing host Kerberos identity resources across hosts.
+   *
+   * @param request      the request
+   * @param clusterName  the cluster name
+   *
+   * @return  the host component service with no parent set
+   */
+  @Path("{clusterName}/kerberos_identities")
+  public HostKerberosIdentityService getHostKerberosIdentityHandler(@Context javax.ws.rs.core.Request request, @PathParam("clusterName") String clusterName) {
+
+    hasPermission(Request.Type.valueOf(request.getMethod()), clusterName);
+    return new HostKerberosIdentityService(clusterName, null);
+  }
+
+  /**
    * Get the component resource without specifying the parent service.
    * Allows accessing component resources across services.
    *
@@ -632,6 +648,26 @@ public class ClusterService extends BaseService {
   public PreUpgradeCheckService getPreUpgradeCheckService(@Context javax.ws.rs.core.Request request, @PathParam("clusterName") String clusterName) {
     hasPermission(Request.Type.valueOf(request.getMethod()), clusterName);
     return new PreUpgradeCheckService(clusterName);
+  }
+
+  /**
+   * Gets the widget layout service
+   */
+  @Path("{clusterName}/widget_layouts")
+  public WidgetLayoutService getWidgetLayoutService(@Context javax.ws.rs.core.Request request,
+                                                    @PathParam ("clusterName") String clusterName) {
+
+    return new WidgetLayoutService(clusterName);
+  }
+
+  /**
+   * Gets the widget service
+   */
+  @Path("{clusterName}/widgets")
+  public WidgetService getWidgetService(@Context javax.ws.rs.core.Request request,
+                                                    @PathParam ("clusterName") String clusterName) {
+
+    return new WidgetService(clusterName);
   }
 
   // ----- helper methods ----------------------------------------------------

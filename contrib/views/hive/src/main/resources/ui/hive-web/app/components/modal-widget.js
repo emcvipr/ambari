@@ -19,16 +19,38 @@
 import Ember from 'ember';
 
 export default Ember.Component.extend(Ember.I18n.TranslateableProperties, {
-  show: function() {
+  show: function () {
     this.$('.modal').modal().on('hidden.bs.modal', function () {
       this.sendAction('close');
     }.bind(this));
   }.on('didInsertElement'),
 
+  keyPress: function (e) {
+    Ember.run.debounce(this, function () {
+      if (e.which === 13) {
+        this.send('ok');
+      } else if (e.which === 27) {
+        this.send('close');
+      }
+    }, 200);
+  },
+
+  setupEvents: function () {
+    this.$(document).on('keyup', Ember.$.proxy(this.keyPress, this));
+  }.on('didInsertElement'),
+
+  destroyEvents: function () {
+    this.$(document).off('keyup', Ember.$.proxy(this.keyPress, this));
+  }.on('willDestroyElement'),
+
   actions: {
     ok: function () {
       this.$('.modal').modal('hide');
       this.sendAction('ok');
+    },
+    close: function () {
+      this.$('.modal').modal('hide');
+      this.sendAction('close');
     }
   }
 });

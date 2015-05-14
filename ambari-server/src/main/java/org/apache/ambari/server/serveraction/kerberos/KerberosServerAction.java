@@ -29,7 +29,7 @@ import org.apache.ambari.server.state.Clusters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile.DATA_FILE_NAME;
+import static org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileReader.DATA_FILE_NAME;
 
 import java.io.File;
 import java.io.IOException;
@@ -42,7 +42,7 @@ import java.util.Map;
  * <p/>
  * This class provides helper methods used to get common properties from the command parameters map
  * and iterate through the Kerberos identity metadata file
- * (see {@link org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile}).
+ * (see {@link org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileReader}).
  */
 public abstract class KerberosServerAction extends AbstractServerAction {
   /**
@@ -117,6 +117,11 @@ public abstract class KerberosServerAction extends AbstractServerAction {
   @Inject
   private KerberosOperationHandlerFactory kerberosOperationHandlerFactory;
 
+  /**
+   * The KerberosIdentityDataFileReaderFactory to use to obtain KerberosIdentityDataFileReader instances
+   */
+  @Inject
+  private KerberosIdentityDataFileReaderFactory kerberosIdentityDataFileReaderFactory;
 
   /**
    * Given a (command parameter) Map and a property name, attempts to safely retrieve the requested
@@ -305,13 +310,13 @@ public abstract class KerberosServerAction extends AbstractServerAction {
 
   /**
    * Iterates through the Kerberos identity metadata from the
-   * {@link org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFile} and calls the
-   * implementing class to handle each identity found.
+   * {@link org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileReader} and calls
+   * the implementing class to handle each identity found.
    * <p/>
    * Using the "data_directory" value from this action's command parameters map, creates a
-   * {@link org.apache.ambari.server.serveraction.kerberos.KerberosActionDataFileReader} to parse
-   * the relative index.dat file and iterate through its "records".  Each "record" is process using
-   * {@link #processRecord(java.util.Map, String, KerberosOperationHandler, java.util.Map)}.
+   * {@link KerberosIdentityDataFileReader} to parse
+   * the relative identity.dat file and iterate through its "records".  Each "record" is process using
+   * {@link #processRecord(Map, String, KerberosOperationHandler, Map, Map)}.
    *
    * @param requestSharedDataContext a Map to be used a shared data among all ServerActions related
    *                                 to a given request
@@ -345,14 +350,14 @@ public abstract class KerberosServerAction extends AbstractServerAction {
             LOG.error(message);
             throw new AmbariException(message);
           }
-          // The "index" file may or may not exist in the data directory, depending on if there
-          // is work to do or not.
-          File indexFile = new File(dataDirectory, DATA_FILE_NAME);
+          // The "identity data" file may or may not exist in the data directory, depending on if
+          // there is work to do or not.
+          File identityDataFile = new File(dataDirectory, DATA_FILE_NAME);
 
-          if (indexFile.exists()) {
-            if (!indexFile.canRead()) {
+          if (identityDataFile.exists()) {
+            if (!identityDataFile.canRead()) {
               String message = String.format("Failed to process the identities, cannot read the index file: %s",
-                  indexFile.getAbsolutePath());
+                  identityDataFile.getAbsolutePath());
               actionLog.writeStdErr(message);
               LOG.error(message);
               throw new AmbariException(message);
@@ -367,8 +372,10 @@ public abstract class KerberosServerAction extends AbstractServerAction {
               throw new AmbariException(message);
             }
 
+            Map<String, String> kerberosConfiguration = getConfiguration("kerberos-env");
+
             try {
-              handler.open(administratorCredential, defaultRealm, getConfiguration("kerberos-env"));
+              handler.open(administratorCredential, defaultRealm, kerberosConfiguration);
             } catch (KerberosOperationException e) {
               String message = String.format("Failed to process the identities, could not properly open the KDC operation handler: %s",
                   e.getMessage());
@@ -378,12 +385,12 @@ public abstract class KerberosServerAction extends AbstractServerAction {
             }
 
             // Create the data file reader to parse and iterate through the records
-            KerberosActionDataFileReader reader = null;
+            KerberosIdentityDataFileReader reader = null;
             try {
-              reader = new KerberosActionDataFileReader(indexFile);
+              reader = kerberosIdentityDataFileReaderFactory.createKerberosIdentityDataFileReader(identityDataFile);
               for (Map<String, String> record : reader) {
                 // Process the current record
-                commandReport = processRecord(record, defaultRealm, handler, requestSharedDataContext);
+                commandReport = processRecord(record, defaultRealm, handler, kerberosConfiguration, requestSharedDataContext);
 
                 // If the principal processor returns a CommandReport, than it is time to stop since
                 // an error condition has probably occurred, else all is assumed to be well.
@@ -397,7 +404,7 @@ public abstract class KerberosServerAction extends AbstractServerAction {
               throw new AmbariException(e.getMessage(), e);
             } catch (IOException e) {
               String message = String.format("Failed to process the identities, cannot read the index file: %s",
-                  indexFile.getAbsolutePath());
+                  identityDataFile.getAbsolutePath());
               actionLog.writeStdErr(message);
               LOG.error(message, e);
               throw new AmbariException(message, e);
@@ -447,14 +454,16 @@ public abstract class KerberosServerAction extends AbstractServerAction {
    * @param operationHandler         a KerberosOperationHandler used to perform Kerberos-related
    *                                 tasks for specific Kerberos implementations
    *                                 (MIT, Active Directory, etc...)
+   * @param kerberosConfiguration    a Map of configuration properties from kerberos-env
    * @param requestSharedDataContext a Map to be used a shared data among all ServerActions related
-   *                                 to a given request
-   * @return a CommandReport, indicating an error condition; or null, indicating a success condition
+   *                                 to a given request  @return a CommandReport, indicating an error
+   *                                 condition; or null, indicating a success condition
    * @throws AmbariException if an error occurs while processing the identity record
    */
   protected abstract CommandReport processIdentity(Map<String, String> identityRecord,
                                                    String evaluatedPrincipal,
                                                    KerberosOperationHandler operationHandler,
+                                                   Map<String, String> kerberosConfiguration,
                                                    Map<String, Object> requestSharedDataContext)
       throws AmbariException;
 
@@ -463,7 +472,7 @@ public abstract class KerberosServerAction extends AbstractServerAction {
    * <p/>
    * Given the data from the record Map, attempts to replace variables in the principal pattern to
    * generate a concrete principal value to further process. This "evaluated principal" is then passed to
-   * {@link #processIdentity(java.util.Map, String, KerberosOperationHandler, java.util.Map)}
+   * {@link #processIdentity(Map, String, KerberosOperationHandler, Map, Map)}
    * to be handled as needed.
    *
    * @param record                   a Map containing the data for the current identity record
@@ -471,31 +480,28 @@ public abstract class KerberosServerAction extends AbstractServerAction {
    * @param operationHandler         a KerberosOperationHandler used to perform Kerberos-related
    *                                 tasks for specific Kerberos implementations
    *                                 (MIT, Active Directory, etc...)
+   * @param kerberosConfiguration    a Map of configuration properties from kerberos-env
    * @param requestSharedDataContext a Map to be used a shared data among all ServerActions related
-   *                                 to a given request
-   * @return a CommandReport, indicating an error condition; or null, indicating a success condition
+   *                                 to a given request  @return a CommandReport, indicating an error
+   *                                 condition; or null, indicating a success condition
    * @throws AmbariException if an error occurs while processing the identity record
    */
   private CommandReport processRecord(Map<String, String> record, String defaultRealm,
                                       KerberosOperationHandler operationHandler,
-                                      Map<String, Object> requestSharedDataContext)
+                                      Map<String, String> kerberosConfiguration, Map<String, Object> requestSharedDataContext)
       throws AmbariException {
     CommandReport commandReport = null;
 
     if (record != null) {
-      String principal = record.get(KerberosActionDataFile.PRINCIPAL);
-      String host = record.get(KerberosActionDataFile.HOSTNAME);
+      String principal = record.get(KerberosIdentityDataFileReader.PRINCIPAL);
+      String host = record.get(KerberosIdentityDataFileReader.HOSTNAME);
 
       if (principal != null) {
         // Evaluate the principal "pattern" found in the record to generate the "evaluated principal"
         // by replacing the _HOST and _REALM variables.
         String evaluatedPrincipal = principal.replace("_HOST", host).replace("_REALM", defaultRealm);
 
-        String message = String.format("Processing identity for %s", evaluatedPrincipal);
-        actionLog.writeStdOut(message);
-        LOG.info(message);
-
-        commandReport = processIdentity(record, evaluatedPrincipal, operationHandler, requestSharedDataContext);
+        commandReport = processIdentity(record, evaluatedPrincipal, operationHandler, kerberosConfiguration, requestSharedDataContext);
       }
     }
 

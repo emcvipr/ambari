@@ -46,15 +46,14 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
                 Em.run.next(function () {
                   App.clusterStatus.updateFromServer().complete(function () {
                     var currentClusterStatus = App.clusterStatus.get('value');
-                    if (currentClusterStatus) {
-                      if (self.get('installerStatuses').contains(currentClusterStatus.clusterState)) {
-                        if (App.isAccessible('ADMIN')) {
-                          self.redirectToInstaller(router, currentClusterStatus, false);
-                        } else {
-                          Em.run.next(function () {
-                            App.router.transitionTo('main.views.index');
-                          });
-                        }
+                    if (router.get('currentState.parentState.name') !== 'views'
+                        && currentClusterStatus && self.get('installerStatuses').contains(currentClusterStatus.clusterState)) {
+                      if (App.isAccessible('ADMIN')) {
+                        self.redirectToInstaller(router, currentClusterStatus, false);
+                      } else {
+                        Em.run.next(function () {
+                          App.router.transitionTo('main.views.index');
+                        });
                       }
                     }
                   });
@@ -142,7 +141,12 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
       heatmap: Em.Route.extend({
         route: '/heatmap',
         connectOutlets: function (router, context) {
-          router.get('mainChartsController').connectOutlet('mainChartsHeatmap');
+          router.get('mainController').dataLoading().done(function () {
+            router.get('mainChartsHeatmapController').loadRacks().done(function(data){
+              router.get('mainChartsHeatmapController').loadRacksSuccessCallback(data);
+              router.get('mainChartsController').connectOutlet('mainChartsHeatmap');
+            });
+          });
         }
       }),
       horizon_chart: Em.Route.extend({
@@ -559,6 +563,37 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
 
   }),
 
+  addServiceWidget: function (router, context) {
+    if (context) {
+      var widgetController = router.get('widgetWizardController');
+      widgetController.save('widgetService', context.get('serviceName'));
+      widgetController.save('layoutId', context.get('layout.id'));
+    }
+    router.transitionTo('addWidget');
+  },
+
+  addWidget: require('routes/add_widget'),
+
+  editServiceWidget: function (router, context) {
+    if (context) {
+      var widgetController = router.get('widgetEditController');
+      widgetController.save('widgetService', context.get('serviceName'));
+      widgetController.save('widgetType', context.get('widgetType'));
+      widgetController.save('widgetProperties', context.get('properties'));
+      widgetController.save('widgetMetrics', context.get('metrics'));
+      widgetController.save('widgetValues', context.get('values'));
+      widgetController.save('widgetName', context.get('widgetName'));
+      widgetController.save('widgetDescription', context.get('description'));
+      widgetController.save('widgetScope', context.get('scope'));
+      widgetController.save('widgetAuthor', context.get('author'));
+      widgetController.save('widgetId', context.get('id'));
+      widgetController.save('allMetrics', []);
+    }
+    router.transitionTo('editWidget');
+  },
+
+  editWidget: require('routes/edit_widget'),
+
   services: Em.Route.extend({
     route: '/services',
     index: Em.Route.extend({
@@ -602,6 +637,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
         route: '/summary',
         connectOutlets: function (router, context) {
           var item = router.get('mainServiceItemController.content');
+          router.get('updateController').updateServiceMetric(Em.K);
           //if service is not existed then route to default service
           if (item.get('isLoaded')) {
             router.get('mainServiceItemController').connectOutlet('mainServiceInfoSummary', item);
@@ -645,6 +681,20 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
           }
         }
       }),
+      heatmaps: Em.Route.extend({
+        route: '/heatmaps',
+        connectOutlets: function (router, context) {
+          var item = router.get('mainServiceItemController.content');
+          if (item.get('isLoaded')) {
+            router.get('mainController').dataLoading().done(function () {
+              router.get('mainServiceInfoHeatmapController').loadRacks().done(function(data) {
+                router.get('mainServiceInfoHeatmapController').loadRacksSuccessCallback(data);
+                router.get('mainServiceItemController').connectOutlet('mainServiceInfoHeatmap', item);
+              });
+            });
+          }
+        }
+      }),
       audit: Em.Route.extend({
         route: '/audit',
         connectOutlets: function (router, context) {
@@ -671,6 +721,8 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
     enableHighAvailability: require('routes/high_availability_routes'),
 
     enableRMHighAvailability: require('routes/rm_high_availability_routes'),
+
+    enableRAHighAvailability: require('routes/ra_high_availability_routes'),
 
     rollbackHighAvailability: require('routes/rollbackHA_routes')
   }),

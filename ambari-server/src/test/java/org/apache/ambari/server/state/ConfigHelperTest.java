@@ -23,12 +23,19 @@ import static org.easymock.EasyMock.expect;
 import static org.easymock.EasyMock.replay;
 import static org.easymock.EasyMock.verify;
 
-import com.google.inject.AbstractModule;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
-import com.google.inject.persist.Transactional;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import javax.persistence.EntityManager;
+
 import junit.framework.Assert;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.actionmanager.RequestFactory;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
@@ -41,6 +48,7 @@ import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.security.SecurityHelper;
+import org.apache.ambari.server.stack.StackManagerFactory;
 import org.apache.ambari.server.state.cluster.ClusterFactory;
 import org.apache.ambari.server.state.cluster.ClustersImpl;
 import org.apache.ambari.server.state.configgroup.ConfigGroup;
@@ -53,15 +61,11 @@ import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
 
-import javax.persistence.EntityManager;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
+import com.google.inject.AbstractModule;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
+import com.google.inject.persist.Transactional;
 
 
 
@@ -89,11 +93,9 @@ public class ConfigHelperTest {
       configHelper = injector.getInstance(ConfigHelper.class);
       managementController = injector.getInstance(AmbariManagementController.class);
 
-      metaInfo.init();
       clusterName = "c1";
-      clusters.addCluster(clusterName);
+      clusters.addCluster(clusterName, new StackId("HDP-2.0.6"));
       cluster = clusters.getCluster(clusterName);
-      cluster.setDesiredStackVersion(new StackId("HDP-2.0.6"));
       Assert.assertNotNull(cluster);
       clusters.addHost("h1");
       clusters.addHost("h2");
@@ -177,12 +179,14 @@ public class ConfigHelperTest {
     private Long addConfigGroup(String name, String tag, List<String> hosts,
                                 List<Config> configs) throws AmbariException {
 
-      Map<String, Host> hostMap = new HashMap<String, Host>();
+      Map<Long, Host> hostMap = new HashMap<Long, Host>();
       Map<String, Config> configMap = new HashMap<String, Config>();
 
+      Long hostId = 1L;
       for (String hostname : hosts) {
         Host host = clusters.getHost(hostname);
-        hostMap.put(host.getHostName(), host);
+        hostMap.put(hostId, host);
+        hostId++;
       }
 
       for (Config config : configs) {
@@ -609,6 +613,7 @@ public class ConfigHelperTest {
           bind(RequestFactory.class).toInstance(createNiceMock(RequestFactory.class));
           bind(Clusters.class).toInstance(createNiceMock(ClustersImpl.class));
           bind(ClusterController.class).toInstance(clusterController);
+          bind(StackManagerFactory.class).toInstance(createNiceMock(StackManagerFactory.class));
         }
       });
 

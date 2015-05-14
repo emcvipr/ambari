@@ -37,7 +37,20 @@ export default function() {
         ['table2'],
         ['table3']
       ]
-    }
+    };
+
+    return [200, {"Content-Type": "application/json"}, JSON.stringify(tables)];
+  });
+
+  this.get(baseUrl + '/resources/ddl/database/db1/table', function (req) {
+    var tables = {
+      tables: [
+        ['table1'],
+        ['table2'],
+        ['table3']
+      ],
+      database: 'db1'
+    };
 
     return [200, {"Content-Type": "application/json"}, JSON.stringify(tables)];
   });
@@ -49,7 +62,7 @@ export default function() {
         ['column2', 'STRING'],
         ['column3', 'STRING']
       ]
-    }
+    };
 
     return [200, {"Content-Type": "application/json"}, JSON.stringify(columns)];
   });
@@ -86,7 +99,7 @@ export default function() {
         "fileResources":[],
         "statusDir":"job1",
         "id":1,
-        "title":"New Query",
+        "title":"Worksheet",
         "duration":2,
         "forcedContent":"",
         "owner":"admin",

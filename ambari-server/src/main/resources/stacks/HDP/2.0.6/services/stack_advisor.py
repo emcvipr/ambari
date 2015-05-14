@@ -88,23 +88,51 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       "AMBARI_METRICS": self.recommendAmsConfigurations
     }
 
-  def putProperty(self, config, configType):
-    if configType not in config or "properties" not in config[configType]:
-      config[configType] = {"properties": {}}
+  def putProperty(self, config, configType, services=None):
+    userConfigs = {}
+    changedConfigs = []
+    # if services parameter, prefer values, set by user
+    if services:
+      if 'configurations' in services.keys():
+        userConfigs = services['configurations']
+      if 'changed-configurations' in services.keys():
+        changedConfigs = services["changed-configurations"]
+
+    if configType not in config:
+      config[configType] = {}
+    if"properties" not in config[configType]:
+      config[configType]["properties"] = {}
     def appendProperty(key, value):
-      config[configType]["properties"][key] = str(value)
+      if {'type': configType, 'name': key} in changedConfigs:
+        config[configType]["properties"][key] = userConfigs[configType]['properties'][key]
+      else:
+        config[configType]["properties"][key] = str(value)
     return appendProperty
 
+  def putPropertyAttribute(self, config, configType):
+    if configType not in config:
+      config[configType] = {}
+    def appendPropertyAttribute(key, attribute, attributeValue):
+      if "property_attributes" not in config[configType]:
+        config[configType]["property_attributes"] = {}
+      if key not in config[configType]["property_attributes"]:
+        config[configType]["property_attributes"][key] = {}
+      config[configType]["property_attributes"][key][attribute] = attributeValue if isinstance(attributeValue, list) else str(attributeValue)
+    return appendPropertyAttribute
+
   def recommendYARNConfigurations(self, configurations, clusterData, services, hosts):
-    putYarnProperty = self.putProperty(configurations, "yarn-site")
-    putYarnEnvProperty = self.putProperty(configurations, "yarn-env")
-    putYarnProperty('yarn.nodemanager.resource.memory-mb', int(round(clusterData['containers'] * clusterData['ramPerContainer'])))
+    putYarnProperty = self.putProperty(configurations, "yarn-site", services)
+    putYarnEnvProperty = self.putProperty(configurations, "yarn-env", services)
+    nodemanagerMinRam = 1048576 # 1TB in mb
+    for nodemanager in self.getHostsWithComponent("YARN", "NODEMANAGER", services, hosts):
+      nodemanagerMinRam = min(nodemanager["Hosts"]["total_mem"]/1024, nodemanagerMinRam)
+    putYarnProperty('yarn.nodemanager.resource.memory-mb', int(round(min(clusterData['containers'] * clusterData['ramPerContainer'], nodemanagerMinRam))))
     putYarnProperty('yarn.scheduler.minimum-allocation-mb', int(clusterData['ramPerContainer']))
-    putYarnProperty('yarn.scheduler.maximum-allocation-mb', int(round(clusterData['containers'] * clusterData['ramPerContainer'])))
+    putYarnProperty('yarn.scheduler.maximum-allocation-mb', int(configurations["yarn-site"]["properties"]["yarn.nodemanager.resource.memory-mb"]))
     putYarnEnvProperty('min_user_id', self.get_system_min_uid())
 
   def recommendMapReduce2Configurations(self, configurations, clusterData, services, hosts):
-    putMapredProperty = self.putProperty(configurations, "mapred-site")
+    putMapredProperty = self.putProperty(configurations, "mapred-site", services)
     putMapredProperty('yarn.app.mapreduce.am.resource.mb', int(clusterData['amMemory']))
     putMapredProperty('yarn.app.mapreduce.am.command-opts', "-Xmx" + str(int(round(0.8 * clusterData['amMemory']))) + "m")
     putMapredProperty('mapreduce.map.memory.mb', clusterData['mapMemory'])
@@ -114,28 +142,30 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putMapredProperty('mapreduce.task.io.sort.mb', min(int(round(0.4 * clusterData['mapMemory'])), 1024))
  
   def recommendHDFSConfigurations(self, configurations, clusterData, services, hosts):
-    putHDFSProperty = self.putProperty(configurations, "hadoop-env")
+    putHDFSProperty = self.putProperty(configurations, "hadoop-env", services)
     putHDFSProperty('namenode_heapsize', max(int(clusterData['totalAvailableRam'] / 2), 1024))
-    putHDFSProperty = self.putProperty(configurations, "hadoop-env")
+    putHDFSProperty = self.putProperty(configurations, "hadoop-env", services)
     putHDFSProperty('namenode_opt_newsize', max(int(clusterData['totalAvailableRam'] / 8), 128))
-    putHDFSProperty = self.putProperty(configurations, "hadoop-env")
+    putHDFSProperty = self.putProperty(configurations, "hadoop-env", services)
     putHDFSProperty('namenode_opt_maxnewsize', max(int(clusterData['totalAvailableRam'] / 8), 256))
 
   def recommendHbaseEnvConfigurations(self, configurations, clusterData, services, hosts):
-    putHbaseProperty = self.putProperty(configurations, "hbase-env")
+    putHbaseProperty = self.putProperty(configurations, "hbase-env", services)
     putHbaseProperty('hbase_regionserver_heapsize', int(clusterData['hbaseRam']) * 1024)
     putHbaseProperty('hbase_master_heapsize', int(clusterData['hbaseRam']) * 1024)
 
   def recommendAmsConfigurations(self, configurations, clusterData, services, hosts):
+    putAmsEnvProperty = self.putProperty(configurations, "ams-env")
     putAmsHbaseSiteProperty = self.putProperty(configurations, "ams-hbase-site")
     putTimelineServiceProperty = self.putProperty(configurations, "ams-site")
     putHbaseEnvProperty = self.putProperty(configurations, "ams-hbase-env")
 
     amsCollectorHosts = self.getComponentHostNames(services, "AMBARI_METRICS", "METRICS_COLLECTOR")
     putHbaseEnvProperty("hbase_regionserver_heapsize", "1024m")
+    # blockCache = 0.3, memstore = 0.35, phoenix-server = 0.15, phoenix-client = 0.25
     putAmsHbaseSiteProperty("hfile.block.cache.size", 0.3)
-    putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.upperLimit", 0.5)
-    putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.lowerLimit", 0.4)
+    putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.upperLimit", 0.35)
+    putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.lowerLimit", 0.3)
     putTimelineServiceProperty("timeline.metrics.host.aggregator.ttl", 86400)
 
     # TODO recommend configuration for multiple AMBARI_METRICS collectors
@@ -143,16 +173,70 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       pass
     else:
       totalHostsCount = len(hosts["items"])
-      if totalHostsCount > 400:
-        putHbaseEnvProperty("hbase_master_heapsize", "12288m")
-      elif totalHostsCount > 100:
-        putHbaseEnvProperty("hbase_master_heapsize", "6144m")
-      elif totalHostsCount > 50:
-        putHbaseEnvProperty("hbase_master_heapsize", "2048m")
+      # blockCache = 0.3, memstore = 0.3, phoenix-server = 0.2, phoenix-client = 0.3
+      if totalHostsCount >= 400:
+        putHbaseEnvProperty("hbase_regionserver_heapsize", "12288m")
+        putAmsEnvProperty("metrics_collector_heapsize", "8192m")
+        putAmsHbaseSiteProperty("hbase.regionserver.handler.count", 60)
+        putAmsHbaseSiteProperty("hbase.regionserver.hlog.blocksize", 134217728)
+        putAmsHbaseSiteProperty("hbase.regionserver.maxlogs", 64)
+        putAmsHbaseSiteProperty("hbase.hregion.memstore.flush.size", 268435456)
+        putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.upperLimit", 0.3)
+        putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.lowerLimit", 0.25)
+        putAmsHbaseSiteProperty("phoenix.query.maxGlobalMemoryPercentage", 20)
+        putTimelineServiceProperty("phoenix.query.maxGlobalMemoryPercentage", 30)
+        putAmsHbaseSiteProperty("hbase_master_xmn_size", "512m")
+        putAmsHbaseSiteProperty("regionserver_xmn_size", "512m")
+      elif totalHostsCount >= 100:
+        putHbaseEnvProperty("hbase_regionserver_heapsize", "6144m")
+        putAmsEnvProperty("metrics_collector_heapsize", "4096m")
+        putAmsHbaseSiteProperty("hbase.regionserver.handler.count", 60)
+        putAmsHbaseSiteProperty("hbase.regionserver.hlog.blocksize", 134217728)
+        putAmsHbaseSiteProperty("hbase.regionserver.maxlogs", 64)
+        putAmsHbaseSiteProperty("hbase.hregion.memstore.flush.size", 268435456)
+        putAmsHbaseSiteProperty("hbase_master_xmn_size", "512m")
+      elif totalHostsCount >= 50:
+        putHbaseEnvProperty("hbase_regionserver_heapsize", "2048m")
+        putHbaseEnvProperty("hbase_master_heapsize", "512m")
+        putAmsEnvProperty("metrics_collector_heapsize", "2048m")
+        putAmsHbaseSiteProperty("hbase_master_xmn_size", "256m")
       else:
-        putHbaseEnvProperty("hbase_master_heapsize", "1024m")
+        # Embedded mode heap size : master + regionserver
+        putHbaseEnvProperty("hbase_regionserver_heapsize", "512m")
+        putHbaseEnvProperty("hbase_master_heapsize", "512m")
+        putAmsEnvProperty("metrics_collector_heapsize", "512m")
+        putAmsHbaseSiteProperty("hbase_master_xmn_size", "128m")
+      pass
+    pass
 
-  def getConfigurationClusterSummary(self, servicesList, hosts, components):
+
+
+  def getHostsWithComponent(self, serviceName, componentName, services, hosts):
+    if services is not None and hosts is not None and serviceName in [service["StackServices"]["service_name"] for service in services["services"]]:
+      service = [serviceEntry for serviceEntry in services["services"] if serviceEntry["StackServices"]["service_name"] == serviceName][0]
+      components = [componentEntry for componentEntry in service["components"] if componentEntry["StackServiceComponents"]["component_name"] == componentName]
+      if (len(components) > 0 and len(components[0]["StackServiceComponents"]["hostnames"]) > 0):
+        componentHostnames = components[0]["StackServiceComponents"]["hostnames"]
+        componentHosts = [host for host in hosts["items"] if host["Hosts"]["host_name"] in componentHostnames]
+        return componentHosts
+    return []
+
+  def getHostWithComponent(self, serviceName, componentName, services, hosts):
+    componentHosts = self.getHostsWithComponent(serviceName, componentName, services, hosts)
+    if (len(componentHosts) > 0):
+      return componentHosts[0]
+    return None
+
+  def getHostComponentsByCategories(self, hostname, categories, services, hosts):
+    components = []
+    if services is not None and hosts is not None:
+      for service in services["services"]:
+          components.extend([componentEntry for componentEntry in service["components"]
+                              if componentEntry["StackServiceComponents"]["component_category"] in categories
+                              and hostname in componentEntry["StackServiceComponents"]["hostnames"]])
+    return components
+
+  def getConfigurationClusterSummary(self, servicesList, hosts, components, services):
 
     hBaseInstalled = False
     if 'HBASE' in servicesList:
@@ -167,7 +251,11 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     }
 
     if len(hosts["items"]) > 0:
-      host = hosts["items"][0]["Hosts"]
+      nodeManagerHost = self.getHostWithComponent("YARN", "NODEMANAGER", services, hosts)
+      if nodeManagerHost is not None:
+        host = nodeManagerHost["Hosts"]
+      else:
+        host = hosts["items"][0]["Hosts"]
       cluster["cpu"] = host["cpu_count"]
       cluster["disk"] = len(host["disk_info"])
       cluster["ram"] = int(host["total_mem"] / (1024 * 1024))
@@ -241,14 +329,47 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     for service in services["services"]:
       serviceName = service["StackServices"]["service_name"]
       validator = self.validateServiceConfigurations(serviceName)
-      if validator is not  None:
+      if validator is not None:
         for siteName, method in validator.items():
           if siteName in recommendedDefaults:
             siteProperties = getSiteProperties(configurations, siteName)
             if siteProperties is not None:
-              resultItems = method(siteProperties, recommendedDefaults[siteName]["properties"], configurations, services, hosts)
+              siteRecommendations = recommendedDefaults[siteName]["properties"]
+              print("SiteName: %s, method: %s\n" % (siteName, method.__name__))
+              print("Site properties: %s\n" % str(siteProperties))
+              print("Recommendations: %s\n********\n" % str(siteRecommendations))
+              resultItems = method(siteProperties, siteRecommendations, configurations, services, hosts)
               items.extend(resultItems)
+    clusterWideItems = self.validateClusterConfigurations(configurations, services, hosts)
+    items.extend(clusterWideItems)
+    self.validateMinMax(items, recommendedDefaults, configurations)
     return items
+
+  def validateClusterConfigurations(self, configurations, services, hosts):
+    validationItems = []
+    hostComponents = {}
+    failureMessage = ""
+
+    for service in services["services"]:
+      for component in service["components"]:
+        if component["StackServiceComponents"]["hostnames"] is not None:
+          for hostName in component["StackServiceComponents"]["hostnames"]:
+            if hostName not in hostComponents.keys():
+              hostComponents[hostName] = []
+            hostComponents[hostName].append(component["StackServiceComponents"]["component_name"])
+
+    for host in hosts["items"]:
+      # Not enough physical memory
+      requiredMemory = getMemorySizeRequired(hostComponents[host["Hosts"]["host_name"]], configurations)
+      if host["Hosts"]["total_mem"] * 1024 < requiredMemory:  # in bytes
+        failureMessage += "Not enough physical RAM on the host {0}. " \
+                          "At least {1} MB is recommended based on components assigned.\n" \
+          .format(host["Hosts"]["host_name"], requiredMemory/1048576)  # MB
+    if failureMessage:
+      notEnoughMemoryItem = self.getWarnItem(failureMessage)
+      validationItems.extend([{"config-name": "", "item": notEnoughMemoryItem}])
+
+    return self.toConfigurationValidationProblems(validationItems, "")
 
   def getServiceConfigurationValidators(self):
     return {
@@ -258,8 +379,37 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       "HBASE": {"hbase-env": self.validateHbaseEnvConfigurations},
       "AMBARI_METRICS": {"ams-hbase-site": self.validateAmsHbaseSiteConfigurations,
               "ams-hbase-env": self.validateAmsHbaseEnvConfigurations,
-              "ams-site": self.validateAmsSiteConfigurations},
+              "ams-site": self.validateAmsSiteConfigurations}
     }
+
+  def validateMinMax(self, items, recommendedDefaults, configurations):
+
+    # required for casting to the proper numeric type before comparison
+    def convertToNumber(number):
+      try:
+        return int(number)
+      except ValueError:
+        return float(number)
+
+    for configName in configurations:
+      validationItems = []
+      if configName in recommendedDefaults and "property_attributes" in recommendedDefaults[configName]:
+        for propertyName in recommendedDefaults[configName]["property_attributes"]:
+          if propertyName in configurations[configName]["properties"]:
+            if "maximum" in recommendedDefaults[configName]["property_attributes"][propertyName] and \
+                propertyName in recommendedDefaults[configName]["properties"]:
+              userValue = convertToNumber(configurations[configName]["properties"][propertyName])
+              maxValue = convertToNumber(recommendedDefaults[configName]["property_attributes"][propertyName]["maximum"])
+              if userValue > maxValue:
+                validationItems.extend([{"config-name": propertyName, "item": self.getWarnItem("Value is greater than the recommended maximum of {0} ".format(maxValue))}])
+            if "minimum" in recommendedDefaults[configName]["property_attributes"][propertyName] and \
+                    propertyName in recommendedDefaults[configName]["properties"]:
+              userValue = convertToNumber(configurations[configName]["properties"][propertyName])
+              minValue = convertToNumber(recommendedDefaults[configName]["property_attributes"][propertyName]["minimum"])
+              if userValue < minValue:
+                validationItems.extend([{"config-name": propertyName, "item": self.getWarnItem("Value is less than the recommended minimum of {0} ".format(minValue))}])
+      items.extend(self.toConfigurationValidationProblems(validationItems, configName))
+    pass
 
   def validateAmsSiteConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
     validationItems = []
@@ -322,29 +472,49 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     ams_env = getSiteProperties(configurations, "ams-env")
     logDirItem = self.validatorEqualsPropertyItem(properties, "hbase_log_dir",
                                                   ams_env, "metrics_collector_log_dir")
+    masterHostItem = None
 
     if masterItem is None:
-      hbase_master_heapsize = formatXmxSizeToBytes(properties["hbase_master_heapsize"])
+      hostMasterComponents = {}
 
-      # TODO Add AMBARI_METRICS Collector Xmx property to ams-env
-      # Collector 512m + HBASE Master heapsize
-      # For standalone HBase, master's heap memory is used by regionserver as well
-      requiredMemory = 536870912 + hbase_master_heapsize
+      for service in services["services"]:
+        for component in service["components"]:
+          if component["StackServiceComponents"]["hostnames"] is not None:
+            for hostName in component["StackServiceComponents"]["hostnames"]:
+              if self.isMasterComponent(component):
+                if hostName not in hostMasterComponents.keys():
+                  hostMasterComponents[hostName] = []
+                hostMasterComponents[hostName].append(component["StackServiceComponents"]["component_name"])
 
       amsCollectorHosts = self.getComponentHostNames(services, "AMBARI_METRICS", "METRICS_COLLECTOR")
       for collectorHostName in amsCollectorHosts:
         for host in hosts["items"]:
           if host["Hosts"]["host_name"] == collectorHostName:
-            if host["Hosts"]["total_mem"] * 1024 < requiredMemory:  # in bytes
-              message = "Not enough total RAM on the host {0}, " \
-                        "at least {1} MB required" \
-                .format(collectorHostName, requiredMemory/1048576)  # MB
-              regionServerItem = self.getWarnItem(message)
-              masterItem = self.getWarnItem(message)
-              break
+            # AMS Collector co-hosted with other master components in bigger clusters
+            if len(hosts['items']) > 31 and \
+              len(hostMasterComponents[collectorHostName]) > 2 and \
+              host["Hosts"]["total_mem"] < 32*1024*1024: # <32 Gb(total_mem in k)
+              masterHostMessage = "Host {0} is used by multiple master components ({1}). " \
+                                  "It is recommended to use a separate host for the " \
+                                  "Ambari Metrics Collector component and ensure " \
+                                  "the host has sufficient memory available."
+
+              masterHostItem = self.getWarnItem(
+                masterHostMessage.format(
+                  collectorHostName, str(", ".join(hostMasterComponents[collectorHostName]))))
+      pass
+
+    # Check RS memory in distributed mode since we set default as 512m
+    hbase_site = getSiteProperties(configurations, "ams-hbase-site")
+    hbase_rootdir = hbase_site.get("hbase.rootdir")
+    regionServerMinMemItem = None
+    if hbase_rootdir.startswith("hdfs://"):
+      regionServerMinMemItem = self.validateMinMemorySetting(properties, 1024, 'hbase_regionserver_heapsize')
 
     validationItems = [{"config-name": "hbase_regionserver_heapsize", "item": regionServerItem},
+                       {"config-name": "hbase_regionserver_heapsize", "item": regionServerMinMemItem},
                        {"config-name": "hbase_master_heapsize", "item": masterItem},
+                       {"config-name": "hbase_master_heapsize", "item": masterHostItem},
                        {"config-name": "hbase_log_dir", "item": logDirItem}]
     return self.toConfigurationValidationProblems(validationItems, "ams-hbase-env")
 
@@ -391,6 +561,11 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     return None
 
   def validatorLessThenDefaultValue(self, properties, recommendedDefaults, propertyName):
+    if propertyName not in recommendedDefaults:
+      # If a property name exists in say hbase-env and hbase-site (which is allowed), then it will exist in the
+      # "properties" dictionary, but not necessarily in the "recommendedDefaults" dictionary". In this case, ignore it.
+      return None
+
     if not propertyName in properties:
       return self.getErrorItem("Value should be set")
     value = to_number(properties[propertyName])
@@ -421,6 +596,27 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
              "for properties {0} and {1}".format(propertyName1, propertyName2))
 
     return None
+
+  def validateMinMemorySetting(self, properties, defaultValue, propertyName):
+    if not propertyName in properties:
+      return self.getErrorItem("Value should be set")
+    if defaultValue is None:
+      return self.getErrorItem("Config's default value can't be null or undefined")
+
+    value = properties[propertyName]
+    if value is None:
+      return self.getErrorItem("Value can't be null or undefined")
+    try:
+      valueInt = int(value.strip()[:-1])
+      # TODO: generify for other use cases
+      defaultValueInt = int(str(defaultValue).strip())
+      if valueInt < defaultValueInt:
+        return self.getWarnItem("Value is less than the minimum recommended default of -Xmx" + str(defaultValue))
+    except:
+      return None
+
+    return None
+
 
   def validateXmxValue(self, properties, recommendedDefaults, propertyName):
     if not propertyName in properties:
@@ -453,7 +649,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
                         {"config-name": 'yarn.scheduler.minimum-allocation-mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'yarn.scheduler.minimum-allocation-mb')},
                         {"config-name": 'yarn.scheduler.maximum-allocation-mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'yarn.scheduler.maximum-allocation-mb')} ]
     return self.toConfigurationValidationProblems(validationItems, "yarn-site")
- 
+
   def validateHbaseEnvConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
     validationItems = [ {"config-name": 'hbase_regionserver_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'hbase_regionserver_heapsize')},
                         {"config-name": 'hbase_master_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'hbase_master_heapsize')} ]
@@ -494,6 +690,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       'HIVE_SERVER': {6: 1, 31: 2, "else": 4},
       'HIVE_METASTORE': {6: 1, 31: 2, "else": 4},
       'WEBHCAT_SERVER': {6: 1, 31: 2, "else": 4},
+      'METRICS_COLLECTOR': {"else": 2},
       }
 
   def get_system_min_uid(self):
@@ -618,3 +815,65 @@ def getMountPointForDir(dir, mountPoints):
           bestMountFound = mountPoint
 
   return bestMountFound
+
+def getHeapsizeProperties():
+  return { "NAMENODE": [{"config-name": "hadoop-env",
+                         "property": "namenode_heapsize",
+                         "default": "1024m"}],
+           "DATANODE": [{"config-name": "hadoop-env",
+                         "property": "dtnode_heapsize",
+                         "default": "1024m"}],
+           "REGIONSERVER": [{"config-name": "hbase-env",
+                             "property": "hbase_regionserver_heapsize",
+                             "default": "1024m"}],
+           "HBASE_MASTER": [{"config-name": "hbase-env",
+                             "property": "hbase_master_heapsize",
+                             "default": "1024m"}],
+           "HIVE_CLIENT": [{"config-name": "hive-site",
+                            "property": "hive.heapsize",
+                            "default": "1024m"}],
+           "HISTORYSERVER": [{"config-name": "mapred-env",
+                              "property": "jobhistory_heapsize",
+                              "default": "1024m"}],
+           "OOZIE_SERVER": [{"config-name": "oozie-env",
+                             "property": "oozie_heapsize",
+                             "default": "1024m"}],
+           "RESOURCEMANAGER": [{"config-name": "yarn-env",
+                                "property": "resourcemanager_heapsize",
+                                "default": "1024m"}],
+           "NODEMANAGER": [{"config-name": "yarn-env",
+                            "property": "nodemanager_heapsize",
+                            "default": "1024m"}],
+           "APP_TIMELINE_SERVER": [{"config-name": "yarn-env",
+                                    "property": "apptimelineserver_heapsize",
+                                    "default": "1024m"}],
+           "ZOOKEEPER_SERVER": [{"config-name": "zookeeper-env",
+                                 "property": "zookeeper_heapsize",
+                                 "default": "1024m"}],
+           "METRICS_COLLECTOR": [{"config-name": "ams-hbase-env",
+                                   "property": "hbase_master_heapsize",
+                                   "default": "1024m"},
+                                 {"config-name": "ams-env",
+                                   "property": "metrics_collector_heapsize",
+                                   "default": "512m"}],
+           }
+
+def getMemorySizeRequired(components, configurations):
+  totalMemoryRequired = 512*1024*1024 # 512Mb for OS needs
+  for component in components:
+    if component in getHeapsizeProperties().keys():
+      heapSizeProperties = getHeapsizeProperties()[component]
+      for heapSizeProperty in heapSizeProperties:
+        try:
+          properties = configurations[heapSizeProperty["config-name"]]["properties"]
+          heapsize = properties[heapSizeProperty["property"]]
+        except KeyError:
+          heapsize = heapSizeProperty["default"]
+
+        # Assume Mb if no modifier
+        if len(heapsize) > 1 and heapsize[-1] in '0123456789':
+          heapsize = str(heapsize) + "m"
+
+        totalMemoryRequired += formatXmxSizeToBytes(heapsize)
+
+  return totalMemoryRequired

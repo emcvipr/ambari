@@ -251,7 +251,7 @@
           </packages>
         </osSpecific>
         <osSpecific>
-          <osFamily>redhat5,redhat6,suse11</osFamily>
+          <osFamily>redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>mysql</name>
@@ -259,7 +259,7 @@
           </packages>
         </osSpecific>
         <osSpecific>
-          <osFamily>redhat5,redhat6,ubuntu12</osFamily>
+          <osFamily>redhat6,debian7,ubuntu12,ubuntu14</osFamily>
           <packages>
             <package>
               <name>mysql-server</name>
@@ -279,7 +279,7 @@
       <commandScript>
         <script>scripts/service_check.py</script>
         <scriptType>PYTHON</scriptType>
-        <timeout>300</timeout>
+        <timeout>120</timeout>
       </commandScript>
 
       <requiredServices>

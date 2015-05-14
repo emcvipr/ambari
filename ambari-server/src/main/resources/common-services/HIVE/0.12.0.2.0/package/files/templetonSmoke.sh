@@ -22,11 +22,13 @@
 
 export ttonhost=$1
 export smoke_test_user=$2
-export smoke_user_keytab=$3
-export security_enabled=$4
-export kinit_path_local=$5
-export smokeuser_principal=$6
-export ttonurl="http://${ttonhost}:50111/templeton/v1"
+export templeton_port=$3
+export ttonTestScript=$4
+export smoke_user_keytab=$5
+export security_enabled=$6
+export kinit_path_local=$7
+export smokeuser_principal=$8
+export ttonurl="http://${ttonhost}:${templeton_port}/templeton/v1"
 
 if [[ $security_enabled == "true" ]]; then
   kinitcmd="${kinit_path_local}  -kt ${smoke_user_keytab} ${smokeuser_principal}; "
@@ -66,20 +68,7 @@ if [[ $security_enabled == "true" ]]; then
 fi
 
 #try pig query
-outname=${smoke_test_user}.`date +"%M%d%y"`.$$;
-ttonTestOutput="/tmp/idtest.${outname}.out";
-ttonTestInput="/tmp/idtest.${outname}.in";
 ttonTestScript="idtest.${outname}.pig"
-
-echo "A = load '$ttonTestInput' using PigStorage(':');"  > /tmp/$ttonTestScript
-echo "B = foreach A generate \$0 as id; " >> /tmp/$ttonTestScript
-echo "store B into '$ttonTestOutput';" >> /tmp/$ttonTestScript
-
-#copy pig script to hdfs
-/var/lib/ambari-agent/ambari-sudo.sh su ${smoke_test_user} -s /bin/bash - -c "hadoop dfs -copyFromLocal /tmp/$ttonTestScript /tmp/$ttonTestScript"
-
-#copy input file to hdfs
-/var/lib/ambari-agent/ambari-sudo.sh su ${smoke_test_user} -s /bin/bash - -c "hadoop dfs -copyFromLocal /etc/passwd $ttonTestInput"
 
 #create, copy post args file
 echo -n "user.name=${smoke_test_user}&file=/tmp/$ttonTestScript" > /tmp/pig_post.txt

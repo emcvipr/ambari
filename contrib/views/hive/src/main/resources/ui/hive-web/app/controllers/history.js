@@ -23,8 +23,8 @@ import constants from 'hive/utils/constants';
 export default Ember.ArrayController.extend(FilterableMixin, {
   itemController: constants.namingConventions.job,
 
-  sortAscending: true,
-  sortProperties: ['dateSubmitted'],
+  sortAscending: false,
+  sortProperties: ['dateSubmittedTimestamp'],
 
   init: function () {
     var oneMonthAgo = new Date();
@@ -40,12 +40,11 @@ export default Ember.ArrayController.extend(FilterableMixin, {
       }),
       Ember.Object.create({
         caption: 'columns.status',
-        property: 'status',
-        classBinding: 'status'
+        property: 'status'
       }),
       Ember.Object.create({
         caption: 'columns.date',
-        property: 'dateSubmitted',
+        property: 'dateSubmittedTimestamp',
         dateRange: Ember.Object.create({
           min: oneMonthAgo,
           max: new Date()
@@ -143,6 +142,31 @@ export default Ember.ArrayController.extend(FilterableMixin, {
       job.destroyRecord().then(function () {
         self.store.find(constants.namingConventions.job, id);
       });
+    },
+
+    clearFilters: function () {
+      var columns = this.get('columns');
+
+      if (columns) {
+        columns.forEach(function (column) {
+          var filterValue = column.get('filterValue');
+          var rangeFilter;
+
+          if (filterValue) {
+            if (typeof filterValue === 'string') {
+              column.set('filterValue');
+            } else {
+              rangeFilter = column.get('numberRange') || column.get('dateRange');
+
+              rangeFilter.set('from', rangeFilter.get('min'));
+              rangeFilter.set('to', rangeFilter.get('max'));
+            }
+          }
+        });
+      }
+
+      //call clear filters from Filterable mixin
+      this.clearFilters();
     }
   }
 });

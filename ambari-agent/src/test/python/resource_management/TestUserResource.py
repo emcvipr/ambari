@@ -17,7 +17,7 @@ limitations under the License.
 '''
 
 from unittest import TestCase
-from mock.mock import patch, MagicMock
+from mock.mock import patch, MagicMock, PropertyMock
 
 from resource_management.core import Environment, Fail
 from resource_management.core.system import System
@@ -44,7 +44,7 @@ class TestUserResource(TestCase):
     with Environment('/') as env:
       user = User("mapred", action = "create", shell = "/bin/bash")
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E useradd -m -s /bin/bash mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, env={'PATH': '/bin'}, bufsize=1, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E useradd -m -s /bin/bash mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, env={'PATH': '/bin'}, bufsize=1, cwd=None, close_fds=True)
     self.assertEqual(popen_mock.call_count, 1)
 
   @patch.object(subprocess, "Popen")
@@ -59,7 +59,7 @@ class TestUserResource(TestCase):
     with Environment('/') as env:
       user = User("mapred", action = "create", shell = "/bin/bash")
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/bash mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/bash mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     self.assertEqual(popen_mock.call_count, 1)
 
   @patch.object(subprocess, "Popen")
@@ -74,7 +74,7 @@ class TestUserResource(TestCase):
     with Environment('/') as env:
       user = User("mapred", action = "remove", shell = "/bin/bash")
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', 'userdel mapred'], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', 'userdel mapred'], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     self.assertEqual(popen_mock.call_count, 1)
 
   @patch.object(subprocess, "Popen")
@@ -90,7 +90,7 @@ class TestUserResource(TestCase):
       user = User("mapred", action = "create", comment = "testComment", 
           shell = "/bin/bash")
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -c testComment -s /bin/bash mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -c testComment -s /bin/bash mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     self.assertEqual(popen_mock.call_count, 1)
 
   @patch.object(subprocess, "Popen")
@@ -106,7 +106,7 @@ class TestUserResource(TestCase):
       user = User("mapred", action = "create", home = "/test/home", 
           shell = "/bin/bash")
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/bash -d /test/home mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/bash -d /test/home mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     self.assertEqual(popen_mock.call_count, 1)
 
   @patch.object(subprocess, "Popen")
@@ -122,7 +122,7 @@ class TestUserResource(TestCase):
       user = User("mapred", action = "create", password = "secure", 
           shell = "/bin/bash")    
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/bash -p secure mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/bash -p secure mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     self.assertEqual(popen_mock.call_count, 1)
 
   @patch.object(subprocess, "Popen")
@@ -137,7 +137,7 @@ class TestUserResource(TestCase):
     with Environment('/') as env:
       user = User("mapred", action = "create", shell = "/bin/sh")
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/sh mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/sh mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     self.assertEqual(popen_mock.call_count, 1)
 
   @patch.object(subprocess, "Popen")
@@ -152,7 +152,7 @@ class TestUserResource(TestCase):
     with Environment('/') as env:
       user = User("mapred", action = "create", uid = "1", shell = "/bin/bash")
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/bash -u 1 mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/bash -u 1 mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     self.assertEqual(popen_mock.call_count, 1)
 
   @patch.object(subprocess, "Popen")
@@ -167,14 +167,16 @@ class TestUserResource(TestCase):
     with Environment('/') as env:
       user = User("mapred", action = "create", gid = "1", shell = "/bin/bash")
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/bash -g 1 mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -s /bin/bash -g 1 mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     self.assertEqual(popen_mock.call_count, 1)
 
+  @patch('resource_management.core.providers.accounts.UserProvider.user_groups', new_callable=PropertyMock)
   @patch.object(subprocess, "Popen")
   @patch.object(pwd, "getpwnam")
-  def test_attribute_groups(self, getpwnam_mock, popen_mock):
+  def test_attribute_groups(self, getpwnam_mock, popen_mock, user_groups_mock):
     subproc_mock = MagicMock()
     subproc_mock.returncode = 0
+    user_groups_mock.return_value = ['hadoop']
     subproc_mock.stdout.readline = MagicMock(side_effect = ['OK'])
     popen_mock.return_value = subproc_mock
     getpwnam_mock.return_value = 1
@@ -183,7 +185,7 @@ class TestUserResource(TestCase):
       user = User("mapred", action = "create", groups = ['1','2','3'], 
           shell = "/bin/bash")
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E usermod -G 1,2,3 -s /bin/bash mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', 'ambari-sudo.sh  PATH=/bin -H -E usermod -G 1,2,3,hadoop -s /bin/bash mapred'], shell=False, preexec_fn=None, env={'PATH': '/bin'}, close_fds=True, stdout=5, stderr=-2, bufsize=1, cwd=None)
     self.assertEqual(popen_mock.call_count, 1)
 
   @patch.object(subprocess, "Popen")
@@ -197,6 +199,6 @@ class TestUserResource(TestCase):
     with Environment('/') as env:
       user = User("mapred", action = "create")
 
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E useradd -m mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E useradd -m mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     self.assertEqual(popen_mock.call_count, 1)
 

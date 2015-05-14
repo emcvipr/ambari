@@ -36,6 +36,7 @@ import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
 import org.apache.ambari.server.agent.ActionQueue;
 import org.apache.ambari.server.agent.CommandReport;
+import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.api.services.BaseRequest;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.ExecuteActionRequest;
@@ -45,12 +46,12 @@ import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.DBAccessorImpl;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
-import org.apache.ambari.server.orm.dao.DaoUtils;
 import org.apache.ambari.server.orm.dao.ExecutionCommandDAO;
 import org.apache.ambari.server.orm.dao.HostRoleCommandDAO;
 import org.apache.ambari.server.orm.entities.HostRoleCommandEntity;
 import org.apache.ambari.server.serveraction.MockServerAction;
 import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostStartEvent;
 import org.apache.ambari.server.utils.StageUtils;
 import org.junit.After;
@@ -63,7 +64,6 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
-import com.google.inject.Provider;
 import com.google.inject.Singleton;
 import com.google.inject.persist.PersistService;
 import com.google.inject.persist.UnitOfWork;
@@ -95,17 +95,20 @@ public class TestActionDBAccessorImpl {
   private HostRoleCommandDAO hostRoleCommandDAO;
 
   @Inject
-  private Provider<EntityManager> entityManagerProvider;
+  private StageFactory stageFactory;
 
-  @Inject
-  private DaoUtils daoUtils;
 
   @Before
   public void setup() throws AmbariException {
     InMemoryDefaultTestModule defaultTestModule = new InMemoryDefaultTestModule();
     injector  = Guice.createInjector(Modules.override(defaultTestModule)
       .with(new TestActionDBAccessorModule()));
+
     injector.getInstance(GuiceJpaInitializer.class);
+
+    // initialize AmbariMetaInfo so that the stacks are populated into the DB
+    injector.getInstance(AmbariMetaInfo.class);
+
     injector.injectMembers(this);
 
     // Add this host's name since it is needed for server-side actions.
@@ -114,11 +117,14 @@ public class TestActionDBAccessorImpl {
 
     clusters.addHost(hostName);
     clusters.getHost(hostName).persist();
-    clusters.addCluster(clusterName);
+
+    StackId stackId = new StackId("HDP-0.1");
+    clusters.addCluster(clusterName, stackId);
     db = injector.getInstance(ActionDBAccessorImpl.class);
 
     am = new ActionManager(5000, 1200000, new ActionQueue(), clusters, db,
         new HostsMap((String) null), injector.getInstance(UnitOfWork.class),
+
 		injector.getInstance(RequestFactory.class), null, null);
   }
 
@@ -322,12 +328,14 @@ public class TestActionDBAccessorImpl {
         Stage stage1 = db.getStage("23-31");
         stage1.setHostRoleStatus(hostName, Role.HBASE_MASTER.toString(), HostRoleStatus.COMPLETED);
         db.hostRoleScheduled(stage1, hostName, Role.HBASE_MASTER.toString());
+        injector.getInstance(EntityManager.class).clear();
       }
     };
 
     thread.start();
     thread.join();
 
+    injector.getInstance(EntityManager.class).clear();
     entities = hostRoleCommandDAO.findByHostRole(hostName, requestId, stageId, Role.HBASE_MASTER.toString());
     assertEquals("Concurrent update failed", HostRoleStatus.COMPLETED, entities.get(0).getStatus());
   }
@@ -361,12 +369,14 @@ public class TestActionDBAccessorImpl {
         Stage stage1 = db.getStage("23-31");
         stage1.setHostRoleStatus(hostName, actionName, HostRoleStatus.COMPLETED);
         db.hostRoleScheduled(stage1, hostName, actionName);
+        injector.getInstance(EntityManager.class).clear();
       }
     };
 
     thread.start();
     thread.join();
 
+    injector.getInstance(EntityManager.class).clear();
     entities = hostRoleCommandDAO.findByHostRole(hostName, requestId, stageId, actionName);
     assertEquals("Concurrent update failed", HostRoleStatus.COMPLETED, entities.get(0).getStatus());
   }
@@ -401,12 +411,14 @@ public class TestActionDBAccessorImpl {
         Stage stage1 = db.getStage("23-31");
         stage1.setHostRoleStatus(serverHostName, roleName, HostRoleStatus.COMPLETED);
         db.hostRoleScheduled(stage1, serverHostName, roleName);
+        injector.getInstance(EntityManager.class).clear();
       }
     };
 
     thread.start();
     thread.join();
 
+    injector.getInstance(EntityManager.class).clear();
     entities = hostRoleCommandDAO.findByHostRole(serverHostName, requestId, stageId, roleName);
     assertEquals("Concurrent update failed", HostRoleStatus.COMPLETED, entities.get(0).getStatus());
   }
@@ -463,7 +475,7 @@ public class TestActionDBAccessorImpl {
   public void testGetRequestsByStatusWithParams() throws AmbariException {
     List<Long> ids = new ArrayList<Long>();
 
-    for (long l = 0; l < 10; l++) {
+    for (long l = 1; l <= 10; l++) {
       ids.add(l);
     }
 
@@ -498,7 +510,7 @@ public class TestActionDBAccessorImpl {
 
   @Test
   public void testAbortRequest() throws AmbariException {
-    Stage s = new Stage(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
+    Stage s = stageFactory.createNew(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
       "clusterHostInfo", "commandParamsStage", "hostParamsStage");
     s.setStageId(stageId);
 
@@ -585,7 +597,7 @@ public class TestActionDBAccessorImpl {
 
   @Test
   public void testGet1000TasksFromOracleDB() throws Exception {
-    Stage s = new Stage(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
+    Stage s = stageFactory.createNew(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
       "clusterHostInfo", "commandParamsStage", "hostParamsStage");
     s.setStageId(stageId);
     for (int i = 1000; i < 2002; i++) {
@@ -647,7 +659,7 @@ public class TestActionDBAccessorImpl {
   }
 
   private Stage createStubStage(String hostname, long requestId, long stageId) {
-    Stage s = new Stage(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
+    Stage s = stageFactory.createNew(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
       "clusterHostInfo", "commandParamsStage", "hostParamsStage");
     s.setStageId(stageId);
     s.addHostRoleExecutionCommand(hostname, Role.HBASE_MASTER,
@@ -665,7 +677,7 @@ public class TestActionDBAccessorImpl {
 
   private void populateActionDBWithCustomAction(ActionDBAccessor db, String hostname,
                                 long requestId, long stageId) throws AmbariException {
-    Stage s = new Stage(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
+    Stage s = stageFactory.createNew(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
       "", "commandParamsStage", "hostParamsStage");
     s.setStageId(stageId);
     s.addHostRoleExecutionCommand(hostname, Role.valueOf(actionName),
@@ -685,7 +697,7 @@ public class TestActionDBAccessorImpl {
 
   private void populateActionDBWithServerAction(ActionDBAccessor db, String hostname,
                                                 long requestId, long stageId) throws AmbariException {
-    Stage s = new Stage(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
+    Stage s = stageFactory.createNew(requestId, "/a/b", "cluster1", 1L, "action db accessor test",
         "", "commandParamsStage", "hostParamsStage");
     s.setStageId(stageId);
     s.addServerActionCommand(serverActionName, Role.AMBARI_SERVER_ACTION, RoleCommand.ACTIONEXECUTE, clusterName, null, null, "command details", null, 300, false);

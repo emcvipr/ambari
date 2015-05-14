@@ -21,15 +21,16 @@ import FilterableMixin from 'hive/mixins/filterable';
 import constants from 'hive/utils/constants';
 
 export default Ember.ArrayController.extend(FilterableMixin, {
-  needs: [ constants.namingConventions.routes.history ],
+  needs: [ constants.namingConventions.routes.history,
+           constants.namingConventions.openQueries ],
+
+  history: Ember.computed.alias('controllers.' + constants.namingConventions.routes.history),
+  openQueries: Ember.computed.alias('controllers.' + constants.namingConventions.openQueries),
 
   sortAscending: true,
   sortProperties: [],
 
   init: function () {
-    var oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-
     this._super();
 
     this.set('columns', Ember.ArrayProxy.create({ content: Ember.A([
@@ -63,17 +64,16 @@ export default Ember.ArrayController.extend(FilterableMixin, {
   ],
 
   model: function () {
-    var queries = this.get('queries');
-    queries = queries ? queries.filterBy('isNew', false) : queries;
-
-    return this.filter(queries);
+    return this.filter(this.get('queries'));
   }.property('queries', 'filters.@each'),
 
   actions: {
     executeAction: function (action, savedQuery) {
+      var self = this;
+
       switch (action) {
         case "buttons.history":
-          this.get('controllers.' + constants.namingConventions.routes.history).filterBy('queryId', savedQuery.get('id'), true);
+          this.get('history').filterBy('queryId', savedQuery.get('id'), true);
           this.transitionToRoute(constants.namingConventions.routes.history);
           break;
         case "buttons.delete":
@@ -88,6 +88,7 @@ export default Ember.ArrayController.extend(FilterableMixin, {
 
           defer.promise.then(function () {
             savedQuery.destroyRecord();
+            self.get('openQueries').updatedDeletedQueryTab(savedQuery);
           });
 
           break;
@@ -102,6 +103,23 @@ export default Ember.ArrayController.extend(FilterableMixin, {
         this.set('sortAscending', true);
         this.set('sortProperties', [ property ]);
       }
+    },
+
+    clearFilters: function () {
+      var columns = this.get('columns');
+
+      if (columns) {
+        columns.forEach(function (column) {
+          var filterValue = column.get('filterValue');
+
+          if (filterValue && typeof filterValue === 'string') {
+            column.set('filterValue');
+          }
+        });
+      }
+
+      //call clear filters from Filterable mixin
+      this.clearFilters();
     }
   }
 });

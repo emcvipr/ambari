@@ -22,7 +22,80 @@ require('mixins/common/localStorage');
 require('models/config_group');
 require('controllers/wizard/step7_controller');
 
-var installerStep7Controller;
+var installerStep7Controller,
+  issuesFilterCases = [
+    {
+      isSubmitDisabled: true,
+      submitButtonClicked: true,
+      isIssuesFilterActive: true,
+      issuesFilterText: '',
+      issuesFilterLinkText: Em.I18n.t('installer.step7.showAllProperties'),
+      title: 'issues filter on, submit button clicked'
+    },
+    {
+      isSubmitDisabled: true,
+      submitButtonClicked: false,
+      isIssuesFilterActive: true,
+      issuesFilterText: Em.I18n.t('installer.step7.showingPropertiesWithIssues'),
+      issuesFilterLinkText: Em.I18n.t('installer.step7.showAllProperties'),
+      title: 'issues filter on, submit button disabled'
+    },
+    {
+      isSubmitDisabled: true,
+      submitButtonClicked: true,
+      isIssuesFilterActive: false,
+      issuesFilterText: '',
+      issuesFilterLinkText: '',
+      title: 'issues filter off, submit button clicked'
+    },
+    {
+      isSubmitDisabled: true,
+      submitButtonClicked: false,
+      isIssuesFilterActive: false,
+      issuesFilterText: '',
+      issuesFilterLinkText: Em.I18n.t('installer.step7.showPropertiesWithIssues'),
+      title: 'issues filter off, submit button disabled'
+    },
+    {
+      isSubmitDisabled: false,
+      submitButtonClicked: false,
+      isIssuesFilterActive: true,
+      issuesFilterText: '',
+      issuesFilterLinkText: Em.I18n.t('installer.step7.showAllProperties'),
+      title: 'issues filter on, submit button enabled'
+    },
+    {
+      isSubmitDisabled: false,
+      submitButtonClicked: false,
+      isIssuesFilterActive: false,
+      issuesFilterText: '',
+      issuesFilterLinkText: '',
+      title: 'issues filter off, submit button enabled'
+    },
+    {
+      isSubmitDisabled: false,
+      submitButtonClicked: false,
+      isIssuesFilterActive: true,
+      issuesFilterText: '',
+      issuesFilterLinkText: Em.I18n.t('installer.step7.showAllProperties'),
+      title: 'issues filter on, submit button not clicked but active'
+    },
+    {
+      isSubmitDisabled: false,
+      submitButtonClicked: true,
+      isIssuesFilterActive: true,
+      issuesFilterText: '',
+      issuesFilterLinkText: Em.I18n.t('installer.step7.showAllProperties'),
+      title: 'issues filter on, submit button clicked and active'
+    }
+  ],
+  issuesFilterTestSetup = function (controller, testCase) {
+    controller.set('submitButtonClicked', testCase.submitButtonClicked);
+    controller.reopen({
+      isSubmitDisabled: testCase.isSubmitDisabled
+    });
+    controller.get('filterColumns').findProperty('attributeName', 'hasIssues').set('selected', testCase.isIssuesFilterActive);
+  };
 
 describe('App.InstallerStep7Controller', function () {
 
@@ -199,6 +272,277 @@ describe('App.InstallerStep7Controller', function () {
     });
   });
 
+  describe('#_createSiteToTagMap', function () {
+    it('should return filtered map', function () {
+      var desired_configs = {
+        site1: {
+          tag: "tag1"
+        },
+        site2: {
+          tag: "tag2"
+        },
+        site3: {
+          tag: "tag3"
+        }
+      };
+      var sites = {
+        site1: true,
+        site3: true
+      };
+      var siteToTagMap = installerStep7Controller._createSiteToTagMap(desired_configs,sites)
+      expect(siteToTagMap).to.eql({
+        site1: "tag1",
+        site3: "tag3"
+      });
+    });
+  });
+
+  describe('#checkDatabaseConnectionTest', function () {
+    it('should return promise in process', function () {
+      installerStep7Controller.set('content', {
+        services: Em.A([
+          Em.Object.create({isSelected: true, isInstalled: false, serviceName: 'OOZIE', ignored: []}),
+          Em.Object.create({isSelected: false, isInstalled: false, serviceName: 'HIVE', ignored: []}),
+          Em.Object.create({isSelected: true, isInstalled: true, serviceName: 's3', ignored: []}),
+          Em.Object.create({isSelected: false, isInstalled: false, serviceName: 's4', ignored: []}),
+          Em.Object.create({isSelected: true, isInstalled: false, serviceName: 's5', ignored: []}),
+          Em.Object.create({isSelected: false, isInstalled: false, serviceName: 's6', ignored: []}),
+          Em.Object.create({isSelected: true, isInstalled: true, serviceName: 's7', ignored: []}),
+          Em.Object.create({isSelected: false, isInstalled: false, serviceName: 's8', ignored: []})
+        ])
+      });
+      var obj = Em.Object.create({name:'oozie_database',value:"aa"});
+      installerStep7Controller.set('stepConfigs',Em.A([Em.Object.create({serviceName: 'OOZIE', configs: Em.A([obj]) })]));
+      var deffer = installerStep7Controller.checkDatabaseConnectionTest();
+      expect(deffer.isResolved()).to.equal(false);
+      deffer.resolve(true);
+      deffer.done(function(data) {
+        expect(data).to.equal(true);
+      });
+    });
+  });
+
+  describe('#submit', function () {
+    it('should return undefined if submit disabled', function () {
+      installerStep7Controller.set('isSubmitDisabled',true);
+      expect(installerStep7Controller.submit()).to.be.undefined;
+    });
+    it('sumbit button should be unclicked if no configs', function () {
+      installerStep7Controller.set('isSubmitDisabled',false);
+      installerStep7Controller.submit();
+      expect(installerStep7Controller.get('submitButtonClicked')).to.be.false;
+    });
+  });
+
+  describe('#activateSpecialConfigs', function () {
+    var expected = [{
+       "smokeuser": {
+         "isEditable": true
+       },
+       "group": {
+         "isEditable": true
+       },
+       "services": [
+         {
+           "serviceName": "s1",
+           "isSelected": true,
+           "isInstalled": false
+         },
+         {
+           "serviceName": "s2",
+           "isSelected": false,
+           "isInstalled": false
+         },
+         {
+           "serviceName": "s3",
+           "isSelected": true,
+           "isInstalled": true
+         },
+         {
+           "serviceName": "s4",
+           "isSelected": false,
+           "isInstalled": false
+         },
+         {
+           "serviceName": "s5",
+           "isSelected": true,
+           "isInstalled": false
+         },
+         {
+           "serviceName": "s6",
+           "isSelected": false,
+           "isInstalled": false
+         },
+         {
+           "serviceName": "s7",
+           "isSelected": true,
+           "isInstalled": true
+         },
+         {
+           "serviceName": "s8",
+           "isSelected": false,
+           "isInstalled": false
+         }
+       ]
+      },[
+        {
+          "serviceName": "MISC",
+          "configs": [
+            {
+              "name": "smokeuser",
+              "value": {
+                "isEditable": true
+              },
+              "isEditable": false
+            },
+            {
+              "name": "user_group",
+              "value": {
+                "isEditable": true
+              },
+              "isEditable": false
+            },
+            {
+              "name": "kdc_type"
+            }
+          ]
+        },
+        {
+          "serviceName": "KERBEROS",
+          "configs": [
+            {
+              "name": "smokeuser",
+              "value": {
+                "isEditable": true
+              },
+              "isEditable": false
+            },
+            {
+              "name": "user_group",
+              "value": {
+                "isEditable": true
+              },
+              "isEditable": false
+            },
+            {
+              "name": "kdc_type"
+            }
+          ]
+        }
+      ]];
+      var allSelectedServiceNames = ['SLIDER', 'YARN'];
+      var configs = Em.A([Em.Object.create({
+        name: 'smokeuser',
+        value: ''
+      }),Em.Object.create({
+        name: 'user_group',
+        value: ''
+      }),Em.Object.create({
+        name: 'kdc_type',
+        value: ''
+      })]);
+      var stepConfigs = Em.A([Em.Object.create({serviceName: 'MISC', configs: configs}),
+                              Em.Object.create({serviceName: 'KERBEROS', configs: configs})]);
+      var content = Em.Object.create({
+        smokeuser: Em.Object.create({isEditable: true}),
+        group: Em.Object.create({isEditable: true}),
+        services: Em.A([
+          Em.Object.create({isSelected: true, isInstalled: false, serviceName: 's1'}),
+          Em.Object.create({isSelected: false, isInstalled: false, serviceName: 's2'}),
+          Em.Object.create({isSelected: true, isInstalled: true, serviceName: 's3'}),
+          Em.Object.create({isSelected: false, isInstalled: false, serviceName: 's4'}),
+          Em.Object.create({isSelected: true, isInstalled: false, serviceName: 's5'}),
+          Em.Object.create({isSelected: false, isInstalled: false, serviceName: 's6'}),
+          Em.Object.create({isSelected: true, isInstalled: true, serviceName: 's7'}),
+          Em.Object.create({isSelected: false, isInstalled: false, serviceName: 's8'})
+        ])
+      });
+    it('should return configs with true value', function () {
+      installerStep7Controller.set('wizardController', Em.Object.create(App.LocalStorage, {name: 'addServiceController'}));
+      installerStep7Controller.set('addMiscTabToPage',true);
+      installerStep7Controller.reopen({allSelectedServiceNames: allSelectedServiceNames});
+      installerStep7Controller.set('stepConfigs', stepConfigs);
+      installerStep7Controller.set('content', content);
+      installerStep7Controller.activateSpecialConfigs();
+      expect(JSON.parse(JSON.stringify(installerStep7Controller.get('content')))).to.be.eql(expected[0]);
+    });
+    it('should return stepsConfigs with true value', function () {
+      installerStep7Controller.set('wizardController', Em.Object.create(App.LocalStorage, {name: 'kerberosWizardController'}));
+      installerStep7Controller.set('addMiscTabToPage',true);
+      installerStep7Controller.reopen({allSelectedServiceNames: allSelectedServiceNames});
+      installerStep7Controller.set('stepConfigs', stepConfigs);
+      installerStep7Controller.set('content', content);
+      installerStep7Controller.activateSpecialConfigs();
+      expect(JSON.parse(JSON.stringify(installerStep7Controller.get('stepConfigs')))).to.be.eql(expected[1]);
+    });
+  });
+
+  describe('#getConfigTagsSuccess', function () {
+    beforeEach(function(){
+      sinon.stub(App.StackService, 'find', function () {
+        return [
+          Em.Object.create({
+            serviceName: 's0',
+            isInstalled: true,
+            configTypes: {
+              site3: true,
+              site1: true
+            }
+          }),
+          Em.Object.create({
+            serviceName: 's1',
+            isInstalled: true,
+            configTypes: {
+              site1: true,
+              site2: true
+            }
+          })
+        ];
+      });
+    });
+    afterEach(function(){
+      App.StackService.find.restore();
+    });
+
+    it('should return serviceConfigTags', function () {
+      var desired_configs = {
+        site1: {
+          tag: "tag1"
+        },
+        site2: {
+          tag: "tag2"
+        },
+        site3: {
+          tag: "tag3"
+        }
+      };
+      var data = {
+        Clusters: {
+          desired_configs: desired_configs
+        }
+      };
+      var siteToTagMap = installerStep7Controller.getConfigTagsSuccess(data)
+      expect(installerStep7Controller.get('serviceConfigTags')).to.eql([
+        {
+          "siteName": "site1",
+          "tagName": "tag1",
+          "newTagName": null
+        },
+        {
+          "siteName": "site2",
+          "tagName": "tag2",
+          "newTagName": null
+        },
+        {
+          "siteName": "site3",
+          "tagName": "tag3",
+          "newTagName": null
+        }
+      ]);
+      expect(installerStep7Controller.get('isAppliedConfigLoaded')).to.equal(true);
+    });
+  });
+
   describe('#clearStep', function () {
     it('should clear stepConfigs', function () {
       installerStep7Controller.set('stepConfigs', [
@@ -275,6 +619,12 @@ describe('App.InstallerStep7Controller', function () {
       installerStep7Controller.setGroupsToDelete(groups);
       expect(installerStep7Controller.get('groupsToDelete')).to.eql(expected);
       expect(installerStep7Controller.get('wizardController').getDBProperty('groupsToDelete')).to.eql(expected);
+    });
+  });
+
+  describe('#checkMySQLHost', function () {
+    it('should send query', function () {
+      expect(installerStep7Controller.checkMySQLHost().readyState).to.equal(1);
     });
   });
 
@@ -468,9 +818,10 @@ describe('App.InstallerStep7Controller', function () {
       installerStep7Controller.resolveStormConfigs.restore();
       installerStep7Controller.resolveYarnConfigs.restore();
     });
-    var serviceNames = [
+    [
       {serviceName: 'STORM', method: "resolveStormConfigs"},
-      {serviceName: 'YARN', method: "resolveYarnConfigs"}].forEach(function(t) {
+      {serviceName: 'YARN', method: "resolveYarnConfigs"}
+    ].forEach(function(t) {
       it("should call " + t.method + " if serviceName is " + t.serviceName, function () {
         var configs = [
           {},
@@ -971,6 +1322,7 @@ describe('App.InstallerStep7Controller', function () {
       );
 
       installerStep7Controller.reopen({selectedServiceNames: ['HDFS', 's2']});
+      installerStep7Controller.set('installedServiceNames',['HDFS', 's2', 's3']);
       sinon.stub(App.config, 'renderConfigs', function () {
         return serviceConfigs;
       });
@@ -1047,7 +1399,6 @@ describe('App.InstallerStep7Controller', function () {
       });
       sinon.stub(App.config, 'mergePreDefinedWithStored', Em.K);
       sinon.stub(App.config, 'addAdvancedConfigs', Em.K);
-      sinon.stub(App.config, 'addCustomConfigs', Em.K);
       sinon.stub(App.config, 'fileConfigsIntoTextarea', Em.K);
       sinon.stub(installerStep7Controller, 'clearStep', Em.K);
       sinon.stub(installerStep7Controller, 'getConfigTags', Em.K);
@@ -1063,7 +1414,6 @@ describe('App.InstallerStep7Controller', function () {
     afterEach(function () {
       App.config.mergePreDefinedWithStored.restore();
       App.config.addAdvancedConfigs.restore();
-      App.config.addCustomConfigs.restore();
       App.config.fileConfigsIntoTextarea.restore();
       installerStep7Controller.clearStep.restore();
       installerStep7Controller.getConfigTags.restore();
@@ -1089,7 +1439,6 @@ describe('App.InstallerStep7Controller', function () {
       installerStep7Controller.loadStep();
       expect(App.config.mergePreDefinedWithStored.calledOnce).to.equal(true);
       expect(App.config.addAdvancedConfigs.calledOnce).to.equal(true);
-      expect(App.config.addCustomConfigs.calledOnce).to.equal(true);
     });
     it('should call setInstalledServiceConfigs for addServiceController', function () {
       installerStep7Controller.set('wizardController.name', 'addServiceController');
@@ -1349,6 +1698,43 @@ describe('App.InstallerStep7Controller', function () {
 
   });
 
+  describe('#setServiceDatabaseConfigs', function () {
+
+    var controller = App.WizardStep7Controller.create({
+      installedServiceNames: ['OOZIE', 'HIVE']
+    });
+    var configs = [
+      {
+        name: 'hive_database',
+        value: 'MySQL',
+        serviceName: 'HIVE',
+        filename: 'hbase-site.xml'
+      },
+      {
+        name: 'oozie_database',
+        value: 'MySQL',
+        serviceName: 'OOZIE',
+        filename: 'ams-hbase-site.xml'
+      }
+    ];
+
+    it('should handle properties with the same name', function () {
+      var services = Em.A([
+        Em.Object.create({
+          isInstalled: true,
+          serviceName: 'SQOOP'
+        }),
+        Em.Object.create({
+          isInstalled: true,
+          serviceName: 'HDFS'
+        })
+      ]);
+      controller.setServiceDatabaseConfigs(configs);
+      var properties = configs.filterProperty('name', 'hive_database');
+      expect(properties).to.have.length(1);
+    });
+  });
+
   describe('#getAmbariDatabaseSuccess', function () {
 
     var controller = App.WizardStep7Controller.create({
@@ -1409,6 +1795,210 @@ describe('App.InstallerStep7Controller', function () {
         controller.getAmbariDatabaseSuccess(item.data);
         expect(controller.get('mySQLServerConflict')).to.equal(item.mySQLServerConflict);
       });
+    });
+
+  });
+
+  describe('#showDatabaseConnectionWarningPopup', function () {
+
+    var cases = [
+        {
+          method: 'onSecondary',
+          submitButtonClicked: false,
+          isRejected: true,
+          title: 'Cancel button clicked'
+        },
+        {
+          method: 'onPrimary',
+          submitButtonClicked: true,
+          isResolved: true,
+          title: 'Proceed Anyway button clicked'
+        }
+      ],
+      dfd,
+      testObject,
+      serviceNames = ['HIVE', 'OOZIE'],
+      bodyMessage = 'HIVE, OOZIE';
+
+    beforeEach(function () {
+      installerStep7Controller.set('submitButtonClicked', true);
+      dfd = $.Deferred(function (d) {
+        d.done(function () {
+          testObject.isResolved = true;
+        });
+        d.fail(function () {
+          testObject.isRejected = true;
+        })
+      });
+      testObject = {};
+    });
+
+    cases.forEach(function (item) {
+      it(item.title, function () {
+        var popup = installerStep7Controller.showDatabaseConnectionWarningPopup(serviceNames, dfd);
+        expect(popup.get('body')).to.equal(Em.I18n.t('installer.step7.popup.database.connection.body').format(bodyMessage));
+        popup[item.method]();
+        expect(testObject.isResolved).to.equal(item.isResolved);
+        expect(testObject.isRejected).to.equal(item.isRejected);
+        expect(installerStep7Controller.get('submitButtonClicked')).to.equal(item.submitButtonClicked);
+      });
+    });
+
+  });
+
+  describe('#issuesFilterText', function () {
+
+    issuesFilterCases.forEach(function (item) {
+      it(item.title, function () {
+        issuesFilterTestSetup(installerStep7Controller, item);
+        expect(installerStep7Controller.get('issuesFilterText')).to.equal(item.issuesFilterText);
+      })
+    });
+
+  });
+
+  describe('#loadServiceTagsSuccess', function () {
+    it('should create ClusterSiteToTagMap', function () {
+      var params = Em.Object.create({
+        serviceName: "OOZIE",
+        serviceConfigsDef: Em.Object.create({
+          configTypes: Em.Object.create({
+            site3: true,
+            site2: true,
+            site1: true
+          })
+        })
+      });
+      var wizardController = Em.Object.create({
+          allHosts: [
+            {hostName: 'h1'},
+            {hostName: 'h2'},
+            {hostName: 'h3'}
+          ]
+      });
+      installerStep7Controller.set('wizardController', wizardController);
+      installerStep7Controller.set('stepConfigs', Em.A([Em.Object.create({serviceName: 'OOZIE', configs: Em.A([]) })]));
+      var desired_configs = {
+        site1: {
+          tag: "tag1"
+        },
+        site2: {
+          tag: "tag2"
+        },
+        site3: {
+          tag: "tag3"
+        }
+      };
+      var data = {
+        config_groups: Em.A([Em.Object.create({
+          ConfigGroup: Em.Object.create({
+            tag: 'OOZIE',
+            hosts: Em.A([Em.Object.create({host_name: 'h1'})]),
+            id: 1,
+            group_name: "",
+            description: "",
+            desired_configs: Em.A([Em.Object.create({
+              type: '1',
+              tag: 'h1'
+            })])
+          })
+        })]),
+        Clusters: {
+          desired_configs: desired_configs
+        }
+      };
+      installerStep7Controller.loadServiceTagsSuccess(data, {}, params);
+      var result = installerStep7Controller.get("loadedClusterSiteToTagMap");
+      expect(JSON.parse(JSON.stringify(result))).to.eql(JSON.parse(JSON.stringify({"site1":"tag1","site2":"tag2","site3":"tag3"})));
+    })
+  });
+
+  describe('#issuesFilterLinkText', function () {
+
+    issuesFilterCases.forEach(function (item) {
+      it(item.title, function () {
+        issuesFilterTestSetup(installerStep7Controller, item);
+        expect(installerStep7Controller.get('issuesFilterLinkText')).to.equal(item.issuesFilterLinkText);
+      })
+    });
+
+  });
+
+  describe('#toggleIssuesFilter', function () {
+    it('should toggle issues filter', function () {
+      var issuesFilter = installerStep7Controller.get('filterColumns').findProperty('attributeName', 'hasIssues');
+      issuesFilter.set('selected', false);
+      installerStep7Controller.toggleIssuesFilter();
+      expect(issuesFilter.get('selected')).to.be.true;
+      installerStep7Controller.toggleIssuesFilter();
+      expect(issuesFilter.get('selected')).to.be.false;
+    });
+  });
+
+  describe('#addKerberosDescriptorConfigs', function() {
+    var configs = [
+      { name: 'prop1', displayName: 'Prop1' },
+      { name: 'prop2', displayName: 'Prop2' },
+      { name: 'prop3', displayName: 'Prop3' }
+    ];
+    var descriptor = [
+      Em.Object.create({ name: 'prop4', filename: 'file-1'}),
+      Em.Object.create({ name: 'prop1', filename: 'file-1'})
+    ];
+    var propertiesAttrTests = [
+      {
+        attr: 'isUserProperty', val: false,
+        m: 'descriptor properties should not be marked as custom'
+      },
+      {
+        attr: 'category', val: 'Advanced file-1',
+        m: 'descriptor properties should be added to Advanced category'
+      },
+      {
+        attr: 'isOverridable', val: false,
+        m: 'descriptor properties should not be overriden'
+      }
+    ];
+
+    propertiesAttrTests.forEach(function(test) {
+      it(test.m, function() {
+        installerStep7Controller.addKerberosDescriptorConfigs(configs, descriptor);
+        expect(configs.findProperty('name', 'prop1')[test.attr]).to.be.eql(test.val);
+      });
+    });
+  });
+
+  describe('#errorsCount', function () {
+
+    it('should ignore configs with widgets (enhanced configs)', function () {
+
+      installerStep7Controller.reopen({selectedService: {
+        configs: [
+          Em.Object.create({isVisible: true, widget: Em.View, isValid: false}),
+          Em.Object.create({isVisible: true, widget: Em.View, isValid: true}),
+          Em.Object.create({isVisible: true, isValid: true}),
+          Em.Object.create({isVisible: true, isValid: false})
+        ]
+      }});
+
+      expect(installerStep7Controller.get('errorsCount')).to.equal(1);
+
+    });
+
+    it('should ignore configs with widgets (enhanced configs) and hidden configs', function () {
+
+      installerStep7Controller.reopen({selectedService: {
+        configs: [
+          Em.Object.create({isVisible: true, widget: Em.View, isValid: false}),
+          Em.Object.create({isVisible: true, widget: Em.View, isValid: true}),
+          Em.Object.create({isVisible: false, isValid: false}),
+          Em.Object.create({isVisible: true, isValid: true}),
+          Em.Object.create({isVisible: true, isValid: false})
+        ]
+      }});
+
+      expect(installerStep7Controller.get('errorsCount')).to.equal(1);
+
     });
 
   });
