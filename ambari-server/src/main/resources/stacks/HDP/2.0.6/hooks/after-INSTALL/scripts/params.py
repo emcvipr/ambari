@@ -29,6 +29,13 @@ from resource_management.core.system import System
 from ambari_commons.os_check import OSCheck
 
 config = Script.get_config()
+
+print '######################## AFTER-INSTALL ############################'
+print config
+print '######################## AFTER-INSTALL ############################'
+service_type = default("serviceType","")
+print "###### Service type:: ", service_type
+
 sudo = AMBARI_SUDO_BINARY
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])

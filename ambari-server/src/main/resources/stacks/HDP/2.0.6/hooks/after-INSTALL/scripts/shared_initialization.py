@@ -37,15 +37,16 @@ def setup_hdp_install_directory():
   import params
   if params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.2') >= 0:
     Execute(as_sudo(['touch', SELECT_ALL_PERFORMED_MARKER]) + ' ; ' +
-                   format('{sudo} /usr/bin/hdp-select set all `ambari-python-wrap /usr/bin/hdp-select versions | grep ^{stack_version_unformatted} | tail -1`'),
-            only_if=format('ls -d /usr/hdp/{stack_version_unformatted}*'),   # If any HDP version is installed
+                   format('{sudo} /usr/bin/hdp-select set all `ambari-python-wrap /usr/bin/hdp-select versions | grep ^{hdp_stack_version} | tail -1`'),
+            only_if=format('ls -d /usr/hdp/{hdp_stack_version}*'),   # If any HDP version is installed
             not_if=format("test -f {SELECT_ALL_PERFORMED_MARKER}")           # Do that only once (otherwise we break rolling upgrade logic)
     )
 
 def setup_config():
   import params
   stackversion = params.stack_version_unformatted
-  if params.has_namenode or stackversion.find('Gluster') >= 0:
+  print "***** Service type:: ", params.service_type
+  if params.has_namenode or stackversion.find('Gluster') >= 0 or params.service_type == 'HCFS':
     # create core-site only if the hadoop config diretory exists
     XmlConfig("core-site.xml",
               conf_dir=params.hadoop_conf_dir,
