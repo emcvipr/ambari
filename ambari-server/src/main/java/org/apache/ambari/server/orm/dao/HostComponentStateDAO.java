@@ -18,19 +18,20 @@
 
 package org.apache.ambari.server.orm.dao;
 
-import com.google.inject.Inject;
-import com.google.inject.Provider;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
-import org.apache.ambari.server.orm.RequiresSession;
-import org.apache.ambari.server.orm.entities.HostComponentStateEntity;
-import org.apache.ambari.server.orm.entities.HostComponentStateEntityPK;
-import org.apache.ambari.server.orm.entities.HostEntity;
+import java.util.List;
 
 import javax.persistence.EntityManager;
 import javax.persistence.NoResultException;
 import javax.persistence.TypedQuery;
-import java.util.List;
+
+import org.apache.ambari.server.orm.RequiresSession;
+import org.apache.ambari.server.orm.entities.HostComponentStateEntity;
+import org.apache.ambari.server.orm.entities.HostEntity;
+
+import com.google.inject.Inject;
+import com.google.inject.Provider;
+import com.google.inject.Singleton;
+import com.google.inject.persist.Transactional;
 
 @Singleton
 public class HostComponentStateDAO {
@@ -43,8 +44,8 @@ public class HostComponentStateDAO {
   HostDAO hostDAO;
 
   @RequiresSession
-  public HostComponentStateEntity findByPK(HostComponentStateEntityPK primaryKey) {
-    return entityManagerProvider.get().find(HostComponentStateEntity.class, primaryKey);
+  public HostComponentStateEntity findById(long id) {
+    return entityManagerProvider.get().find(HostComponentStateEntity.class, id);
   }
 
   @RequiresSession
@@ -71,6 +72,81 @@ public class HostComponentStateDAO {
     return daoUtils.selectList(query);
   }
 
+  /**
+   * Retrieve all of the Host Component States for the given service.
+   *
+   * @param serviceName Service Name
+   * @return Return all of the Host Component States that match the criteria.
+   */
+  @RequiresSession
+  public List<HostComponentStateEntity> findByService(String serviceName) {
+    final TypedQuery<HostComponentStateEntity> query = entityManagerProvider.get().createNamedQuery("HostComponentStateEntity.findByService", HostComponentStateEntity.class);
+    query.setParameter("serviceName", serviceName);
+
+    return daoUtils.selectList(query);
+  }
+
+  /**
+   * Retrieve all of the Host Component States for the given service and component.
+   *
+   * @param serviceName Service Name
+   * @param componentName Component Name
+   * @return Return all of the Host Component States that match the criteria.
+   */
+  @RequiresSession
+  public List<HostComponentStateEntity> findByServiceAndComponent(String serviceName, String componentName) {
+    final TypedQuery<HostComponentStateEntity> query = entityManagerProvider.get().createNamedQuery("HostComponentStateEntity.findByServiceAndComponent", HostComponentStateEntity.class);
+    query.setParameter("serviceName", serviceName);
+    query.setParameter("componentName", componentName);
+
+    return daoUtils.selectList(query);
+  }
+
+  /**
+   * Retrieve the single Host Component State for the given unique service, component, and host.
+   *
+   * @param serviceName Service Name
+   * @param componentName Component Name
+   * @param hostName Host Name
+   * @return Return all of the Host Component States that match the criteria.
+   */
+  @RequiresSession
+  public HostComponentStateEntity findByServiceComponentAndHost(String serviceName, String componentName, String hostName) {
+    final TypedQuery<HostComponentStateEntity> query = entityManagerProvider.get().createNamedQuery("HostComponentStateEntity.findByServiceComponentAndHost", HostComponentStateEntity.class);
+    query.setParameter("serviceName", serviceName);
+    query.setParameter("componentName", componentName);
+    query.setParameter("hostName", hostName);
+
+    return daoUtils.selectSingle(query);
+  }
+
+  /**
+   * Retrieve the single Host Component State for the given unique cluster,
+   * service, component, and host.
+   *
+   * @param clusterId
+   *          Cluster ID
+   * @param serviceName
+   *          Service Name
+   * @param componentName
+   *          Component Name
+   * @param hostId
+   *          Host ID
+   * @return Return all of the Host Component States that match the criteria.
+   */
+  @RequiresSession
+  public HostComponentStateEntity findByIndex(Long clusterId, String serviceName,
+      String componentName, Long hostId) {
+    final TypedQuery<HostComponentStateEntity> query = entityManagerProvider.get().createNamedQuery(
+        "HostComponentStateEntity.findByIndex", HostComponentStateEntity.class);
+    query.setParameter("clusterId", clusterId);
+    query.setParameter("serviceName", serviceName);
+    query.setParameter("componentName", componentName);
+    query.setParameter("hostId", hostId);
+
+    return daoUtils.selectSingle(query);
+  }
+
   @Transactional
   public void refresh(HostComponentStateEntity hostComponentStateEntity) {
     entityManagerProvider.get().refresh(hostComponentStateEntity);
@@ -81,9 +157,19 @@ public class HostComponentStateDAO {
     entityManagerProvider.get().persist(hostComponentStateEntity);
   }
 
+  /**
+   * Merges the managed entity, calling {@link EntityManager#flush()}
+   * immediately after. This fixes concurrent transaction issues on SQL Server.
+   *
+   * @param hostComponentStateEntity
+   * @return
+   */
   @Transactional
   public HostComponentStateEntity merge(HostComponentStateEntity hostComponentStateEntity) {
-    return entityManagerProvider.get().merge(hostComponentStateEntity);
+    EntityManager entityManager = entityManagerProvider.get();
+    hostComponentStateEntity = entityManager.merge(hostComponentStateEntity);
+    entityManager.flush();
+    return hostComponentStateEntity;
   }
 
   @Transactional
@@ -95,10 +181,5 @@ public class HostComponentStateDAO {
     // Make sure that the state entity is removed from its host entity
     hostEntity.removeHostComponentStateEntity(hostComponentStateEntity);
     hostDAO.merge(hostEntity);
-  }
-
-  @Transactional
-  public void removeByPK(HostComponentStateEntityPK primaryKey) {
-    remove(findByPK(primaryKey));
   }
 }

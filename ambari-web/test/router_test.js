@@ -24,26 +24,24 @@ describe('App.Router', function () {
   var router = App.Router.create();
 
   describe('#loginSuccessCallback()', function() {
-    it('should log in user and load views', function () {
-      var mainViewsControllerMock = Em.Object.create({
-        loadAmbariViews: sinon.stub()
-      });
-      var userName = 'test';
+
+    beforeEach(function () {
       sinon.stub(App.usersMapper, 'map');
       sinon.stub(router, 'setUserLoggedIn');
-      sinon.stub(App.router, 'get').withArgs('mainViewsController').returns(mainViewsControllerMock);
       sinon.stub(App.ajax, 'send');
+    });
 
-      router.loginSuccessCallback({},{},{loginName: userName});
-
-      expect(mainViewsControllerMock.loadAmbariViews.calledOnce).to.be.true;
-      expect(router.setUserLoggedIn.calledOnce).to.be.true;
-      expect(router.setUserLoggedIn.calledWith(userName)).to.be.true;
-
+    afterEach(function() {
       App.usersMapper.map.restore();
       router.setUserLoggedIn.restore();
-      App.router.get.restore();
       App.ajax.send.restore();
+    });
+
+    it('should log in user and load views', function () {
+      var userName = 'test';
+      router.loginSuccessCallback({},{},{loginName: userName});
+      expect(router.setUserLoggedIn.calledOnce).to.be.true;
+      expect(router.setUserLoggedIn.calledWith(userName)).to.be.true;
     })
   });
 
@@ -108,4 +106,60 @@ describe('App.Router', function () {
 
   });
 
+  describe('#adminViewInfoSuccessCallback', function() {
+    beforeEach(function() {
+      sinon.stub(window.location, 'replace', Em.K);
+    });
+    afterEach(function() {
+      window.location.replace.restore();
+    });
+
+    it('should redirect to the latest version of admin view', function() {
+      var tests = [{
+        mockData: {
+          components: [{
+            'RootServiceComponents': {
+              'component_version': '1.9.0'
+            }
+          }, {
+            'RootServiceComponents': {
+              'component_version': '2.0.0'
+            }
+          }]
+        },
+        expected: '/views/ADMIN_VIEW/2.0.0/INSTANCE/#/'
+      }, {
+        mockData: {
+          components: [{
+            'RootServiceComponents': {
+              'component_version': '1.9.0'
+            }
+          }, {
+            'RootServiceComponents': {
+              'component_version': '2.1.0'
+            }
+          }, {
+            'RootServiceComponents': {
+              'component_version': '2.0.0'
+            }
+          }]
+        },
+        expected: '/views/ADMIN_VIEW/2.1.0/INSTANCE/#/'
+      }, {
+        mockData: {
+          versions: [{
+            'RootServiceComponents': {
+              version: '2.1.0'
+            }
+          }]
+        },
+        expected: '/views/ADMIN_VIEW/2.1.0/INSTANCE/#/'
+      }];
+
+      tests.forEach(function(data) {
+        router.adminViewInfoSuccessCallback(data.mockData);
+        expect(window.location.replace.calledWith(data.expected)).to.be.true;
+      });
+    });
+  });
 });

@@ -19,13 +19,21 @@ Ambari Agent
 
 """
 
+import os
 from resource_management import *
 from ambari_commons import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 
 @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
-def zookeeper_service(action='start'):
+def zookeeper_service(action='start', rolling_restart=False):
   import params
+
+  # This path may be missing after Ambari upgrade. We need to create it.
+  if not rolling_restart and not os.path.exists("/usr/hdp/current/zookeeper-server") and params.current_version:
+    conf_select.select(params.stack_name, "zookeeper", params.current_version)
+    hdp_select.select("zookeeper-server", params.version)
 
   cmd = format("env ZOOCFGDIR={config_dir} ZOOCFG=zoo.cfg {zk_bin}/zkServer.sh")
 
@@ -53,7 +61,7 @@ def zookeeper_service(action='start'):
     Execute(rm_pid)
 
 @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
-def zookeeper_service(action='start'):
+def zookeeper_service(action='start', rolling_restart=False):
   import params
   if action == 'start':
     Service(params.zookeeper_win_service_name, action="start")

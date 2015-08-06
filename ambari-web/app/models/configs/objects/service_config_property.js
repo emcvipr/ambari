@@ -24,9 +24,61 @@ App.ServiceConfigProperty = Em.Object.extend({
   id: '', //either 'puppet var' or 'site property'
   name: '',
   displayName: '',
+
+  /**
+   * value that is shown on IU
+   * and is changing by user
+   * @type {String|null}
+   */
   value: '',
+
+  /**
+   * value that is saved on cluster configs
+   * and stored in /api/v1/clusters/{name}/configurations
+   * @type {String|null}
+   */
+  savedValue: null,
+
+  /**
+   * value that is returned from server as recommended
+   * or stored on stack
+   * @type {String|null}
+   */
+  recommendedValue: null,
+
+  /**
+   * initial value of config. if value is saved it will be initial
+   * otherwise first recommendedValue will be initial
+   * @type {String|null}
+   */
+  initialValue: null,
+
+  /**
+   * value that is shown on IU
+   * and is changing by user
+   * @type {boolean}
+   */
+  isFinal: false,
+
+  /**
+   * value that is saved on cluster configs api
+   * @type {boolean}
+   */
+  savedIsFinal: null,
+
+  /**
+   * value that is returned from server as recommended
+   * or stored on stack
+   * @type {boolean}
+   */
+  recommendedIsFinal: null,
+
+  /**
+   * @type {boolean}
+   */
+  supportsFinal: false,
+
   retypedPassword: '',
-  defaultValue: '',
   defaultDirectory: '',
   description: '',
   displayType: 'string', // string, digits, number, directories, custom
@@ -36,12 +88,9 @@ App.ServiceConfigProperty = Em.Object.extend({
   isReconfigurable: true, // by default a config property is reconfigurable
   isEditable: true, // by default a config property is editable
   isNotEditable: Ember.computed.not('isEditable'),
-  isFinal: false,
   hideFinalIcon: function () {
     return (!this.get('isFinal'))&& this.get('isNotEditable');
   }.property('isFinal', 'isNotEditable'),
-  defaultIsFinal: false,
-  supportsFinal: false,
   isVisible: true,
   isMock: false, // mock config created created only to displaying
   isRequiredByAgent: true, // Setting it to true implies property will be stored in configuration
@@ -64,14 +113,31 @@ App.ServiceConfigProperty = Em.Object.extend({
   showLabel: true,
   error: false,
   warn: false,
+  previousValue: null, // cached value before changing config <code>value</code>
+
+  /**
+   * List of <code>isFinal</code>-values for overrides
+   * Set in the controller
+   * Should be empty array by default!
+   * @type {boolean[]}
+   */
+  overrideIsFinalValues: [],
 
   /**
    * true if property has warning or error
    * @type {boolean}
    */
   hasIssues: function () {
-    return (this.get('errorMessage') + this.get('warnMessage')) !== "";
-  }.property('errorMessage', 'warnMessage'),
+    var originalSCPIssued = (this.get('errorMessage') + this.get('warnMessage')) !== "";
+    var overridesIssue = false;
+    (this.get('overrides') || []).forEach(function(override) {
+      if (override.get('errorMessage') + override.get('warnMessage') !== "") {
+        overridesIssue = true;
+        return;
+      }
+    });
+    return originalSCPIssued || overridesIssue;
+  }.property('errorMessage', 'warnMessage', 'overrideErrorTrigger'),
 
   overrideErrorTrigger: 0, //Trigger for overridable property error
   isRestartRequired: false,
@@ -84,18 +150,12 @@ App.ServiceConfigProperty = Em.Object.extend({
   rowStyleClass: null, // CSS-Class to be applied on the row showing this config
   showAsTextBox: false,
 
-  forceUpdate: false,
-  /**
-   * value that is returned from server as recommended
-   * @type {String}
-   */
-  recommendedValue: null,
-
   /**
    * @type {boolean}
    */
   recommendedValueExists: function () {
-    return !Em.isNone(this.get('recommendedValue'));
+    return !Em.isNone(this.get('recommendedValue')) && (this.get('recommendedValue') != "")
+      && this.get('isRequiredByAgent') && !this.get('cantBeUndone');
   }.property('recommendedValue'),
 
   /**
@@ -132,7 +192,7 @@ App.ServiceConfigProperty = Em.Object.extend({
     if (Em.isNone(this.get('overrides')) && this.get('overrideValues.length') === 0) return false;
     return JSON.stringify(this.get('overrides').mapProperty('isFinal')) !== JSON.stringify(this.get('overrideIsFinalValues'))
       || JSON.stringify(this.get('overrides').mapProperty('value')) !== JSON.stringify(this.get('overrideValues'));
-  }.property('isOverridden', 'overrides.@each.isNotDefaultValue'),
+  }.property('isOverridden', 'overrides.@each.isNotDefaultValue', 'overrideValues.length'),
 
   isRemovable: function() {
     var isOriginalSCP = this.get('isOriginalSCP');
@@ -144,13 +204,18 @@ App.ServiceConfigProperty = Em.Object.extend({
   }.property('isUserProperty', 'isOriginalSCP', 'overrides.length'),
 
   init: function () {
-    if(this.get("displayType")=="password"){
-      this.set('retypedPassword', this.get('value'));
-    }
     if ((this.get('id') === 'puppet var') && this.get('value') == '') {
-      this.set('value', this.get('defaultValue'));
+      if (this.get('savedValue')) {
+        this.set('value', this.get('savedValue'));
+      } else if (this.get('recommendedValue')) {
+        this.set('value', this.get('recommendedValue'));
+      }
     }
-    // TODO: remove mock data
+    if(this.get("displayType") === "password"){
+      this.set('retypedPassword', this.get('value'));
+      this.set('recommendedValue', '');
+    }
+    this.set('initialValue', this.get('value'));
   },
 
   /**
@@ -159,18 +224,18 @@ App.ServiceConfigProperty = Em.Object.extend({
    */
   isNotDefaultValue: function () {
     var value = this.get('value');
-    var defaultValue = this.get('defaultValue');
+    var savedValue = this.get('savedValue');
     var supportsFinal = this.get('supportsFinal');
     var isFinal = this.get('isFinal');
-    var defaultIsFinal = this.get('defaultIsFinal');
+    var savedIsFinal = this.get('savedIsFinal');
     // ignore precision difference for configs with type of `float` which value may ends with 0
     // e.g. between 0.4 and 0.40
     if (this.get('stackConfigProperty') && this.get('stackConfigProperty.valueAttributes.type') == 'float') {
-      defaultValue = '' + parseFloat(defaultValue);
+      savedValue = !Em.isNone(savedValue) ? '' + parseFloat(savedValue) : null;
       value = '' + parseFloat(value);
     }
-    return (defaultValue != null && value !== defaultValue) || (supportsFinal && isFinal !== defaultIsFinal);
-  }.property('value', 'defaultValue', 'isEditable', 'isFinal', 'defaultIsFinal'),
+    return (savedValue != null && value !== savedValue) || (supportsFinal && !Em.isNone(savedIsFinal) && isFinal !== savedIsFinal);
+  }.property('value', 'savedValue', 'isEditable', 'isFinal', 'savedIsFinal'),
 
   /**
    * Don't show "Undo" for hosts on Installer Step7
@@ -178,6 +243,46 @@ App.ServiceConfigProperty = Em.Object.extend({
   cantBeUndone: function() {
     return ["masterHost", "slaveHosts", "masterHosts", "slaveHost", "radio button"].contains(this.get('displayType'));
   }.property('displayType'),
+
+  /**
+   * Used in <code>templates/common/configs/service_config_category.hbs</code>
+   * @type {boolean}
+   */
+  undoAvailable: function () {
+    return !this.get('cantBeUndone') && this.get('isNotDefaultValue');
+  }.property('cantBeUndone', 'isNotDefaultValue'),
+
+  /**
+   * Used in <code>templates/common/configs/service_config_category.hbs</code>
+   * @type {boolean}
+   */
+  removeAvailable: function () {
+    return this.get('isRemovable') && !this.get('isComparison');
+  }.property('isComparison', 'isRemovable'),
+
+  /**
+   * Used in <code>templates/common/configs/service_config_category.hbs</code>
+   * @type {boolean}
+   */
+  switchGroupAvailable: function () {
+    return !this.get('isEditable') && this.get('group');
+  }.property('isEditable', 'group'),
+
+  /**
+   * Used in <code>templates/common/configs/service_config_category.hbs</code>
+   * @type {boolean}
+   */
+  setRecommendedAvailable: function () {
+    return this.get('isEditable') && this.get('recommendedValueExists');
+  }.property('isEditable', 'recommendedValueExists'),
+
+  /**
+   * Used in <code>templates/common/configs/service_config_category.hbs</code>
+   * @type {boolean}
+   */
+  overrideAvailable: function () {
+    return !this.get('isComparison') && this.get('isPropertyOverridable') && (this.get('displayType') !== 'password');
+  }.property('isPropertyOverridable', 'isComparison'),
 
   isValid: function () {
     return this.get('errorMessage') === '';
@@ -199,7 +304,6 @@ App.ServiceConfigProperty = Em.Object.extend({
         return App.ServiceConfigRadioButtons;
         break;
       case 'directories':
-      case 'datanodedirs':
         return App.ServiceConfigTextArea;
         break;
       case 'content':
@@ -251,7 +355,14 @@ App.ServiceConfigProperty = Em.Object.extend({
     if (!isError) {
       switch (this.get('displayType')) {
         case 'int':
-          if (!validator.isValidInt(value)) {
+          if (('' + value).trim().length === 0) {
+            this.set('errorMessage', '');
+            isError = false;
+            return;
+          }
+          if (validator.isConfigValueLink(value)) {
+            isError = false;
+          } else if (!validator.isValidInt(value)) {
             this.set('errorMessage', 'Must contain digits only');
             isError = true;
           } else {
@@ -264,7 +375,9 @@ App.ServiceConfigProperty = Em.Object.extend({
           }
           break;
         case 'float':
-          if (!validator.isValidFloat(value)) {
+          if (validator.isConfigValueLink(value)) {
+            isError = false;
+          } else if (!validator.isValidFloat(value)) {
             this.set('errorMessage', 'Must be a valid number');
             isError = true;
           }
@@ -286,25 +399,20 @@ App.ServiceConfigProperty = Em.Object.extend({
           break;
         case 'checkbox':
           break;
-        case 'datanodedirs':
-          if (!validator.isValidDataNodeDir(value)) {
-            this.set('errorMessage', 'dir format is wrong, can be "[{storage type}]/{dir name}"');
-            isError = true;
-          }
-          else {
-            if (!validator.isAllowedDir(value)) {
-              this.set('errorMessage', 'Cannot start with "home(s)"');
+        case 'directories':
+        case 'directory':
+          if (this.get('configSupportHeterogeneous')) {
+            if (!validator.isValidDataNodeDir(value)) {
+              this.set('errorMessage', 'dir format is wrong, can be "[{storage type}]/{dir name}"');
+              isError = true;
+            }
+          } else {
+            if (!validator.isValidDir(value)) {
+              this.set('errorMessage', 'Must be a slash or drive at the start');
               isError = true;
             }
           }
-          break;
-        case 'directories':
-        case 'directory':
-          if (!validator.isValidDir(value)) {
-            this.set('errorMessage', 'Must be a slash or drive at the start');
-            isError = true;
-          }
-          else {
+          if (!isError) {
             if (!validator.isAllowedDir(value)) {
               this.set('errorMessage', 'Can\'t start with "home(s)"');
               isError = true;
@@ -319,7 +427,9 @@ App.ServiceConfigProperty = Em.Object.extend({
             isError = true;
           }
           break;
+        case 'supportTextConnection':
         case 'host':
+          var connectionProperties = ['kdc_host'];
           var hiveOozieHostNames = ['hive_hostname','hive_existing_mysql_host','hive_existing_oracle_host','hive_ambari_host',
             'oozie_hostname','oozie_existing_mysql_host','oozie_existing_oracle_host','oozie_ambari_host'];
           if(hiveOozieHostNames.contains(this.get('name'))) {
@@ -328,7 +438,7 @@ App.ServiceConfigProperty = Em.Object.extend({
               isError = true;
             }
           } else {
-            if (validator.isNotTrimmed(value)) {
+            if ((validator.isNotTrimmed(value) && connectionProperties.contains(this.get('name')) || validator.isNotTrimmed(value))) {
               this.set('errorMessage', Em.I18n.t('host.trimspacesValidation'));
               isError = true;
             }
@@ -336,7 +446,9 @@ App.ServiceConfigProperty = Em.Object.extend({
           break;
         case 'advanced':
           if(this.get('name')=='javax.jdo.option.ConnectionURL' || this.get('name')=='oozie.service.JPAService.jdbc.url') {
-            if (validator.isNotTrimmed(value)) {
+            if (validator.isConfigValueLink(value)) {
+              isError = false;
+            } else if (validator.isNotTrimmed(value)) {
               this.set('errorMessage', Em.I18n.t('host.trimspacesValidation'));
               isError = true;
             }
@@ -349,10 +461,6 @@ App.ServiceConfigProperty = Em.Object.extend({
             isError = true;
           }
       }
-    }
-
-    if (!isError) {
-      isError = this._validateOverrides();
     }
 
     if (!isWarn || isError) { // Errors get priority
@@ -371,40 +479,18 @@ App.ServiceConfigProperty = Em.Object.extend({
   }.observes('value', 'isFinal', 'retypedPassword'),
 
   /**
-   * Check config overrides and parent config overrides (if exist)
-   * @returns {boolean}
-   * @private
-   * @method _validateOverrides
+   * defines specific directory properties that
+   * allows setting drive type before dir name
+   * ex: [SSD]/usr/local/my_dir
+   * @param config
+   * @returns {*|Boolean|boolean}
    */
-  _validateOverrides: function () {
-    var self = this;
-    var isError = false;
-    var value = this.get('value');
-    var isOriginalSCP = this.get('isOriginalSCP');
-    var supportsFinal = this.get('supportsFinal');
-    var isFinal = this.get('isFinal');
-    var parentSCP = this.get('parentSCP');
-    if (!isOriginalSCP) {
-      if (!Em.isNone(parentSCP)) {
-        if (value === parentSCP.get('value') || supportsFinal && isFinal === parentSCP.get('isFinal')) {
-          this.set('errorMessage', Em.I18n.t('config.override.valueEqualToParentConfig'));
-          isError = true;
-        }
-        else {
-          var overrides = parentSCP.get('overrides');
-          if (overrides) {
-            overrides.forEach(function (override) {
-              if (self == override) return;
-              if (value === override.get('value') || supportsFinal && isFinal === parentSCP.get('isFinal')) {
-                self.set('errorMessage', Em.I18n.t('config.override.valueEqualToAnotherOverrideConfig'));
-                isError = true;
-              }
-            });
-          }
-        }
-      }
+  configSupportHeterogeneous: function() {
+    if (App.get('isHadoop22Stack')) {
+      return ['directories', 'directory'].contains(this.get('displayType')) && ['dfs.datanode.data.dir'].contains(this.get('name'));
+    } else {
+      return false;
     }
-    return isError;
-  }
+  }.property('displayType', 'name', 'App.isHadoop22Stack')
 
 });

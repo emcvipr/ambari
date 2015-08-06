@@ -23,21 +23,18 @@ import urllib2
 
 import logging
 from unittest import TestCase
-from only_for_platform import get_platform, PLATFORM_WINDOWS
+from only_for_platform import get_platform, os_distro_value, PLATFORM_WINDOWS
+
+from ambari_commons.os_check import OSCheck
 
 from mock.mock import patch, MagicMock
 
-if get_platform() != PLATFORM_WINDOWS:
-  os_distro_value = ('Suse','11','Final')
-else:
-  os_distro_value = ('win2012serverr2','6.3','WindowsServer')
-
 with patch("platform.linux_distribution", return_value = os_distro_value):
   from ambari_commons import OSCheck
-  from application_metric_map import ApplicationMetricMap
-  from config_reader import Configuration
-  from emitter import Emitter
-  from stop_handler import bind_signal_handlers
+  from core.application_metric_map import ApplicationMetricMap
+  from core.config_reader import Configuration
+  from core.emitter import Emitter
+  from core.stop_handler import bind_signal_handlers
 
 logger = logging.getLogger()
 
@@ -80,7 +77,6 @@ class TestEmitter(TestCase):
     self.assertEqual(url_open_mock.call_count, 3)
     self.assertUrlData(url_open_mock)
     
-
   def assertUrlData(self, url_open_mock):
     self.assertEqual(len(url_open_mock.call_args), 2)
     data = url_open_mock.call_args[0][0].data

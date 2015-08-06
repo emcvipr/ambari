@@ -258,7 +258,7 @@
           "yarn.resourcemanager.connect.max-wait.ms": "900000",
           "yarn.resourcemanager.connect.retry-interval.ms": "30000",
           "yarn.resourcemanager.fs.state-store.retry-policy-spec": "2000, 500",
-          "yarn.resourcemanager.fs.state-store.uri": "",
+          "yarn.resourcemanager.fs.state-store.uri": " ",
           "yarn.resourcemanager.ha.enabled": "false",
           "yarn.resourcemanager.recovery.enabled": "false",
           "yarn.resourcemanager.state-store.max-completed-applications": "${yarn.resourcemanager.max-completed-applications}",
@@ -269,7 +269,10 @@
           "yarn.resourcemanager.work-preserving-recovery.enabled": "false",
           "yarn.resourcemanager.work-preserving-recovery.scheduling-wait-ms": "10000",
           "yarn.resourcemanager.zk-acl": "world:anyone:rwcda",
-          "yarn.resourcemanager.zk-address": "localhost:2181",
+          "yarn.resourcemanager.zk-address": {
+            "value": "{ZOOKEEPER_QUORUM}",
+            "template": "yes"
+          },
           "yarn.resourcemanager.zk-num-retries": "1000",
           "yarn.resourcemanager.zk-retry-interval-ms": "1000",
           "yarn.resourcemanager.zk-state-store.parent-path": "/rmstore",

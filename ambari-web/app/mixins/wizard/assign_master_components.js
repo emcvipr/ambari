@@ -475,9 +475,11 @@ App.AssignMasterComponents = Em.Mixin.create({
    * @method clearStep
    */
   clearStep: function () {
-    this.set('hosts', []);
-    this.set('selectedServicesMasters', []);
-    this.set('servicesMasters', []);
+    this.setProperties({
+      hosts: [],
+      selectedServicesMasters: [],
+      servicesMasters: []
+    });
     App.StackServiceComponent.find().forEach(function (stackComponent) {
       stackComponent.set('serviceComponentId', 1);
     }, this);
@@ -535,8 +537,8 @@ App.AssignMasterComponents = Em.Mixin.create({
       var mastersLength = this.get("selectedServicesMasters").filterProperty("component_name", componentName).length;
       if (mastersLength < this.getMaxNumberOfMasters(componentName)) {
         component.set('showAddControl', true);
-      } else if (mastersLength == 1) {
-        component.set('showRemoveControl', false);
+      } else {
+        component.set('showRemoveControl', mastersLength != 1);
       }
     }
   },
@@ -795,16 +797,22 @@ App.AssignMasterComponents = Em.Mixin.create({
    * @returns {masterComponents[]}
    */
   addNewMasters: function (masterComponents) {
-    this.get('mastersToAdd').forEach(function(masterName){
-      var hostName = this.getHostForMaster(masterName, masterComponents);
-      var serviceName = this.getServiceByMaster(masterName);
-      masterComponents.push(this.createComponentInstallationObject(
+    this.get('mastersToAdd').forEach(function (masterName, index, mastersToAdd) {
+      var toBeAddedNumber = mastersToAdd.filter(function (name) {
+          return name === masterName;
+        }).length,
+        alreadyAddedNumber = masterComponents.filterProperty('component_name', masterName).rejectProperty('isInstalled').length;
+      if (toBeAddedNumber > alreadyAddedNumber) {
+        var hostName = this.getHostForMaster(masterName, masterComponents),
+          serviceName = this.getServiceByMaster(masterName);
+        masterComponents.push(this.createComponentInstallationObject(
           Em.Object.create({
             componentName: masterName,
             serviceName: serviceName
           }),
           hostName
-      ));
+        ));
+      }
     }, this);
     return masterComponents;
   },
@@ -836,11 +844,19 @@ App.AssignMasterComponents = Em.Mixin.create({
     return App.StackServiceComponent.find().findProperty('componentName', master).get('serviceName');
   },
 
+  /**
+   * Sort components by their service (using <code>App.StackService.displayOrder</code>)
+   * Services not in App.StackService.displayOrder are moved to the end of the list
+   *
+   * @param components
+   * @returns {*}
+   */
   sortComponentsByServiceName: function(components) {
     var displayOrder = App.StackService.displayOrder;
+    var indexForUnordered = Math.max(displayOrder.length, components.length);
     return components.sort(function (a, b) {
-      var aValue = displayOrder.indexOf(a.serviceId) != -1 ? displayOrder.indexOf(a.serviceId) : components.length;
-      var bValue = displayOrder.indexOf(b.serviceId) != -1 ? displayOrder.indexOf(b.serviceId) : components.length;
+      var aValue = displayOrder.indexOf(a.serviceId) != -1 ? displayOrder.indexOf(a.serviceId) : indexForUnordered;
+      var bValue = displayOrder.indexOf(b.serviceId) != -1 ? displayOrder.indexOf(b.serviceId) : indexForUnordered;
       return aValue - bValue;
     });
   },
@@ -852,7 +868,7 @@ App.AssignMasterComponents = Em.Mixin.create({
     var components = App.StackServiceComponent.find().filterProperty('isOtherComponentCoHosted');
     var selectedServicesMasters = this.get('selectedServicesMasters');
     components.forEach(function (component) {
-      var componentName = component.get('componentName')
+      var componentName = component.get('componentName');
       var hostComponent = selectedServicesMasters.findProperty('component_name', componentName);
       var dependentCoHosts = component.get('coHostedComponents');
       dependentCoHosts.forEach(function (coHostedComponent) {
@@ -1000,7 +1016,10 @@ App.AssignMasterComponents = Em.Mixin.create({
 
       this.get("selectedServicesMasters").insertAt(this.get("selectedServicesMasters").indexOf(lastMaster) + 1, newMaster);
 
-      this.set('componentToRebalance', componentName);
+      this.setProperties({
+        componentToRebalance: componentName,
+        lastChangedComponent: componentName
+      });
       this.incrementProperty('rebalanceComponentHostsCounter');
       this.toggleProperty('hostNameCheckTrigger');
       return true;
@@ -1034,7 +1053,10 @@ App.AssignMasterComponents = Em.Mixin.create({
       currentMasters.set("lastObject.showRemoveControl", false);
     }
 
-    this.set('componentToRebalance', componentName);
+    this.setProperties({
+      componentToRebalance: componentName,
+      lastChangedComponent: componentName
+    });
     this.incrementProperty('rebalanceComponentHostsCounter');
     this.toggleProperty('hostNameCheckTrigger');
     return true;

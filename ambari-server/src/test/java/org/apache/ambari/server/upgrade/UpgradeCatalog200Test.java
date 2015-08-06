@@ -24,6 +24,7 @@ import static junit.framework.Assert.assertNotNull;
 import static junit.framework.Assert.assertNull;
 import static junit.framework.Assert.assertTrue;
 import static junit.framework.Assert.fail;
+import static org.easymock.EasyMock.anyObject;
 import static org.easymock.EasyMock.capture;
 import static org.easymock.EasyMock.createMockBuilder;
 import static org.easymock.EasyMock.createNiceMock;
@@ -37,8 +38,10 @@ import static org.easymock.EasyMock.verify;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -64,7 +67,6 @@ import org.apache.ambari.server.orm.entities.ClusterServiceEntity;
 import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntity;
 import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntityPK;
 import org.apache.ambari.server.orm.entities.HostComponentStateEntity;
-import org.apache.ambari.server.orm.entities.HostComponentStateEntityPK;
 import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntity;
 import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntityPK;
@@ -129,6 +131,8 @@ public class UpgradeCatalog200Test {
   public void testExecuteDDLUpdates() throws Exception {
     final DBAccessor dbAccessor = createNiceMock(DBAccessor.class);
     Configuration configuration = createNiceMock(Configuration.class);
+    Connection connection = createNiceMock(Connection.class);
+    Statement statement = createNiceMock(Statement.class);
     ResultSet resultSet = createNiceMock(ResultSet.class);
 
     expect(configuration.getDatabaseUrl()).andReturn(Configuration.JDBC_IN_MEMORY_URL).anyTimes();
@@ -164,7 +168,7 @@ public class UpgradeCatalog200Test {
 
     // Alert Definition
     dbAccessor.addColumn(eq("alert_definition"),
-        capture(alertDefinitionIgnoreColumnCapture));
+                          capture(alertDefinitionIgnoreColumnCapture));
 
     dbAccessor.addColumn(eq("alert_definition"),
         capture(alertDefinitionDescriptionColumnCapture));
@@ -241,6 +245,8 @@ public class UpgradeCatalog200Test {
     dbAccessor.createTable(eq("kerberos_principal_host"), capture(kerberosPrincipalHostCapture),
         eq("principal_name"), eq("host_name"));
 
+    expect(dbAccessor.tableHasColumn("kerberos_principal_host", "host_name")).andReturn(true).atLeastOnce();
+
     dbAccessor.addFKConstraint(eq("kerberos_principal_host"), eq("FK_krb_pr_host_hostname"),
         eq("host_name"), eq("hosts"), eq("host_name"), eq(true), eq(false));
 
@@ -250,7 +256,15 @@ public class UpgradeCatalog200Test {
     setViewInstancePropertyExpectations(dbAccessor, valueColumnCapture);
     setViewInstanceDataExpectations(dbAccessor, dataValueColumnCapture);
 
-    replay(dbAccessor, configuration, resultSet);
+    // AbstractUpgradeCatalog.addSequence()
+    dbAccessor.getConnection();
+    expectLastCall().andReturn(connection).anyTimes();
+    connection.createStatement();
+    expectLastCall().andReturn(statement).anyTimes();
+    statement.executeQuery(anyObject(String.class));
+    expectLastCall().andReturn(resultSet).anyTimes();
+
+    replay(dbAccessor, configuration, resultSet, statement, connection);
 
     AbstractUpgradeCatalog upgradeCatalog = getUpgradeCatalog(dbAccessor);
     Class<?> c = AbstractUpgradeCatalog.class;
@@ -259,7 +273,7 @@ public class UpgradeCatalog200Test {
     f.set(upgradeCatalog, configuration);
 
     upgradeCatalog.executeDDLUpdates();
-    verify(dbAccessor, configuration, resultSet);
+    verify(dbAccessor, configuration, resultSet, statement, connection);
 
     // verify columns for alert_definition
     verifyAlertDefinitionIgnoreColumn(alertDefinitionIgnoreColumnCapture);
@@ -451,20 +465,8 @@ public class UpgradeCatalog200Test {
     propertiesExpectedT0.put("user_group", "hadoop");
     propertiesExpectedT0.put("kinit_path_local", "/usr/bin");
     propertiesExpectedT0.put("security_enabled", "true");
-    propertiesExpectedT0.put("hive_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/hive/");
-    propertiesExpectedT0.put("sqoop_tar_source", "/usr/hdp/current/sqoop-client/sqoop.tar.gz");
-    propertiesExpectedT0.put("hadoop-streaming_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/mapreduce/");
-    propertiesExpectedT0.put("pig_tar_source", "/usr/hdp/current/pig-client/pig.tar.gz");
-    propertiesExpectedT0.put("mapreduce_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/mapreduce/");
-    propertiesExpectedT0.put("hive_tar_source", "/usr/hdp/current/hive-client/hive.tar.gz");
-    propertiesExpectedT0.put("mapreduce_tar_source", "/usr/hdp/current/hadoop-client/mapreduce.tar.gz");
     propertiesExpectedT0.put("smokeuser", "ambari-qa");
-    propertiesExpectedT0.put("pig_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/pig/");
-    propertiesExpectedT0.put("hadoop-streaming_tar_source", "/usr/hdp/current/hadoop-mapreduce-client/hadoop-streaming.jar");
-    propertiesExpectedT0.put("tez_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/tez/");
     propertiesExpectedT0.put("smokeuser_keytab", "/etc/security/keytabs/smokeuser.headless.keytab");
-    propertiesExpectedT0.put("sqoop_tar_destination_folder", "hdfs,///hdp/apps/{{ hdp_stack_version }}/sqoop/");
-    propertiesExpectedT0.put("tez_tar_source", "/usr/hdp/current/tez-client/lib/tez.tar.gz");
     propertiesExpectedT0.put("ignore_groupsusers_create", "false");
 
     final Map<String, String> propertiesExpectedT1 = new HashMap<String, String>(propertiesExpectedT0);
@@ -576,12 +578,9 @@ public class UpgradeCatalog200Test {
     HostComponentDesiredStateEntity hcDesiredStateEntity = hostComponentDesiredStateDAO.findByPK(hcDesiredStateEntityPk);
     assertNotNull(hcDesiredStateEntity);
 
-    HostComponentStateEntityPK hcStateEntityPk = new HostComponentStateEntityPK();
-    hcStateEntityPk.setServiceName("NAGIOS");
-    hcStateEntityPk.setClusterId(clusterEntity.getClusterId());
-    hcStateEntityPk.setComponentName("NAGIOS_SERVER");
-    hcStateEntityPk.setHostId(hostEntity.getHostId());
-    HostComponentStateEntity hcStateEntity = hostComponentStateDAO.findByPK(hcStateEntityPk);
+    HostComponentStateEntity hcStateEntity = hostComponentStateDAO.findByIndex(
+        clusterEntity.getClusterId(), "NAGIOS", "NAGIOS_SERVER", hostEntity.getHostId());
+
     assertNotNull(hcStateEntity);
 
     ClusterServiceEntity clusterService = clusterServiceDao.findByClusterAndServiceNames(

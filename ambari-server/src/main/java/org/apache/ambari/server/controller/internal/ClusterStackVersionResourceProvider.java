@@ -20,7 +20,6 @@ package org.apache.ambari.server.controller.internal;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.JDK_LOCATION;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -57,13 +56,14 @@ import org.apache.ambari.server.controller.spi.ResourceAlreadyExistsException;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.events.ActionFinalReportReceivedEvent;
+import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.orm.dao.ClusterDAO;
 import org.apache.ambari.server.orm.dao.ClusterVersionDAO;
 import org.apache.ambari.server.orm.dao.HostVersionDAO;
 import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
-import org.apache.ambari.server.orm.entities.ClusterEntity;
+import org.apache.ambari.server.orm.dao.StackDAO;
 import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
-import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.HostVersionEntity;
 import org.apache.ambari.server.orm.entities.OperatingSystemEntity;
 import org.apache.ambari.server.orm.entities.RepositoryEntity;
@@ -71,6 +71,7 @@ import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.serveraction.upgrades.FinalizeUpgradeAction;
 import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.ComponentInfo;
 import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.ServiceComponentHost;
@@ -146,6 +147,9 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
   private static HostVersionDAO hostVersionDAO;
 
   @Inject
+  private static StackDAO stackDAO;
+
+  @Inject
   private static RepositoryVersionDAO repositoryVersionDAO;
 
   @Inject
@@ -167,6 +171,9 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
 
   @Inject
   private static Configuration configuration;
+
+  @Inject
+  private static AmbariEventPublisher ambariEventPublisher;
 
   @Inject
   private static Injector injector;
@@ -309,8 +316,6 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
       }
     } else { // Using stack that is current for cluster
       StackId currentStackVersion = cluster.getCurrentStackVersion();
-      stackName = currentStackVersion.getStackName();
-      stackVersion = currentStackVersion.getStackVersion();
       stackId = currentStackVersion;
     }
 
@@ -337,6 +342,8 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
     int maxTasks = configuration.getAgentPackageParallelCommandsLimit();
     int hostCount = hostsForCluster.size();
     int batchCount = (int) (Math.ceil((double)hostCount / maxTasks));
+
+    ArrayList<Host> directTransitions = new ArrayList<Host>();
 
     long stageId = req.getLastStageId() + 1;
     if (0L == stageId) {
@@ -368,8 +375,13 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
       // Populate with commands for host
       for (int i = 0; i < maxTasks && hostsForClusterIter.hasNext(); i++) {
         Host host = hostsForClusterIter.next();
-        addHostVersionInstallCommandsToStage(desiredRepoVersion,
-                cluster, managementController, ami, stackId, perOsRepos, stage, host);
+        if (hostHasVersionableComponents(cluster, ami, stackId, host)) {
+          addHostVersionInstallCommandsToStage(desiredRepoVersion,
+                  cluster, managementController, ami, stackId, perOsRepos, stage, host);
+        } else {
+          directTransitions.add(host);
+        }
+
       }
     }
     req.addStages(stages);
@@ -400,6 +412,12 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
       // Will also initialize all Host Versions in an INSTALLING state.
       cluster.inferHostVersions(existingCSVer);
 
+      // Directly transition host versions to INSTALLED for hosts that don't have
+      // versionable components
+      for(Host host : directTransitions) {
+        transitionHostVersionToInstalled(host, cluster, existingCSVer.getRepositoryVersion().getVersion());
+      }
+
       req.persist();
 
     } catch (AmbariException e) {
@@ -421,7 +439,7 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
                       "not defined. Repo version=%s, stackId=%s",
               host.getOsFamily(), desiredRepoVersion, stackId));
     }
-    // For every host at cluster, determine packages for all installed services
+    // determine packages for all services that are installed on host
     List<ServiceOsSpecific.Package> packages = new ArrayList<ServiceOsSpecific.Package>();
     Set<String> servicesOnHost = new HashSet<String>();
     List<ServiceComponentHost> components = cluster.getServiceComponentHosts(host.getHostName());
@@ -440,7 +458,11 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
       List<ServiceOsSpecific.Package> packagesForService = managementController.getPackagesForServiceHost(info,
               new HashMap<String, String>(), // Contents are ignored
               host.getOsFamily());
-      packages.addAll(packagesForService);
+      for (ServiceOsSpecific.Package aPackage : packagesForService) {
+        if (! aPackage.getSkipUpgrade()) {
+          packages.add(aPackage);
+        }
+      }
     }
     final String packageList = gson.toJson(packages);
     final String repoList = gson.toJson(repoInfo);
@@ -467,6 +489,58 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
     } catch (AmbariException e) {
       throw new SystemException("Can not modify stage", e);
     }
+  }
+
+
+  /**
+   * Returns true if there is at least one versionable component on host for a given
+   * stack.
+   */
+  private boolean hostHasVersionableComponents(Cluster cluster, AmbariMetaInfo ami,
+                                               StackId stackId, Host host) throws SystemException {
+    List<ServiceComponentHost> components = cluster.getServiceComponentHosts(host.getHostName());
+    for (ServiceComponentHost component : components) {
+      ComponentInfo componentInfo;
+      try {
+        componentInfo = ami.getComponent(stackId.getStackName(),
+                stackId.getStackVersion(), component.getServiceName(), component.getServiceComponentName());
+      } catch (AmbariException e) {
+        throw new SystemException(String.format("Exception while accessing component %s of service %s for stack %s",
+                component.getServiceName(), component.getServiceComponentName(), stackId));
+      }
+      if (componentInfo.isVersionAdvertised()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+
+  /**
+   *  Sends event for host regarding successful repo version installation
+   *  without actually running any commands on host.
+   *  Transitioning host version to INSTALLED state manually would not be the
+   *  best idea since some additional logic may be bound to event listeners.
+   */
+  private void transitionHostVersionToInstalled(Host host, Cluster cluster,
+                                                String version) {
+    LOG.info(String.format("Transitioning version %s on host %s directly to installed" +
+                    " without distributing bits to host since it has no versionable components.",
+            version, host.getHostName()));
+    CommandReport report = new CommandReport();
+    report.setRole(INSTALL_PACKAGES_ACTION);
+    report.setStdOut("Skipped distributing bits to host since it has " +
+            "no versionable components installed");
+    report.setStdErr("");
+    // We don't set actual repo version in structured output in order
+    // to avoid confusing server with fake data
+    report.setStructuredOut("{}");
+    report.setExitCode(0);
+    report.setStatus(HostRoleStatus.COMPLETED.toString());
+    ActionFinalReportReceivedEvent event = new ActionFinalReportReceivedEvent(
+            cluster.getClusterId(), host.getHostName(),
+            report, true);
+    ambariEventPublisher.publish(event);
   }
 
 
@@ -525,6 +599,11 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
       LOG.info("Initiating finalization for manual upgrade to version {} for cluster {}",
               desiredRepoVersion, clName);
 
+      // First, set desired cluster stack version to enable cross-stack upgrade
+      StackId stackId = rve.getStackId();
+      Cluster cluster = getManagementController().getClusters().getCluster(clName);
+      cluster.setDesiredStackVersion(stackId);
+
       Map<String, String> args = new HashMap<String, String>();
       if (newStateStr.equals(RepositoryVersionState.CURRENT.toString())) {
         // Finalize upgrade workflow
@@ -539,14 +618,12 @@ public class ClusterStackVersionResourceProvider extends AbstractControllerResou
       }
 
       // Get a host name to populate the hostrolecommand table's hostEntity.
-      ClusterEntity cluster = clusterDAO.findByName(clName);
-      String defaultHostName = null;
-      List<HostEntity> hosts = new ArrayList(cluster.getHostEntities());
-      if (hosts != null && !hosts.isEmpty()) {
+      String defaultHostName;
+      ArrayList<Host> hosts = new ArrayList<Host>(cluster.getHosts());
+      if (!hosts.isEmpty()) {
         Collections.sort(hosts);
         defaultHostName = hosts.get(0).getHostName();
-      }
-      if (defaultHostName == null) {
+      } else {
         throw new AmbariException("Could not find at least one host to set the command for");
       }
 

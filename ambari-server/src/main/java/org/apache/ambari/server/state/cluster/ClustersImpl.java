@@ -51,6 +51,7 @@ import org.apache.ambari.server.orm.dao.HostRoleCommandDAO;
 import org.apache.ambari.server.orm.dao.HostStateDAO;
 import org.apache.ambari.server.orm.dao.HostVersionDAO;
 import org.apache.ambari.server.orm.dao.KerberosPrincipalHostDAO;
+import org.apache.ambari.server.orm.dao.RequestOperationLevelDAO;
 import org.apache.ambari.server.orm.dao.ResourceTypeDAO;
 import org.apache.ambari.server.orm.dao.ServiceConfigDAO;
 import org.apache.ambari.server.orm.dao.StackDAO;
@@ -117,6 +118,8 @@ public class ClustersImpl implements Clusters {
   @Inject
   private ResourceTypeDAO resourceTypeDAO;
   @Inject
+  private RequestOperationLevelDAO requestOperationLevelDAO;
+  @Inject
   private KerberosPrincipalHostDAO kerberosPrincipalHostDAO;
   @Inject
   private HostConfigMappingDAO hostConfigMappingDAO;
@@ -158,18 +161,16 @@ public class ClustersImpl implements Clusters {
   }
 
   private void checkLoaded() {
-    if (clustersLoaded) {
-      return;
-    }
-
-    w.lock();
-    try {
-      if (!clustersLoaded) {
-        loadClustersAndHosts();
+    if (!clustersLoaded) {
+      w.lock();
+      try {
+        if (!clustersLoaded) {
+          loadClustersAndHosts();
+        }
+        clustersLoaded = true;
+      } finally {
+        w.unlock();
       }
-      clustersLoaded = true;
-    } finally {
-      w.unlock();
     }
   }
 
@@ -256,7 +257,10 @@ public class ClustersImpl implements Clusters {
       throws AmbariException {
     checkLoaded();
 
-    Cluster cluster = clusters.get(clusterName);
+    Cluster cluster = null;
+    if (clusterName != null) {
+      cluster = clusters.get(clusterName);
+    }
     if (null == cluster) {
       throw new ClusterNotFoundException(clusterName);
     }
@@ -340,6 +344,13 @@ public class ClustersImpl implements Clusters {
     }
 
     return hosts.get(hostname);
+  }
+
+  @Override
+  public boolean hostExists(String hostname){
+    checkLoaded();
+
+    return hosts.containsKey(hostname);
   }
 
   @Override
@@ -450,10 +461,14 @@ public class ClustersImpl implements Clusters {
     checkLoaded();
 
     Map<String, Host> hostMap = new HashMap<String, Host>();
-
+    Host host = null;
     for (String hostName : hostSet) {
-      Host host = hosts.get(hostName);
-      if (null == hostName) {
+      if (null != hostName) {
+          host= hosts.get(hostName);
+        if (host == null) {
+          throw new HostNotFoundException(hostName);
+        }
+      } else {
         throw new HostNotFoundException(hostName);
       }
 
@@ -693,7 +708,7 @@ public class ClustersImpl implements Clusters {
   @Override
   public void unmapHostFromCluster(String hostname, String clusterName) throws AmbariException {
     final Cluster cluster = getCluster(clusterName);
-    this.unmapHostFromClusters(hostname, new HashSet<Cluster>() {{ add(cluster); }});
+    unmapHostFromClusters(hostname, new HashSet<Cluster>() {{ add(cluster); }});
   }
 
   public void unmapHostFromClusters(String hostname, Set<Cluster> clusters) throws AmbariException {
@@ -788,7 +803,7 @@ public class ClustersImpl implements Clusters {
       // Remove from all clusters in the cluster_host_mapping table.
       // This will also remove from kerberos_principal_hosts, hostconfigmapping, and configgrouphostmapping 
       Set<Cluster> clusters = hostClusterMap.get(hostname);
-      this.unmapHostFromClusters(hostname, clusters);
+      unmapHostFromClusters(hostname, clusters);
       hostDAO.refresh(entity);
 
       hostVersionDAO.removeByHostName(hostname);
@@ -799,6 +814,7 @@ public class ClustersImpl implements Clusters {
       hostStateDAO.removeByHostId(entity.getHostId());
       hostConfigMappingDAO.removeByHostId(entity.getHostId());
       serviceConfigDAO.removeHostFromServiceConfigs(entity.getHostId());
+      requestOperationLevelDAO.removeByHostId(entity.getHostId());
 
       // Remove from dictionaries
       hosts.remove(hostname);

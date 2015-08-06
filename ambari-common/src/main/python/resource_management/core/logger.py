@@ -24,8 +24,9 @@ __all__ = ["Logger"]
 import sys
 import logging
 from resource_management.libraries.script.config_dictionary import UnknownConfiguration
+from resource_management.core.utils import PasswordString
 
-MESSAGE_MAX_LEN = 256
+MESSAGE_MAX_LEN = 512
 DICTIONARY_MAX_LEN = 5
 
 class Logger:
@@ -34,7 +35,7 @@ class Logger:
   sensitive_strings = {}
   
   @staticmethod
-  def initialize_logger(logging_level=logging.INFO, name='resource_management', format='%(asctime)s - %(message)s'):
+  def initialize_logger(name='resource_management', logging_level=logging.INFO, format='%(asctime)s - %(message)s'):
     # set up logging (two separate loggers for stderr and stdout with different loglevels)
     logger = logging.getLogger(name)
     logger.setLevel(logging_level)
@@ -45,9 +46,10 @@ class Logger:
     cherr = logging.StreamHandler(sys.stderr)
     cherr.setLevel(logging.ERROR)
     cherr.setFormatter(formatter)
+    logger.handlers = []
     logger.addHandler(cherr)
     logger.addHandler(chout)
-    
+
     Logger.logger = logger
     
     return logger, chout, cherr
@@ -101,20 +103,22 @@ class Logger:
   
   @staticmethod
   def _get_resource_repr(resource):
-    return Logger.get_function_repr(repr(resource), resource.arguments)
-
+    return Logger.get_function_repr(repr(resource), resource.arguments, resource)
+  
   @staticmethod
-  def get_function_repr(name, arguments):
+  def get_function_repr(name, arguments, resource=None):
     logger_level = logging._levelNames[Logger.logger.level]
 
     arguments_str = ""
     for x,y in arguments.iteritems():
-
+      # for arguments which want to override the output
+      if resource and 'log_str' in dir(resource._arguments[x]):
+        val = resource._arguments[x].log_str(x, y)
+      # don't show long arguments
+      elif isinstance(y, basestring) and len(y) > MESSAGE_MAX_LEN:
+        val = '...'
       # strip unicode 'u' sign
-      if isinstance(y, unicode):
-        # don't show long messages
-        if len(y) > MESSAGE_MAX_LEN:
-          y = '...'
+      elif isinstance(y, unicode):
         val = repr(y).lstrip('u')
       # don't show dicts of configurations
       # usually too long
@@ -134,12 +138,10 @@ class Logger:
         val = y.__name__
       else:
         val = repr(y)
-        
-
 
       arguments_str += "'{0}': {1}, ".format(x, val)
 
     if arguments_str:
       arguments_str = arguments_str[:-2]
-
+        
     return unicode("{0} {{{1}}}").format(name, arguments_str)

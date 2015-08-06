@@ -21,10 +21,7 @@ var App = require('app');
 App.MainConfigHistoryController = Em.ArrayController.extend(App.TableServerMixin, {
   name: 'mainConfigHistoryController',
 
-  dataSource: App.ServiceConfigVersion.find(),
-  content: function () {
-    return this.get('dataSource').filterProperty('isRequested');
-  }.property('dataSource.@each.isRequested'),
+  content: App.ServiceConfigVersion.find(),
   isPolling: false,
   totalCount: 0,
   filteredCount: 0,
@@ -32,7 +29,7 @@ App.MainConfigHistoryController = Em.ArrayController.extend(App.TableServerMixin
   resetStartIndex: true,
   mockUrl: '/data/configurations/service_versions.json',
   realUrl: function () {
-    return App.apiPrefix + '/clusters/' + App.get('clusterName') + '/configurations/service_config_versions?<parameters>fields=service_config_version,user,group_id,group_name,is_current,createtime,service_name,hosts,service_config_version_note&minimal_response=true';
+    return App.apiPrefix + '/clusters/' + App.get('clusterName') + '/configurations/service_config_versions?<parameters>fields=service_config_version,user,group_id,group_name,is_current,createtime,service_name,hosts,service_config_version_note,is_cluster_compatible,stack_id&minimal_response=true';
   }.property('App.clusterName'),
 
   /**
@@ -226,6 +223,7 @@ App.MainConfigHistoryController = Em.ArrayController.extend(App.TableServerMixin
       if (queryParams) {
         params = App.router.get('updateController').computeParameters(queryParams);
       }
+      params = (params.length > 0) ? params + "&" : params;
       return this.get('realUrl').replace('<parameters>', params);
     }
   },

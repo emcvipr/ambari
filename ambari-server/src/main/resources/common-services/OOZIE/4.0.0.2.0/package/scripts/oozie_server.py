@@ -18,11 +18,7 @@ limitations under the License.
 
 """
 
-import oozie_server_upgrade
-
 from resource_management.core import Logger
-from resource_management.core.resources.system import Execute
-from resource_management.libraries.functions import format
 from resource_management.libraries.script import Script
 from resource_management.libraries.functions import compare_versions
 from resource_management.libraries.functions import conf_select
@@ -33,11 +29,13 @@ from resource_management.libraries.functions.security_commons import cached_kini
 from resource_management.libraries.functions.security_commons import get_params_from_filesystem
 from resource_management.libraries.functions.security_commons import validate_security_config_properties
 from resource_management.libraries.functions.security_commons import FILE_TYPE_XML
+
 from ambari_commons import OSConst
 from ambari_commons.os_family_impl import OsFamilyImpl
 
 from oozie import oozie
 from oozie_service import oozie_service
+from oozie_server_upgrade import OozieUpgrade
 
 from check_oozie_server_status import check_oozie_server_status
          
@@ -55,8 +53,13 @@ class OozieServer(Script):
   def start(self, env, rolling_restart=False):
     import params
     env.set_params(params)
-    #TODO remove this when config command will be implemented
+
     self.configure(env)
+
+    # preparing the WAR file must run after configure since configure writes out
+    # oozie-env.sh which is needed to have the right environment directories setup!
+    if rolling_restart is True:
+      OozieUpgrade.prepare_warfile()
 
     oozie_service(action='start', rolling_restart=rolling_restart)
 
@@ -143,9 +146,11 @@ class OozieServerDefault(OozieServer):
 
   def pre_rolling_restart(self, env):
     """
-    Performs the tasks surrounding the Oozie startup when a rolling upgrade
-    is in progress. This includes backing up the configuration, updating
-    the database, preparing the WAR, and installing the sharelib in HDFS.
+    Performs the tasks that should be done before an upgrade of oozie. This includes:
+      - backing up configurations
+      - running hdp-select and conf-select
+      - restoring configurations
+      - preparing the libext directory
     :param env:
     :return:
     """
@@ -159,14 +164,14 @@ class OozieServerDefault(OozieServer):
 
     Logger.info("Executing Oozie Server Rolling Upgrade pre-restart")
 
-    oozie_server_upgrade.backup_configuration()
+    OozieUpgrade.backup_configuration()
 
     conf_select.select(params.stack_name, "oozie", params.version)
     hdp_select.select("oozie-server", params.version)
 
-    oozie_server_upgrade.restore_configuration()
-    oozie_server_upgrade.prepare_libext_directory()
-    oozie_server_upgrade.upgrade_oozie()
+    OozieUpgrade.restore_configuration()
+    OozieUpgrade.prepare_libext_directory()
+
 
 @OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
 class OozieServerWindows(OozieServer):

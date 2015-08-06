@@ -30,12 +30,7 @@ import os
 import tempfile
 
 from ambari_commons import OSCheck
-from only_for_platform import only_for_platform, get_platform, PLATFORM_LINUX, PLATFORM_WINDOWS
-
-if get_platform() != PLATFORM_WINDOWS:
-  os_distro_value = ('Suse','11','Final')
-else:
-  os_distro_value = ('win2012serverr2','6.3','WindowsServer')
+from only_for_platform import os_distro_value
 
 with patch("platform.linux_distribution", return_value = ('Suse','11','Final')):
   from ambari_agent import NetUtil
@@ -283,10 +278,10 @@ class TestSecurity(unittest.TestCase):
   @patch("ambari_agent.hostname.hostname")
   @patch('__builtin__.open', create=True, autospec=True)
   @patch.dict('os.environ', {'DUMMY_PASSPHRASE': 'dummy-passphrase'})
-  @patch('json.dumps')
+  @patch('ambari_simplejson.dumps')
   @patch('urllib2.Request')
   @patch("urllib2.OpenerDirector.open")
-  @patch('json.loads')
+  @patch('ambari_simplejson.loads')
   def test_reqSignCrt(self, loads_mock, urlopen_mock, request_mock, dumps_mock, open_mock, hostname_mock):
     self.config.set('security', 'keysdir', '/dummy-keysdir')
     self.config.set('security', 'passphrase_env_var_name', 'DUMMY_PASSPHRASE')

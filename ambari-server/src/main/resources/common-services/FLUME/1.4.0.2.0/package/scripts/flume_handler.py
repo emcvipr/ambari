@@ -23,6 +23,7 @@ from flume import flume
 from flume import get_desired_state
 
 from resource_management import *
+from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions.flume_agent_helper import find_expected_agent_names
 from resource_management.libraries.functions.flume_agent_helper import get_flume_status
@@ -103,6 +104,7 @@ class FlumeHandler(Script):
     elif len(expected_agents) == 0 and 'INSTALLED' == get_desired_state():
       raise ComponentIsNotRunning()
 
+
   @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
   def status(self, env):
     import params
@@ -119,6 +121,7 @@ class FlumeHandler(Script):
       return
 
     Logger.info("Executing Flume Rolling Upgrade pre-restart")
+    conf_select.select(params.stack_name, "flume", params.version)
     hdp_select.select("flume-server", params.version)
     flume_upgrade.pre_start_restore()
 

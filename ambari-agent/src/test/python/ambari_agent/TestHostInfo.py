@@ -31,7 +31,7 @@ from mock.mock import create_autospec
 import ambari_commons
 from ambari_commons import OSCheck
 import os
-from only_for_platform import not_for_platform, get_platform, PLATFORM_WINDOWS, PLATFORM_LINUX
+from only_for_platform import not_for_platform, os_distro_value, PLATFORM_WINDOWS
 from ambari_commons.firewall import Firewall
 from ambari_commons.os_check import OSCheck, OSConst
 from ambari_agent.HostCheckReportFileHandler import HostCheckReportFileHandler
@@ -42,7 +42,7 @@ from resource_management.core.system import System
 from resource_management.libraries.functions import packages_analyzer
 
 @not_for_platform(PLATFORM_WINDOWS)
-@patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = ('Suse','11','Final')))
+@patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
 class TestHostInfo(TestCase):
 
   @patch.object(OSCheck, 'get_os_family')
@@ -404,23 +404,6 @@ class TestHostInfo(TestCase):
     self.assertEquals(list[0]['pid'], 1)
     self.assertTrue(list[0]['hadoop'])
     self.assertEquals(list[0]['user'], 'user')
-
-  @patch("subprocess.Popen")
-  @patch.object(Hardware, 'extractMountInfo')
-  def test_osdiskAvailableSpace(self, extract_mount_info_mock, subproc_popen_mock):
-    hostInfo = HostInfoLinux()
-    p = MagicMock()
-    p.communicate.return_value = ['some']
-    subproc_popen_mock.return_value = p
-    extract_mount_info_mock.return_value = {'info' : 'info'}
-    result = hostInfo.osdiskAvailableSpace('')
-
-    self.assertTrue(result['info'], 'info')
-
-    p.communicate.return_value = ''
-    result = hostInfo.osdiskAvailableSpace('')
-
-    self.assertEquals(result, {})
 
   @patch.object(OSCheck, "get_os_type")
   @patch("subprocess.Popen")

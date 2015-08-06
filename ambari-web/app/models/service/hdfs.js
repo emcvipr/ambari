@@ -19,24 +19,21 @@ var App = require('app');
 
 App.HDFSService = App.Service.extend({
   version: DS.attr('string'),
-  nameNode: function () {
-    return this.get('hostComponents').findProperty('componentName', 'NAMENODE');
-  }.property('hostComponents'),
-  snameNode: function () {
-    return this.get('hostComponents').findProperty('componentName', 'SECONDARY_NAMENODE');
-  }.property('hostComponents'),
+  nameNode: DS.belongsTo('App.HostComponent'),
+  snameNode: DS.belongsTo('App.HostComponent'),
   activeNameNode: DS.belongsTo('App.HostComponent'),
   standbyNameNode: DS.belongsTo('App.HostComponent'),
   standbyNameNode2: DS.belongsTo('App.HostComponent'),
+  isNnHaEnabled: function() {
+    return !this.get('snameNode') && this.get('hostComponents').filterProperty('componentName', 'NAMENODE').length > 1;
+  }.property('snameNode','hostComponents'),
   dataNodesStarted: DS.attr('number'),
   dataNodesInstalled: DS.attr('number'),
   dataNodesTotal: DS.attr('number'),
   nfsGatewaysStarted: DS.attr('number'),
   nfsGatewaysInstalled: DS.attr('number'),
   nfsGatewaysTotal: DS.attr('number'),
-  journalNodes: function () {
-    return this.get('hostComponents').filterProperty('componentName', 'JOURNALNODE');
-  }.property('hostComponents.@each'),
+  journalNodes: DS.hasMany('App.HostComponent'),
   nameNodeStartTime: DS.attr('number'),
   jvmMemoryHeapUsed: DS.attr('number'),
   jvmMemoryHeapMax: DS.attr('number'),
@@ -46,12 +43,13 @@ App.HDFSService = App.Service.extend({
   capacityUsed: DS.attr('number'),
   capacityTotal: DS.attr('number'),
   capacityRemaining: DS.attr('number'),
+  capacityNonDfsUsed: DS.attr('number'),
   dfsTotalBlocks: DS.attr('number'),
   dfsCorruptBlocks: DS.attr('number'),
   dfsMissingBlocks: DS.attr('number'),
   dfsUnderReplicatedBlocks: DS.attr('number'),
   dfsTotalFiles: DS.attr('number'),
-  upgradeStatus: DS.attr('boolean'),
+  upgradeStatus: DS.attr('string'),
   safeModeStatus: DS.attr('string'),
   nameNodeRpc: DS.attr('number'),
   metricsNotAvailable: DS.attr('boolean')

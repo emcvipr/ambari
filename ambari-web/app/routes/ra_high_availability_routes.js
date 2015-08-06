@@ -56,7 +56,7 @@ module.exports = App.WizardRoute.extend({
                 alwaysCallback: function () {
                   self.hide();
                   router.transitionTo('main.services.index');
-                  //location.reload();
+                  location.reload();
                 }
               });
             }, Em.I18n.t('admin.ra_highAvailability.closePopup'));
@@ -71,7 +71,7 @@ module.exports = App.WizardRoute.extend({
               alwaysCallback: function () {
                 self.hide();
                 router.transitionTo('main.services.index');
-                //location.reload();
+                location.reload();
               }
             });
           }
@@ -109,7 +109,9 @@ module.exports = App.WizardRoute.extend({
       });
     },
     next: function (router) {
-      router.get('rAHighAvailabilityWizardController').save('loadBalancerURL');
+      var controller = router.get('rAHighAvailabilityWizardController');
+      controller.save('loadBalancerURL');
+      controller.clearMasterComponentHosts();
       router.transitionTo('step2');
     }
   }),
@@ -136,6 +138,7 @@ module.exports = App.WizardRoute.extend({
       };
       wizardController.set('content.raHosts', raHosts);
       wizardController.save('raHosts');
+      wizardController.saveMasterComponentHosts(stepController);
       router.transitionTo('step3');
     },
     back: function (router) {
@@ -186,7 +189,7 @@ module.exports = App.WizardRoute.extend({
         alwaysCallback: function () {
           rAHighAvailabilityWizardController.get('popup').hide();
           router.transitionTo('main.services.index');
-          //location.reload();
+          location.reload();
         }
       });
     }

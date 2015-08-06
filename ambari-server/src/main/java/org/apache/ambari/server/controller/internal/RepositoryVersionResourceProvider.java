@@ -17,6 +17,7 @@
  */
 package org.apache.ambari.server.controller.internal;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -188,7 +189,7 @@ public class RepositoryVersionResourceProvider extends AbstractResourceProvider 
     for (Map<String, Object> propertyMap: propertyMaps) {
       final StackId stackId = getStackInformationFromUrl(propertyMap);
 
-      if (propertyMaps.size() == 1 && propertyMap.get(REPOSITORY_VERSION_ID_PROPERTY_ID) == null) {
+      if (stackId != null && propertyMaps.size() == 1 && propertyMap.get(REPOSITORY_VERSION_ID_PROPERTY_ID) == null) {
         requestedEntities.addAll(repositoryVersionDAO.findByStack(stackId));
       } else {
         final Long id;
@@ -395,6 +396,11 @@ public class RepositoryVersionResourceProvider extends AbstractResourceProvider 
       if (!osSupported.contains(os)) {
         throw new AmbariException("Operating system type " + os + " is not supported by stack " + stackFullName);
       }
+    }
+
+    if (!RepositoryVersionEntity.isVersionInStack(repositoryVersion.getStackId(), repositoryVersion.getVersion())) {
+      throw new AmbariException(MessageFormat.format("Version {0} needs to belong to stack {1}",
+          repositoryVersion.getVersion(), repositoryVersion.getStackName() + "-" + repositoryVersion.getStackVersion()));
     }
   }
 

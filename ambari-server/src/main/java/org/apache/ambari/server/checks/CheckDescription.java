@@ -31,8 +31,6 @@ public enum CheckDescription {
   CLIENT_RETRY(PrereqCheckType.SERVICE,
       "Client Retry Properties",
       new HashMap<String, String>() {{
-        put(ClientRetryPropertyCheck.HDFS_CLIENT_RETRY_MISSING_KEY,
-          "The hdfs-site.xml property dfs.client.retry.policy.enabled should be set to true.");
         put(ClientRetryPropertyCheck.HIVE_CLIENT_RETRY_MISSING_KEY,
           "The hive-site.xml property hive.metastore.failure.retries should be set to a positive value.");
         put(ClientRetryPropertyCheck.OOZIE_CLIENT_RETRY_MISSING_KEY,
@@ -70,6 +68,13 @@ public enum CheckDescription {
       "The SNameNode component must be deleted from all hosts",
       new HashMap<String, String>() {{
         put(AbstractCheckDescriptor.DEFAULT, "The SNameNode component must be deleted from host: {{fails}}.");
+      }}),
+
+  SERVICES_HIVE_MULTIPLE_METASTORES(PrereqCheckType.SERVICE,
+      "Hive Metastore Availability",
+      new HashMap<String, String>() {{
+        put(AbstractCheckDescriptor.DEFAULT,
+          "Multiple Hive Metastore instances are recommended for Rolling Upgrade. This ensures that there is at least one Metastore running during the upgrade process.");
       }}),
 
   SERVICES_MAINTENANCE_MODE(PrereqCheckType.SERVICE,
@@ -123,7 +128,7 @@ public enum CheckDescription {
       "All services must be started",
       new HashMap<String, String>() {{
         put(AbstractCheckDescriptor.DEFAULT,
-          "The following Services must be started: {{fails}}");
+          "The following Services must be started: {{fails}}. Try to do a Stop & Start in case they were started outside of Ambari.");
       }}),
 
   SERVICES_YARN_WP(PrereqCheckType.SERVICE,
@@ -134,10 +139,10 @@ public enum CheckDescription {
       }}),
 
   SERVICES_YARN_RM_HA(PrereqCheckType.SERVICE,
-      "YARN ResourceManager HA should be enabled to prevent a disruption in service during the upgrade",
+      "YARN ResourceManager High Availability is not enabled.",
       new HashMap<String, String>() {{
         put(AbstractCheckDescriptor.DEFAULT,
-          "YARN ResourceManager High Availability is not enabled. Verify that dfs.nameservices property is present in hdfs-site.xml.");
+          "YARN ResourceManager HA should be enabled to prevent a disruption in service during the upgrade");
       }}),
 
   SERVICES_YARN_TIMELINE_ST(PrereqCheckType.SERVICE,
@@ -145,6 +150,17 @@ public enum CheckDescription {
       new HashMap<String, String>() {{
         put(AbstractCheckDescriptor.DEFAULT,
           "YARN should have state preserving restart enabled for the Timeline server. The yarn-site.xml property yarn.timeline-service.recovery.enabled should be set to true.");
+      }}),
+
+  SERVICES_MR2_JOBHISTORY_ST(PrereqCheckType.SERVICE,
+      "MapReduce2 JobHistory recovery should be enabled",
+      new HashMap<String, String>() {{
+        put(MapReduce2JobHistoryStatePreservingCheck.MAPREDUCE2_JOBHISTORY_RECOVERY_ENABLE_KEY,
+          "MapReduce2 should have recovery enabled for the JobHistory server. The mapred-site.xml property mapreduce.jobhistory.recovery.enable should be set to true.");
+        put(MapReduce2JobHistoryStatePreservingCheck.MAPREDUCE2_JOBHISTORY_RECOVERY_STORE_KEY,
+          "MapReduce2 should have recovery enabled for the JobHistory server. The mapred-site.xml property mapreduce.jobhistory.recovery.store.class should be set to org.apache.hadoop.mapreduce.v2.hs.HistoryServerLeveldbStateStoreService.");
+        put(MapReduce2JobHistoryStatePreservingCheck.MAPREDUCE2_JOBHISTORY_RECOVERY_STORE_LEVELDB_PATH_KEY,
+          "MapReduce2 should have recovery enabled for the JobHistory server. The mapred-site.xml property mapreduce.jobhistory.recovery.store.leveldb.path should be set. Please note that \"mapreduce.jobhistory.recovery.store.leveldb.path\" should be on a mount with ~3 GB of free space.");
       }}),
 
   SERVICES_HIVE_DYNAMIC_SERVICE_DISCOVERY(PrereqCheckType.SERVICE,

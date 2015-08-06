@@ -19,7 +19,6 @@ limitations under the License.
 '''
 
 import glob
-import hostname
 import logging
 import os
 import re
@@ -32,7 +31,6 @@ from ambari_commons import OSCheck, OSConst
 from ambari_commons.firewall import Firewall
 from ambari_commons.os_family_impl import OsFamilyImpl
 
-from ambari_agent.Hardware import Hardware
 from ambari_agent.HostCheckReportFileHandler import HostCheckReportFileHandler
 
 
@@ -134,7 +132,7 @@ class HostInfoLinux(HostInfo):
     "rrdcached", "hcat", "ambari-qa", "sqoop-ambari-qa", "sqoop-ambari_qa",
     "webhcat", "hadoop-hdfs", "hadoop-yarn", "hadoop-mapreduce",
     "knox", "yarn", "hive-webhcat", "kafka", "slider", "storm-slider-client",
-    "ganglia-web"
+    "ganglia-web", "mahout", "spark", "pig", "phoenix", "ranger", "accumulo"
   ]
 
 
@@ -146,9 +144,10 @@ class HostInfoLinux(HostInfo):
   DEFAULT_USERS = [
     "hive", "ambari-qa", "oozie", "hbase", "hcat", "mapred",
     "hdfs", "rrdcached", "zookeeper", "flume", "sqoop", "sqoop2",
-    "hue", "yarn", "tez", "storm", "falcon", "kafka", "knox"
+    "hue", "yarn", "tez", "storm", "falcon", "kafka", "knox", "ams",
+    "hadoop", "spark", "accumulo", "atlas", "mahout", "ranger", "kms"
   ]
-
+  
   # Default set of directories that are checked for existence of files and folders
   DEFAULT_DIRS = [
     "/etc", "/var/run", "/var/log", "/usr/lib", "/var/lib", "/var/tmp", "/tmp", "/var",
@@ -163,23 +162,12 @@ class HostInfoLinux(HostInfo):
   def __init__(self, config=None):
     super(HostInfoLinux, self).__init__(config)
 
-  def osdiskAvailableSpace(self, path):
-    diskInfo = {}
-    try:
-      df = subprocess.Popen(["df", "-kPT", path], stdout=subprocess.PIPE)
-      dfdata = df.communicate()[0]
-      return Hardware.extractMountInfo(dfdata.splitlines()[-1])
-    except:
-      pass
-    return diskInfo
-
   def checkUsers(self, users, results):
     f = open('/etc/passwd', 'r')
     for userLine in f:
       fields = userLine.split(":")
       if fields[0] in users:
         result = {}
-        homeDir = fields[5]
         result['name'] = fields[0]
         result['homeDir'] = fields[5]
         result['status'] = "Available"

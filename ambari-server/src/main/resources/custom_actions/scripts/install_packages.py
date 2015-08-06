@@ -19,17 +19,24 @@ limitations under the License.
 Ambari Agent
 
 """
+import os
+import signal
 
-import json
-import sys
 import re
-import traceback
+import os.path
+
+import ambari_simplejson as json  # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
+
 from resource_management import *
 from resource_management.libraries.functions.list_ambari_managed_repos import list_ambari_managed_repos
 from ambari_commons.os_check import OSCheck, OSConst
 from resource_management.libraries.functions.packages_analyzer import allInstalledPackages
-from resource_management.core.shell import call
-from resource_management.libraries.functions.default import default
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions.hdp_select import get_hdp_versions
+from resource_management.libraries.functions.repo_version_history \
+  import read_actual_version_from_history_file, write_actual_version_to_history_file, REPO_VERSION_HISTORY_FILE
+
+from resource_management.core.logger import Logger
 
 
 class InstallPackages(Script):
@@ -42,107 +49,211 @@ class InstallPackages(Script):
 
   UBUNTU_REPO_COMPONENTS_POSTFIX = ["main"]
   REPO_FILE_NAME_PREFIX = 'HDP-'
-
+  STACK_TO_ROOT_FOLDER = {"HDP": "/usr/hdp"}
+  
   def actionexecute(self, env):
-    delayed_fail = False
-    package_install_result = False
+    num_errors = 0
 
     # Parse parameters
     config = Script.get_config()
 
+    repo_rhel_suse = config['configurations']['cluster-env']['repo_suse_rhel_template']
+    repo_ubuntu = config['configurations']['cluster-env']['repo_ubuntu_template']
+    template = repo_rhel_suse if OSCheck.is_redhat_family() or OSCheck.is_suse_family() else repo_ubuntu
+
+    # Handle a SIGTERM and SIGINT gracefully
+    signal.signal(signal.SIGTERM, self.abort_handler)
+    signal.signal(signal.SIGINT, self.abort_handler)
+
     # Select dict that contains parameters
     try:
-      repository_version = config['roleParams']['repository_version']
+      self.repository_version = config['roleParams']['repository_version']
       base_urls = json.loads(config['roleParams']['base_urls'])
       package_list = json.loads(config['roleParams']['package_list'])
       stack_id = config['roleParams']['stack_id']
     except KeyError:
       # Last try
-      repository_version = config['commandParams']['repository_version']
+      self.repository_version = config['commandParams']['repository_version']
       base_urls = json.loads(config['commandParams']['base_urls'])
       package_list = json.loads(config['commandParams']['package_list'])
       stack_id = config['commandParams']['stack_id']
 
+    stack_name = None
+    self.stack_root_folder = None
+    if stack_id and "-" in stack_id:
+      stack_split = stack_id.split("-")
+      if len(stack_split) == 2:
+        stack_name = stack_split[0].upper()
+        if stack_name in self.STACK_TO_ROOT_FOLDER:
+          self.stack_root_folder = self.STACK_TO_ROOT_FOLDER[stack_name]
+    if self.stack_root_folder is None:
+      raise Fail("Cannot determine the stack's root directory by parsing the stack_id property, {0}".format(str(stack_id)))
+
+    self.repository_version = self.repository_version.strip()
+
     # Install/update repositories
     installed_repositories = []
-    current_repositories = ['base']  # Some our packages are installed from the base repo
-    current_repo_files = set(['base'])
-    old_versions = self.hdp_versions()
-    
+    self.current_repositories = []
+    self.current_repo_files = set()
+
+    # Enable base system repositories
+    # We don't need that for RHEL family, because we leave all repos enabled
+    # except disabled HDP* ones
+    if OSCheck.is_suse_family():
+      self.current_repositories.append('base')
+    elif OSCheck.is_ubuntu_family():
+      self.current_repo_files.add('base')
+
+    Logger.info("Will install packages for repository version {0}".format(self.repository_version))
     try:
       append_to_file = False
       for url_info in base_urls:
-        repo_name, repo_file = self.install_repository(url_info, repository_version, append_to_file)
-        current_repositories.append(repo_name)
-        current_repo_files.add(repo_file)
+        repo_name, repo_file = self.install_repository(url_info, append_to_file, template)
+        self.current_repositories.append(repo_name)
+        self.current_repo_files.add(repo_file)
         append_to_file = True
 
       installed_repositories = list_ambari_managed_repos()
     except Exception, err:
-      print "Can not distribute repositories."
-      print traceback.format_exc()
-      delayed_fail = True
+      Logger.logger.exception("Cannot distribute repositories. Error: {0}".format(str(err)))
+      num_errors += 1
 
-    # Install packages
-    if not delayed_fail:
-      packages_were_checked = False
-      try:
-        packages_installed_before = []
-        allInstalledPackages(packages_installed_before)
-        packages_installed_before = [package[0] for package in packages_installed_before]
-        packages_were_checked = True
-        filtered_package_list = self.filter_package_list(package_list)
-        for package in filtered_package_list:
-          name = self.format_package_name(package['name'], repository_version)
-          Package(name, use_repos=list(current_repo_files) if OSCheck.is_ubuntu_family() else current_repositories)
-        package_install_result = True
-      except Exception, err:
-        print "Can not install packages."
-        print traceback.format_exc()
-        delayed_fail = True
-
-        # Remove already installed packages in case of fail
-        if packages_were_checked and packages_installed_before:
-          packages_installed_after = []
-          allInstalledPackages(packages_installed_after)
-          packages_installed_after = [package[0] for package in packages_installed_after]
-          packages_installed_before = set(packages_installed_before)
-          new_packages_installed = [package for package in packages_installed_after if package not in packages_installed_before]
-
-          if OSCheck.is_ubuntu_family():
-            package_version_string = repository_version.replace('.', '-')
-          else:
-            package_version_string = repository_version.replace('-', '_')
-            package_version_string = package_version_string.replace('.', '_')
-          for package in new_packages_installed:
-            if package_version_string and (package_version_string in package):
-              Package(package, action="remove")
-
-    # Build structured output
-    structured_output = {
+    # Build structured output with initial values
+    self.structured_output = {
       'ambari_repositories': installed_repositories,
-      'installed_repository_version': repository_version,
+      'installed_repository_version': self.repository_version,
       'stack_id': stack_id,
-      'package_installation_result': 'SUCCESS' if package_install_result else 'FAIL'
+      'package_installation_result': 'FAIL'
     }
+    self.put_structured_out(self.structured_output)
 
-    if package_install_result:
-      new_versions = self.hdp_versions()
-      deltas = set(new_versions) - set(old_versions)
-      if 1 == len(deltas):
-        structured_output['actual_version'] = next(iter(deltas))
-
-    self.put_structured_out(structured_output)
-
-    # Provide correct exit code
-    if delayed_fail:
+    if num_errors > 0:
       raise Fail("Failed to distribute repositories/install packages")
 
-  def install_repository(self, url_info, repository_version, append_to_file):
-    template = "repo_suse_rhel.j2" if OSCheck.is_redhat_family() or OSCheck.is_suse_family() else "repo_ubuntu.j2"
+    # If the repo contains a build number, optimistically assume it to be the actual_version. It will get changed
+    # to correct value if it is not
+    self.actual_version = None
+    if self.repository_version:
+      m = re.search("[\d\.]+-\d+", self.repository_version)
+      if m:
+        # Contains a build number
+        self.repo_version_with_build_number = self.repository_version
+        self.structured_output['actual_version'] = self.repo_version_with_build_number  # This is the best value known so far.
+        self.put_structured_out(self.structured_output)
+      else:
+        self.repo_version_with_build_number = None
+
+    # Initial list of versions, used to compute the new version installed
+    self.old_versions = get_hdp_versions()
+
+    try:
+      # It's possible for the process to receive a SIGTERM while installing the packages
+      ret_code = self.install_packages(package_list)
+      if ret_code == 0:
+        self.structured_output['package_installation_result'] = 'SUCCESS'
+        self.put_structured_out(self.structured_output)
+      else:
+        num_errors += 1
+    except Exception, err:
+      Logger.logger.exception("Could not install packages. Error: {0}".format(str(err)))
+
+    # Provide correct exit code
+    if num_errors > 0:
+      raise Fail("Failed to distribute repositories/install packages")
+
+    if 'package_installation_result' in self.structured_output and \
+      'actual_version' in self.structured_output and \
+      self.structured_output['package_installation_result'] == 'SUCCESS':
+      conf_select.create_config_links(stack_id, self.structured_output['actual_version'])
+
+  def compute_actual_version(self):
+    """
+    After packages are installed, determine what the new actual version is, in order to save it.
+    """
+    Logger.info("Attempting to determine actual version with build number.")
+    Logger.info("Old versions: {0}".format(self.old_versions))
+
+    new_versions = get_hdp_versions()
+    Logger.info("New versions: {0}".format(new_versions))
+
+    deltas = set(new_versions) - set(self.old_versions)
+    Logger.info("Deltas: {0}".format(deltas))
+
+    # Get HDP version without build number
+    normalized_repo_version = self.repository_version.split('-')[0]
+
+    if 1 == len(deltas):
+      self.actual_version = next(iter(deltas)).strip()
+      self.structured_output['actual_version'] = self.actual_version
+      self.put_structured_out(self.structured_output)
+      write_actual_version_to_history_file(normalized_repo_version, self.actual_version)
+    else:
+      Logger.info("Cannot determine a new actual version installed by using the delta method.")
+      # If the first install attempt does a partial install and is unable to report this to the server,
+      # then a subsequent attempt will report an empty delta. For this reason, it is important to search the
+      # repo version history file to determine if we previously did write an actual_version.
+      self.actual_version = read_actual_version_from_history_file(normalized_repo_version)
+      if self.actual_version is not None:
+        self.actual_version = self.actual_version.strip()
+        self.structured_output['actual_version'] = self.actual_version
+        self.put_structured_out(self.structured_output)
+        Logger.info("Found actual version {0} by parsing file {1}".format(self.actual_version, REPO_VERSION_HISTORY_FILE))
+      elif self.repo_version_with_build_number is None:
+        msg = "Could not determine actual version installed. Try reinstalling packages again."
+        raise Fail(msg)
+
+
+  def install_packages(self, package_list):
+    """
+    Actually install the packages using the package manager.
+    :param package_list: List of package names to install
+    :return: Returns 0 if no errors were found, and 1 otherwise.
+    """
+    ret_code = 0
+    # Install packages
+    packages_were_checked = False
+    try:
+      packages_installed_before = []
+      allInstalledPackages(packages_installed_before)
+      packages_installed_before = [package[0] for package in packages_installed_before]
+      packages_were_checked = True
+      for package in package_list:
+        name = self.format_package_name(package['name'], self.repository_version)
+        Package(name,
+                use_repos=list(self.current_repo_files) if OSCheck.is_ubuntu_family() else self.current_repositories,
+                skip_repos=[self.REPO_FILE_NAME_PREFIX + "*"] if OSCheck.is_redhat_family() else [])
+    except Exception, err:
+      ret_code = 1
+      Logger.logger.exception("Package Manager failed to install packages. Error: {0}".format(str(err)))
+
+      # Remove already installed packages in case of fail
+      if packages_were_checked and packages_installed_before:
+        packages_installed_after = []
+        allInstalledPackages(packages_installed_after)
+        packages_installed_after = [package[0] for package in packages_installed_after]
+        packages_installed_before = set(packages_installed_before)
+        new_packages_installed = [package for package in packages_installed_after if package not in packages_installed_before]
+
+        if OSCheck.is_ubuntu_family():
+          package_version_string = self.repository_version.replace('.', '-')
+        else:
+          package_version_string = self.repository_version.replace('-', '_')
+          package_version_string = package_version_string.replace('.', '_')
+        for package in new_packages_installed:
+          if package_version_string and (package_version_string in package):
+            Package(package, action="remove")
+    # Compute the actual version in order to save it in structured out
+    try:
+      self.compute_actual_version()
+    except Fail, err:
+      ret_code = 1
+      Logger.logger.exception("Failure while computing actual version. Error: {0}".format(str(err)))
+    return ret_code
+
+  def install_repository(self, url_info, append_to_file, template):
 
     repo = {
-      'repoName': "{0}-{1}".format(url_info['name'], repository_version)
+      'repoName': "{0}-{1}".format(url_info['name'], self.repository_version)
     }
 
     if not 'baseUrl' in url_info:
@@ -156,7 +267,7 @@ class InstallPackages(Script):
       repo['mirrorsList'] = url_info['mirrorsList']
 
     ubuntu_components = [url_info['name']] + self.UBUNTU_REPO_COMPONENTS_POSTFIX
-    file_name = self.REPO_FILE_NAME_PREFIX + repository_version
+    file_name = self.REPO_FILE_NAME_PREFIX + self.repository_version
 
     Repository(repo['repoName'],
       action = "create",
@@ -183,53 +294,10 @@ class InstallPackages(Script):
     else:
       return package_name
 
-  def hdp_versions(self):
-    code, out = call("hdp-select versions")
-    if 0 == code:
-      versions = []
-      for line in out.splitlines():
-        versions.append(line.rstrip('\n'))
-      return versions
-    else:
-      return []
+  def abort_handler(self, signum, frame):
+    Logger.error("Caught signal {0}, will handle it gracefully. Compute the actual version if possible before exiting.".format(signum))
+    self.compute_actual_version()
 
-
-  def filter_package_list(self, package_list):
-    """
-    Here we filter packages that are managed with custom logic in package
-    scripts. Usually this packages come from system repositories, and either
-     are not available when we restrict repository list, or should not be
-    installed on host at all.
-    :param package_list: original list
-    :return: filtered package_list
-    """
-    filtered_package_list = []
-
-    # hadoop-lzo package is installed only if LZO compression is enabled
-    lzo_packages = ['hadoop-lzo', 'lzo', 'hadoop-lzo-native', 'liblzo2-2', 'hadooplzo']
-    has_lzo = False
-    io_compression_codecs = default("/configurations/core-site/io.compression.codecs", None)
-    if io_compression_codecs:
-      has_lzo = "com.hadoop.compression.lzo" in io_compression_codecs.lower()
-
-    for package in package_list:
-      skip_package = False
-      # mysql* package logic is managed at HIVE scripts
-      if package['name'].startswith('mysql'):
-        skip_package = True
-      # Ambari metrics packages should not be upgraded during RU
-      if package['name'].startswith('ambari-metrics'):
-        skip_package = True
-
-      if not has_lzo:
-        for lzo_package in lzo_packages:
-          if package['name'].startswith(lzo_package):
-            skip_package = True
-            break
-
-      if not skip_package:
-        filtered_package_list.append(package)
-    return filtered_package_list
 
 if __name__ == "__main__":
   InstallPackages().execute()

@@ -66,12 +66,28 @@ module.exports = Em.Application.create({
   }.property('upgradeState'),
 
   /**
+   * flag is true when upgrade process is aborted
+   * @returns {boolean}
+   */
+  upgradeAborted: function() {
+    return this.get('upgradeState') === "ABORTED";
+  }.property('upgradeState'),
+
+  /**
    * RU is running
    * @type {boolean}
    */
   upgradeIsRunning: function() {
     return this.get('upgradeInProgress') || this.get('upgradeHolding');
   }.property('upgradeInProgress', 'upgradeHolding'),
+
+  /**
+   * flag is true when upgrade process is running or aborted
+   * @returns {boolean}
+   */
+  upgradeIsNotFinished: function () {
+    return this.get('upgradeIsRunning') || this.get('upgradeAborted');
+  }.property('upgradeIsRunning', 'upgradeAborted'),
 
   /**
    * compute user access rights by permission type
@@ -201,7 +217,7 @@ module.exports = Em.Application.create({
   isHaEnabled: function () {
     var isHDFSInstalled = App.Service.find().findProperty('serviceName','HDFS');
     return !!isHDFSInstalled && !this.HostComponent.find().someProperty('componentName', 'SECONDARY_NAMENODE');
-  }.property('router.clusterController.isLoaded', 'router.clusterController.dataLoadList.serviceMetrics'),
+  }.property('router.clusterController.dataLoadList.services', 'router.clusterController.isServiceContentFullyLoaded'),
 
   /**
    * If ResourceManager High Availability is enabled

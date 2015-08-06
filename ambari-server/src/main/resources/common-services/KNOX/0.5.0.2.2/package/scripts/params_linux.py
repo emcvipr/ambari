@@ -19,7 +19,7 @@ Ambari Agent
 
 """
 from resource_management import *
-import json
+import ambari_simplejson as json # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.default import default
@@ -33,6 +33,7 @@ config = Script.get_config()
 
 tmp_dir = Script.get_tmp_dir()
 stack_name = default("/hostLevelParams/stack_name", None)
+upgrade_direction = default("/commandParams/upgrade_direction", None)
 version = default("/commandParams/version", None)
 
 knox_master_secret_path = '/var/lib/knox/data/security/master'
@@ -62,6 +63,27 @@ knox_logs_dir = '/var/log/knox'
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
+dfs_ha_enabled = False
+dfs_ha_nameservices = default("/configurations/hdfs-site/dfs.nameservices", None)
+dfs_ha_namenode_ids = default(format("/configurations/hdfs-site/dfs.ha.namenodes.{dfs_ha_nameservices}"), None)
+
+namenode_rpc = None
+
+if dfs_ha_namenode_ids:
+  dfs_ha_namemodes_ids_list = dfs_ha_namenode_ids.split(",")
+  dfs_ha_namenode_ids_array_len = len(dfs_ha_namemodes_ids_list)
+  if dfs_ha_namenode_ids_array_len > 1:
+    dfs_ha_enabled = True
+if dfs_ha_enabled:
+  for nn_id in dfs_ha_namemodes_ids_list:
+    nn_host = config['configurations']['hdfs-site'][format('dfs.namenode.rpc-address.{dfs_ha_nameservices}.{nn_id}')]
+    if hostname in nn_host:
+      namenode_id = nn_id
+      namenode_rpc = nn_host
+    # With HA enabled namenode_address is recomputed
+  namenode_address = format('hdfs://{dfs_ha_nameservices}')
+
+
 namenode_hosts = default("/clusterHostInfo/namenode_host", None)
 if type(namenode_hosts) is list:
   namenode_host = namenode_hosts[0]
@@ -75,8 +97,11 @@ namenode_rpc_port = "8020"
 if has_namenode:
   if 'dfs.namenode.http-address' in config['configurations']['hdfs-site']:
     namenode_http_port = get_port_from_url(config['configurations']['hdfs-site']['dfs.namenode.http-address'])
-  if 'dfs.namenode.rpc-address' in config['configurations']['hdfs-site']:
-    namenode_rpc_port = get_port_from_url(config['configurations']['hdfs-site']['dfs.namenode.rpc-address'])
+  if dfs_ha_enabled and namenode_rpc:
+    namenode_rpc_port = get_port_from_url(namenode_rpc)
+  else:
+    if 'dfs.namenode.rpc-address' in config['configurations']['hdfs-site']:
+      namenode_rpc_port = get_port_from_url(config['configurations']['hdfs-site']['dfs.namenode.rpc-address'])
 
 rm_hosts = default("/clusterHostInfo/rm_host", None)
 if type(rm_hosts) is list:
@@ -188,20 +213,28 @@ if has_ranger_admin:
   if xa_audit_db_flavor == 'mysql':
     jdbc_symlink_name = "mysql-jdbc-driver.jar"
     jdbc_jar_name = "mysql-connector-java.jar"
+    audit_jdbc_url = format('jdbc:mysql://{xa_db_host}/{xa_audit_db_name}')
+    jdbc_driver = "com.mysql.jdbc.Driver"
   elif xa_audit_db_flavor == 'oracle':
     jdbc_jar_name = "ojdbc6.jar"
     jdbc_symlink_name = "oracle-jdbc-driver.jar"
+    audit_jdbc_url = format('jdbc:oracle:thin:\@//{xa_db_host}')
+    jdbc_driver = "oracle.jdbc.OracleDriver"
   elif xa_audit_db_flavor == 'postgres':
     jdbc_jar_name = "postgresql.jar"
     jdbc_symlink_name = "postgres-jdbc-driver.jar"
-  elif xa_audit_db_flavor == 'sqlserver':
+    audit_jdbc_url = format('jdbc:postgresql://{xa_db_host}/{xa_audit_db_name}')
+    jdbc_driver = "org.postgresql.Driver"
+  elif xa_audit_db_flavor == 'mssql':
     jdbc_jar_name = "sqljdbc4.jar"
     jdbc_symlink_name = "mssql-jdbc-driver.jar"
+    audit_jdbc_url = format('jdbc:sqlserver://{xa_db_host};databaseName={xa_audit_db_name}')
+    jdbc_driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
 
   downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 
   driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
-  driver_curl_target = format("{java_share_dir}/{jdbc_jar_name}")
+  driver_curl_target = format("/usr/hdp/current/knox-server/ext/{jdbc_jar_name}")
 
   knox_ranger_plugin_config = {
     'username': repo_config_username,
@@ -218,11 +251,9 @@ if has_ranger_admin:
     'repositoryType': 'knox',
     'assetType': '5',
     }
-
-  if xml_configurations_supported:
-    xa_audit_db_is_enabled = config['configurations']['ranger-knox-audit']['xasecure.audit.db.is.enabled']
-    ssl_keystore_file_path = config['configurations']['ranger-knox-policymgr-ssl']['xasecure.policymgr.clientssl.keystore']
-    ssl_truststore_file_path = config['configurations']['ranger-knox-policymgr-ssl']['xasecure.policymgr.clientssl.truststore']
-    ssl_keystore_password = unicode(config['configurations']['ranger-knox-policymgr-ssl']['xasecure.policymgr.clientssl.keystore.password'])
-    ssl_truststore_password = unicode(config['configurations']['ranger-knox-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password'])
-    credential_file = format('/etc/ranger/{repo_name}/cred.jceks') 
+  
+  ranger_audit_solr_urls = config['configurations']['ranger-admin-site']['ranger.audit.solr.urls']
+  xa_audit_db_is_enabled = config['configurations']['ranger-knox-audit']['xasecure.audit.destination.db'] if xml_configurations_supported else None
+  ssl_keystore_password = unicode(config['configurations']['ranger-knox-policymgr-ssl']['xasecure.policymgr.clientssl.keystore.password']) if xml_configurations_supported else None
+  ssl_truststore_password = unicode(config['configurations']['ranger-knox-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password']) if xml_configurations_supported else None
+  credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None

@@ -101,9 +101,16 @@ describe('App.MainHostServiceConfigsController', function () {
   });
 
 	describe("#loadStep()", function () {
+    beforeEach(function() {
+      sinon.stub(controller, 'loadCurrentVersions', Em.K);
+    });
+    afterEach(function() {
+      controller.loadCurrentVersions.restore();
+    });
 		it("should set host", function () {
 			controller.set('content', {
-				host: 'host1'
+				host: 'host1',
+        dependentServiceNames: []
 			});
 			controller.loadStep();
 			expect(controller.get('host')).to.be.equal('host1');
@@ -129,12 +136,10 @@ describe('App.MainHostServiceConfigsController', function () {
 
     beforeEach(function() {
       sinon.stub(controller, 'launchSwitchConfigGroupOfHostDialog', Em.K);
-      sinon.stub(controller, 'onConfigGroupChange', Em.K);
-    });
+      });
 
     afterEach(function () {
       controller.launchSwitchConfigGroupOfHostDialog.restore();
-      controller.onConfigGroupChange.restore();
     });
 
 		it("should call launchSwitchConfigGroupOfHostDialog", function () {

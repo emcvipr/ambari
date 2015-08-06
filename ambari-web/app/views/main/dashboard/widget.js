@@ -106,6 +106,12 @@ App.DashboardWidgetView = Em.View.extend({
   thresh2: null,
 
   /**
+   * @type {Boolean}
+   * @default false
+   */
+  isDataLoadedBinding: 'App.router.clusterController.isServiceContentFullyLoaded',
+
+  /**
    * @type {Em.Object}
    * @class
    */
@@ -172,7 +178,10 @@ App.DashboardWidgetView = Em.View.extend({
   }),
 
   didInsertElement: function () {
-    App.tooltip(this.$("[rel='ZoomInTooltip']"), {placement : 'left'});
+    App.tooltip(this.$("[rel='ZoomInTooltip']"), {
+      placement: 'left',
+      template: '<div class="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner graph-tooltip"></div></div>'
+    });
   },
 
   willDestroyElement : function() {

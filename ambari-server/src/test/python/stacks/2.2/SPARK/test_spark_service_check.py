@@ -20,6 +20,9 @@ limitations under the License.
 from mock.mock import MagicMock, call, patch
 from stacks.utils.RMFTestCase import *
 
+from only_for_platform import not_for_platform, PLATFORM_WINDOWS
+
+@not_for_platform(PLATFORM_WINDOWS)
 @patch("resource_management.libraries.functions.get_hdp_version", new=MagicMock(return_value="2.3.0.0-1597"))
 class TestServiceCheck(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "SPARK/1.2.0.2.2/package"
@@ -36,6 +39,7 @@ class TestServiceCheck(RMFTestCase):
     self.assertResourceCalled('Execute', "curl -s -o /dev/null -w'%{http_code}' --negotiate -u: -k http://localhost:18080 | grep 200",
         tries = 10,
         try_sleep = 3,
+        logoutput = True
     )
     self.assertNoMoreResources()
     
@@ -54,5 +58,6 @@ class TestServiceCheck(RMFTestCase):
     self.assertResourceCalled('Execute', "curl -s -o /dev/null -w'%{http_code}' --negotiate -u: -k http://localhost:18080 | grep 200",
         tries = 10,
         try_sleep = 3,
+        logoutput = True
     )
     self.assertNoMoreResources()

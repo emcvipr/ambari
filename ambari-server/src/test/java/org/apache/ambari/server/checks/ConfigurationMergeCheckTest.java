@@ -58,12 +58,13 @@ public class ConfigurationMergeCheckTest {
   private Clusters clusters = EasyMock.createMock(Clusters.class);
   private Map<String, String> m_configMap = new HashMap<String, String>();
 
+  private static final StackId stackId_1_0 = new StackId("HDP-1.0");
+
   @Before
   public void before() throws Exception {
     Cluster cluster = EasyMock.createMock(Cluster.class);
-    StackId stackId = new StackId("HDP-1.0");
 
-    expect(cluster.getCurrentStackVersion()).andReturn(stackId).anyTimes();
+    expect(cluster.getCurrentStackVersion()).andReturn(stackId_1_0).anyTimes();
     expect(clusters.getCluster((String) anyObject())).andReturn(cluster).anyTimes();
 
     expect(cluster.getServices()).andReturn(new HashMap<String, Service>() {{
@@ -84,14 +85,15 @@ public class ConfigurationMergeCheckTest {
   public void testApplicable() throws Exception {
 
     PrereqCheckRequest request = new PrereqCheckRequest("cluster");
+    request.setTargetStackId(stackId_1_0);
 
     ConfigurationMergeCheck cmc = new ConfigurationMergeCheck();
     Assert.assertFalse(cmc.isApplicable(request));
 
     final RepositoryVersionDAO repositoryVersionDAO = EasyMock.createMock(RepositoryVersionDAO.class);
-    expect(repositoryVersionDAO.findMaxByVersion("1.0")).andReturn(createFor("1.0")).anyTimes();
-    expect(repositoryVersionDAO.findMaxByVersion("1.1")).andReturn(createFor("1.1")).anyTimes();
-    expect(repositoryVersionDAO.findMaxByVersion("1.2")).andReturn(null).anyTimes();
+    expect(repositoryVersionDAO.findByStackNameAndVersion("HDP", "1.0")).andReturn(createFor("1.0")).anyTimes();
+    expect(repositoryVersionDAO.findByStackNameAndVersion("HDP", "1.1")).andReturn(createFor("1.1")).anyTimes();
+    expect(repositoryVersionDAO.findByStackNameAndVersion("HDP", "1.2")).andReturn(null).anyTimes();
 
     replay(repositoryVersionDAO);
 
@@ -117,7 +119,6 @@ public class ConfigurationMergeCheckTest {
 
     request.setRepositoryVersion("1.2");
     Assert.assertFalse(cmc.isApplicable(request));
-
   }
 
   @Test
@@ -125,8 +126,8 @@ public class ConfigurationMergeCheckTest {
     ConfigurationMergeCheck cmc = new ConfigurationMergeCheck();
 
     final RepositoryVersionDAO repositoryVersionDAO = EasyMock.createMock(RepositoryVersionDAO.class);
-    expect(repositoryVersionDAO.findMaxByVersion("1.0")).andReturn(createFor("1.0")).anyTimes();
-    expect(repositoryVersionDAO.findMaxByVersion("1.1")).andReturn(createFor("1.1")).anyTimes();
+    expect(repositoryVersionDAO.findByStackNameAndVersion("HDP", "1.0")).andReturn(createFor("1.0")).anyTimes();
+    expect(repositoryVersionDAO.findByStackNameAndVersion("HDP", "1.1")).andReturn(createFor("1.1")).anyTimes();
 
     replay(repositoryVersionDAO);
 
@@ -164,12 +165,12 @@ public class ConfigurationMergeCheckTest {
     PropertyInfo pi10 = new PropertyInfo();
     pi10.setFilename(CONFIG_FILE);
     pi10.setName(CONFIG_PROPERTY);
-    pi10.setValue("1024m");
+    pi10.setValue("1024");
 
     PropertyInfo pi11 = new PropertyInfo();
     pi11.setFilename(CONFIG_FILE);
     pi11.setName(CONFIG_PROPERTY);
-    pi11.setValue("1024m");
+    pi11.setValue("1024");
 
     expect(ami.getServiceProperties("HDP", "1.0", "HDFS")).andReturn(
         Collections.singleton(pi10)).anyTimes();
@@ -183,6 +184,7 @@ public class ConfigurationMergeCheckTest {
     replay(ami);
 
     PrereqCheckRequest request = new PrereqCheckRequest("cluster");
+    request.setTargetStackId(stackId_1_0);
     request.setRepositoryVersion("1.1");
 
     PrerequisiteCheck check = new PrerequisiteCheck(null, "cluster");
@@ -190,17 +192,25 @@ public class ConfigurationMergeCheckTest {
     Assert.assertEquals("Expect no warnings", 0, check.getFailedOn().size());
 
     check = new PrerequisiteCheck(null, "cluster");
-    pi11.setValue("1026m");
+    m_configMap.put(CONFIG_PROPERTY, "1025m");
+    pi11.setValue("1026");
     cmc.perform(check, request);
     Assert.assertEquals("Expect warning when user-set has changed from new default",
         1, check.getFailedOn().size());
+    Assert.assertEquals(1, check.getFailedDetail().size());
+    ConfigurationMergeCheck.MergeDetail detail = (ConfigurationMergeCheck.MergeDetail) check.getFailedDetail().get(0);
+    Assert.assertEquals("1025m", detail.current);
+    Assert.assertEquals("1026m", detail.new_stack_value);
+    Assert.assertEquals("1025m", detail.result_value);
+    Assert.assertEquals(CONFIG_TYPE, detail.type);
+    Assert.assertEquals(CONFIG_PROPERTY, detail.property);
 
     check = new PrerequisiteCheck(null, "cluster");
     pi11.setName(CONFIG_PROPERTY + ".foo");
     cmc.perform(check, request);
     Assert.assertEquals("Expect no warning when user new stack is empty",
         0, check.getFailedOn().size());
-
+    Assert.assertEquals(0, check.getFailedDetail().size());
 
     check = new PrerequisiteCheck(null, "cluster");
     pi11.setName(CONFIG_PROPERTY);
@@ -208,7 +218,10 @@ public class ConfigurationMergeCheckTest {
     cmc.perform(check, request);
     Assert.assertEquals("Expect warning when user old stack is empty, and value changed",
         1, check.getFailedOn().size());
-
+    Assert.assertEquals(1, check.getFailedDetail().size());
+    detail = (ConfigurationMergeCheck.MergeDetail) check.getFailedDetail().get(0);
+    Assert.assertEquals("1025m", detail.current);
+    Assert.assertEquals("1026m", detail.new_stack_value);
   }
 
   private RepositoryVersionEntity createFor(final String stackVersion) {

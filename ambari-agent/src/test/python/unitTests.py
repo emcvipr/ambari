@@ -18,12 +18,34 @@ See the License for the specific language governing permissions and
 limitations under the License.
 '''
 
+"""
+SAMPLE USAGE:
+
+python unitTests.py
+python unitTests.py NameOfFile.py
+python unitTests.py NameOfFileWithoutExtension  (this will append .* to the end, so it can match other file names too)
+
+prepend _ to test file name(s) and run "python unitTests.py": execute only
+  test files whose name begins with _ (useful for quick debug)
+
+SETUP:
+To run in Linux from command line,
+cd to this same directory. Then make sure PYTHONPATH is correct.
+
+export PYTHONPATH=$PYTHONPATH:$(pwd)/ambari-agent/src/test/python:
+$(pwd)/ambari-common/src/test/python:
+$(pwd)/ambari-agent/src/test/python/ambari_agent:
+$(pwd)/ambari-common/src/main/python:
+$(pwd)/ambari-server/src/main/resources/common-services/HDFS/2.1.0.2.0/package/files:
+$(pwd)/ambari-agent/src/test/python/resource_management:
+$(pwd)/ambari-common/src/main/python/ambari_jinja2
+"""
+
+import re
 import unittest
-import doctest
-from os.path import dirname, split, isdir
-import logging.handlers
+import fnmatch
+from os.path import isdir
 import logging
-import platform
 from only_for_platform import get_platform, PLATFORM_WINDOWS
 #TODO Add an option to randomize the tests' execution
 #from random import shuffle
@@ -32,10 +54,6 @@ LOG_FILE_NAME='tests.log'
 SELECTED_PREFIX = "_"
 PY_EXT='.py'
 
-if get_platform() == PLATFORM_WINDOWS:
-  IGNORE_FOLDERS = ["resource_management"]
-else:
-  IGNORE_FOLDERS = ["resource_management_windows"]
 
 class TestAgent(unittest.TestSuite):
   def run(self, result):
@@ -54,15 +72,40 @@ def parent_dir(path):
 
   return parent_dir
 
+def get_test_files(path, mask=None, recursive=True):
+  """
+  Returns test files for path recursively
+  """
+  # Must convert mask so it can match a file
+  if mask and mask != "" and not mask.endswith("*"):
+    mask=mask+"*"
 
-def all_tests_suite():
+  file_list = []
+  directory_items = os.listdir(path)
 
+  for item in directory_items:
+    add_to_pythonpath = False
+    p = os.path.join(path, item)
+    if os.path.isfile(p):
+      if mask is not None and fnmatch.fnmatch(item, mask) or \
+        mask is None and re.search(r"^_?[Tt]est.*\.py$", item):
+          add_to_pythonpath = True
+          file_list.append(item)
+    elif os.path.isdir(p):
+      if recursive:
+        file_list.extend(get_test_files(p, mask=mask))
+    if add_to_pythonpath:
+      sys.path.append(path)
+
+  return file_list
+
+
+def all_tests_suite(custom_test_mask):
+  test_mask = custom_test_mask if custom_test_mask else None
 
   src_dir = os.getcwd()
-  files_list = []
-  for directory in os.listdir(src_dir):
-    if os.path.isdir(directory) and not (directory in IGNORE_FOLDERS):
-      files_list += os.listdir(src_dir + os.sep + directory)
+  files_list = get_test_files(src_dir, mask=test_mask)
+
   #TODO Add an option to randomize the tests' execution
   #shuffle(files_list)
   tests_list = []
@@ -87,12 +130,15 @@ def all_tests_suite():
   return unittest.TestSuite([suite])
 
 def main():
+  test_mask = None
+  if len(sys.argv) >= 2:
+    test_mask = sys.argv[1]
 
   logger.info('------------------------------------------------------------------------')
   logger.info('PYTHON AGENT TESTS')
   logger.info('------------------------------------------------------------------------')
   runner = unittest.TextTestRunner(verbosity=2, stream=sys.stdout)
-  suite = all_tests_suite()
+  suite = all_tests_suite(test_mask)
   status = runner.run(suite).wasSuccessful()
 
   if not status:
@@ -112,9 +158,18 @@ def main():
 if __name__ == '__main__':
   import os
   import sys
-  sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-  sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) + os.sep + 'main' + os.sep + 'python')
-  sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) + os.sep + 'main' + os.sep + 'python' + os.sep + 'ambari_agent')
+
+  pwd = os.path.abspath(__file__)
+  ambari_agent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(pwd))))
+  src_dir = os.path.dirname(ambari_agent_dir)
+  ambari_common_dir = os.path.join(src_dir, "ambari-common")
+
+  sys.path.insert(0, os.path.join(ambari_agent_dir, "src", "main", "python"))
+  sys.path.insert(0, os.path.join(ambari_agent_dir, "src", "main", "python", "ambari_agent"))
+  sys.path.insert(0, os.path.join(ambari_common_dir, "src", "main", "python"))
+  sys.path.insert(0, os.path.join(ambari_common_dir, "src", "main", "python", "ambari_jinja2"))
+  sys.path.insert(0, os.path.join(ambari_common_dir, "src", "test", "python"))
+
   logger = logging.getLogger()
   logger.setLevel(logging.INFO)
   formatter = logging.Formatter("[%(levelname)s] %(message)s")

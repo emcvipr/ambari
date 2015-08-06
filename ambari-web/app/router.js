@@ -54,6 +54,8 @@ App.Router = Em.Router.extend({
   enableLogging: true,
   isFwdNavigation: true,
   backBtnForHigherStep: false,
+  transitionInProgress: false,
+
 
   /**
    * Is true, if cluster.provisioning_state is equal to 'INSTALLED'
@@ -120,7 +122,7 @@ App.Router = Em.Router.extend({
     return currentStep;
   },
 
-  loggedIn: App.db.getAuthenticated(),
+  loggedIn: !!App.db.getAuthenticated(),
 
   loginName: function() {
     return this.getLoginName();
@@ -130,27 +132,52 @@ App.Router = Em.Router.extend({
     var dfd = $.Deferred();
     var self = this;
     var auth = App.db.getAuthenticated();
-    var authResp = (auth && auth === true);
-    if (authResp) {
-      App.ajax.send({
-        name: 'router.login.clusters',
-        sender: this,
-        success: 'onAuthenticationSuccess',
-        error: 'onAuthenticationError'
-      }).complete(function () {
+    App.ajax.send({
+      name: 'router.login.clusters',
+      sender: this,
+      success: 'onAuthenticationSuccess',
+      error: 'onAuthenticationError'
+    }).complete(function (xhr) {
+      if (xhr.isResolved()) {
+        // if server knows the user and user authenticated by UI
+        if (auth && auth === true) {
           dfd.resolve(self.get('loggedIn'));
-        });
-    } else {
-      this.set('loggedIn', false);
-      dfd.resolve(false);
-    }
+          // if server knows the user but UI don't, check the response header
+          // and try to authorize
+        } else if (xhr.getResponseHeader('User')) {
+          var user = xhr.getResponseHeader('User');
+          App.ajax.send({
+            name: 'router.login',
+            sender: self,
+            data: {
+              usr: user,
+              loginName: encodeURIComponent(user)
+            },
+            success: 'loginSuccessCallback',
+            error: 'loginErrorCallback'
+          });
+        } else {
+          self.setAuthenticated(false);
+          dfd.resolve(false);
+        }
+      }
+    });
     return dfd.promise();
   },
 
+  /**
+   * Response for <code>/clusters?fields=Clusters/provisioning_state</code>
+   * @type {null|object}
+   */
+  clusterData: null,
+
   onAuthenticationSuccess: function (data) {
-    this.setAuthenticated(true);
-    if (data.items.length) {
-      this.setClusterInstalled(data);
+    if (App.db.getAuthenticated() === true) {
+      this.set('clusterData', data);
+      this.setAuthenticated(true);
+      if (data.items.length) {
+        this.setClusterInstalled(data);
+      }
     }
   },
 
@@ -245,17 +272,22 @@ App.Router = Em.Router.extend({
     console.log('login success');
     App.usersMapper.map({"items": [data]});
     this.setUserLoggedIn(decodeURIComponent(params.loginName));
-    App.router.get('mainViewsController').loadAmbariViews();
-    App.ajax.send({
-      name: 'router.login.clusters',
-      sender: this,
-      data: {
-        loginName: params.loginName,
-        loginData: data
-      },
-      success: 'loginGetClustersSuccessCallback',
-      error: 'loginGetClustersErrorCallback'
-    });
+    var requestData = {
+      loginName: params.loginName,
+      loginData: data
+    };
+    // no need to load cluster data if it's already loaded
+    if (this.get('clusterData')) {
+      this.loginGetClustersSuccessCallback(this.get('clusterData'), {}, requestData);
+    }
+    else {
+      App.ajax.send({
+        name: 'router.login.clusters',
+        sender: this,
+        data: requestData,
+        success: 'loginGetClustersSuccessCallback'
+      });
+    }
   },
 
   loginErrorCallback: function(request, ajaxOptions, error, opt) {
@@ -275,8 +307,6 @@ App.Router = Em.Router.extend({
   },
 
   loginGetClustersSuccessCallback: function (clustersData, opt, params) {
-    var adminViewUrl = '/views/ADMIN_VIEW/2.0.0/INSTANCE/#/';
-    //TODO: Replace hard coded value with query. Same in templates/application.hbs
     var loginController = this.get('loginController');
     var loginData = params.loginData;
     var privileges = loginData.privileges || [];
@@ -290,8 +320,11 @@ App.Router = Em.Router.extend({
           router.setClusterInstalled(clustersData);
           transitionToApp = true;
         } else {
-          window.location = adminViewUrl;
-          return;
+          App.ajax.send({
+            name: 'ambari.service.load_server_version',
+            sender: this,
+            success: 'adminViewInfoSuccessCallback'
+          });
         }
       } else {
         if (clustersData.items.length) {
@@ -312,7 +345,7 @@ App.Router = Em.Router.extend({
       }
       App.set('isPermissionDataLoaded', true);
       if (transitionToApp) {
-        if (!Em.isNone(router.get('preferedPath')) && 
+        if (!Em.isNone(router.get('preferedPath')) &&
             router.get('preferedPath') != "#/login") {
           window.location = router.get('preferedPath');
           router.set('preferedPath', null);
@@ -323,13 +356,23 @@ App.Router = Em.Router.extend({
           });
         }
       } else {
+        App.router.get('mainViewsController').loadAmbariViews();
         router.transitionTo('main.views.index');
         loginController.postLogin(true,true);
       }
   },
-
-  loginGetClustersErrorCallback: function (req) {
-    console.log("Get clusters error: " + req.statusCode);
+  adminViewInfoSuccessCallback: function(data) {
+    var components = Em.get(data,'components');
+    if (Em.isArray(components)) {
+      var mappedVersions = components.map(function(component) {
+          if (Em.get(component, 'RootServiceComponents.component_version')) {
+            return Em.get(component, 'RootServiceComponents.component_version');
+          }
+        }),
+        sortedMappedVersions = mappedVersions.sort(),
+        latestVersion = sortedMappedVersions[sortedMappedVersions.length-1];
+      window.location.replace('/views/ADMIN_VIEW/' + latestVersion + '/INSTANCE/#/');
+    }
   },
 
   getSection: function (callback) {
@@ -342,37 +385,25 @@ App.Router = Em.Router.extend({
     } else {
       if (this.get('clusterInstallCompleted')) {
         App.clusterStatus.updateFromServer(false).complete(function () {
-          var clusterStatusOnServer = App.clusterStatus.get('value');
           var route = 'main.dashboard.index';
-          if (clusterStatusOnServer && clusterStatusOnServer.wizardControllerName === App.router.get('addHostController.name')) {
-            // if wizardControllerName == "addHostController", then it means someone closed the browser or the browser was crashed when we were last in Add Hosts wizard
-            route = 'main.hostAdd';
-          } else if (clusterStatusOnServer && (clusterStatusOnServer.wizardControllerName === App.router.get('addSecurityController.name') || clusterStatusOnServer.wizardControllerName === App.router.get('mainAdminSecurityDisableController.name'))) {
-            // if wizardControllerName == "addSecurityController", then it means someone closed the browser or the browser was crashed when we were last in Add Security wizard
-            route = 'main.admin.adminSecurity';
-          } else if (clusterStatusOnServer && (clusterStatusOnServer.wizardControllerName === App.router.get('kerberosWizardController.name'))) {
-            // if wizardControllerName == "adminKerberosController", then it means someone closed the browser or the browser was crashed when we were last in Add Kerberos wizard
-            route = 'main.admin.adminKerberos.adminAddKerberos';
-          } else if (clusterStatusOnServer && clusterStatusOnServer.wizardControllerName === App.router.get('addServiceController.name')) {
-            // if wizardControllerName == "addHostController", then it means someone closed the browser or the browser was crashed when we were last in Add Hosts wizard
-            route = 'main.serviceAdd';
-          } else if (clusterStatusOnServer && clusterStatusOnServer.wizardControllerName === App.router.get('reassignMasterController.name')) {
-            // if wizardControllerName == "reassignMasterController", then it means someone closed the browser or the browser was crashed when we were last in Reassign Master wizard
-            route = 'main.reassign';
-          } else if (clusterStatusOnServer && clusterStatusOnServer.wizardControllerName === App.router.get('highAvailabilityWizardController.name')) {
-            // if wizardControllerName == "highAvailabilityWizardController", then it means someone closed the browser or the browser was crashed when we were last in NameNode High Availability wizard
-            route = 'main.services.enableHighAvailability';
-          } else if (clusterStatusOnServer && clusterStatusOnServer.wizardControllerName === App.router.get('rMHighAvailabilityWizardController.name')) {
-            // if wizardControllerName == "highAvailabilityWizardController", then it means someone closed the browser or the browser was crashed when we were last in NameNode High Availability wizard
-            route = 'main.services.enableRMHighAvailability';
-          } else if (clusterStatusOnServer && clusterStatusOnServer.wizardControllerName === App.router.get('rollbackHighAvailabilityWizardController.name')) {
-            // if wizardControllerName == "highAvailabilityRollbackController", then it means someone closed the browser or the browser was crashed when we were last in NameNode High Availability Rollback wizard
-            route = 'main.services.rollbackHighAvailability';
-          } else if (clusterStatusOnServer && clusterStatusOnServer.wizardControllerName === App.router.get('mainAdminStackAndUpgradeController.name')) {
-            // if wizardControllerName == "mainAdminStackAndUpgradeController", then it means someone closed the browser or the browser was crashed when we were last in Rolling Upgrade wizard
-            route = 'main.admin.stackAndUpgrade';
+          var clusterStatusOnServer = App.clusterStatus.get('value');
+          if (clusterStatusOnServer) {
+            var wizardControllerRoutes = require('data/controller_route');
+            var wizardControllerRoute =  wizardControllerRoutes.findProperty('wizardControllerName', clusterStatusOnServer.wizardControllerName);
+            if (wizardControllerRoute) {
+              route =  wizardControllerRoute.route;
+            }
           }
-          callback(route);
+          if (wizardControllerRoute && wizardControllerRoute.wizardControllerName === 'mainAdminStackAndUpgradeController')  {
+            var clusterController =   App.router.get('clusterController');
+            clusterController.loadClusterName().done(function(){
+              clusterController.restoreUpgradeState().done(function(){
+                callback(route);
+              });
+            });
+          } else {
+            callback(route);
+          }
         });
       } else {
         callback('installer');
@@ -381,9 +412,9 @@ App.Router = Em.Router.extend({
   },
 
   logOff: function (context) {
-    $('title').text(Em.I18n.t('app.name'));
-    var hash = misc.utf8ToB64(this.get('loginController.loginName') + ":" + this.get('loginController.password'));
+    var self = this;
 
+    $('title').text(Em.I18n.t('app.name'));
     App.router.get('mainController').stopPolling();
     // App.db.cleanUp() must be called before router.clearAllSteps().
     // otherwise, this.set('installerController.currentStep, 0) would have no effect
@@ -404,29 +435,37 @@ App.Router = Em.Router.extend({
       App.ajax.send({
         name: 'router.logoff',
         sender: this,
-        data: {
-          auth: "Basic " + hash
-        },
-        beforeSend: 'authBeforeSend',
         success: 'logOffSuccessCallback',
-        error:'logOffErrorCallback'
+        error: 'logOffErrorCallback'
+      }).complete(function() {
+        self.logoffRedirect(context);
       });
+    } else {
+      this.logoffRedirect();
     }
+  },
+
+  logOffSuccessCallback: function () {
+    console.log("invoked logout on the server successfully");
+    var applicationController = App.router.get('applicationController');
+    applicationController.set('isPollerRunning', false);
+  },
+
+  logOffErrorCallback: function () {
+    console.log("failed to invoke logout on the server");
+  },
+
+  /**
+   * Redirect function on sign off request.
+   *
+   * @param {$.Event} [context=undefined] - triggered event context
+   */
+  logoffRedirect: function(context) {
     if (App.router.get('clusterController.isLoaded')) {
       window.location.reload();
     } else {
       this.transitionTo('login', context);
     }
-  },
-
-  logOffSuccessCallback: function (data) {
-    console.log("invoked logout on the server successfully");
-    var applicationController = App.router.get('applicationController');
-    applicationController.set('isPollerRunning',false);
-  },
-
-  logOffErrorCallback: function (req) {
-    console.log("failed to invoke logout on the server");
   },
 
   /**
@@ -489,7 +528,6 @@ App.Router = Em.Router.extend({
         $('title').text(Em.I18n.t('app.name'));
         console.log('/login:connectOutlet');
         console.log('currentStep is: ' + router.getInstallerCurrentStep());
-        console.log('authenticated is: ' + router.getAuthenticated());
         router.get('applicationController').connectOutlet('login');
       }
     }),
@@ -506,7 +544,11 @@ App.Router = Em.Router.extend({
             router.transitionTo('login');
           });
         } else {
-            window.location.replace('/views/ADMIN_VIEW/2.0.0/INSTANCE/#/');
+          App.ajax.send({
+            name: 'ambari.service.load_server_version',
+            sender: router,
+            success: 'adminViewInfoSuccessCallback'
+          });
         }
       }
     }),

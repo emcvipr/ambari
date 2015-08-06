@@ -18,6 +18,7 @@
 
 
 var App = require('app');
+var componentsUtils = require('utils/components');
 
 App.KerberosWizardController = App.WizardController.extend({
 
@@ -29,6 +30,7 @@ App.KerberosWizardController = App.WizardController.extend({
 
   isKerberosWizard: true,
 
+  stackConfigsLoaded: false,
   /**
    * Used for hiding back button in wizard
    */
@@ -152,41 +154,26 @@ App.KerberosWizardController = App.WizardController.extend({
     this.set('content.serviceConfigProperties', serviceConfigProperties);
   },
 
-  /**
-   * load advanced configs from server
-   */
-  loadAdvancedConfigs: function (dependentController) {
-    var self = this;
-    var loadAdvancedConfigResult = [];
-    dependentController.set('isAdvancedConfigLoaded', false);
-    var serviceName = this.get('content.serviceName');
-    App.config.loadAdvancedConfig(serviceName, function (properties) {
-      loadAdvancedConfigResult.pushObjects(properties);
-      self.set('content.advancedServiceConfig', loadAdvancedConfigResult);
-      self.setDBProperty('advancedServiceConfig', loadAdvancedConfigResult);
-      dependentController.set('isAdvancedConfigLoaded', true);
-    });
-  },
-
   loadKerberosDescriptorConfigs: function () {
     var kerberosDescriptorConfigs = this.getDBProperty('kerberosDescriptorConfigs');
     this.set('kerberosDescriptorConfigs', kerberosDescriptorConfigs);
   },
 
   /**
-   * Overide the visibility of a list of form items with a new value
+   * Override the visibility of a list of form items with a new value
    *
    * @param {Array} itemsArray
    * @param newValue
    */
-  overrideVisibility: function (itemsArray, newValue) {
-    var self = this;
+  overrideVisibility: function (itemsArray, newValue, exceptions) {
     newValue = newValue || false;
 
-    for (var i=0; i < itemsArray.length; i += 1) {
-      var isException = self.get('exceptionsOnSkipClient').filterProperty(itemsArray[i].get('category'), itemsArray[i].get('name'));
-      if (!isException.length) {
-        itemsArray[i].set('isVisible', newValue);
+    for (var i = 0, len = itemsArray.length; i < len; i += 1) {
+      if (!Ember.$.isEmptyObject(itemsArray[i])) {
+        var isException = exceptions.filterProperty(itemsArray[i].category, itemsArray[i].name);
+        if (!isException.length) {
+          itemsArray[i].isVisible = newValue;
+        }
       }
     }
   },
@@ -200,6 +187,59 @@ App.KerberosWizardController = App.WizardController.extend({
     this.set('kerberosDescriptorConfigs', kerberosDescriptorConfigs);
   },
 
+  createKerberosResources: function (callback) {
+    var self = this;
+    this.createKerberosService().done(function () {
+      componentsUtils.updateAndCreateServiceComponent('KERBEROS_CLIENT').done(function () {
+        self.createKerberosHostComponents().done(callback);
+      });
+    });
+  },
+
+  createKerberosService: function () {
+    return App.ajax.send({
+      name: 'wizard.step8.create_selected_services',
+      sender: this,
+      data: {
+        data: '{"ServiceInfo": { "service_name": "KERBEROS"}}',
+        cluster: App.get('clusterName') || App.clusterStatus.get('clusterName')
+      }
+    });
+  },
+
+  createKerberosHostComponents: function () {
+    var hostNames = App.get('allHostNames');
+    var queryStr = '';
+    hostNames.forEach(function (hostName) {
+      queryStr += 'Hosts/host_name=' + hostName + '|';
+    });
+    //slice off last symbol '|'
+    queryStr = queryStr.slice(0, -1);
+
+    var data = {
+      "RequestInfo": {
+        "query": queryStr
+      },
+      "Body": {
+        "host_components": [
+          {
+            "HostRoles": {
+              "component_name": 'KERBEROS_CLIENT'
+            }
+          }
+        ]
+      }
+    };
+
+    return App.ajax.send({
+      name: 'wizard.step8.register_host_to_component',
+      sender: this,
+      data: {
+        cluster: App.router.getClusterName(),
+        data: JSON.stringify(data)
+      }
+    });
+  },
 
   loadMap: {
     '1': [
@@ -214,9 +254,13 @@ App.KerberosWizardController = App.WizardController.extend({
       {
         type: 'sync',
         callback: function () {
-          var kerberosStep2controller = App.get('router.kerberosWizardStep2Controller');
-          this.loadAdvancedConfigs(kerberosStep2controller);
+          var self = this;
           this.loadServiceConfigProperties();
+          if (!this.get('stackConfigsLoaded')) {
+            App.config.loadConfigsFromStack(['KERBEROS']).complete(function() {
+              self.set('stackConfigsLoaded', true);
+            }, this);
+          }
         }
       }
     ],

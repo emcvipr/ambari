@@ -613,7 +613,9 @@ App.WizardStep9Controller = Em.Controller.extend(App.ReloadPopupMixin, {
    * @method onSuccessPerHost
    */
   onSuccessPerHost: function (actions, contentHost) {
-    if (actions.everyProperty('Tasks.status', 'COMPLETED') && this.get('content.cluster.status') === 'INSTALLED') {
+    var status = this.get('content.cluster.status');
+    if (actions.everyProperty('Tasks.status', 'COMPLETED') && 
+        (status === 'INSTALLED' || status === 'STARTED') ) {
       contentHost.set('status', 'success');
     }
   },
@@ -703,7 +705,7 @@ App.WizardStep9Controller = Em.Controller.extend(App.ReloadPopupMixin, {
         progress = actionsPerHost ? (Math.ceil(((queuedActions * 0.09) + (inProgressActions * 0.35) + completedActions ) / actionsPerHost * 33)) : 33;
         break;
       case 'INSTALLED':
-        progress = actionsPerHost ? (34 + Math.ceil(((queuedActions * 0.09) + (inProgressActions * 0.35) + completedActions ) / actionsPerHost * 66)) : 100;
+        progress = actionsPerHost ? (33 + Math.floor(((queuedActions * 0.09) + (inProgressActions * 0.35) + completedActions ) / actionsPerHost * 67)) : 100;
         break;
       default:
         progress = 100;
@@ -769,7 +771,9 @@ App.WizardStep9Controller = Em.Controller.extend(App.ReloadPopupMixin, {
    */
   setFinishState: function (polledData) {
     if (this.get('content.cluster.status') === 'INSTALLED') {
-      this.changeParseHostInfo(this.isServicesStarted(polledData));
+      Em.run.next(this, function(){
+        this.changeParseHostInfo(this.isServicesStarted(polledData));
+      });
       return;
     } else if (this.get('content.cluster.status') === 'PENDING') {
       this.setIsServicesInstalled(polledData);
@@ -784,7 +788,7 @@ App.WizardStep9Controller = Em.Controller.extend(App.ReloadPopupMixin, {
   },
 
   /**
-   * @param polledData Josn data retrieved from API
+   * @param polledData JSON data retrieved from API
    * @returns {bool} Has "Start All Services" request completed successfully
    * @method isServicesStarted
    */
@@ -889,7 +893,7 @@ App.WizardStep9Controller = Em.Controller.extend(App.ReloadPopupMixin, {
     console.log('TRACE: Entering host info function');
     var self = this;
     var totalProgress = 0;
-    var tasksData = polledData.tasks;
+    var tasksData = polledData.tasks || [];
     console.log("The value of tasksData is: ", tasksData);
     var requestId = this.get('content.cluster.requestId');
     tasksData.setEach('Tasks.request_id', requestId);

@@ -20,7 +20,12 @@ Ambari Agent
 
 """
 
+import contextlib
+import sys
+import cStringIO
 from resource_management.core.exceptions import Fail
+
+PASSWORDS_HIDE_STRING = "[PROTECTED]"
 
 class AttributeDictionary(object):
   def __init__(self, *args, **kwargs):
@@ -106,3 +111,25 @@ def checked_unite(dict1, dict2):
   result.update(dict2)
   
   return result
+
+@contextlib.contextmanager
+def suppress_stdout():
+  save_stdout = sys.stdout
+  sys.stdout = cStringIO.StringIO()
+  yield
+  sys.stdout = save_stdout
+
+class PasswordString(unicode):
+  """
+  Logger replaces this strings with [PROTECTED]
+  """
+  
+  def __init__(self, value):
+    self.value = value
+    
+  def __str__(self):
+    return value
+  
+  def __repr__(self):
+    return PASSWORDS_HIDE_STRING
+  

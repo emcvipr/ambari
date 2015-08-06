@@ -181,6 +181,23 @@ footer {
         animation-iteration-count: infinite;
       }
 
+      .upgrade-aborted {
+        text-shadow: none;
+        background-color: @health-status-red;
+        -webkit-animation-name: redPulse;
+        -webkit-animation-duration: 1s;
+        -webkit-animation-iteration-count: infinite;
+        -moz-animation-name: redPulse;
+        -moz-animation-duration: 1s;
+        -moz-animation-iteration-count: infinite;
+        animation-name: redPulse;
+        animation-duration: 1s;
+        animation-iteration-count: infinite;
+        .icon-remove {
+          color: #fff;
+        }
+      }
+
     }
     @media (max-width: 1200px) {
       ul.top-nav-menu.nav {
@@ -547,6 +564,14 @@ h1 {
   max-width: 400px;
   overflow-wrap: break-word;
   white-space:pre-wrap;
+  &.alert-def-detail-tooltip {
+    max-height: 300px;
+    max-width: 650px;
+    overflow: scroll;
+  }
+  &.graph-tooltip {
+    max-width: 200px;
+  }
 }
 
 .popover {
@@ -1191,6 +1216,11 @@ h1 {
       list-style-type: none;
     }
   }
+  .enhanced-config-tab-content {
+    .action {
+      display: inline-block;
+    }
+  }
   .common-config-category, .enhanced-config-tab-content  {
     .action {
       cursor: pointer;
@@ -1208,16 +1238,16 @@ h1 {
       margin-right: 2px;
     }
     .btn-final{
-      background: none repeat scroll 0 0 #fff;
+      background: transparent repeat scroll 0 0 rgba(255, 255, 255, 0);
     }
     .btn-final .icon-lock{
       color: #a6a6a6;
+      cursor: inherit;
     }
     .btn-final.active .icon-lock {
       color: blue;
     }
-    .btn-final.active,
-    .btn-final.active[disabled] { //copied from Bootstrap .btn.active
+    .btn-final.active { //copied from Bootstrap .btn.active
       background-color: #e6e6e6;
       background-color: #d9d9d9 \9;
       background-image: none;
@@ -1225,6 +1255,8 @@ h1 {
       -webkit-box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.05);
       -moz-box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.05);
       box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+    .btn-final.active[disabled] {
       cursor: not-allowed;
     }
     a.accordion-toggle:hover {
@@ -2141,7 +2173,6 @@ a:focus {
       width: 60px;
     }
     .chart-legend {
-      left: 60px;
       top: 245px;
     }
     .x_tick {
@@ -2255,7 +2286,7 @@ a:focus {
       list-style: none;
       height: 20px;
       width: 20px;
-      margin-left: 6px;
+      margin-left: 2px;
       display: inline;
       float: none;
     }
@@ -2284,7 +2315,7 @@ a:focus {
         padding: 1px 4px;
         background: @health-status-red;
         float: right;
-        margin-right: 5px;
+        margin-right: 1px;
         margin-top: 3px;
         &.alerts-crit-count {
           background: @health-status-red;
@@ -2302,7 +2333,7 @@ a:focus {
     }
     .icon-laptop {
       color: #555;
-      padding-left: 5px;
+      padding-left: 1px;
     }
     .active {
       .icon-laptop {
@@ -2535,6 +2566,9 @@ table.graphs {
   #dashboard-widgets{
     .caption {
       height: 25px;
+    }
+    .spinner {
+      margin: 55px auto;
     }
     .row-fluid .span2p4 {
       width: 19.60%;
@@ -3127,7 +3161,7 @@ table.graphs {
     td.name .trim_hostname{
       display: block;
       float: left;
-      width: 89%!important;
+      width: 86%!important;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -3537,7 +3571,7 @@ table.graphs {
 .services-menu {
   .icon-refresh {
     color: @restart-indicator-color;
-    margin-left: 4px;
+    margin-left: 1px;
   }
 }
 #host-details, #serviceConfig {
@@ -4242,12 +4276,13 @@ ul.inline li {
   }
 }
 
-.one-story-bar {
-  margin-bottom: 60px;
+#config_history_flow {
+  margin-bottom: 20px;
+  &.with-enhanced-config {
+    margin-bottom: 60px;
+  }
 }
-.two-stories-bar {
-  margin-bottom: 100px;
-}
+
 
 .pointer {
   cursor: pointer;
@@ -4634,7 +4669,7 @@ ul.inline li {
   }
   // when the scree is narrow, the popup modal width is adjustable
   .full-width-modal {
-    .modal{
+    .modal {
       width: 90%;
       margin: 350px 0 0 -45%;
     }
@@ -4763,6 +4798,36 @@ i.icon-asterisks {
   white-space: nowrap;
 }
 
+@installer-container-width: 1236px;
+@installer-container-margin: 20px;
+#main {
+  &.install-wizard-content {
+    .main-container {
+      min-width: @installer-container-width + 2*@installer-container-margin;
+    }
+    .wizard {
+      .container {
+        width: @installer-container-width;
+      }
+    }
+  }
+}
+
+#wrapper {
+  .full-width-modal {
+    &.add-service-wizard-modal {
+      .modal {
+        width: @installer-container-width + 2*@installer-container-margin;
+        margin: -350px 0 0 -(@installer-container-width + @installer-container-margin)/2;
+      }
+      .wizard {
+        .container {
+          width: @installer-container-width;
+        }
+      }
+    }
+  }
+}
 //styles for screen width more than 1200px
 @media (min-width: 1200px) {
 
@@ -5270,6 +5335,20 @@ i.icon-asterisks {
       }
     }
   }
+
+  .services-menu .nav-list li {
+    .label.alerts-count {
+      margin-right: 4px;
+    }
+    .icon-laptop {
+      padding-left: 5px;
+    }
+    .health-status-LIVE, .health-status-STARTING,
+    .health-status-DEAD-RED, .health-status-STOPPING,
+    .health-status-DEAD-YELLOW {
+      margin-left: 6px;
+    }
+  }
 }
 
 .filter-combobox{
@@ -5278,6 +5357,7 @@ i.icon-asterisks {
     -webkit-border-radius: 4px 0 0 4px;
     -moz-border-radius: 4px 0 0 4px;
     border-radius: 4px 0 0 4px;
+    padding-right: 20px;
   }
 
   > .btn-group{
@@ -5382,6 +5462,10 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
 
 .mll {
   margin-left: @space-l;
+}
+
+.mrm {
+  margin-right: @space-m;
 }
 
 #cleanerContainer {
@@ -5614,21 +5698,52 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
   }
 }
 
+
+@config-dependency-t-name-width: 180px;
+@config-dependency-t-service-width: 100px;
+@config-dependency-t-group-width: 140px;
+@config-dependency-t-filename-width: 150px;
+@config-dependency-t-value-width: 230px;
+
 #config-dependencies {
   max-height: 500px;
-  overflow-y: auto;
+  overflow-y: visible;
   td {
     min-width: 120px;
+    word-break: break-all;
   }
   td.check-box-col {
     min-width: 5px;
     width: 5px;
+  }
+  td.config-dependency-name {
+    min-width: @config-dependency-t-name-width;
+  }
+  td.config-dependency-service {
+    min-width: @config-dependency-t-service-width;
+    max-width: @config-dependency-t-service-width;
+  }
+  td.config-dependency-group {
+    max-width: @config-dependency-t-group-width;
+  }
+  td.config-dependency-filename {
+    max-width: @config-dependency-t-filename-width;
+  }
+  td.config-dependency-value,
+  td.config-dependency-recommended-value {
+    width: @config-dependency-t-value-width;
+    min-width: @config-dependency-t-value-width;
   }
 }
 
 .path-link {
   white-space: nowrap;
   cursor: pointer;
+  &.not-active-link:hover {
+    color: #999;
+    text-decoration: none;
+    cursor: default;
+  }
 }
 
 .bottom-border {
@@ -5662,7 +5777,7 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
           overflow: visible;
           height: 100%;
           padding: 18px;
-          border: 1px solid #aaa;
+          border: 1px solid #e4e4e4;
           vertical-align: top;
           h4 {
             margin: 0px;
@@ -5672,18 +5787,6 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
           h5 {
             font-size: 18px;
             font-weight: 400;
-          }
-          .vertical-splitter-r {
-            border-right: 2px solid #ccc; // vertical splitter
-            padding-right: 20px;
-            padding-left: 0px;
-          }
-
-          .vertical-splitter-l {
-            border-left: 2px solid #ccc; // vertical splitter
-            margin-left: -2px;
-            padding-left: 20px;
-            padding-right: 0px;
           }
           div.with-border {
             border: 1px solid #aaa;
@@ -5696,19 +5799,35 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
             height: ~"calc(100% - 30px)";
             border-collapse: separate;
             table-layout: fixed;
+            @-moz-document url-prefix() { // for firefox only AMBARI-10985
+              .config-subsection {
+                height: 100% !important;
+              }
+            }
             .config-subsection {
               padding: 0px;
               vertical-align: top;
+              height: 0px; // td with height set allows inner div to have % height AMBARI-10985
+              .vertical-splitter-l {
+                border-left: 1px solid #e4e4e4; // vertical splitter
+                margin-left: -2px;
+                padding-left: 20px;
+                padding-right: 0px;
+                height: 88%;
+              }
               &.no-horizontal-splitter {
                 border-bottom: none; // no horizontal splitter for subsection on the last row
               }
               &.top-horizontal-splitter {
-                border-top: 2px solid #ccc; // horizontal splitter
+                border-top: 1px solid #e4e4e4; // horizontal splitter
                 padding-top: 15px;
                 padding-bottom: 15px;
               }
               .directories {
                 min-width: 0px !important;
+              }
+              .subsection-display-name {
+                padding-top: 5px;
               }
             }
           }
@@ -5725,5 +5844,36 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
 .version-labels, .version-info-bar, .version-box {
   .label, .badge {
     font-weight: normal;
+  }
+}
+
+.cluster-check-popup {
+  .modal {
+    width: 950px;
+    margin-left: -475px;
+    #pre-upgrade-check {
+      .icon-warning-sign {
+        color: @health-status-yellow;
+      }
+      pre {
+        word-break: keep-all;
+      }
+      .configs-table {
+        table-layout: fixed;
+        font-size: 0.95em;
+        td {
+          word-wrap: break-word;
+          &.no-value {
+            font-style: italic;
+          }
+        }
+        td:first-child, td:first-child + td, th:first-child, th:first-child + th {
+          width: 12.5%;
+        }
+        td:first-child + td + td, td:first-child + td + td + td, td:first-child + td + td + td + td, th:first-child + th + th, th:first-child + th + th + th, th:first-child + th + th + th + th {
+          width: 25%;
+        }
+      }
+    }
   }
 }

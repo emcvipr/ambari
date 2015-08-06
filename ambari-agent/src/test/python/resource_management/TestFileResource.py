@@ -19,20 +19,30 @@ limitations under the License.
 
 from unittest import TestCase
 from mock.mock import patch, MagicMock
+from only_for_platform import get_platform, not_for_platform, os_distro_value, PLATFORM_WINDOWS
+
+from ambari_commons.os_check import OSCheck
+
 import os
 import sys
 from resource_management.core import Environment, Fail
 from resource_management.core.resources import File
 from resource_management.core.system import System
-from resource_management.core import sudo
-import resource_management.core.providers.system
 import resource_management
 
+if get_platform() != PLATFORM_WINDOWS:
+  import resource_management.core.providers.system
+  import grp
+  import pwd
+else:
+  import resource_management.core.providers.windows.system
 
-@patch.object(System, "os_family", new = 'redhat')
+
+
+@patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
 class TestFileResource(TestCase):
   @patch.object(os.path, "dirname")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_action_create_dir_exist(self, isdir_mock, dirname_mock):
     """
     Tests if 'create' action fails when path is existent directory
@@ -53,7 +63,7 @@ class TestFileResource(TestCase):
     self.assertFalse(dirname_mock.called)
 
   @patch.object(os.path, "dirname")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_action_create_parent_dir_non_exist(self, isdir_mock, dirname_mock):
     """
     Tests if 'create' action fails when parent directory of path
@@ -77,10 +87,10 @@ class TestFileResource(TestCase):
     self.assertTrue(dirname_mock.called)
 
   @patch("resource_management.core.providers.system._ensure_metadata")
-  @patch.object(sudo, "read_file")
-  @patch.object(sudo, "create_file")
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.read_file")
+  @patch("resource_management.core.sudo.create_file")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_action_create_non_existent_file(self, isdir_mock, exists_mock, create_file_mock, read_file_mock, ensure_mock):
     """
     Tests if 'create' action create new non existent file and write proper data
@@ -101,10 +111,10 @@ class TestFileResource(TestCase):
 
 
   @patch("resource_management.core.providers.system._ensure_metadata")
-  @patch.object(sudo, "read_file")
-  @patch.object(sudo, "create_file")
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.read_file")
+  @patch("resource_management.core.sudo.create_file")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_action_create_replace(self, isdir_mock, exists_mock, create_file_mock, read_file_mock, ensure_mock):
     """
     Tests if 'create' action rewrite existent file with new data
@@ -124,9 +134,9 @@ class TestFileResource(TestCase):
     create_file_mock.assert_called_with('/directory/file', 'new-content', encoding=None)
 
 
-  @patch.object(sudo, "unlink")
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.unlink")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_action_delete_is_directory(self, isdir_mock, exist_mock, unlink_mock):
     """
     Tests if 'delete' action fails when path is directory
@@ -150,9 +160,9 @@ class TestFileResource(TestCase):
     self.assertEqual(exist_mock.call_count, 0)
     self.assertEqual(unlink_mock.call_count, 0)
 
-  @patch.object(sudo, "unlink")
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.unlink")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_action_delete(self, isdir_mock, exist_mock, unlink_mock):
     """
     Tests if 'delete' action removes file
@@ -173,7 +183,7 @@ class TestFileResource(TestCase):
     self.assertEqual(unlink_mock.call_count, 1)
 
 
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_attribute_path(self, isdir_mock):
     """
     Tests 'path' attribute
@@ -196,10 +206,10 @@ class TestFileResource(TestCase):
 
   @patch.object(resource_management.core.Environment, "backup_file")
   @patch("resource_management.core.providers.system._ensure_metadata")
-  @patch.object(sudo, "read_file")
-  @patch.object(sudo, "create_file")
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.read_file")
+  @patch("resource_management.core.sudo.create_file")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_attribute_backup(self, isdir_mock, exists_mock, create_file_mock,  read_file_mock, ensure_mock, backup_file_mock):
     """
     Tests 'backup' attribute
@@ -233,8 +243,8 @@ class TestFileResource(TestCase):
 
   @patch("resource_management.core.providers.system._ensure_metadata")
   @patch("__builtin__.open")
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_attribute_replace(self, isdir_mock, exists_mock, open_mock, ensure_mock):
     """
     Tests 'replace' attribute
@@ -261,16 +271,16 @@ class TestFileResource(TestCase):
     self.assertEqual(open_mock.call_count, 0)
 
 
-  @patch("resource_management.core.providers.system._coerce_uid")
-  @patch("resource_management.core.providers.system._coerce_gid")
-  @patch.object(sudo, "chown")
-  @patch.object(sudo, "chmod")
-  @patch.object(sudo, "stat")
-  @patch.object(sudo, "create_file")
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
-  def test_ensure_metadata(self, isdir_mock, exists_mock, create_file_mock, stat_mock, chmod_mock, chown_mock, gid_mock,
-                           uid_mock):
+  @patch("pwd.getpwnam")
+  @patch("grp.getgrnam")
+  @patch("resource_management.core.sudo.chown")
+  @patch("resource_management.core.sudo.chmod")
+  @patch("resource_management.core.sudo.stat")
+  @patch("resource_management.core.sudo.create_file")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
+  def test_ensure_metadata(self, isdir_mock, exists_mock, create_file_mock, stat_mock, chmod_mock, chown_mock, getgrnam_mock,
+                           getpwnam_mock):
     """
     Tests if _ensure_metadata changes owner, usergroup and permissions of file to proper values
     """
@@ -284,8 +294,10 @@ class TestFileResource(TestCase):
         self.st_gid = 1
 
     stat_mock.return_value = stat()
-    gid_mock.return_value = 0
-    uid_mock.return_value = 0
+    getpwnam_mock.return_value = MagicMock()
+    getpwnam_mock.return_value.pw_uid = 0
+    getgrnam_mock.return_value = MagicMock()
+    getgrnam_mock.return_value.gr_gid = 0
 
     with Environment('/') as env:
       File('/directory/file',
@@ -301,14 +313,16 @@ class TestFileResource(TestCase):
     self.assertEqual(create_file_mock.call_count, 1)
     stat_mock.assert_called_with('/directory/file')
     self.assertEqual(chmod_mock.call_count, 1)
-    self.assertEqual(chown_mock.call_count, 2)
-    gid_mock.assert_called_once_with('hdfs')
-    uid_mock.assert_called_once_with('root')
+    self.assertEqual(chown_mock.call_count, 1)
+    getgrnam_mock.assert_called_once_with('hdfs')
+    getpwnam_mock.assert_called_with('root')
 
     chmod_mock.reset_mock()
     chown_mock.reset_mock()
-    gid_mock.return_value = 1
-    uid_mock.return_value = 1
+    getpwnam_mock.return_value = MagicMock()
+    getpwnam_mock.return_value.pw_uid = 1
+    getgrnam_mock.return_value = MagicMock()
+    getgrnam_mock.return_value.gr_gid = 1
 
     with Environment('/') as env:
       File('/directory/file',
@@ -321,14 +335,14 @@ class TestFileResource(TestCase):
     
 
     self.assertEqual(chmod_mock.call_count, 1)
-    self.assertEqual(chown_mock.call_count, 0)
+    chown_mock.assert_called_with('/directory/file', None, None)
 
   @patch("resource_management.core.providers.system._ensure_metadata")
   @patch("resource_management.core.providers.system.FileProvider._get_content")
-  @patch.object(sudo, "read_file")
-  @patch.object(sudo, "create_file")
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.read_file")
+  @patch("resource_management.core.sudo.create_file")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_action_create_encoding(self, isdir_mock, exists_mock, create_file_mock, read_file_mock, get_content_mock ,ensure_mock):
 
     isdir_mock.side_effect = [False, True]

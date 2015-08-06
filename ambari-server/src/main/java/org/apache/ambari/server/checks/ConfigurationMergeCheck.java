@@ -55,12 +55,13 @@ public class ConfigurationMergeCheck extends AbstractCheckDescriptor {
       return false;
     }
 
+    String stackName = request.getTargetStackId().getStackName();
     String repoVersion = request.getRepositoryVersion();
     if (null == repoVersion) {
       return false;
     }
 
-    RepositoryVersionEntity rve = repositoryVersionDaoProvider.get().findMaxByVersion(repoVersion);
+    RepositoryVersionEntity rve = repositoryVersionDaoProvider.get().findByStackNameAndVersion(stackName, repoVersion);
     if (null == rve) {
       return false;
     }
@@ -87,7 +88,8 @@ public class ConfigurationMergeCheck extends AbstractCheckDescriptor {
   public void perform(PrerequisiteCheck prerequisiteCheck, PrereqCheckRequest request)
       throws AmbariException {
 
-    RepositoryVersionEntity rve = repositoryVersionDaoProvider.get().findMaxByVersion(request.getRepositoryVersion());
+    String stackName = request.getTargetStackId().getStackName();
+    RepositoryVersionEntity rve = repositoryVersionDaoProvider.get().findByStackNameAndVersion(stackName, request.getRepositoryVersion());
 
     Map<String, Map<String, ThreeWayValue>> changes =
         m_mergeHelper.getConflicts(request.getClusterName(), rve.getStackId());
@@ -100,12 +102,31 @@ public class ConfigurationMergeCheck extends AbstractCheckDescriptor {
         ThreeWayValue twv = configEntry.getValue();
         if (null == twv.oldStackValue) { // !!! did not exist and in the map means changed
           failedTypes.add(entry.getKey());
+
           prerequisiteCheck.getFailedOn().add(entry.getKey() + "/" + configEntry.getKey());
+
+          MergeDetail md = new MergeDetail();
+          md.type = entry.getKey();
+          md.property = configEntry.getKey();
+          md.current = twv.savedValue;
+          md.new_stack_value = twv.newStackValue;
+          md.result_value = md.current;
+          prerequisiteCheck.getFailedDetail().add(md);
+
         } else if (!twv.oldStackValue.equals(twv.savedValue)) {  // !!! value customized
           if (null == twv.newStackValue || // !!! not in new stack
               !twv.oldStackValue.equals(twv.newStackValue)) { // !!! or the default value changed
             failedTypes.add(entry.getKey());
+
             prerequisiteCheck.getFailedOn().add(entry.getKey() + "/" + configEntry.getKey());
+
+            MergeDetail md = new MergeDetail();
+            md.type = entry.getKey();
+            md.property = configEntry.getKey();
+            md.current = twv.savedValue;
+            md.new_stack_value = twv.newStackValue;
+            md.result_value = md.current;
+            prerequisiteCheck.getFailedDetail().add(md);
           }
         }
       }
@@ -123,6 +144,15 @@ public class ConfigurationMergeCheck extends AbstractCheckDescriptor {
     }
   }
 
-
+  /**
+   * Used to represent specific detail about merge failures.
+   */
+  public static class MergeDetail {
+    public String type = null;
+    public String property = null;
+    public String current = null;
+    public String new_stack_value = null;
+    public String result_value = null;
+  }
 
 }

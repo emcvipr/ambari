@@ -21,6 +21,9 @@ import json
 from mock.mock import MagicMock, patch
 from stacks.utils.RMFTestCase import *
 
+from only_for_platform import not_for_platform, PLATFORM_WINDOWS
+
+@not_for_platform(PLATFORM_WINDOWS)
 class TestRangerAdmin(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "RANGER/0.4.0/package"
   STACK_VERSION = "2.2"
@@ -29,7 +32,7 @@ class TestRangerAdmin(RMFTestCase):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/ranger_admin.py",
                    classname = "RangerAdmin",
                    command = "configure",
-                   config_file="default.json",
+                   config_file="ranger-admin-default.json",
                    hdp_stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
@@ -40,12 +43,13 @@ class TestRangerAdmin(RMFTestCase):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/ranger_admin.py",
                    classname = "RangerAdmin",
                    command = "start",
-                   config_file="default.json",
+                   config_file="ranger-admin-default.json",
                    hdp_stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_default()
     self.assertResourceCalled('Execute', '/usr/bin/ranger-admin-start',
+        environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
         not_if = 'ps -ef | grep proc_rangeradmin | grep -v grep',
         user = 'ranger',
     )
@@ -55,12 +59,13 @@ class TestRangerAdmin(RMFTestCase):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/ranger_admin.py",
                    classname = "RangerAdmin",
                    command = "stop",
-                   config_file="default.json",
+                   config_file="ranger-admin-default.json",
                    hdp_stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('Execute', '/usr/bin/ranger-admin-stop',
-        user = 'ranger',
+        environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
+        user = 'ranger'
     )
     self.assertNoMoreResources()
     
@@ -68,7 +73,7 @@ class TestRangerAdmin(RMFTestCase):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/ranger_admin.py",
                    classname = "RangerAdmin",
                    command = "configure",
-                   config_file="secured.json",
+                   config_file="ranger-admin-secured.json",
                    hdp_stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
@@ -79,12 +84,13 @@ class TestRangerAdmin(RMFTestCase):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/ranger_admin.py",
                    classname = "RangerAdmin",
                    command = "start",
-                   config_file="secured.json",
+                   config_file="ranger-admin-secured.json",
                    hdp_stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_secured()
     self.assertResourceCalled('Execute', '/usr/bin/ranger-admin-start',
+        environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
         not_if = 'ps -ef | grep proc_rangeradmin | grep -v grep',
         user = 'ranger',
     )
@@ -94,12 +100,13 @@ class TestRangerAdmin(RMFTestCase):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/ranger_admin.py",
                    classname = "RangerAdmin",
                    command = "stop",
-                   config_file="secured.json",
+                   config_file="ranger-admin-secured.json",
                    hdp_stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('Execute', '/usr/bin/ranger-admin-stop',
         user = 'ranger',
+        environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'}
     )
     self.assertNoMoreResources()
 
@@ -108,14 +115,17 @@ class TestRangerAdmin(RMFTestCase):
                               environment = {})
     self.assertResourceCalled('File', '/tmp/mysql-connector-java.jar',
         content = DownloadSource('http://c6401.ambari.apache.org:8080/resources//mysql-jdbc-driver.jar'),
+        mode = 0644
     )
     self.assertResourceCalled('Execute', ('cp',
      '--remove-destination',
      '/tmp/mysql-connector-java.jar',
      '/usr/share/java/mysql-connector-java.jar'),
-        not_if = 'test -f /usr/share/java/mysql-connector-java.jar',
         sudo = True,
         path = ['/bin', '/usr/bin/'],
+    )
+    self.assertResourceCalled('File', '/usr/share/java/mysql-connector-java.jar',
+      mode = 0644
     )
     self.assertResourceCalled('ModifyPropertiesFile', '/usr/hdp/current/ranger-admin/install.properties',
         properties = self.getConfig()['configurations']['admin-properties'],
@@ -124,10 +134,10 @@ class TestRangerAdmin(RMFTestCase):
         logoutput = True,
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
     )
-    self.assertResourceCalled('ModifyPropertiesFile', '/usr/hdp/current/ranger-admin/conf/xa_system.properties',
+    self.assertResourceCalled('ModifyPropertiesFile', '/etc/ranger/admin/conf/xa_system.properties',
         properties = self.getConfig()['configurations']['ranger-site'],
     )
-    self.assertResourceCalled('ModifyPropertiesFile', '/usr/hdp/current/ranger-admin/conf/ranger_webserver.properties',
+    self.assertResourceCalled('ModifyPropertiesFile', '/etc/ranger/admin/conf/ranger_webserver.properties',
         mode = 0744,
         properties = self.getConfig()['configurations']['ranger-site']
     )
@@ -137,14 +147,17 @@ class TestRangerAdmin(RMFTestCase):
                               environment = {})
     self.assertResourceCalled('File', '/tmp/mysql-connector-java.jar',
         content = DownloadSource('http://c6401.ambari.apache.org:8080/resources//mysql-jdbc-driver.jar'),
+        mode = 0644
     )
     self.assertResourceCalled('Execute', ('cp',
      '--remove-destination',
      '/tmp/mysql-connector-java.jar',
      '/usr/share/java/mysql-connector-java.jar'),
-        not_if = 'test -f /usr/share/java/mysql-connector-java.jar',
         sudo = True,
         path = ['/bin', '/usr/bin/'],
+    )
+    self.assertResourceCalled('File', '/usr/share/java/mysql-connector-java.jar',
+      mode = 0644
     )
     self.assertResourceCalled('ModifyPropertiesFile', '/usr/hdp/current/ranger-admin/install.properties',
         properties = self.getConfig()['configurations']['admin-properties'],
@@ -153,10 +166,10 @@ class TestRangerAdmin(RMFTestCase):
         logoutput = True,
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
     )
-    self.assertResourceCalled('ModifyPropertiesFile', '/usr/hdp/current/ranger-admin/conf/xa_system.properties',
+    self.assertResourceCalled('ModifyPropertiesFile', '/etc/ranger/admin/conf/xa_system.properties',
         properties = self.getConfig()['configurations']['ranger-site'],
     )
-    self.assertResourceCalled('ModifyPropertiesFile', '/usr/hdp/current/ranger-admin/conf/ranger_webserver.properties',
+    self.assertResourceCalled('ModifyPropertiesFile', '/etc/ranger/admin/conf/ranger_webserver.properties',
         mode = 0744,
         properties = self.getConfig()['configurations']['ranger-site']
     )
@@ -178,12 +191,13 @@ class TestRangerAdmin(RMFTestCase):
                        call_mocks = [(0, None), (0, None)],
                        mocks_dict = mocks_dict)
 
-    self.assertResourceCalled("Execute", "hdp-select set ranger-admin 2.3.0.0-1234")
+    self.assertResourceCalled("Execute", ('hdp-select', 'set', 'ranger-admin', '2.3.0.0-1234'), sudo=True)
 
-    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      "conf-select create-conf-dir --package ranger-admin --stack-version 2.3.0.0-1234 --conf-version 0",
+      ('conf-select', 'set-conf-dir', '--package', 'ranger-admin', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+       mocks_dict['checked_call'].call_args_list[0][0][0])
+    self.assertEquals(
+      ('conf-select', 'create-conf-dir', '--package', 'ranger-admin', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
-    self.assertEquals(
-      "conf-select set-conf-dir --package ranger-admin --stack-version 2.3.0.0-1234 --conf-version 0",
-       mocks_dict['call'].call_args_list[1][0][0])

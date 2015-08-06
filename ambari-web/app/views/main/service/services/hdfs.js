@@ -57,15 +57,20 @@ App.MainDashboardServiceHdfsView = App.MainDashboardServiceView.extend({
         }
       });
       return masterComponents;
-    }.property('parentView.service.hostComponents.length')
+    }.property('parentView.service.hostComponents.length'),
+    willDestroyElement: function() {
+      $('[rel=healthTooltip]').tooltip('destroy')
+    }
   }),
 
   didInsertElement: function() {
     App.tooltip($("[rel='tooltip']"));
   },
-  dataNodesLive: function () {
-    return this.get('service.dataNodesStarted');
-  }.property('service.dataNodesStarted'),
+
+  willDestroyElement: function() {
+    $("[rel='tooltip']").tooltip('destroy');
+  },
+
   dataNodesDead: function () {
     return this.get('service.dataNodesInstalled');
   }.property('service.dataNodesInstalled'),
@@ -128,21 +133,6 @@ App.MainDashboardServiceHdfsView = App.MainDashboardServiceView.extend({
       numberUtils.bytesToSize(memMax, 1, 'parseFloat'),
       percent.toFixed(1));
   }.property('service.jvmMemoryHeapUsed', 'service.jvmMemoryHeapMax'),
-
-  summaryHeader: function () {
-    var text = this.t("dashboard.services.hdfs.summary");
-    var service = this.get('service');
-    var liveCount = service.get('dataNodesStarted');
-    var totalCount = service.get('dataNodesTotal');
-    var total = service.get('capacityTotal') + 0;
-    var remaining = service.get('capacityRemaining') + 0;
-    var used = total - remaining;
-    var percent = total > 0 ? ((used * 100) / total).toFixed(1) : 0;
-    if (percent == "NaN" || percent < 0) {
-      percent = Em.I18n.t('services.service.summary.notAvailable') + " ";
-    }
-    return text.format(liveCount, totalCount, percent);
-  }.property('service.dataNodesStarted', 'service.dataNodesTotal', 'service.capacityUsed', 'service.capacityTotal'),
 
   dfsUsedDisk: function () {
     var text = this.t("dashboard.services.hdfs.capacityUsed");
@@ -216,18 +206,19 @@ App.MainDashboardServiceHdfsView = App.MainDashboardServiceView.extend({
   upgradeStatus: function () {
     var upgradeStatus = this.get('service.upgradeStatus');
     var healthStatus = this.get('service.healthStatus');
-    if (upgradeStatus) {
+    if (upgradeStatus == 'true') {
       return Em.I18n.t('services.service.summary.pendingUpgradeStatus.notPending');
-    } else if (healthStatus == 'green') {
+    } else if (upgradeStatus == 'false' && healthStatus == 'green') {
       return Em.I18n.t('services.service.summary.pendingUpgradeStatus.notFinalized');
     } else {
+      // upgrade status == null
       return Em.I18n.t("services.service.summary.notAvailable");
     }
   }.property('service.upgradeStatus', 'service.healthStatus'),
   isUpgradeStatusWarning: function () {
     var upgradeStatus = this.get('service.upgradeStatus');
     var healthStatus = this.get('service.healthStatus');
-    return !upgradeStatus && healthStatus == 'green';
+    return upgradeStatus == 'false' && healthStatus == 'green';
   }.property('service.upgradeStatus', 'service.healthStatus')
 
 });

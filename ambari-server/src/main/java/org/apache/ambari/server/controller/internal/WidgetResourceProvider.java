@@ -37,9 +37,12 @@ import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.apache.ambari.server.orm.dao.WidgetDAO;
 import org.apache.ambari.server.orm.entities.PermissionEntity;
 import org.apache.ambari.server.orm.entities.WidgetEntity;
+import org.apache.ambari.server.orm.entities.WidgetLayoutUserWidgetEntity;
 import org.apache.ambari.server.security.authorization.AmbariGrantedAuthority;
+import org.apache.ambari.server.security.authorization.AuthorizationHelper;
 import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -152,7 +155,7 @@ public class WidgetResourceProvider extends AbstractControllerResourceProvider {
           String scope = properties.get(WIDGET_SCOPE_PROPERTY_ID).toString();
 
           if (!isScopeAllowedForUser(scope)) {
-            throw new AmbariException("Only cluster operator can create widgets with cluster scope");
+            throw new AccessDeniedException("Only cluster operator can create widgets with cluster scope");
           }
 
           entity.setWidgetName(properties.get(WIDGET_WIDGET_NAME_PROPERTY_ID).toString());
@@ -205,6 +208,7 @@ public class WidgetResourceProvider extends AbstractControllerResourceProvider {
     final Set<Resource> resources = new HashSet<Resource>();
     final Set<String> requestedIds = getRequestPropertyIds(request, predicate);
     final Set<Map<String, Object>> propertyMaps = getPropertyMaps(predicate);
+    String author = AuthorizationHelper.getAuthenticatedName();
 
     List<WidgetEntity> requestedEntities = new ArrayList<WidgetEntity>();
 
@@ -220,9 +224,12 @@ public class WidgetResourceProvider extends AbstractControllerResourceProvider {
         if (entity == null) {
           throw new NoSuchResourceException("WidgetLayout with id " + id + " does not exists");
         }
+        if (!(entity.getAuthor().equals(author) || entity.getScope().equals(SCOPE.CLUSTER.name()))) {
+          throw new AccessDeniedException("User must be author of the widget or widget must have cluster scope");
+        }
         requestedEntities.add(entity);
       } else {
-        requestedEntities.addAll(widgetDAO.findAll());
+        requestedEntities.addAll(widgetDAO.findByScopeOrAuthor(author, SCOPE.CLUSTER.name()));
       }
     }
 
@@ -346,6 +353,13 @@ public class WidgetResourceProvider extends AbstractControllerResourceProvider {
     }
 
     for (WidgetEntity entity: entitiesToBeRemoved) {
+      if (entity.getListWidgetLayoutUserWidgetEntity() != null) {
+        for (WidgetLayoutUserWidgetEntity layoutUserWidgetEntity : entity.getListWidgetLayoutUserWidgetEntity()) {
+          if (layoutUserWidgetEntity.getWidgetLayout().getListWidgetLayoutUserWidgetEntity() != null) {
+            layoutUserWidgetEntity.getWidgetLayout().getListWidgetLayoutUserWidgetEntity().remove(layoutUserWidgetEntity);
+          }
+        }
+      }
       widgetDAO.remove(entity);
     }
 

@@ -296,6 +296,21 @@ describe('validator', function () {
       })
     });
   });
+
+  describe('#isConfigValueLink', function() {
+    var tests = [
+      {m:'link valid',i:'${asd}',e:true},
+      {m:'empty link ${} -invalid',i:'${}',e:false},
+      {m:'${ just wrong',i:'${',e:false},
+      {m:'anything  just wrong',i:'anything',e:false}
+    ];
+    tests.forEach(function(test) {
+      it(test.m + ' ', function () {
+        expect(validator.isConfigValueLink(test.i)).to.equal(test.e);
+      })
+    });
+  });
+
   describe('#isValidDataNodeDir(value)', function() {
     var tests = [
       {m:'"dir" - invalid',i:'dir',e:false},
@@ -421,6 +436,39 @@ describe('validator', function () {
     tests.forEach(function(test) {
       it(test.m + ' ', function () {
         expect(validator.isValidURL(test.i)).to.equal(test.e);
+      })
+    });
+  });
+
+  describe('#isHostname()', function() {
+    var tests = [
+      {m:'"localhost" - valid',i:'localhost',e:true},
+      {m:'"c6401.apache.ambari.org" - valid',i:'c6401.apache.ambari.org',e:true},
+      {m:'"c6401.org" - valid',i:'c6401.org',e:true},
+      {m:'"c6401" - invalid',i:'c6401',e:false},
+      {m:'"c6401." - invalid',i:'c6401.',e:false}
+    ];
+    tests.forEach(function(test) {
+      it(test.m + ' ', function () {
+        expect(validator.isHostname(test.i)).to.equal(test.e);
+      })
+    });
+  });
+
+  describe('#isValidBaseUrl()', function() {
+    var tests = [
+      {m: '"" - invalid', i: '', e: false},
+      {m: '"http://" - valid', i: 'http://', e: true},
+      {m: '"https://" - valid', i: 'https://', e: true},
+      {m: '"ftp://" - valid', i: 'ftp://', e: true},
+      {m: '"file:///" - valid', i: 'file:///', e: true},
+      {m: '"file3" - invalid', i: 'file3', e: false},
+      {m: '"3" - invalid', i: '3', e: false},
+      {m: '"a" - invalid', i: 'a', e: false}
+    ];
+    tests.forEach(function(test) {
+      it(test.m + ' ', function () {
+        expect(validator.isValidBaseUrl(test.i)).to.equal(test.e);
       })
     });
   });

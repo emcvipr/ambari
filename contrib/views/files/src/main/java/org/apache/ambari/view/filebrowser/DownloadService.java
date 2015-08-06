@@ -48,6 +48,7 @@ import javax.xml.bind.annotation.XmlElement;
 import com.google.gson.Gson;
 import org.apache.ambari.view.filebrowser.utils.NotFoundFormattedException;
 import org.apache.ambari.view.filebrowser.utils.ServiceFormattedException;
+import org.apache.ambari.view.utils.hdfs.HdfsApi;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.ambari.view.ViewContext;
@@ -105,8 +106,11 @@ public class DownloadService extends HdfsService {
       FSDataInputStream in = getApi(context).open(path);
       zip.putNextEntry(new ZipEntry(path.substring(1)));
       byte[] chunk = new byte[1024];
-      while (in.read(chunk) != -1) {
-        zip.write(chunk);
+
+      int readLen = 0;
+      while(readLen != -1) {
+        zip.write(chunk, 0, readLen);
+        readLen = in.read(chunk);
       }
     } catch (IOException ex) {
       logger.error("Error zipping file " + path.substring(1) + " (file ignored): "

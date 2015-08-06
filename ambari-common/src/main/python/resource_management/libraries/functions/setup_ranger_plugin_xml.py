@@ -44,18 +44,32 @@ def setup_ranger_plugin(component_select_name, service_name,
                         plugin_policymgr_ssl_properties, plugin_policymgr_ssl_attributes,
                         component_list, audit_db_is_enabled, credential_file, 
                         xa_audit_db_password, ssl_truststore_password,
-                        ssl_keystore_password, api_version=None):
+                        ssl_keystore_password, api_version=None, hdp_version_override = None):
 
   File(component_downloaded_custom_connector,
-    content = DownloadSource(component_driver_curl_source)
+    content = DownloadSource(component_driver_curl_source),
+    mode = 0644
   )
 
+  directory_path = os.path.dirname(component_driver_curl_target)
+
+  if not os.path.exists(directory_path):
+    Logger.info('Creating directory path {0}'.format(directory_path))
+    Directory(directory_path,
+      mode=0755
+    )
+
   Execute(('cp', '--remove-destination', component_downloaded_custom_connector, component_driver_curl_target),
-    not_if=format("test -f {component_driver_curl_target}"),
+    path=["/bin", "/usr/bin/"],
     sudo=True
   )
 
+  File(component_driver_curl_target, mode=0644)
+
   hdp_version = get_hdp_version(component_select_name)
+  if hdp_version_override is not None:
+    hdp_version = hdp_version_override
+
   component_conf_dir = conf_dict
   
   if plugin_enabled:
@@ -109,19 +123,29 @@ def setup_ranger_plugin(component_select_name, service_name,
       group = component_group,
       mode=0744)
 
-    XmlConfig("ranger-policymgr-ssl.xml",
-      conf_dir=component_conf_dir,
-      configurations=plugin_policymgr_ssl_properties,
-      configuration_attributes=plugin_policymgr_ssl_attributes,
-      owner = component_user,
-      group = component_group,
-      mode=0744)
+    if str(service_name).lower() == 'yarn' :
+      XmlConfig("ranger-policymgr-ssl-yarn.xml",
+        conf_dir=component_conf_dir,
+        configurations=plugin_policymgr_ssl_properties,
+        configuration_attributes=plugin_policymgr_ssl_attributes,
+        owner = component_user,
+        group = component_group,
+        mode=0744) 
+    else :
+      XmlConfig("ranger-policymgr-ssl.xml",
+        conf_dir=component_conf_dir,
+        configurations=plugin_policymgr_ssl_properties,
+        configuration_attributes=plugin_policymgr_ssl_attributes,
+        owner = component_user,
+        group = component_group,
+        mode=0744) 
 
-    setup_ranger_plugin_jar_symblink(hdp_version, service_name, component_list)
+    #This should be done by rpm
+    #setup_ranger_plugin_jar_symblink(hdp_version, service_name, component_list)
 
     setup_ranger_plugin_keystore(service_name, audit_db_is_enabled, hdp_version, credential_file,
               xa_audit_db_password, ssl_truststore_password, ssl_keystore_password,
-              component_user, component_group)
+              component_user, component_group, java_home)
 
   else:
     File(format('{component_conf_dir}/ranger-security.xml'),
@@ -141,20 +165,20 @@ def setup_ranger_plugin_jar_symblink(hdp_version, service_name, component_list):
       sudo=True)
 
 def setup_ranger_plugin_keystore(service_name, audit_db_is_enabled, hdp_version, credential_file, xa_audit_db_password,
-                                ssl_truststore_password, ssl_keystore_password, component_user, component_group):
+                                ssl_truststore_password, ssl_keystore_password, component_user, component_group, java_home):
 
   cred_lib_path = format('/usr/hdp/{hdp_version}/ranger-{service_name}-plugin/install/lib/*')
   cred_setup_prefix = format('python /usr/hdp/{hdp_version}/ranger-{service_name}-plugin/ranger_credential_helper.py -l "{cred_lib_path}"')
 
   if audit_db_is_enabled:
-    cred_setup = format('{cred_setup_prefix} -f {credential_file} -k "auditDBCred" -v "{xa_audit_db_password}" -c 1')
-    Execute(cred_setup, logoutput=True)
+    cred_setup = format('{cred_setup_prefix} -f {credential_file} -k "auditDBCred" -v {xa_audit_db_password!p} -c 1')
+    Execute(cred_setup, environment={'JAVA_HOME': java_home}, logoutput=True)
 
-  cred_setup = format('{cred_setup_prefix} -f {credential_file} -k "sslKeyStore" -v "{ssl_keystore_password}" -c 1')
-  Execute(cred_setup, logoutput=True)
+  cred_setup = format('{cred_setup_prefix} -f {credential_file} -k "sslKeyStore" -v {ssl_keystore_password!p} -c 1')
+  Execute(cred_setup, environment={'JAVA_HOME': java_home}, logoutput=True)
 
-  cred_setup = format('{cred_setup_prefix} -f {credential_file} -k "sslTrustStore" -v "{ssl_truststore_password}" -c 1')
-  Execute(cred_setup, logoutput=True)
+  cred_setup = format('{cred_setup_prefix} -f {credential_file} -k "sslTrustStore" -v {ssl_truststore_password!p} -c 1')
+  Execute(cred_setup, environment={'JAVA_HOME': java_home}, logoutput=True)
 
   File(credential_file,
     owner = component_user,

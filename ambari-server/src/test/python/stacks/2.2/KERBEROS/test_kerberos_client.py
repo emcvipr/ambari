@@ -24,7 +24,9 @@ import sys
 import use_cases
 from stacks.utils.RMFTestCase import *
 
+from only_for_platform import not_for_platform, PLATFORM_WINDOWS
 
+@not_for_platform(PLATFORM_WINDOWS)
 class TestKerberosClient(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "KERBEROS/1.10.3-10/package"
   STACK_VERSION = "2.2"
@@ -93,6 +95,12 @@ class TestKerberosClient(RMFTestCase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
+    self.assertResourceCalled('Directory', '/tmp/AMBARI-artifacts/',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('File', '/tmp/AMBARI-artifacts//UnlimitedJCEPolicyJDK7.zip',
+                            content = DownloadSource('http://c6401.ambari.apache.org:8080/resources//UnlimitedJCEPolicyJDK7.zip'),
+                            )
     self.assertNoMoreResources()
 
   def test_configure_unmanaged_ad(self):

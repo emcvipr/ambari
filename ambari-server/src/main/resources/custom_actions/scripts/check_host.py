@@ -21,8 +21,10 @@ Ambari Agent
 """
 
 import os
+import re
 import subprocess
 import socket
+import getpass
 
 from resource_management.libraries.functions import packages_analyzer
 from ambari_commons import os_utils
@@ -31,6 +33,9 @@ from ambari_commons.inet_utils import download_file
 from resource_management import Script, Execute, format
 from ambari_agent.HostInfo import HostInfo
 from ambari_agent.HostCheckReportFileHandler import HostCheckReportFileHandler
+from resource_management.core.resources import Directory, File
+from ambari_commons.constants import AMBARI_SUDO_BINARY
+from resource_management.core import shell
 
 CHECK_JAVA_HOME = "java_home_check"
 CHECK_DB_CONNECTION = "db_connection_check"
@@ -38,6 +43,7 @@ CHECK_HOST_RESOLUTION = "host_resolution_check"
 CHECK_LAST_AGENT_ENV = "last_agent_env_check"
 CHECK_INSTALLED_PACKAGES = "installed_packages"
 CHECK_EXISTING_REPOS = "existing_repos"
+CHECK_TRANSPARENT_HUGE_PAGE = "transparentHugePage"
 
 DB_MYSQL = "mysql"
 DB_ORACLE = "oracle"
@@ -55,34 +61,38 @@ JDBC_DRIVER_SYMLINK_POSTGRESQL = "postgres-jdbc-driver.jar"
 JDBC_DRIVER_SYMLINK_MSSQL = "sqljdbc4.jar"
 JDBC_AUTH_SYMLINK_MSSQL = "sqljdbc_auth.dll"
 
+THP_FILE = "/sys/kernel/mm/redhat_transparent_hugepage/enabled"
+
 class CheckHost(Script):
   # Packages that are used to find repos (then repos are used to find other packages)
   PACKAGES = [
-    "hadoop_2_2_*", "hadoop-2-2-.*", "zookeeper_2_2_*", "zookeeper-2-2-.*",
-    "hadoop", "zookeeper", "webhcat", "*-manager-server-db", "*-manager-daemons"
+    "hadoop", "zookeeper", "webhcat", "oozie", "ambari", "*-manager-server-db",
+    "*-manager-daemons", "mahout", "spark", "falcon", "hbase", "kafka", "knox",
+    "slider", "sqoop", "storm", "pig", "flume","hcatalog", "phoenix", "ranger",
+    "accumulo", "hive_*"
   ]
   
 
   # ignore packages from repos whose names start with these strings
   IGNORE_PACKAGES_FROM_REPOS = [
-    "ambari", "installed"
+    "installed"
   ]
   
 
   # ignore required packages
   IGNORE_PACKAGES = [
-    "epel-release"
+    "epel-release", "ambari-server", "ambari-agent"
   ]
   
   # Additional packages to look for (search packages that start with these)
   ADDITIONAL_PACKAGES = [
     "rrdtool", "rrdtool-python", "ganglia", "gmond", "gweb", "libconfuse",
-    "ambari-log4j", "hadoop", "zookeeper", "oozie", "webhcat"
+    "ambari-log4j"
   ]
   
   # ignore repos from the list of repos to be cleaned
   IGNORE_REPOS = [
-    "ambari", "HDP-UTILS"
+    "HDP-UTILS", "AMBARI", "BASE"
   ]
   
   def __init__(self):
@@ -142,7 +152,23 @@ class CheckHost(Script):
         print "There was an unknown error while checking installed packages and existing repositories: " + str(exception)
         structured_output[CHECK_INSTALLED_PACKAGES] = {"exit_code" : 1, "message": str(exception)}
         structured_output[CHECK_EXISTING_REPOS] = {"exit_code" : 1, "message": str(exception)}
-        
+
+    # Here we are checking transparent huge page if CHECK_TRANSPARENT_HUGE_PAGE is in check_execute_list
+    if CHECK_TRANSPARENT_HUGE_PAGE in check_execute_list:
+      try :
+        # This file exist only on redhat 6
+        thp_regex = "\[(.+)\]"
+        if os.path.isfile(THP_FILE):
+          with open(THP_FILE) as f:
+            file_content = f.read()
+            structured_output[CHECK_TRANSPARENT_HUGE_PAGE] = {"exit_code" : 0, "message": str(re.search(thp_regex,
+                                                                                            file_content).groups()[0])}
+        else:
+          structured_output[CHECK_TRANSPARENT_HUGE_PAGE] = {"exit_code" : 0, "message": ""}
+      except Exception, exception :
+        print "There was an unknown error while getting transparent huge page data: " + str(exception)
+        structured_output[CHECK_TRANSPARENT_HUGE_PAGE] = {"exit_code" : 1, "message": str(exception)}
+
     # this is necessary for HostCleanup to know later what were the results.
     self.reportFileHandler.writeHostChecksCustomActionsFile(structured_output)
     
@@ -170,14 +196,14 @@ class CheckHost(Script):
 
   def execute_java_home_available_check(self, config):
     print "Java home check started."
-    java64_home = config['commandParams']['java_home']
+    java_home = config['commandParams']['java_home']
 
-    print "Java home to check: " + java64_home
+    print "Java home to check: " + java_home
     java_bin = "java"
     if OSCheck.is_windows_family():
       java_bin = "java.exe"
   
-    if not os.path.isfile(os.path.join(java64_home, "bin", java_bin)):
+    if not os.path.isfile(os.path.join(java_home, "bin", java_bin)):
       print "Java home doesn't exist!"
       java_home_check_structured_output = {"exit_code" : 1, "message": "Java home doesn't exist!"}
     else:
@@ -195,7 +221,7 @@ class CheckHost(Script):
     ambari_server_hostname = config['commandParams']['ambari_server_host']
     check_db_connection_jar_name = "DBConnectionVerification.jar"
     jdk_location = config['commandParams']['jdk_location']
-    java64_home = config['commandParams']['java_home']
+    java_home = config['commandParams']['java_home']
     db_name = config['commandParams']['db_name']
 
     if db_name == DB_MYSQL:
@@ -229,7 +255,7 @@ class CheckHost(Script):
       java_bin = "java.exe"
       class_path_delimiter = ";"
 
-    java_exec = os.path.join(java64_home, "bin",java_bin)
+    java_exec = os.path.join(java_home, "bin",java_bin)
 
     if ('jdk_name' not in config['commandParams'] or config['commandParams']['jdk_name'] == None \
         or config['commandParams']['jdk_name'] == '') and not os.path.isfile(java_exec):
@@ -245,7 +271,7 @@ class CheckHost(Script):
       jdk_name = config['commandParams']['jdk_name']
       jdk_url = "{0}/{1}".format(jdk_location, jdk_name)
       jdk_download_target = os.path.join(agent_cache_dir, jdk_name)
-      java_dir = os.path.dirname(java64_home)
+      java_dir = os.path.dirname(java_home)
       try:
         download_file(jdk_url, jdk_download_target)
       except Exception, e:
@@ -255,26 +281,38 @@ class CheckHost(Script):
         db_connection_check_structured_output = {"exit_code" : 1, "message": message}
         return db_connection_check_structured_output
 
-      if jdk_name.endswith(".bin"):
-        install_cmd = format("mkdir -p {java_dir} ; chmod +x {jdk_download_target}; cd {java_dir} ; echo A | " \
-                           "{jdk_curl_target} -noregister > /dev/null 2>&1")
-        install_path = ["/bin","/usr/bin/"]
-      elif jdk_name.endswith(".gz"):
-        install_cmd = format("mkdir -p {java_dir} ; cd {java_dir} ; tar -xf {jdk_download_target} > /dev/null 2>&1")
-        install_path = ["/bin","/usr/bin/"]
-      elif jdk_name.endswith(".exe"):
+      if jdk_name.endswith(".exe"):
         install_cmd = "{0} /s INSTALLDIR={1} STATIC=1 WEB_JAVA=0 /L \\var\\log\\ambari-agent".format(
-          os_utils.quote_path(jdk_download_target), os_utils.quote_path(java64_home),
+        os_utils.quote_path(jdk_download_target), os_utils.quote_path(java_home),
         )
         install_path = [java_dir]
-
-      try:
-        Execute(install_cmd, path = install_path)
-      except Exception, e:
-        message = "Error installing java.\n" + str(e)
-        print message
-        db_connection_check_structured_output = {"exit_code" : 1, "message": message}
-        return db_connection_check_structured_output
+        try:
+          Execute(install_cmd, path = install_path)
+        except Exception, e:
+          message = "Error installing java.\n" + str(e)
+          print message
+          db_connection_check_structured_output = {"exit_code" : 1, "message": message}
+          return db_connection_check_structured_output
+      else:
+        tmp_java_dir = format("{tmp_dir}/jdk")
+        sudo = AMBARI_SUDO_BINARY
+        if jdk_name.endswith(".bin"):
+          chmod_cmd = ("chmod", "+x", jdk_download_target)
+          install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && echo A | {jdk_download_target} -noregister && {sudo} cp -rp {tmp_java_dir}/* {java_dir}")
+        elif jdk_name.endswith(".gz"):
+          chmod_cmd = ("chmod","a+x", java_dir)
+          install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && tar -xf {jdk_download_target} && {sudo} cp -rp {tmp_java_dir}/* {java_dir}")
+        try:
+          Directory(java_dir)
+          Execute(chmod_cmd, not_if = format("test -e {java_exec}"), sudo = True)
+          Execute(install_cmd, not_if = format("test -e {java_exec}"))
+          File(format("{java_home}/bin/java"), mode=0755, cd_access="a")
+          Execute(("chown","-R", getpass.getuser(), java_home), sudo = True)
+        except Exception, e:
+          message = "Error installing java.\n" + str(e)
+          print message
+          db_connection_check_structured_output = {"exit_code" : 1, "message": message}
+          return db_connection_check_structured_output
 
     # download DBConnectionVerification.jar from ambari-server resources
     try:
@@ -302,27 +340,19 @@ class CheckHost(Script):
       print message
       db_connection_check_structured_output = {"exit_code" : 1, "message": message}
       return db_connection_check_structured_output
-  
-  
+
+
     # try to connect to db
     db_connection_check_command = format("{java_exec} -cp {check_db_connection_path}{class_path_delimiter}" \
            "{jdbc_path} -Djava.library.path={agent_cache_dir} org.apache.ambari.server.DBConnectionVerification \"{db_connection_url}\" " \
            "{user_name} {user_passwd!p} {jdbc_driver}")
-    print "INFO db_connection_check_command: " + db_connection_check_command
-    process = subprocess.Popen(db_connection_check_command,
-                               stdout=subprocess.PIPE,
-                               stdin=subprocess.PIPE,
-                               stderr=subprocess.PIPE,
-                               shell=True)
-    (stdoutdata, stderrdata) = process.communicate()
-    print "INFO stdoutdata: " + stdoutdata
-    print "INFO stderrdata: " + stderrdata
-    print "INFO returncode: " + str(process.returncode)
-  
-    if process.returncode == 0:
+
+    code, out = shell.call(db_connection_check_command)
+
+    if code == 0:
       db_connection_check_structured_output = {"exit_code" : 0, "message": "DB connection check completed successfully!" }
     else:
-      db_connection_check_structured_output = {"exit_code" : 1, "message":  stdoutdata + stderrdata }
+      db_connection_check_structured_output = {"exit_code" : 1, "message":  out }
   
     return db_connection_check_structured_output
 

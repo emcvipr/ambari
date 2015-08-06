@@ -44,6 +44,8 @@ def webhcat():
 def webhcat():
   import params
 
+  from setup_atlas_hive import setup_atlas_hive
+
   Directory(params.templeton_pid_dir,
             owner=params.webhcat_user,
             mode=0755,
@@ -86,6 +88,21 @@ def webhcat():
             group=params.user_group,
             )
 
+  # if we're in an upgrade of a secure cluster, make sure hive-site and yarn-site are created
+  if Script.is_hdp_stack_greater_or_equal("2.3") and params.version:
+    XmlConfig("hive-site.xml",
+      conf_dir = format("/usr/hdp/{version}/hive/conf"),
+      configurations = params.config['configurations']['hive-site'],
+      configuration_attributes = params.config['configuration_attributes']['hive-site'],
+      owner = params.hive_user)
+
+    XmlConfig("yarn-site.xml",
+      conf_dir = format("/usr/hdp/{version}/hadoop/conf"),
+      configurations = params.config['configurations']['yarn-site'],
+      configuration_attributes = params.config['configuration_attributes']['yarn-site'],
+      owner = params.yarn_user)
+  
+
   File(format("{config_dir}/webhcat-env.sh"),
        owner=params.webhcat_user,
        group=params.user_group,
@@ -112,3 +129,5 @@ def webhcat():
          owner=params.webhcat_user,
          content=StaticFile(format("{config_dir}/{log4j_webhcat_filename}.template"))
     )
+
+  setup_atlas_hive(configuration_directory=params.config_dir)

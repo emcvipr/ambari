@@ -83,7 +83,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
   refresh: function () {
     this.set('filteringComplete', false);
     var updaterMethodName = this.get('updater.tableUpdaterMap')[this.get('tableName')];
-    this.get('updater')[updaterMethodName](this.updaterSuccessCb.bind(this), this.updaterErrorCb.bind(this));
+    this.get('updater')[updaterMethodName](this.updaterSuccessCb.bind(this), this.updaterErrorCb.bind(this), true);
     return true;
   },
 
@@ -155,11 +155,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     change: function () {
       this.get('parentView').saveDisplayLength();
       var self = this;
-      if (this.get('parentView.startIndex') === 1 || this.get('parentView.startIndex') === 0) {
-        Ember.run.next(function () {
-          self.get('parentView').updatePagination();
-        });
-      } else {
+      if (this.get('parentView.startIndex') !== 1 && this.get('parentView.startIndex') !== 0) {
         Ember.run.next(function () {
           self.set('parentView.startIndex', 1);
         });
@@ -203,14 +199,10 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     this.clearFiltersObs();
     this.addObserver('selectAllHosts', this, this.toggleAllHosts);
     this.addObserver('filteringComplete', this, this.overlayObserver);
-    this.addObserver('startIndex', this, 'updateHostsPagination');
+    this.addObserver('startIndex', this, 'updatePagination');
     this.addObserver('displayLength', this, 'updatePagination');
     this.addObserver('filteredCount', this, this.updatePaging);
     this.overlayObserver();
-  },
-
-  updateHostsPagination: function () {
-    this.updatePagination();
   },
 
   willDestroyElement: function () {
@@ -376,15 +368,11 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
   getHostsForBulkOperations: function (queryParams, operationData, loadingPopup) {
     var params = App.router.get('updateController').computeParameters(queryParams);
 
-    if (!params.length) {
-      params = '&';
-    }
-
     App.ajax.send({
       name: 'hosts.bulk.operations',
       sender: this,
       data: {
-        parameters: params.substring(0, params.length - 1),
+        parameters: params,
         operationData: operationData,
         loadingPopup: loadingPopup
       },
@@ -400,7 +388,6 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
         id:host.id,
         clusterId: host.cluster_id,
         passiveState: host.passive_state,
-        isRequested: host.is_requested,
         hostName: host.host_name,
         hostComponents: host.host_components
       })
@@ -551,7 +538,14 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
       App.tooltip(this.$("[rel='HealthTooltip'], [rel='UsageTooltip'], [rel='ComponentsTooltip']"));
     },
 
+    willDestroyElement: function() {
+      this.$("[rel='HealthTooltip'], [rel='UsageTooltip'], [rel='ComponentsTooltip']").remove();
+    },
+
     displayComponents: function () {
+      if (this.get('hasNoComponents')) {
+        return;
+      }
       var header = Em.I18n.t('common.components'),
         hostName = this.get('content.hostName'),
         items = this.get('content.hostComponents').getEach('displayName');
@@ -559,6 +553,9 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     },
 
     displayVersions: function () {
+      if (this.get('hasSingleVersion')) {
+        return;
+      }
       var header = Em.I18n.t('common.versions'),
         hostName = this.get('content.hostName'),
         items = this.get('content.stackVersions').filterProperty('isVisible').map(function (stackVersion) {
@@ -575,29 +572,27 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
      * @returns {String}
      */
     restartRequiredComponentsMessage: function() {
-      var restartRequiredComponents = this.get('content.hostComponents').filterProperty('staleConfigs', true);
-      var count = restartRequiredComponents.length;
+      var restartRequiredComponents = this.get('content.componentsWithStaleConfigs');
+      var count = this.get('content.componentsWithStaleConfigsCount');
       if (count <= 5) {
         var word = (count == 1) ? Em.I18n.t('common.component') : Em.I18n.t('common.components');
         return Em.I18n.t('hosts.table.restartComponents.withNames').format(restartRequiredComponents.getEach('displayName').join(', ')) + ' ' + word.toLowerCase();
       }
       return Em.I18n.t('hosts.table.restartComponents.withoutNames').format(count);
-    }.property('content.hostComponents.@each.staleConfigs'),
+    }.property('content.componentsWithStaleConfigs'),
 
     /**
      * Tooltip message for "Maintenance" icon
      * @returns {String}
      */
     componentsInPassiveStateMessage: function() {
-      var componentsInPassiveState = this.get('content.hostComponents').filter(function(component) {
-        return component.get('passiveState') !== 'OFF';
-      });
-      var count = componentsInPassiveState.length;
+      var componentsInPassiveState = this.get('content.componentsInPassiveState');
+      var count = this.get('content.componentsInPassiveStateCount');
       if (count <= 5) {
         return Em.I18n.t('hosts.table.componentsInPassiveState.withNames').format(componentsInPassiveState.getEach('displayName').join(', '));
       }
       return Em.I18n.t('hosts.table.componentsInPassiveState.withoutNames').format(count);
-    }.property('content.hostComponents.@each.passiveState'),
+    }.property('content.componentsInPassiveState'),
 
     /**
      * true if host has only one repoversion
@@ -625,7 +620,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
      */
     currentVersion: function() {
       var currentRepoVersion = this.get('content.stackVersions').findProperty('isCurrent') || this.get('content.stackVersions').objectAt(0);
-      return currentRepoVersion ? currentRepoVersion.get('displayName') + " (" + currentRepoVersion.get('displayStatus') + ")" : "";
+      return currentRepoVersion ? currentRepoVersion.get('displayName') : "";
     }.property('content.stackVersions'),
 
     /**

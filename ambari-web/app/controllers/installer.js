@@ -65,7 +65,6 @@ App.InstallerController = App.WizardController.extend({
     'installOptions',
     'allHostNamesPattern',
     'serviceComponents',
-    'advancedServiceConfig',
     'clientInfo',
     'selectedServiceNames',
     'serviceConfigGroups',
@@ -86,7 +85,7 @@ App.InstallerController = App.WizardController.extend({
     this.get('isStepDisabled').setEach('value', true);
     this.get('isStepDisabled').pushObject(Ember.Object.create({
       step: 0,
-      value: false
+      value: true
     }));
   },
   /**
@@ -211,7 +210,7 @@ App.InstallerController = App.WizardController.extend({
           diskInfo: host.disk_info,
           diskTotal: disksOverallCapacity / (1024 * 1024),
           diskFree: diskFree / (1024 * 1024),
-          hostComponents: host.hostComponents
+          hostComponents: host.hostComponents || []
         }
       ))
     }
@@ -281,8 +280,14 @@ App.InstallerController = App.WizardController.extend({
         error: 'loadStacksVersionsErrorCallback'
       }));
     }, this);
+    this.set('loadStacksRequestsCounter', requests.length);
     return requests;
   },
+
+  /**
+   * Counter for counting number of successful requests to load stack versions
+   */
+  loadStacksRequestsCounter: 0,
 
   /**
    * Parse loaded data and create array of stacks objects
@@ -299,16 +304,18 @@ App.InstallerController = App.WizardController.extend({
       }, this);
     }
     App.stackMapper.map(data);
-    if (!isStacksExistInDb) {
-      var defaultStackVersion = App.Stack.find().findProperty('id', App.defaultStackVersion);
-      if (defaultStackVersion) {
-        defaultStackVersion.set('isSelected', true)
-      } else {
-        App.Stack.find().objectAt(0).set('isSelected', true);
+    if (!this.decrementProperty('loadStacksRequestsCounter')) {
+      if (!isStacksExistInDb) {
+        var defaultStackVersion = App.Stack.find().findProperty('id', App.defaultStackVersion);
+        if (defaultStackVersion) {
+          defaultStackVersion.set('isSelected', true)
+        } else {
+          App.Stack.find().objectAt(0).set('isSelected', true);
+        }
       }
+      this.set('content.stacks', App.Stack.find());
+      App.set('currentStackVersion', App.Stack.find().findProperty('isSelected').get('id'));
     }
-    this.set('content.stacks', App.Stack.find());
-    App.set('currentStackVersion', App.Stack.find().findProperty('isSelected').get('id'));
   },
 
   /**
@@ -434,10 +441,6 @@ App.InstallerController = App.WizardController.extend({
     this.set("content.masterComponentHosts", masterComponentHosts);
   },
 
-  loadRecommendations: function () {
-    this.set("content.recommendations", this.getDBProperty('recommendations'));
-  },
-
   loadCurrentHostGroups: function () {
     this.set("content.recommendationsHostGroups", this.getDBProperty('recommendationsHostGroups'));
   },
@@ -476,8 +479,6 @@ App.InstallerController = App.WizardController.extend({
     var serviceConfigProperties = this.getDBProperty('serviceConfigProperties');
     this.set('content.serviceConfigProperties', serviceConfigProperties);
     console.log("InstallerController.loadServiceConfigProperties: loaded config ", serviceConfigProperties);
-
-    this.set('content.advancedServiceConfig', this.getDBProperty('advancedServiceConfig'));
   },
   /**
    * Generate clients list for selected services and save it to model
@@ -705,12 +706,7 @@ App.InstallerController = App.WizardController.extend({
 
   setStepsEnable: function () {
     for (var i = 0; i <= this.totalSteps; i++) {
-      var step = this.get('isStepDisabled').findProperty('step', i);
-      if (i <= this.get('currentStep')) {
-        step.set('value', false);
-      } else {
-        step.set('value', true);
-      }
+      this.get('isStepDisabled').findProperty('step', i).set('value', i > this.get('currentStep'));
     }
   }.observes('currentStep'),
 

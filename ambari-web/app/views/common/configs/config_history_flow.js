@@ -65,6 +65,10 @@ App.ConfigHistoryFlowView = Em.View.extend({
     })
   },
 
+  allServiceVersions: function() {
+    return App.ServiceConfigVersion.find().filterProperty('serviceName', this.get('serviceName'));
+  }.property('serviceName'),
+
   showCompareVersionBar: function() {
     return !Em.isNone(this.get('compareServiceVersion'));
   }.property('compareServiceVersion'),
@@ -99,22 +103,29 @@ App.ConfigHistoryFlowView = Em.View.extend({
   }.property('displayedServiceVersion'),
 
   serviceVersions: function () {
-    var allServiceVersions = App.ServiceConfigVersion.find().filterProperty('serviceName', this.get('serviceName'));
     var groupName = this.get('controller.selectedConfigGroup.isDefault') ? 'default'
         : this.get('controller.selectedConfigGroup.name');
+    var groupId = this.get('controller.selectedConfigGroup.configGroupId');
 
-    allServiceVersions.forEach(function (version) {
+    this.get('allServiceVersions').forEach(function (version) {
       version.set('isDisabled', !(version.get('groupName') === groupName));
     }, this);
 
-    var serviceVersions = allServiceVersions.filter(function(s) {
-      return s.get('groupName') == groupName || s.get('groupName') == 'default';
+    var serviceVersions = this.get('allServiceVersions').filter(function(s) {
+      return (s.get('groupId') === groupId) || s.get('groupName') == 'default';
     });
 
     return serviceVersions.sort(function (a, b) {
       return Em.get(b, 'createTime') - Em.get(a, 'createTime');
     });
   }.property('serviceName', 'controller.selectedConfigGroup.name'),
+
+  /**
+   * disable versions visible to the user to prevent actions on them
+   */
+  disableVersions: function () {
+    this.get('allServiceVersions').setEach('isDisabled', true);
+  },
 
   /**
    * service versions which in viewport and visible to user
@@ -152,44 +163,45 @@ App.ConfigHistoryFlowView = Em.View.extend({
     event.stopPropagation();
     this.set('showFullList', true);
   },
+
   hideFullList: function (event) {
     this.set('showFullList', !(this.get('serviceVersions.length') > this.VERSIONS_IN_DROPDOWN));
   },
 
+  computePosition: function(event) {
+    var $el = this.$('.dropdown-menu', event.currentTarget);
+    // remove existing style - in case user scrolls the page
+    $el.removeAttr('style');
+    var elHeight = $el.outerHeight(),
+      parentHeight = $el.parent().outerHeight(),
+      pagePosition = window.innerHeight + window.pageYOffset,
+      elBottomPosition = $el.offset().top + elHeight,
+      shouldShowUp = elBottomPosition > pagePosition ;
+    if (shouldShowUp) {
+      $el.css('margin-top', -(elHeight - parentHeight));
+    }
+    $el = null;
+  },
+
   didInsertElement: function () {
     App.tooltip(this.$('[data-toggle=tooltip]'),{
-      placement: 'bottom'
+      placement: 'bottom',
+      html: false
     });
     App.tooltip(this.$('[data-toggle=arrow-tooltip]'),{
       placement: 'top'
     });
-    $(".version-info-bar-wrapper").stick_in_parent({parent: '#serviceConfig', offset_top: 10});
+    this.$(".version-info-bar-wrapper").stick_in_parent({parent: '#serviceConfig', offset_top: 10});
   },
 
-  serviceVersionBox: Em.View.extend({
-    actionTypes: function() {
-      return this.get('parentView.actionTypes');
-    }.property('parentView.actionTypes'),
-    templateName: require('templates/common/configs/service_version_box'),
-    didInsertElement: function () {
-      $('.version-box').hoverIntent(function() {
-        var self = this;
-        setTimeout(function() {
-          if ($(self).is(':hover')) {
-            $(self).find('.version-popover').fadeIn(200);
-          }
-        }, 700);
-      }, function() {
-        $(this).find('.version-popover').hide();
-      });
-      App.tooltip(this.$('[data-toggle=tooltip]'),{
-        placement: 'bottom'
-      });
-      App.tooltip(this.$('[data-toggle=arrow-tooltip]'),{
-        placement: 'top'
-      });
-    }
-  }),
+  willDestroyElement: function() {
+    Em.keys(this.get('serviceVersionsReferences')).forEach(function(key) {
+      Em.get(this.get('serviceVersionsReferences'), key).destroy();
+    }, this);
+    this.$('.version-info-bar-wrapper').trigger('sticky_kit:detach').off();
+    this.$('[data-toggle=tooltip], [data-toggle=arrow-tooltip]').remove();
+  },
+
 
   willInsertElement: function () {
     var serviceVersions = this.get('serviceVersions');
@@ -292,11 +304,15 @@ App.ConfigHistoryFlowView = Em.View.extend({
       self[type].call(self, event);
     }
 
-    if (controller.hasUnsavedChanges()) {
-      controller.showSavePopup(null, callback);
-      return;
-    }
-    callback();
+    Em.run.next(function() {
+      if (controller.hasUnsavedChanges()) {
+        controller.showSavePopup(null, callback);
+        return;
+      }
+
+      self.disableVersions();
+      callback();
+    });
   },
 
   /**
@@ -326,7 +342,11 @@ App.ConfigHistoryFlowView = Em.View.extend({
   compare: function (event) {
     this.set('controller.compareServiceVersion', event.context);
     this.set('compareServiceVersion', event.context);
-    this.get('controller').onConfigGroupChange();
+    var controller = this.get('controller');
+    controller.get('stepConfigs').clear();
+    controller.loadCompareVersionConfigs(controller.get('allConfigs')).done(function() {
+      controller.onLoadOverrides(controller.get('allConfigs'));
+    });
   },
   removeCompareVersionBar: function () {
     var displayedVersion = this.get('displayedServiceVersion.version');
@@ -341,6 +361,7 @@ App.ConfigHistoryFlowView = Em.View.extend({
         serviceVersion.set('isDisplayed', false);
       }
     });
+    this.set('isCompareMode', false);
     this.shiftFlowOnSwitch(versionIndex);
     this.get('controller').loadSelectedVersion(displayedVersion);
   },
@@ -443,7 +464,6 @@ App.ConfigHistoryFlowView = Em.View.extend({
         self.get('controller').setProperties({
           saveConfigsFlag: true,
           serviceConfigVersionNote: this.get('serviceConfigNote'),
-          serviceConfigNote: this.get('serviceConfigNote'),
           preSelectedConfigVersion: Em.Object.create({
             version: newVersionToBeCreated,
             serviceName: self.get('displayedServiceVersion.serviceName'),
@@ -491,5 +511,46 @@ App.ConfigHistoryFlowView = Em.View.extend({
       this.set('startIndex', versionIndex);
       this.adjustFlowView();
     }
+  }
+});
+
+App.ConfigsServiceVersionBoxView = Em.View.extend({
+
+  actionTypesBinding: 'parentView.actionTypes',
+
+  disabledActionAttr: function() {
+    if (this.get('serviceVersion')) {
+      return this.get('serviceVersion').get('disabledActionAttr');
+    }
+  }.property('serviceVersion.disabledActionAttr'),
+
+  disabledActionMessages: function() {
+    if (this.get('serviceVersion')) {
+      return this.get('serviceVersion').get('disabledActionMessages');
+    }
+  }.property('serviceVersion.disabledActionMessages'),
+
+  templateName: require('templates/common/configs/service_version_box'),
+
+  didInsertElement: function () {
+    this._super();
+    this.$('.version-box').hoverIntent(function() {
+      if ($(this).is(':hover')) {
+        $(this).find('.version-popover').delay(700).fadeIn(200).end();
+      }
+    }, function() {
+      $(this).find('.version-popover').stop().fadeOut(200).end();
+    });
+    App.tooltip(this.$('[data-toggle=tooltip]'), {
+      placement: 'bottom'
+    });
+    App.tooltip(this.$('[data-toggle=arrow-tooltip]'), {
+      placement: 'top'
+    });
+  },
+
+  willDestroyElement: function() {
+    this.$('.version-box').off();
+    this.$('[data-toggle=tooltip], [data-toggle=arrow-tooltip]').remove();
   }
 });

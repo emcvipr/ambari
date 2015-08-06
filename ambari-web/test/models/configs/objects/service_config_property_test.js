@@ -175,20 +175,24 @@ var serviceConfigProperty,
     {
       initial: {
         displayType: 'password',
-        value: 'value'
+        value: 'value',
+        recommendedValue: 'recommended'
       },
       result: {
-        retypedPassword: 'value'
+        retypedPassword: 'value',
+        recommendedValue: ''
       }
     },
     {
       initial: {
         id: 'puppet var',
         value: '',
-        defaultValue: 'default'
+        savedValue: 'default',
+        recommendedValue: 'recommended'
       },
       result: {
-        value: 'default'
+        value: 'default',
+        recommendedValue: 'recommended'
       }
     }
   ],
@@ -197,17 +201,17 @@ var serviceConfigProperty,
       isEditable: false
     },
     {
-      defaultValue: null
+      savedValue: null
     },
     {
       value: 'value',
-      defaultValue: 'value'
+      savedValue: 'value'
     }
   ],
   notDefaultTrueData = {
     isEditable: true,
     value: 'value',
-    defaultValue: 'default'
+    savedValue: 'default'
   },
   types = ['masterHost', 'slaveHosts', 'masterHosts', 'slaveHost', 'radio button'],
   classCases = [
@@ -471,107 +475,45 @@ describe('App.ServiceConfigProperty', function () {
     });
   });
 
-  describe('#_validateOverrides', function () {
+  describe('#undoAvailable', function () {
 
     Em.A([
       {
-        m: 'original config',
-        e: false,
-        c: {
-          value: 'on',
-          isOriginalSCP: true,
-          supportsFinal: false,
-          isFinal: false,
-          parentSCP: null
-        }
+        cantBeUndone: true,
+        isNotDefaultValue: true,
+        e: false
       },
       {
-        m: 'not original config, value equal to parent',
-        e: true,
-        c: {
-          value: 'on',
-          isOriginalSCP: false,
-          supportsFinal: false,
-          isFinal: false,
-          parentSCP: App.ServiceConfigProperty.create({
-            value: 'on'
-          })
-        }
+        cantBeUndone: false,
+        isNotDefaultValue: true,
+        e: true
       },
       {
-        m: 'not original config, isFinal equal to parent',
-        e: true,
-        c: {
-          value: 'on',
-          isOriginalSCP: false,
-          supportsFinal: true,
-          isFinal: false,
-          parentSCP: App.ServiceConfigProperty.create({
-            value: 'off',
-            isFinal: false
-          })
-        }
+        cantBeUndone: true,
+        isNotDefaultValue: false,
+        e: false
       },
       {
-        m: 'not original config, isFinal equal to parent, but final not supported',
-        e: false,
-        c: {
-          value: 'on',
-          isOriginalSCP: false,
-          supportsFinal: false,
-          isFinal: false,
-          parentSCP: App.ServiceConfigProperty.create({
-            value: 'off',
-            isFinal: false
-          })
-        }
-      },
-      {
-        m: 'not original config, parent override has same value',
-        e: true,
-        c: {
-          value: 'on',
-          isOriginalSCP: false,
-          supportsFinal: true,
-          isFinal: false,
-          parentSCP: App.ServiceConfigProperty.create({
-            value: 'off',
-            overrides: [
-              App.ServiceConfigProperty.create({
-                value: 'on',
-                isOriginalSCP: false
-              })
-            ]
-          })
-        }
-      },
-      {
-        m: 'not original config, parent override doesn\'t have same value',
-        e: false,
-        c: {
-          value: 'on',
-          isOriginalSCP: false,
-          supportsFinal: true,
-          isFinal: false,
-          parentSCP: App.ServiceConfigProperty.create({
-            value: 'off',
-            isFinal: true,
-            overrides: [
-              App.ServiceConfigProperty.create({
-                value: 'another',
-                isOriginalSCP: false
-              })
-            ]
-          })
-        }
+        cantBeUndone: false,
+        isNotDefaultValue: false,
+        e: false
       }
     ]).forEach(function (test) {
-      it(test.m, function () {
-        serviceConfigProperty.reopen(test.c);
-        expect(serviceConfigProperty._validateOverrides()).to.equal(test.e);
+      it('', function () {
+        serviceConfigProperty.reopen({
+          cantBeUndone: test.cantBeUndone,
+          isNotDefaultValue: test.isNotDefaultValue
+        });
+        expect(serviceConfigProperty.get('undoAvailable')).to.equal(test.e);
       });
     });
 
   });
+
+  describe('#overrideIsFinalValues', function () {
+    it('should be defined as empty array', function () {
+      expect(serviceConfigProperty.get('overrideIsFinalValues')).to.eql([]);
+    });
+  })
 
 });

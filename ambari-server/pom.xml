@@ -36,9 +36,15 @@
     <ambari_commons.install.dir>/usr/lib/ambari-server/lib/ambari_commons</ambari_commons.install.dir>
     <resource_management.install.dir>/usr/lib/ambari-server/lib/resource_management</resource_management.install.dir>
     <jinja.install.dir>/usr/lib/ambari-server/lib/ambari_jinja2</jinja.install.dir>
+    <simplejson.install.dir>/usr/lib/ambari-server/lib/ambari_simplejson</simplejson.install.dir>
     <ambari-web-dir>${basedir}/../ambari-web/public</ambari-web-dir>
     <ambari-admin-dir>${basedir}/../ambari-admin</ambari-admin-dir>
     <contrib-views-dir>${basedir}/../contrib/views</contrib-views-dir>
+    <resourceManagementSrcLocation>${project.basedir}/../ambari-common/src/main/python/resource_management</resourceManagementSrcLocation>
+    <commonServicesSrcLocation>target/classes/common-services</commonServicesSrcLocation>
+    <stacksSrcLocation>target/classes/stacks/${stack.distribution}</stacksSrcLocation>
+    <tarballResourcesFolder>src/main/resources</tarballResourcesFolder>
+    <skipPythonTests>false</skipPythonTests>
   </properties>
   <build>
     <plugins>
@@ -280,6 +286,7 @@
           <defaultDirmode>755</defaultDirmode>
           <defaultUsername>root</defaultUsername>
           <defaultGroupname>root</defaultGroupname>
+          <needarch>x86_64</needarch>
           <mappings>
             <mapping>
               <directory>/usr/lib/ambari-server</directory>
@@ -320,7 +327,7 @@
               <sources>
                 <source>
                   <location>
-                    ${project.basedir}/../ambari-common/src/main/python/resource_management
+                    ${resourceManagementSrcLocation}
                   </location>
                 </source>
               </sources>
@@ -339,7 +346,18 @@
                 </source>
               </sources>
             </mapping>
-              <mapping>
+            <mapping>
+              <directory>${simplejson.install.dir}</directory>
+              <filemode>755</filemode>
+              <username>root</username>
+              <groupname>root</groupname>
+              <sources>
+                <source>
+                  <location>${project.basedir}/../ambari-common/src/main/python/ambari_simplejson</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
               <directory>/usr/sbin</directory>
               <filemode>755</filemode>
               <username>root</username>
@@ -387,12 +405,24 @@
             </mapping>
             <mapping>
               <directory>/var/lib/ambari-server/</directory>
+              <configuration>true</configuration>
               <filemode>700</filemode>
               <username>root</username>
               <groupname>root</groupname>
               <sources>
                 <source>
                   <location>conf/unix/ambari-env.sh</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
+              <directory>/var/lib/ambari-server/</directory>
+              <filemode>700</filemode>
+              <username>root</username>
+              <groupname>root</groupname>
+              <sources>
+                <source>
+                  <location>conf/unix/ambari-sudo.sh</location>
                 </source>
               </sources>
             </mapping>
@@ -549,7 +579,7 @@
               <directory>/var/lib/ambari-server/resources/common-services</directory>
               <sources>
                 <source>
-                  <location>target/classes/common-services</location>
+                  <location>${commonServicesSrcLocation}</location>
                 </source>
               </sources>
             </mapping>
@@ -565,7 +595,7 @@
               <directory>/var/lib/ambari-server/resources/stacks/${stack.distribution}</directory>
               <sources>
                 <source>
-                  <location>target/classes/stacks/${stack.distribution}</location>
+                  <location>${stacksSrcLocation}</location>
                 </source>
               </sources>
             </mapping>
@@ -785,6 +815,17 @@
               </mapper>
             </data>
             <data>
+              <src>conf/unix/ambari-sudo.sh</src>
+              <type>file</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>/var/lib/ambari-server/</prefix>
+                <user>root</user>
+                <group>root</group>
+                <filemode>700</filemode>
+              </mapper>
+            </data>
+            <data>
               <src>conf/unix/install-helper.sh</src>
               <type>file</type>
               <mapper>
@@ -890,6 +931,30 @@
               </mapper>
             </data>
             <data>
+              <src>target/classes/Ambari-DDL-SQLServer-CREATE.sql</src>
+              <type>file</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>/var/lib/ambari-server/resources</prefix>
+              </mapper>
+            </data>
+            <data>
+              <src>target/classes/Ambari-DDL-SQLServer-CREATELOCAL.sql</src>
+              <type>file</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>/var/lib/ambari-server/resources</prefix>
+              </mapper>
+            </data>
+            <data>
+              <src>src/main/resources/Ambari-DDL-SQLServer-DROP.sql</src>
+              <type>file</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>/var/lib/ambari-server/resources</prefix>
+              </mapper>
+            </data>
+            <data>
               <src>${project.build.directory}/DBConnectionVerification.jar</src>
               <type>file</type>
               <mapper>
@@ -949,7 +1014,7 @@
               </mapper>
             </data>
             <data>
-              <src>target/classes/common-services</src>
+              <src>${commonServicesSrcLocation}</src>
               <type>directory</type>
               <mapper>
                 <type>perm</type>
@@ -965,7 +1030,7 @@
               </mapper>
             </data>
             <data>
-              <src>target/classes/stacks/${stack.distribution}</src>
+              <src>${stacksSrcLocation}</src>
               <type>directory</type>
               <mapper>
                 <type>perm</type>
@@ -1080,7 +1145,7 @@
             </data>
             <data>
               <src>
-                ${project.basedir}/../ambari-common/src/main/python/resource_management
+                ${resourceManagementSrcLocation}
               </src>
               <type>directory</type>
               <mapper>
@@ -1098,6 +1163,17 @@
               <mapper>
                 <type>perm</type>
                 <prefix>${jinja.install.dir}</prefix>
+                <filemode>755</filemode>
+                <user>root</user>
+                <group>root</group>
+              </mapper>
+            </data>
+            <data>
+              <src>${project.basedir}/../ambari-common/src/main/python/ambari_simplejson</src>
+              <type>directory</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>${simplejson.install.dir}</prefix>
                 <filemode>755</filemode>
                 <user>root</user>
                 <group>root</group>
@@ -1145,7 +1221,7 @@
               <environmentVariables>
                   <PYTHONPATH>${path.python.1}${pathsep}$PYTHONPATH</PYTHONPATH>
               </environmentVariables>
-              <skip>${skipTests}</skip>
+              <skip>${skipPythonTests}</skip>
             </configuration>
             <id>python-test</id>
             <phase>test</phase>
@@ -1213,6 +1289,7 @@
                 <copy todir="${ambari-admin-dir}/target" flatten="true">
                   <fileset dir="${contrib-views-dir}">
                     <include name="*/target/*jar" />
+                    <exclude name="**/ambari-views-utils*jar" />
                   </fileset>
                 </copy>
               </target>
@@ -1292,6 +1369,17 @@
       </build>
     </profile>
     <profile>
+      <id>skipTestRun</id>
+      <activation>
+        <property>
+          <name>skipTests</name>
+        </property>
+      </activation>
+      <properties>
+        <skipPythonTests>true</skipPythonTests>
+      </properties>
+    </profile>
+    <profile>
       <id>windows</id>
       <activation>
         <os>
@@ -1306,7 +1394,7 @@
         <executable.shell>cmd</executable.shell>
         <fileextension.shell>cmd</fileextension.shell>
         <fileextension.dot.shell-default>.cmd</fileextension.dot.shell-default>
-        <path.python.1>${project.basedir}\..\ambari-common\src\main\python;${project.basedir}\..\ambari-agent\src\main\python;${project.basedir}\..\ambari-common\src\main\python\ambari_jinja2;${project.basedir}\..\ambari-common\src\main\python\ambari_commons;${project.basedir}\..\ambari-common\src\test\python;${project.basedir}\src\main\python;${project.basedir}\src\main\python\ambari-server-state;${project.basedir}\src\main\resources\custom_actions;${project.basedir}\src\main\resources\scripts;${project.basedir}\src\test\python</path.python.1>
+        <path.python.1>${project.basedir}\..\ambari-common\src\main\python;${project.basedir}\..\ambari-agent\src\main\python;${project.basedir}\..\ambari-common\src\main\python\ambari_jinja2;${project.basedir}\..\ambari-common\src\main\python\ambari_commons;${project.basedir}\..\ambari-common\src\test\python;${project.basedir}\src\main\python;${project.basedir}\src\main\python\ambari-server-state;${project.basedir}\src\main\resources\custom_actions\scripts;${project.basedir}\src\main\resources\scripts;${project.basedir}\src\test\python</path.python.1>
         <assemblydescriptor>src/main/assemblies/server-windows.xml</assemblydescriptor>
         <assemblybootstrap>src/main/assemblies/bootstrap-windows.xml</assemblybootstrap>
         <assemblychocodescriptor>src/main/assemblies/server-windows-choco.xml</assemblychocodescriptor>
@@ -1422,6 +1510,55 @@
         <python.xml.package>python-xml</python.xml.package>
       </properties>
     </profile>
+    <profile>
+      <id>pluggable-stack-definition</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+        <property>
+          <name>pluggableStackDefinitionConfig</name>
+        </property>
+      </activation>
+      <properties>
+        <resourceManagementSrcLocation>target/pluggable-stack-definition/python/resource_management</resourceManagementSrcLocation>
+        <commonServicesSrcLocation>target/pluggable-stack-definition/common-services</commonServicesSrcLocation>
+        <stacksSrcLocation>target/pluggable-stack-definition/stacks/${stack.distribution}</stacksSrcLocation>
+        <resourcesSrcLocation>src/main/resources</resourcesSrcLocation>
+        <tarballResourcesFolder>target/pluggable-stack-definition</tarballResourcesFolder>
+        <pluggableStackDefinitionScriptLocation>${project.basedir}/../ambari-common/src/main/python/pluggable_stack_definition/GenerateStackDefinition.py</pluggableStackDefinitionScriptLocation>
+        <pluggableStackDefinitionConfig>${project.basedir}/../ambari-common/src/main/python/pluggable_stack_definition/configs/${stack.distribution}.json</pluggableStackDefinitionConfig>
+        <pluggableStackDefinitionOutput>target/pluggable-stack-definition</pluggableStackDefinitionOutput>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>1.2.1</version>
+            <executions>
+              <execution>
+                <configuration>
+                  <executable>${executable.python}</executable>
+                  <arguments>
+                    <argument>${pluggableStackDefinitionScriptLocation}</argument>
+                    <argument>-c</argument>
+                    <argument>${pluggableStackDefinitionConfig}</argument>
+                    <argument>-r</argument>
+                    <argument>${resourcesSrcLocation}</argument>
+                    <argument>-o</argument>
+                    <argument>${pluggableStackDefinitionOutput}</argument>
+                  </arguments>
+                </configuration>
+                <id>pluggable-stack-definition-generate</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
   </profiles>
   <dependencies>
     <dependency>
@@ -1437,6 +1574,11 @@
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-csv</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>uk.com.robust-it</groupId>
+      <artifactId>cloning</artifactId>
+      <version>1.9.2</version>
     </dependency>
     <dependency>
       <groupId>com.google.inject.extensions</groupId>
@@ -1458,6 +1600,12 @@
     <dependency>
       <groupId>org.apache.derby</groupId>
       <artifactId>derby</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.derby</groupId>
+      <artifactId>derbytools</artifactId>
+      <version>10.11.1.1</version>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.springframework.security</groupId>
@@ -1558,6 +1706,10 @@
     </dependency>
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-servlets</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-webapp</artifactId>
     </dependency>
     <!--jsp support for jetty -->
@@ -1605,7 +1757,7 @@
     </dependency>
     <dependency>
       <groupId>javax.servlet</groupId>
-      <artifactId>servlet-api</artifactId>
+      <artifactId>javax.servlet-api</artifactId>
     </dependency>
     <dependency>
       <groupId>com.sun.jersey</groupId>
@@ -1686,26 +1838,27 @@
     </dependency>
     <dependency>
       <groupId>org.powermock</groupId>
-      <artifactId>powermock-core</artifactId>
-      <version>1.5</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.powermock</groupId>
-      <artifactId>powermock-reflect</artifactId>
-      <version>1.5</version>
+      <artifactId>powermock-module-junit4</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.powermock</groupId>
       <artifactId>powermock-api-easymock</artifactId>
-      <version>1.5</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.powermock</groupId>
-      <artifactId>powermock-module-junit4</artifactId>
-      <version>1.5</version>
+      <artifactId>powermock-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.powermock</groupId>
+      <artifactId>powermock-reflect</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.powermock</groupId>
+      <artifactId>powermock-api-mockito</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>

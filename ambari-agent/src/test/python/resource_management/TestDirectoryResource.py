@@ -18,30 +18,43 @@ limitations under the License.
 
 from unittest import TestCase
 from mock.mock import patch, MagicMock
+from only_for_platform import get_platform, not_for_platform, os_distro_value, PLATFORM_WINDOWS
+
+from ambari_commons.os_check import OSCheck
+
 import os
 from resource_management.core.system import System
-from resource_management.core import Environment, Fail, sudo
+from resource_management.core import Environment, Fail
 from resource_management.core.resources import Directory
 
-@patch.object(System, "os_family", new = 'redhat')
+if get_platform() != PLATFORM_WINDOWS:
+  import pwd
+  import grp
+
+
+@patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
 class TestDirectoryResource(TestCase):
-  
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "makedirs")
-  @patch.object(sudo, "path_isdir")
-  @patch.object(sudo, "stat")
-  @patch.object(sudo,"chmod")
-  @patch.object(sudo,"chown")
-  @patch("resource_management.core.providers.system._coerce_uid")
-  @patch("resource_management.core.providers.system._coerce_gid")
-  def test_create_directory_recursive(self, _coerce_gid_mock, _coerce_uid_mock,
+
+  @not_for_platform(PLATFORM_WINDOWS)
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.makedirs")
+  @patch("resource_management.core.sudo.path_isdir")
+  @patch("resource_management.core.sudo.stat")
+  @patch("resource_management.core.sudo.chmod")
+  @patch("resource_management.core.sudo.chown")
+  @patch("pwd.getpwnam")
+  @patch("grp.getgrnam")
+  def test_create_directory_recursive(self, getgrnam_mock, getpwnam_mock,
                                       os_chown_mock, os_chmod_mock, os_stat_mock,
                                       isdir_mock, os_makedirs_mock, 
                                       os_path_exists_mock):
     os_path_exists_mock.return_value = False
     isdir_mock.return_value = True
-    _coerce_uid_mock.return_value = 66
-    _coerce_gid_mock.return_value = 77
+    getpwnam_mock.return_value = MagicMock()
+    getpwnam_mock.return_value.pw_uid = 66
+    getgrnam_mock.return_value = MagicMock()
+    getgrnam_mock.return_value.gr_gid = 77
+    
     os_stat_mock.return_value = type("", (), dict(st_mode=0755, st_uid=0, st_gid=0))()
     
     with Environment('/') as env:
@@ -55,27 +68,28 @@ class TestDirectoryResource(TestCase):
       
     os_makedirs_mock.assert_called_with('/a/b/c/d', 0777)
     os_chmod_mock.assert_called_with('/a/b/c/d', 0777)
-    os_chown_mock.assert_any_call('/a/b/c/d', 'hdfs', None)
-    os_chown_mock.assert_any_call('/a/b/c/d', None, 'hadoop')
+    os_chown_mock.assert_any_call('/a/b/c/d', getpwnam_mock.return_value, getgrnam_mock.return_value)
   
-  @patch.object(sudo, "path_exists")
+  @patch("resource_management.core.sudo.path_exists")
   @patch.object(os.path, "dirname")
-  @patch.object(sudo, "path_isdir")
-  @patch.object(sudo, "makedir")
-  @patch.object(sudo, "stat")
-  @patch.object(sudo,"chmod")
-  @patch.object(sudo,"chown")
-  @patch("resource_management.core.providers.system._coerce_uid")
-  @patch("resource_management.core.providers.system._coerce_gid")
-  def test_create_directory_not_recursive(self, _coerce_gid_mock, _coerce_uid_mock,
+  @patch("resource_management.core.sudo.path_isdir")
+  @patch("resource_management.core.sudo.makedir")
+  @patch("resource_management.core.sudo.stat")
+  @patch("resource_management.core.sudo.chmod")
+  @patch("resource_management.core.sudo.chown")
+  @patch("pwd.getpwnam")
+  @patch("grp.getgrnam")
+  def test_create_directory_not_recursive(self, getgrnam_mock, getpwnam_mock,
                                       os_chown_mock, os_chmod_mock, os_stat_mock,
                                       mkdir_mock, isdir_mock, os_dirname_mock, 
                                       os_path_exists_mock):
     os_path_exists_mock.return_value = False
     os_dirname_mock.return_value = "/a/b/c"
     isdir_mock.return_value = True
-    _coerce_uid_mock.return_value = 66
-    _coerce_gid_mock.return_value = 77
+    getpwnam_mock.return_value = MagicMock()
+    getpwnam_mock.return_value.pw_uid = 66
+    getgrnam_mock.return_value = MagicMock()
+    getpwnam_mock.return_value.gr_gid = 77
     os_stat_mock.return_value = type("", (), dict(st_mode=0755, st_uid=0, st_gid=0))()
     
     with Environment('/') as env:
@@ -88,12 +102,11 @@ class TestDirectoryResource(TestCase):
       
     mkdir_mock.assert_called_with('/a/b/c/d', 0777)
     os_chmod_mock.assert_called_with('/a/b/c/d', 0777)
-    os_chown_mock.assert_any_call('/a/b/c/d', 'hdfs', None)
-    os_chown_mock.assert_any_call('/a/b/c/d', None, 'hadoop')
+    os_chown_mock.assert_any_call('/a/b/c/d', getpwnam_mock.return_value, getgrnam_mock.return_value)
     
-  @patch.object(sudo, "path_exists")
+  @patch("resource_management.core.sudo.path_exists")
   @patch.object(os.path, "dirname")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_create_directory_failed_no_parent(self, isdir_mock, os_dirname_mock, 
                                       os_path_exists_mock):
     os_path_exists_mock.return_value = False
@@ -114,8 +127,8 @@ class TestDirectoryResource(TestCase):
       self.assertEqual('Applying Directory[\'/a/b/c/d\'] failed, parent directory /a/b/c doesn\'t exist',
                        str(e))
 
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_create_directory_path_is_file_or_line(self, isdir_mock, os_path_exists_mock):
     os_path_exists_mock.return_value = True
     isdir_mock.return_value = False
@@ -133,9 +146,9 @@ class TestDirectoryResource(TestCase):
       self.assertEqual('Applying Directory[\'/a/b/c/d\'] failed, file /a/b/c/d already exists',
                        str(e))
   
-  @patch.object(sudo, "rmtree")
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.rmtree")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_delete_directory(self, isdir_mock, os_path_exists_mock, rmtree_mock):
     os_path_exists_mock.return_value = True
     isdir_mock.return_value = True
@@ -147,7 +160,7 @@ class TestDirectoryResource(TestCase):
       
     rmtree_mock.assert_called_with('/a/b/c/d')
     
-  @patch.object(sudo, "path_exists")
+  @patch("resource_management.core.sudo.path_exists")
   def test_delete_noexisting_directory(self, os_path_exists_mock):
     os_path_exists_mock.return_value = False
     
@@ -156,9 +169,9 @@ class TestDirectoryResource(TestCase):
            action='delete'
       )
   
-  @patch.object(sudo, "rmtree")
-  @patch.object(sudo, "path_exists")
-  @patch.object(sudo, "path_isdir")
+  @patch("resource_management.core.sudo.rmtree")
+  @patch("resource_management.core.sudo.path_exists")
+  @patch("resource_management.core.sudo.path_isdir")
   def test_delete_directory_with_path_to_file(self, isdir_mock, os_path_exists_mock, rmtree_mock):
     os_path_exists_mock.return_value = True
     isdir_mock.return_value = False

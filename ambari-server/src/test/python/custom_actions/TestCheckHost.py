@@ -31,17 +31,12 @@ from unittest import TestCase
 
 from check_host import CheckHost
 
-from only_for_platform import only_for_platform, get_platform, PLATFORM_LINUX, PLATFORM_WINDOWS
-from ambari_agent.HostCheckReportFileHandler import HostCheckReportFileHandler
+from only_for_platform import get_platform, not_for_platform, only_for_platform, os_distro_value, PLATFORM_WINDOWS
 
-if get_platform() != PLATFORM_WINDOWS:
-  os_distro_value = ('Suse','11','Final')
-else:
-  os_distro_value = ('win2012serverr2','6.3','WindowsServer')
+from ambari_agent.HostCheckReportFileHandler import HostCheckReportFileHandler
 
 
 @patch.object(HostCheckReportFileHandler, "writeHostChecksCustomActionsFile", new=MagicMock())
-@patch.object(HostCheckReportFileHandler, "resolve_ambari_config", new=MagicMock())
 class TestCheckHost(TestCase):
   current_dir = os.path.dirname(os.path.realpath(__file__))
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
@@ -75,10 +70,10 @@ class TestCheckHost(TestCase):
   @patch.object(Script, 'get_tmp_dir')
   @patch("check_host.download_file")
   @patch("resource_management.libraries.script.Script.put_structured_out")
-  @patch("subprocess.Popen")
   @patch("check_host.format")
   @patch("os.path.isfile")
-  def testDBConnectionCheck(self, isfile_mock, format_mock, popenMock, structured_out_mock, download_file_mock, get_tmp_dir_mock, mock_config):
+  @patch("resource_management.core.shell.call")
+  def testDBConnectionCheck(self, shell_call_mock, isfile_mock, format_mock, structured_out_mock, download_file_mock, get_tmp_dir_mock, mock_config):
     # test, download DBConnectionVerification.jar failed
     mock_config.return_value = {"commandParams" : {"check_execute_list" : "db_connection_check",
                                                    "java_home" : "test_java_home",
@@ -139,10 +134,7 @@ class TestCheckHost(TestCase):
     format_mock.reset_mock()
     download_file_mock.reset_mock()
     download_file_mock.side_effect = [p, p]
-    s = MagicMock()
-    s.communicate.return_value = ("test message", "")
-    s.returncode = 1
-    popenMock.return_value = s
+    shell_call_mock.return_value = (1, "test message")
 
     checkHost.actionexecute(None)
 
@@ -156,7 +148,7 @@ class TestCheckHost(TestCase):
     # test, db connection success
     download_file_mock.reset_mock()
     download_file_mock.side_effect = [p, p]
-    s.returncode = 0
+    shell_call_mock.return_value = (0, "test message")
 
     checkHost.actionexecute(None)
 
@@ -178,6 +170,7 @@ class TestCheckHost(TestCase):
     checkHost.actionexecute(None)
     self.assertEquals(structured_out_mock.call_args[0][0], {'db_connection_check': {'message': 'Custom java is not ' \
             'available on host. Please install it. Java home should be the same as on server. \n', 'exit_code': 1}})
+    pass
 
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
@@ -220,6 +213,7 @@ class TestCheckHost(TestCase):
                     {'cause': (), 'host': u'!!!', 'type': 'FORWARD_LOOKUP'}], 
        'message': 'There were 5 host(s) that could not resolve to an IP address.', 
        'failed_count': 5, 'success_count': 0, 'exit_code': 0}})
+    pass
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(Script, 'get_config')
@@ -240,8 +234,10 @@ class TestCheckHost(TestCase):
     # ensure the correct function was called
     self.assertTrue(structured_out_mock.called)
     structured_out_mock.assert_called_with({})
+    pass
 
 
+  @not_for_platform(PLATFORM_WINDOWS)
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch("platform.system")
   @patch.object(Script, 'get_config')
@@ -294,3 +290,95 @@ class TestCheckHost(TestCase):
 
     #ensure the correct response is returned
     put_structured_out_mock.assert_called_with({'last_agent_env_check': {'message': 'test exception', 'exit_code': 1}})
+    pass
+
+  @only_for_platform(PLATFORM_WINDOWS)
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch("platform.system")
+  @patch.object(Script, 'get_config')
+  @patch.object(Script, 'get_tmp_dir')
+  @patch('resource_management.libraries.script.Script.put_structured_out')
+  @patch('ambari_agent.HostInfo.HostInfoWindows.javaProcs')
+  @patch('ambari_agent.HostInfo.HostInfoWindows.checkLiveServices')
+  @patch('ambari_agent.HostInfo.HostInfoWindows.getUMask')
+  @patch('ambari_agent.HostInfo.HostInfoWindows.checkFirewall')
+  @patch('ambari_agent.HostInfo.HostInfoWindows.checkReverseLookup')
+  @patch('time.time')
+  def testLastAgentEnv(self, time_mock, checkReverseLookup_mock, checkFirewall_mock,
+                       getUMask_mock, checkLiveServices_mock, javaProcs_mock, put_structured_out_mock,
+                       get_tmp_dir_mock, get_config_mock, systemmock):
+    jsonFilePath = os.path.join(TestCheckHost.current_dir, "..", "..", "resources", "custom_actions", "check_last_agent_env.json")
+    with open(jsonFilePath, "r") as jsonFile:
+      jsonPayload = json.load(jsonFile)
+
+    get_config_mock.return_value = ConfigDictionary(jsonPayload)
+    get_tmp_dir_mock.return_value = "/tmp"
+
+    checkHost = CheckHost()
+    checkHost.actionexecute(None)
+
+    # ensure the correct function was called
+    self.assertTrue(time_mock.called)
+    self.assertTrue(checkReverseLookup_mock.called)
+    self.assertTrue(checkFirewall_mock.called)
+    self.assertTrue(getUMask_mock.called)
+    self.assertTrue(checkLiveServices_mock.called)
+    self.assertTrue(javaProcs_mock.called)
+    self.assertTrue(put_structured_out_mock.called)
+    # ensure the correct keys are in the result map
+    last_agent_env_check_result = put_structured_out_mock.call_args[0][0]
+    self.assertTrue('last_agent_env_check' in last_agent_env_check_result)
+    self.assertTrue('hostHealth' in last_agent_env_check_result['last_agent_env_check'])
+    self.assertTrue('firewallRunning' in last_agent_env_check_result['last_agent_env_check'])
+    self.assertTrue('firewallName' in last_agent_env_check_result['last_agent_env_check'])
+    self.assertTrue('alternatives' in last_agent_env_check_result['last_agent_env_check'])
+    self.assertTrue('umask' in last_agent_env_check_result['last_agent_env_check'])
+    self.assertTrue('stackFoldersAndFiles' in last_agent_env_check_result['last_agent_env_check'])
+    self.assertTrue('existingUsers' in last_agent_env_check_result['last_agent_env_check'])
+
+    # try it now with errors
+    javaProcs_mock.side_effect = Exception("test exception")
+    checkHost.actionexecute(None)
+
+    #ensure the correct response is returned
+    put_structured_out_mock.assert_called_with({'last_agent_env_check': {'message': 'test exception', 'exit_code': 1}})
+    pass
+
+
+  @patch.object(HostCheckReportFileHandler, "resolve_ambari_config")
+  @patch("resource_management.libraries.script.Script.put_structured_out")
+  @patch.object(Script, 'get_tmp_dir')
+  @patch.object(Script, 'get_config')
+  @patch("os.path.isfile")
+  @patch('__builtin__.open')
+  def testTransparentHugePage(self, open_mock, os_path_isfile_mock, mock_config,
+                              get_tmp_dir_mock, structured_out_mock,
+                              resolve_config_mock):
+    context_manager_mock = MagicMock()
+    open_mock.return_value = context_manager_mock
+    file_mock = MagicMock()
+    file_mock.read.return_value = "[never] always"
+    enter_mock = MagicMock()
+    enter_mock.return_value = file_mock
+    enter_mock = MagicMock()
+    enter_mock.return_value = file_mock
+    exit_mock  = MagicMock()
+    setattr( context_manager_mock, '__enter__', enter_mock )
+    setattr( context_manager_mock, '__exit__', exit_mock )
+    os_path_isfile_mock.return_value = True
+    get_tmp_dir_mock.return_value = "/tmp"
+    mock_config.return_value = {"commandParams" : {"check_execute_list" : "transparentHugePage"}}
+
+    checkHost = CheckHost()
+    checkHost.actionexecute(None)
+
+    self.assertEquals(structured_out_mock.call_args[0][0], {'transparentHugePage' : {'message': 'never', 'exit_code': 0}})
+
+    # case 2, file not exists
+    os_path_isfile_mock.return_value = False
+    checkHost.actionexecute(None)
+
+    self.assertEquals(structured_out_mock.call_args[0][0], {'transparentHugePage' : {'message': '', 'exit_code': 0}})
+
+
+

@@ -91,10 +91,12 @@ class TestHookBeforeStart(RMFTestCase):
       owner = 'hdfs',
       content = Template('topology_mappings.data.j2'),
       group = 'hadoop',
+      only_if = 'test -d /etc/hadoop/conf',
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/topology_script.py',
       content = StaticFile('topology_script.py'),
       mode = 0755,
+      only_if = 'test -d /etc/hadoop/conf',
     )
     self.assertNoMoreResources()
 
@@ -158,10 +160,21 @@ class TestHookBeforeStart(RMFTestCase):
                               owner = 'hdfs',
                               group = 'hadoop',
                               )
+    self.assertResourceCalled('File', '/etc/hadoop/conf/topology_mappings.data',
+                              owner = 'hdfs',
+                              content = Template('topology_mappings.data.j2'),
+                              group = 'hadoop',
+                              only_if = 'test -d /etc/hadoop/conf',
+                              )
+    self.assertResourceCalled('File', '/etc/hadoop/conf/topology_script.py',
+                              content = StaticFile('topology_script.py'),
+                              mode = 0755,
+                              only_if = 'test -d /etc/hadoop/conf',
+                              )
     self.assertNoMoreResources()
 
   def test_hook_default_hdfs(self):
-    config_file = "stacks/2.0.6/configs/default.json"
+    config_file = self._getStackTestsFolder() + "/2.0.6/configs/default.json"
     with open(config_file, "r") as f:
       default_json = json.load(f)
 
@@ -176,18 +189,6 @@ class TestHookBeforeStart(RMFTestCase):
                               not_if = "(! which getenforce ) || (which getenforce && getenforce | grep -q Disabled)",
                               sudo=True,
                               )
-    self.assertResourceCalled('Directory', '/usr/lib/hadoop/lib/native/Linux-i386-32',
-        recursive = True,
-    )
-    self.assertResourceCalled('Directory', '/usr/lib/hadoop/lib/native/Linux-amd64-64',
-        recursive = True,
-    )
-    self.assertResourceCalled('Link', '/usr/lib/hadoop/lib/native/Linux-i386-32/libsnappy.so',
-        to = '/usr/lib/libsnappy.so',
-    )
-    self.assertResourceCalled('Link', '/usr/lib/hadoop/lib/native/Linux-amd64-64/libsnappy.so',
-        to = '/usr/lib64/libsnappy.so',
-    )
     self.assertResourceCalled('Directory', '/var/log/hadoop',
                               owner = 'root',
                               group = 'hadoop',
@@ -241,10 +242,12 @@ class TestHookBeforeStart(RMFTestCase):
                               owner = 'hdfs',
                               content = Template('topology_mappings.data.j2'),
                               group = 'hadoop',
+                              only_if = 'test -d /etc/hadoop/conf',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/topology_script.py',
                               content = StaticFile('topology_script.py'),
                               mode = 0755,
+                              only_if = 'test -d /etc/hadoop/conf',
                               )
     self.assertNoMoreResources()
 

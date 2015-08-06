@@ -49,14 +49,9 @@ App.MainServiceItemController = Em.Controller.extend({
 
   initHosts: function() {
     if (App.get('components.masters').length !== 0) {
-      var self = this;
-
-      var hostNames = App.Host.find().mapProperty('hostName');
-      this.set('allHosts', hostNames);
-
       ['HBASE_MASTER', 'HIVE_METASTORE', 'ZOOKEEPER_SERVER', 'FLUME_HANDLER', 'HIVE_SERVER', 'RANGER_KMS_SERVER', 'NIMBUS'].forEach(function(componentName) {
-        self.loadHostsWithoutComponent(componentName);
-      });
+        this.loadHostsWithoutComponent(componentName);
+      }, this);
     }
   }.observes('App.components.masters', 'content.hostComponents.length'),
 
@@ -64,7 +59,7 @@ App.MainServiceItemController = Em.Controller.extend({
     var self = this;
     var hostsWithComponent = App.HostComponent.find().filterProperty('componentName', componentName).mapProperty('hostName');
 
-    var hostsWithoutComponent = this.get('allHosts').filter(function(hostName) {
+    var hostsWithoutComponent = App.get('allHostNames').filter(function(hostName) {
       return !hostsWithComponent.contains(hostName);
     });
 
@@ -102,8 +97,6 @@ App.MainServiceItemController = Em.Controller.extend({
   isConfigurable: function () {
     return !App.get('services.noConfigTypes').contains(this.get('content.serviceName'));
   }.property('App.services.noConfigTypes','content.serviceName'),
-
-  allHosts: [],
 
   clientComponents: function () {
     var clientNames = [];
@@ -166,10 +159,10 @@ App.MainServiceItemController = Em.Controller.extend({
     var self = this;
     var serviceDisplayName = this.get('content.displayName');
     var isMaintenanceOFF = this.get('content.passiveState') === 'OFF';
-    
+
     var msg = isMaintenanceOFF && serviceHealth == 'INSTALLED'? Em.I18n.t('services.service.stop.warningMsg.turnOnMM').format(serviceDisplayName) : null;
     msg = self.addAdditionalWarningMessage(serviceHealth, msg, serviceDisplayName);
-    
+
     var bodyMessage = Em.Object.create({
       putInMaintenance: (serviceHealth == 'INSTALLED' && isMaintenanceOFF) || (serviceHealth == 'STARTED' && !isMaintenanceOFF),
       turnOnMmMsg: serviceHealth == 'INSTALLED' ? Em.I18n.t('passiveState.turnOnFor').format(serviceDisplayName) : Em.I18n.t('passiveState.turnOffFor').format(serviceDisplayName),
@@ -187,7 +180,7 @@ App.MainServiceItemController = Em.Controller.extend({
   addAdditionalWarningMessage: function(serviceHealth, msg, serviceDisplayName){
     var servicesAffectedDisplayNames = [];
     var servicesAffected = [];
-    
+
     if(serviceHealth == 'INSTALLED'){
       //To stop a service, display dependencies message...
       var currentService = this.get('content.serviceName');
@@ -214,7 +207,7 @@ App.MainServiceItemController = Em.Controller.extend({
           }
         }
       },this);
-      
+
       var names = servicesAffectedDisplayNames.join();
       if(names){
         //only display this line with a non-empty dependency list
@@ -225,7 +218,7 @@ App.MainServiceItemController = Em.Controller.extend({
           msg = dependenciesMsg;
       }
     }
-    
+
     return msg;
   },
 
@@ -575,7 +568,6 @@ App.MainServiceItemController = Em.Controller.extend({
     if (component) {
       var reassignMasterController = App.router.get('reassignMasterController');
       reassignMasterController.saveComponentToReassign(component);
-      reassignMasterController.getSecurityStatus();
       reassignMasterController.setCurrentStep('1');
       App.router.transitionTo('reassign');
     }
@@ -740,7 +732,7 @@ App.MainServiceItemController = Em.Controller.extend({
       return false;
     }
     return (this.get('content.healthStatus') != 'green');
-  }.property('content.healthStatus','isPending'),
+  }.property('content.healthStatus','isPending', 'App.isHaEnabled'),
 
   /**
    * Determine if service has than one service client components

@@ -25,6 +25,7 @@ import static org.easymock.EasyMock.verify;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -377,7 +378,7 @@ public class ConfigHelperTest {
     }
 
     @Test
-    public void testCloneAttributesMap_sourceIsNull() throws Exception {
+    public void testCloneAttributesMapSourceIsNull() throws Exception {
       // init
       Map<String, Map<String, String>> targetAttributesMap = new HashMap<String, Map<String, String>>();
       Map<String, String> attributesValues = new HashMap<String, String>();
@@ -405,7 +406,7 @@ public class ConfigHelperTest {
     }
 
     @Test
-    public void testCloneAttributesMap_targetIsNull() throws Exception {
+    public void testCloneAttributesMapTargetIsNull() throws Exception {
       // init
       Map<String, Map<String, String>> targetAttributesMap = null;
       Map<String, Map<String, String>> sourceAttributesMap = new HashMap<String, Map<String, String>>();
@@ -469,7 +470,7 @@ public class ConfigHelperTest {
     }
 
     @Test
-    public void testMergeAttributes_noAttributeOverrides() throws Exception {
+    public void testMergeAttributesWithNoAttributeOverrides() throws Exception {
       Map<String, Map<String, String>> persistedAttributes = new HashMap<String, Map<String, String>>();
       Map<String, String> persistedFinalAttrs = new HashMap<String, String>();
       persistedFinalAttrs.put("a", "true");
@@ -496,7 +497,7 @@ public class ConfigHelperTest {
     }
 
     @Test
-    public void testMergeAttributes_nullAttributes() throws Exception {
+    public void testMergeAttributesWithNullAttributes() throws Exception {
       Map<String, Map<String, String>> persistedAttributes = new HashMap<String, Map<String, String>>();
       Map<String, String> persistedFinalAttrs = new HashMap<String, String>();
       persistedFinalAttrs.put("a", "true");
@@ -524,7 +525,7 @@ public class ConfigHelperTest {
     }
 
     @Test
-    public void testMergeAttributes_nullProperties() throws Exception {
+    public void testMergeAttributesWithNullProperties() throws Exception {
       Map<String, Map<String, String>> persistedAttributes = new HashMap<String, Map<String, String>>();
       Map<String, String> persistedFinalAttrs = new HashMap<String, String>();
       persistedFinalAttrs.put("a", "true");
@@ -550,6 +551,52 @@ public class ConfigHelperTest {
       Assert.assertEquals("true", finalResultAttributes.get("b"));
       Assert.assertEquals("true", finalResultAttributes.get("c"));
       Assert.assertEquals("true", finalResultAttributes.get("d"));
+    }
+
+    @Test
+    public void testUpdateConfigType() throws Exception {
+      Config currentConfig = cluster.getDesiredConfigByType("core-site");
+      Map<String, String> properties = currentConfig.getProperties();
+      // Attributes exist
+      Map<String, Map<String, String>> propertiesAttributes = currentConfig.getPropertiesAttributes();
+      Assert.assertNotNull(propertiesAttributes);
+      Assert.assertEquals(1, propertiesAttributes.size());
+      Assert.assertTrue(propertiesAttributes.containsKey("attribute1"));
+      // Config tag before update
+      Assert.assertEquals("version1",currentConfig.getTag());
+      // Properties before update
+      Assert.assertEquals("30", properties.get("fs.trash.interval"));
+      // Property and attribute exist
+      Assert.assertTrue(properties.containsKey("ipc.client.connect.max.retries"));
+      Assert.assertTrue(propertiesAttributes.get("attribute1").containsKey("ipc.client.connect.max.retries"));
+
+
+      Map<String, String> updates = new HashMap<String, String>();
+      updates.put("new-property", "new-value");
+      updates.put("fs.trash.interval", "updated-value");
+      Collection<String> removals = Collections.singletonList("ipc.client.connect.max.retries");
+      configHelper.updateConfigType(cluster, managementController, "core-site", updates, removals, "admin", "Test note");
+
+
+      Config updatedConfig = cluster.getDesiredConfigByType("core-site");
+      // Attributes aren't lost
+      propertiesAttributes = updatedConfig.getPropertiesAttributes();
+      Assert.assertNotNull(propertiesAttributes);
+      Assert.assertEquals(1, propertiesAttributes.size());
+      Assert.assertTrue(propertiesAttributes.containsKey("attribute1"));
+      // Config tag updated
+      Assert.assertFalse("version1".equals(updatedConfig.getTag()));
+      // Property added
+      properties = updatedConfig.getProperties();
+      Assert.assertTrue(properties.containsKey("new-property"));
+      Assert.assertEquals("new-value", properties.get("new-property"));
+      // Property updated
+      Assert.assertTrue(properties.containsKey("fs.trash.interval"));
+      Assert.assertEquals("updated-value", properties.get("fs.trash.interval"));
+      Assert.assertEquals("2", propertiesAttributes.get("attribute1").get("fs.trash.interval"));
+      // Property and attribute removed
+      Assert.assertFalse(properties.containsKey("ipc.client.connect.max.retries"));
+      Assert.assertFalse(propertiesAttributes.get("attribute1").containsKey("ipc.client.connect.max.retries"));
     }
 
     @Test
@@ -620,7 +667,7 @@ public class ConfigHelperTest {
     }
 
     @Test
-    public void testGetServiceProperties_SimpleInvocation() throws Exception {
+    public void testGetServicePropertiesSimpleInvocation() throws Exception {
       Cluster mockCluster = createStrictMock(Cluster.class);
       StackId mockStackVersion = createStrictMock(StackId.class);
       AmbariMetaInfo mockAmbariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
@@ -654,7 +701,7 @@ public class ConfigHelperTest {
     }
 
     @Test
-    public void testGetServiceProperties_DoNoRemoveExcluded() throws Exception {
+    public void testGetServicePropertiesDoNoRemoveExcluded() throws Exception {
       StackId mockStackVersion = createStrictMock(StackId.class);
       AmbariMetaInfo mockAmbariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
       ServiceInfo mockServiceInfo = createStrictMock(ServiceInfo.class);
@@ -685,7 +732,7 @@ public class ConfigHelperTest {
     }
 
     @Test
-    public void testGetServiceProperties_RemoveExcluded() throws Exception {
+    public void testGetServicePropertiesRemoveExcluded() throws Exception {
       StackId mockStackVersion = createStrictMock(StackId.class);
       AmbariMetaInfo mockAmbariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
       ServiceInfo mockServiceInfo = createStrictMock(ServiceInfo.class);

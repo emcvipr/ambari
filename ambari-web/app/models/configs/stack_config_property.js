@@ -62,7 +62,7 @@ App.StackConfigProperty = DS.Model.extend({
    * after cluster created is taken from cluster properties value
    * @property {string}
    */
-  defaultValue: DS.attr('string'),
+  recommendedValue: DS.attr('string'),
 
   /**
    * defines if property support usage <code>isFinal<code> flag
@@ -71,10 +71,10 @@ App.StackConfigProperty = DS.Model.extend({
   supportsFinal: DS.attr('boolean', {defaultValue: true}),
 
   /**
-   * defines the defaultValue value of <code>isFinal<code> value
+   * defines the recommended value of <code>isFinal<code> value
    * @property {boolean}
    */
-  defaultIsFinal: DS.attr('boolean', {defaultValue: false}),
+  recommendedIsFinal: DS.attr('boolean', {defaultValue: false}),
 
   /**
    * type of property
@@ -86,7 +86,7 @@ App.StackConfigProperty = DS.Model.extend({
    * service name
    * @property {string}
    */
-  serviceName:  DS.attr('string'),
+  serviceName:  DS.attr('string', {defaultValue: 'MISC'}),
 
   /**
    * stack name
@@ -112,6 +112,13 @@ App.StackConfigProperty = DS.Model.extend({
    * @property {array}
    */
   propertyDependedBy: DS.attr('array', {defaultValue: []}),
+
+  /**
+   * this property contains list of file type and name of properties
+   * which values depends on current property
+   * @property {object[]}
+   */
+  propertyDependsOn: DS.attr('array', {defaultValue: []}),
 
   /**
    * info for displaying property
@@ -172,12 +179,16 @@ App.StackConfigProperty = DS.Model.extend({
   value: DS.attr('string'),
 
   /**
-   * config property isFinal value same as defaultIsFinal
+   * config property isFinal value same as recommendedIsFinal
    * @property {boolean}
    */
-  isFinal: DS.attr('boolean', {defaultValue: false})
+  isFinal: DS.attr('boolean', {defaultValue: false}),
+
+  /**
+   * @type {boolean}
+   */
+  index: DS.attr('number', {defaultValue: null})
 });
 
 
 App.StackConfigProperty.FIXTURES = [];
-

@@ -43,7 +43,7 @@ limitations under the License.
               <goal>copy-dependencies</goal>
             </goals>
             <configuration>
-              <includeArtifactIds>commons-codec,commons-collections,commons-httpclient,commons-lang,commons-logging,guava,jackson-core-asl,jackson-mapper-asl,jackson-xc</includeArtifactIds>
+              <includeArtifactIds>commons-codec,commons-collections,commons-httpclient,commons-lang,commons-logging,jackson-core-asl,jackson-mapper-asl,jackson-xc</includeArtifactIds>
               <outputDirectory>${project.build.directory}/lib</outputDirectory>
             </configuration>
           </execution>
@@ -177,13 +177,11 @@ limitations under the License.
     <dependency>
       <groupId>org.powermock</groupId>
       <artifactId>powermock-api-easymock</artifactId>
-      <version>1.4.9</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.powermock</groupId>
       <artifactId>powermock-module-junit4</artifactId>
-      <version>1.4.9</version>
       <scope>test</scope>
     </dependency>
     <dependency>

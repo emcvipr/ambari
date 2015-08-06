@@ -35,7 +35,7 @@ from ambari_server.serverConfiguration import configDefaults, get_ambari_propert
 from ambari_server.serverUtils import is_server_runing, refresh_stack_hash
 from ambari_server.serverSetup import reset, setup, setup_jce_policy
 from ambari_server.serverUpgrade import upgrade, upgrade_stack, set_current
-from ambari_server.setupHttps import setup_https
+from ambari_server.setupHttps import setup_https, setup_truststore
 
 from ambari_server.setupActions import BACKUP_ACTION, LDAP_SETUP_ACTION, LDAP_SYNC_ACTION, PSTART_ACTION, \
   REFRESH_STACK_HASH_ACTION, RESET_ACTION, RESTORE_ACTION, SETUP_ACTION, SETUP_SECURITY_ACTION, START_ACTION, \
@@ -191,6 +191,8 @@ def create_setup_security_actions(args):
       ['Enable HTTPS for Ambari server.', UserActionRestart(setup_https, args)],
       ['Encrypt passwords stored in ambari.properties file.', UserAction(setup_master_key)],
       ['Setup Ambari kerberos JAAS configuration.', UserAction(setup_ambari_krb5_jaas)],
+      ['Setup truststore.', UserActionRestart(setup_truststore)],
+      ['Import certificate to truststore.', UserActionRestart(setup_truststore, True)],
     ]
   return action_list
 
@@ -200,6 +202,8 @@ def create_setup_security_actions(args):
       ['Enable HTTPS for Ambari server.', UserActionRestart(setup_https, args)],
       ['Encrypt passwords stored in ambari.properties file.', UserAction(setup_master_key)],
       ['Setup Ambari kerberos JAAS configuration.', UserAction(setup_ambari_krb5_jaas)],
+      ['Setup truststore.', UserActionRestart(setup_truststore)],
+      ['Import certificate to truststore.', UserActionRestart(setup_truststore, True)],
     ]
   return action_list
 
@@ -224,7 +228,7 @@ def setup_security(args):
   try:
     actionDesc = actions[int(choice) - 1]
   except IndexError:
-    raise FatalException('Unknown option for setup-security command.')
+    raise FatalException(1, 'Unknown option for setup-security command.')
 
   action = actionDesc[1]
   action.execute()
@@ -429,6 +433,7 @@ def init_debug(options):
 
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def fix_database_options(options, parser):
+  _validate_database_port(options, parser)
   pass
 
 @OsFamilyFuncImpl(OsFamilyImpl.DEFAULT)
@@ -446,18 +451,7 @@ def fix_database_options(options, parser):
   elif options.dbms is not None:
     options.dbms = options.dbms.lower()
 
-  # correct port
-  if options.database_port is not None:
-    correct = False
-    try:
-      port = int(options.database_port)
-      if 65536 > port > 0:
-        correct = True
-    except ValueError:
-      pass
-    if not correct:
-      parser.print_help()
-      parser.error("Incorrect database port " + options.database_port)
+  _validate_database_port(options, parser)
 
   # jdbc driver and db options validation
   if options.jdbc_driver is None and options.jdbc_db is not None:
@@ -471,6 +465,21 @@ def fix_database_options(options, parser):
     exit(-1)
   else:
     options.sid_or_sname = options.sid_or_sname.lower()
+
+
+def _validate_database_port(options, parser):
+  # correct port
+  if options.database_port is not None:
+    correct = False
+    try:
+      port = int(options.database_port)
+      if 65536 > port > 0:
+        correct = True
+    except ValueError:
+      pass
+    if not correct:
+      parser.print_help()
+      parser.error("Incorrect database port " + options.database_port)
 
 
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)

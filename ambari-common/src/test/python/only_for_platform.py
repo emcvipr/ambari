@@ -45,3 +45,11 @@ def for_specific_platforms(systems):
     if platform.system() in systems:
       return obj
   return decorator
+
+os_distro_value_linux = ('Suse','11','Final')
+os_distro_value_windows = ('win2012serverr2','6.3','WindowsServer')
+
+if get_platform() != PLATFORM_WINDOWS:
+  os_distro_value = os_distro_value_linux
+else:
+  os_distro_value = os_distro_value_windows

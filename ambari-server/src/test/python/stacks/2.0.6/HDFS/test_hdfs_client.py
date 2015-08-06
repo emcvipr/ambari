@@ -48,20 +48,25 @@ class Test(RMFTestCase):
                               )
     self.assertResourceCalled('XmlConfig', 'hdfs-site.xml',
                               conf_dir = '/tmp/123',
+                              mode=0644,
                               configuration_attributes = self.getConfig()['configuration_attributes']['hdfs-site'],
                               configurations = self.getConfig()['configurations']['hdfs-site'],
                               )
     self.assertResourceCalled('File', '/tmp/123/hadoop-env.sh',
+                              mode=0644,
                               content = InlineTemplate(self.getConfig()['configurations']['hadoop-env']['content']),
                               )
     self.assertResourceCalled('File', '/tmp/123/log4j.properties',
+                              mode=0644,
                               content = InlineTemplate(self.getConfig()['configurations']['hdfs-log4j']['content']+
                                                        self.getConfig()['configurations']['yarn-log4j']['content']),
                               )
     self.assertResourceCalled('PropertiesFile', '/tmp/123/runtime.properties',
+                              mode=0644,
                               properties = UnknownConfigurationMock(),
     )
     self.assertResourceCalled('PropertiesFile', '/tmp/123/startup.properties',
+                              mode=0644,
                               properties = UnknownConfigurationMock(),
     )
     self.assertResourceCalled('Directory', '/tmp/123',
@@ -77,7 +82,7 @@ class Test(RMFTestCase):
                    hdp_stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES)
 
-    self.assertResourceCalled("Execute", "hdp-select set hadoop-client 2.2.1.0-2067")
+    self.assertResourceCalled("Execute", ('hdp-select', 'set', 'hadoop-client', '2.2.1.0-2067'), sudo=True)
 
     # for now, it's enough that hdp-select is confirmed
 
@@ -199,16 +204,17 @@ class Test(RMFTestCase):
                        call_mocks = [(0, None), (0, None)],
                        mocks_dict = mocks_dict)
 
-    self.assertResourceCalled('Execute', 'hdp-select set hadoop-client %s' % version,)
+    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'hadoop-client', version), sudo=True,)
     self.assertNoMoreResources()
 
-    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      "conf-select create-conf-dir --package hadoop --stack-version 2.3.0.0-1234 --conf-version 0",
+      ('conf-select', 'set-conf-dir', '--package', 'hadoop', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+       mocks_dict['checked_call'].call_args_list[0][0][0])
+    self.assertEquals(
+      ('conf-select', 'create-conf-dir', '--package', 'hadoop', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
-    self.assertEquals(
-      "conf-select set-conf-dir --package hadoop --stack-version 2.3.0.0-1234 --conf-version 0",
-       mocks_dict['call'].call_args_list[1][0][0])
 
   def test_pre_rolling_restart(self):
     config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
@@ -222,5 +228,5 @@ class Test(RMFTestCase):
                        config_dict = json_content,
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
-    self.assertResourceCalled('Execute', 'hdp-select set hadoop-client %s' % version,)
+    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'hadoop-client', version), sudo=True,)
     self.assertNoMoreResources()

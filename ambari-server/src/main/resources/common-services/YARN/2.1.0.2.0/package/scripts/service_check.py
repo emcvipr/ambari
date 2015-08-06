@@ -22,12 +22,13 @@ Ambari Agent
 from resource_management.libraries.functions.version import compare_versions
 from resource_management import *
 import sys
-import json
+import ambari_simplejson as json # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 import re
 import subprocess
 from ambari_commons import os_utils
 from ambari_commons import OSConst
 from ambari_commons.os_family_impl import OsFamilyImpl
+from resource_management.libraries.functions.get_user_call_output import get_user_call_output
 
 CURL_CONNECTION_TIMEOUT = '5'
 
@@ -114,13 +115,13 @@ class ServiceCheckDefault(ServiceCheck):
 
     json_response_received = False
     for rm_host in params.rm_hosts:
-      info_app_url = "http://" + rm_host + ":" + params.rm_port + "/ws/v1/cluster/apps/" + application_name
+      info_app_url = params.scheme + "://" + rm_host + ":" + params.rm_active_port + "/ws/v1/cluster/apps/" + application_name
 
-      get_app_info_cmd = "curl --negotiate -u : -sL --connect-timeout " + CURL_CONNECTION_TIMEOUT + " " + info_app_url
+      get_app_info_cmd = "curl --negotiate -u : -ksL --connect-timeout " + CURL_CONNECTION_TIMEOUT + " " + info_app_url
 
-      return_code, stdout = shell.checked_call(get_app_info_cmd,
-                                            path='/usr/sbin:/sbin:/usr/local/bin:/bin:/usr/bin',
+      return_code, stdout, _ = get_user_call_output(get_app_info_cmd,
                                             user=params.smokeuser,
+                                            path='/usr/sbin:/sbin:/usr/local/bin:/bin:/usr/bin',
                                             )
 
       try:

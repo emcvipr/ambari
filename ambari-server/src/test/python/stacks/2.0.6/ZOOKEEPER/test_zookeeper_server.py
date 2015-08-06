@@ -64,7 +64,6 @@ class TestZookeeperServer(RMFTestCase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
-    self.assert_configure_default()
     self.assertResourceCalled('Execute', 'source /etc/zookeeper/conf/zookeeper-env.sh ; env ZOOCFGDIR=/etc/zookeeper/conf ZOOCFG=zoo.cfg /usr/lib/zookeeper/bin/zkServer.sh stop',
       user = 'zookeeper',
     )
@@ -109,7 +108,6 @@ class TestZookeeperServer(RMFTestCase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
-    self.assert_configure_secured()
     self.assertResourceCalled('Execute', 'source /etc/zookeeper/conf/zookeeper-env.sh ; env ZOOCFGDIR=/etc/zookeeper/conf ZOOCFG=zoo.cfg /usr/lib/zookeeper/bin/zkServer.sh stop',
                   user = 'zookeeper',
     )
@@ -355,7 +353,7 @@ class TestZookeeperServer(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
     self.assertResourceCalled('Execute',
-                              'hdp-select set zookeeper-server %s' % version)
+                              ('hdp-select', 'set', 'zookeeper-server', version), sudo=True)
     self.assertNoMoreResources()
 
   @patch("resource_management.core.shell.call")
@@ -379,15 +377,16 @@ class TestZookeeperServer(RMFTestCase):
                        mocks_dict = mocks_dict)
 
     self.assertResourceCalled('Execute',
-                              'hdp-select set zookeeper-server %s' % version)
+                              ('hdp-select', 'set', 'zookeeper-server', version), sudo=True)
 
-    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      "conf-select create-conf-dir --package zookeeper --stack-version 2.3.0.0-3242 --conf-version 0",
+      ('conf-select', 'set-conf-dir', '--package', 'zookeeper', '--stack-version', '2.3.0.0-3242', '--conf-version', '0'),
+       mocks_dict['checked_call'].call_args_list[0][0][0])
+    self.assertEquals(
+      ('conf-select', 'create-conf-dir', '--package', 'zookeeper', '--stack-version', '2.3.0.0-3242', '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
-    self.assertEquals(
-      "conf-select set-conf-dir --package zookeeper --stack-version 2.3.0.0-3242 --conf-version 0",
-       mocks_dict['call'].call_args_list[1][0][0])
 
     self.assertNoMoreResources()
 

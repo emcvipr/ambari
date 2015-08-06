@@ -47,7 +47,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
                   App.clusterStatus.updateFromServer().complete(function () {
                     var currentClusterStatus = App.clusterStatus.get('value');
                     if (router.get('currentState.parentState.name') !== 'views'
-                        && currentClusterStatus && self.get('installerStatuses').contains(currentClusterStatus.clusterState)) {
+                      && currentClusterStatus && self.get('installerStatuses').contains(currentClusterStatus.clusterState)) {
                       if (App.isAccessible('ADMIN')) {
                         self.redirectToInstaller(router, currentClusterStatus, false);
                       } else {
@@ -142,10 +142,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
         route: '/heatmap',
         connectOutlets: function (router, context) {
           router.get('mainController').dataLoading().done(function () {
-            router.get('mainChartsHeatmapController').loadRacks().done(function(data){
-              router.get('mainChartsHeatmapController').loadRacksSuccessCallback(data);
-              router.get('mainChartsController').connectOutlet('mainChartsHeatmap');
-            });
+            router.get('mainChartsController').connectOutlet('mainChartsHeatmap');
           });
         }
       }),
@@ -210,7 +207,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
               controller.isOozieConfigLoaded.always(function () {
                 controller.connectOutlet('mainHostSummary');
               });
-            }else {
+            } else {
               controller.connectOutlet('mainHostSummary');
             }
           });
@@ -220,7 +217,9 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
       configs: Em.Route.extend({
         route: '/configs',
         connectOutlets: function (router, context) {
-          router.get('mainHostDetailsController').connectOutlet('mainHostConfigs');
+          router.get('mainController').isLoading.call(router.get('clusterController'), 'isConfigsPropertiesLoaded').done(function () {
+            router.get('mainHostDetailsController').connectOutlet('mainHostConfigs');
+          });
         }
       }),
 
@@ -343,10 +342,6 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
     },
 
     index: Em.Route.extend({
-      /* enter: function(router, transition){
-       var controller = router.get('mainAdminController');
-       router.transitionTo('admin' + controller.get('category').capitalize());
-       }, */
       route: '/',
       redirectsTo: 'stackAndUpgrade.index'
     }),
@@ -357,43 +352,6 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
         router.set('mainAdminController.category', "authentication");
         router.get('mainAdminController').connectOutlet('mainAdminAuthentication');
       }
-    }),
-
-    adminSecurity: Em.Route.extend({
-      route: '/security',
-      enter: function (router) {
-        router.set('mainAdminController.category', "security");
-        var controller = router.get('mainAdminSecurityController');
-        if (!(controller.getAddSecurityWizardStatus() === 'RUNNING') && !(controller.getDisableSecurityStatus() === 'RUNNING')) {
-          Em.run.next(function () {
-            router.transitionTo('adminSecurity.index');
-          });
-        } else if (controller.getAddSecurityWizardStatus() === 'RUNNING') {
-          Em.run.next(function () {
-            router.transitionTo('adminAddSecurity');
-          });
-        } else if (controller.getDisableSecurityStatus() === 'RUNNING') {
-          Em.run.next(function () {
-            router.transitionTo('disableSecurity');
-          });
-        }
-      },
-
-      index: Em.Route.extend({
-        route: '/',
-        connectOutlets: function (router, context) {
-          var controller = router.get('mainAdminController');
-          controller.set('category', "security");
-          controller.connectOutlet('mainAdminSecurity');
-        }
-      }),
-
-      addSecurity: function (router, object) {
-        router.get('mainAdminSecurityController').setAddSecurityWizardStatus('RUNNING');
-        router.transitionTo('adminAddSecurity');
-      },
-
-      adminAddSecurity: require('routes/add_security')
     }),
 
     adminKerberos: Em.Route.extend({
@@ -411,7 +369,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
         route: '/disableSecurity',
         enter: function (router) {
           App.router.get('updateController').set('isWorking', false);
-          router.get('mainController').dataLoading().done(function() {
+          router.get('mainController').dataLoading().done(function () {
             App.ModalPopup.show({
               classNames: ['full-width-modal'],
               header: Em.I18n.t('admin.removeSecurity.header'),
@@ -439,7 +397,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
                     // otherwise show confirmation window
                     App.showConfirmationPopup(function () {
                       self.proceedOnClose();
-                    }, Em.I18n.t('admin.addSecurity.disable.onClose'));
+                    }, Em.I18n.t('admin.security.disable.onClose'));
                   }
                 } else {
                   self.proceedOnClose();
@@ -459,7 +417,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
                   clusterState: 'DEFAULT',
                   localdb: App.db.data
                 }, {
-                  alwaysCallback: function() {
+                  alwaysCallback: function () {
                     self.hide();
                     router.transitionTo('adminKerberos.index');
                     location.reload();
@@ -563,16 +521,18 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
 
   }),
 
-  addServiceWidget: function (router, context) {
+  createServiceWidget: function (router, context) {
     if (context) {
       var widgetController = router.get('widgetWizardController');
       widgetController.save('widgetService', context.get('serviceName'));
-      widgetController.save('layoutId', context.get('layout.id'));
+      var layout = JSON.parse(JSON.stringify(context.get('layout')));
+      layout.widgets = context.get('layout.widgets').mapProperty('id');
+      widgetController.save('layout', layout);
     }
-    router.transitionTo('addWidget');
+    router.transitionTo('createWidget');
   },
 
-  addWidget: require('routes/add_widget'),
+  createWidget: require('routes/create_widget'),
 
   editServiceWidget: function (router, context) {
     if (context) {
@@ -609,6 +569,8 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
               }
               if (router.get('mainServiceItemController').get('routeToConfigs')) {
                 router.transitionTo('service.configs', service);
+              } else if (router.get('mainServiceItemController.routeToHeatmaps')) {
+                router.transitionTo('service.heatmaps', service);
               } else {
                 router.transitionTo('service.summary', service);
               }
@@ -624,10 +586,16 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
       route: '/:service_id',
       connectOutlets: function (router, service) {
         router.get('mainServiceController').connectOutlet('mainServiceItem', service);
-        if (service && router.get('mainServiceItemController').get('routeToConfigs')) {
-          router.transitionTo('configs');
+        if (service.get('isLoaded')) {
+          if (router.get('mainServiceItemController').get('routeToConfigs')) {
+            router.transitionTo('configs');
+          } else if (router.get('mainServiceItemController.routeToHeatmaps')) {
+            router.transitionTo('heatmaps');
+          } else {
+            router.transitionTo('summary');
+          }
         } else {
-          router.transitionTo('summary');
+          router.transitionTo('index');
         }
       },
       index: Ember.Route.extend({
@@ -637,7 +605,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
         route: '/summary',
         connectOutlets: function (router, context) {
           var item = router.get('mainServiceItemController.content');
-          router.get('updateController').updateServiceMetric(Em.K);
+          if (router.get('clusterController.isServiceMetricsLoaded')) router.get('updateController').updateServiceMetric(Em.K);
           //if service is not existed then route to default service
           if (item.get('isLoaded')) {
             router.get('mainServiceItemController').connectOutlet('mainServiceInfoSummary', item);
@@ -656,21 +624,29 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
       configs: Em.Route.extend({
         route: '/configs',
         connectOutlets: function (router, context) {
-          var item = router.get('mainServiceItemController.content');
-          //if service is not existed then route to default service
-          if (item.get('isLoaded')) {
-            if (router.get('mainServiceItemController.isConfigurable')) {
-              router.get('mainServiceItemController').connectOutlet('mainServiceInfoConfigs', item);
+          router.get('mainController').dataLoading().done(function () {
+            var item = router.get('mainServiceItemController.content');
+            //if service is not existed then route to default service
+            if (item.get('isLoaded')) {
+              if (router.get('mainServiceItemController.isConfigurable')) {
+                // HDFS service config page requires service metrics information to determine NameNode HA state and hide SNameNode category
+                if (item.get('serviceName') === 'HDFS') {
+                  router.get('mainController').isLoading.call(router.get('clusterController'), 'isServiceContentFullyLoaded').done(function () {
+                    router.get('mainServiceItemController').connectOutlet('mainServiceInfoConfigs', item);
+                  });
+                } else {
+                  router.get('mainServiceItemController').connectOutlet('mainServiceInfoConfigs', item);
+                }
+              }
+              else {
+                // if service doesn't have configs redirect to summary
+                router.transitionTo('summary');
+              }
+            } else {
+              item.set('routeToConfigs', true);
+              router.transitionTo('services.index');
             }
-            else {
-              // if service doesn't have configs redirect to summary
-              router.transitionTo('summary');
-            }
-          }
-          else {
-            item.set('routeToConfigs', true);
-            router.transitionTo('services.index');
-          }
+          });
         },
         unroutePath: function (router, context) {
           var controller = router.get('mainServiceInfoConfigsController');
@@ -684,15 +660,15 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
       heatmaps: Em.Route.extend({
         route: '/heatmaps',
         connectOutlets: function (router, context) {
-          var item = router.get('mainServiceItemController.content');
-          if (item.get('isLoaded')) {
-            router.get('mainController').dataLoading().done(function () {
-              router.get('mainServiceInfoHeatmapController').loadRacks().done(function(data) {
-                router.get('mainServiceInfoHeatmapController').loadRacksSuccessCallback(data);
-                router.get('mainServiceItemController').connectOutlet('mainServiceInfoHeatmap', item);
-              });
-            });
-          }
+          router.get('mainController').dataLoading().done(function () {
+            var item = router.get('mainServiceItemController.content');
+            if (item.get('isLoaded')) {
+              router.get('mainServiceItemController').connectOutlet('mainServiceInfoHeatmap', item);
+            } else {
+              item.set('routeToHeatmaps', true);
+              router.transitionTo('services.index');
+            }
+          });
         }
       }),
       audit: Em.Route.extend({
@@ -704,7 +680,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
       }),
       showInfo: function (router, event) {
         var mainServiceInfoConfigsController = App.router.get('mainServiceInfoConfigsController');
-        if (event.context === 'summary' && mainServiceInfoConfigsController.hasUnsavedChanges()) {
+        if (event.context !== 'configs' && mainServiceInfoConfigsController.hasUnsavedChanges()) {
           mainServiceInfoConfigsController.showSavePopup(router.get('location.lastSetURL').replace('configs', 'summary'));
           return false;
         }

@@ -75,7 +75,7 @@ App.QuickViewLinks = Em.View.extend({
   /**
    * list of files that contains properties for enabling/disabling ssl
    */
-  requiredSiteNames: ['hadoop-env','yarn-env','hbase-env','oozie-env','mapred-env','storm-env', 'falcon-env', 'core-site', 'hdfs-site', 'hbase-site', 'oozie-site', 'yarn-site', 'mapred-site', 'storm-site', 'spark-defaults'],
+  requiredSiteNames: ['hadoop-env','yarn-env','hbase-env','oozie-env','mapred-env','storm-env', 'falcon-env', 'core-site', 'hdfs-site', 'hbase-site', 'oozie-site', 'yarn-site', 'mapred-site', 'storm-site', 'spark-defaults', 'accumulo-site', 'application-properties', 'ranger-admin-site'],
   /**
    * Get public host name by its host name.
    *
@@ -109,6 +109,12 @@ App.QuickViewLinks = Em.View.extend({
     this.setQuickLinks();
   },
 
+  willDestroyElement: function() {
+    this.get('configProperties').clear();
+    this.get('actualTags').clear();
+    this.get('quickLinks').clear();
+  },
+
   findComponentHost: function (components, componentName) {
     var component = components.find(function (item) {
       return item.host_components.someProperty('HostRoles.component_name', componentName);
@@ -137,7 +143,7 @@ App.QuickViewLinks = Em.View.extend({
         var protocol = self.setProtocol(item.get('service_id'), self.get('configProperties'), self.ambariProperties());
         if (item.get('template')) {
           var port = item.get('http_config') && self.setPort(item, protocol);
-          if (['FALCON', 'OOZIE'].contains(item.get('service_id'))) {
+          if (['FALCON', 'OOZIE', 'ATLAS'].contains(item.get('service_id'))) {
             item.set('url', item.get('template').fmt(protocol, hosts[0], port, App.router.get('loginName')));
           } else {
             item.set('url', item.get('template').fmt(protocol, hosts[0], port));
@@ -157,7 +163,11 @@ App.QuickViewLinks = Em.View.extend({
           var protocol = self.setProtocol(item.get('service_id'), self.get('configProperties'), self.ambariProperties());
           if (item.get('template')) {
             var port = item.get('http_config') && self.setPort(item, protocol);
-            newItem.url = item.get('template').fmt(protocol, host.publicHostName, port);
+            if (item.get('service_id')==='OOZIE') {
+              newItem.url = item.get('template').fmt(protocol, host.publicHostName, port, App.router.get('loginName'));
+            } else {
+              newItem.url = item.get('template').fmt(protocol, host.publicHostName, port);
+            }
             newItem.label = item.get('label');
           }
           quickLinks.push(newItem);
@@ -187,6 +197,20 @@ App.QuickViewLinks = Em.View.extend({
     }
     var hosts = [];
     switch (serviceName) {
+      case 'OOZIE':
+        // active OOZIE components
+        var components = this.get('content.hostComponents').filterProperty('componentName','OOZIE_SERVER').filterProperty('workStatus', 'STARTED');
+        if (components && components.length > 1) {
+          components.forEach(function (component) {
+            hosts.push({
+              'publicHostName': response.items.findProperty('Hosts.host_name', component.get('hostName')).Hosts.public_host_name,
+              'status': Em.I18n.t('quick.links.label.active')
+            });
+          });
+        } else if (components && components.length === 1) {
+          hosts[0] = this.findComponentHost(response.items, 'OOZIE_SERVER');
+        }
+        break;
       case "HDFS":
         if (this.get('content.snameNode')) {
           // not HA
@@ -271,6 +295,9 @@ App.QuickViewLinks = Em.View.extend({
       case "ACCUMULO":
         hosts[0] = this.findComponentHost(response.items, "ACCUMULO_MONITOR");
         break;
+      case "ATLAS":
+        hosts[0] = this.findComponentHost(response.items, "ATLAS_SERVER");
+        break;
       default:
         var service = App.StackService.find().findProperty('serviceName', serviceName);
         if (service && service.get('hasMaster')) {
@@ -283,7 +310,7 @@ App.QuickViewLinks = Em.View.extend({
 
   /**
    * services that supports security. this array is used to find out protocol.
-   * becides GANGLIA, YARN, MAPREDUCE2. These properties use
+   * becides GANGLIA, YARN, MAPREDUCE2, ACCUMULO. These services use
    * their properties to know protocol
    */
   servicesSupportsHttps: ["HDFS", "HBASE"],
@@ -329,6 +356,36 @@ App.QuickViewLinks = Em.View.extend({
         }
         return hadoopSslEnabled ? "https" : "http";
         break;
+      case "ACCUMULO":
+        var accumuloProperties = configProperties && configProperties.findProperty('type', 'accumulo-site');
+        if (accumuloProperties && accumuloProperties.properties) {
+          if (accumuloProperties.properties['monitor.ssl.keyStore'] && accumuloProperties.properties['monitor.ssl.trustStore']) {
+            return "https";
+          } else {
+            return "http";
+          }
+        }
+        return "http";
+        break;
+      case "ATLAS":
+        var atlasProperties = configProperties && configProperties.findProperty('type', 'application-properties');
+        if (atlasProperties && atlasProperties.properties) {
+          if (atlasProperties.properties['metadata.enableTLS'] == "true") {
+            return "https";
+          } else {
+            return "http";
+          }
+        }
+        return "http";
+        break;
+      case "RANGER":
+        var rangerProperties = configProperties && configProperties.findProperty('type', 'ranger-admin-site');
+        if (rangerProperties && rangerProperties.properties && rangerProperties.properties['ranger.service.https.attrib.ssl.enabled'] == "true") {
+          return "https";
+        } else {
+          return "http";
+        }
+        break;
       default:
         return this.get('servicesSupportsHttps').contains(service_id) && hadoopSslEnabled ? "https" : "http";
     }
@@ -372,7 +429,10 @@ App.QuickViewLinks = Em.View.extend({
       case "oozie":
       case "ganglia":
       case "storm":
+      case "spark":
       case "falcon":
+      case "accumulo":
+      case "atlas":
         return "_blank";
         break;
       default:

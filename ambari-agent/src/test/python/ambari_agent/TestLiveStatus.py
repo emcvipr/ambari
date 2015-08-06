@@ -27,12 +27,7 @@ from mock.mock import patch, MagicMock
 import pprint
 from ambari_agent import StatusCheck
 from ambari_commons import OSCheck
-from only_for_platform import only_for_platform, get_platform, PLATFORM_LINUX, PLATFORM_WINDOWS
-
-if get_platform() != PLATFORM_WINDOWS:
-  os_distro_value = ('Suse','11','Final')
-else:
-  os_distro_value = ('win2012serverr2','6.3','WindowsServer')
+from only_for_platform import os_distro_value
 
 
 class TestLiveStatus(TestCase):
@@ -144,9 +139,11 @@ class TestLiveStatus(TestCase):
     # enable stdout
     sys.stdout = sys.__stdout__
 
+  @patch("os.path.isdir")
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(ActualConfigHandler.ActualConfigHandler, "read_actual_component")
-  def test_build(self, read_actual_component_mock):
+  def test_build(self, read_actual_component_mock, isdir_mock):
+    isdir_mock.return_value = False
     for component in LiveStatus.COMPONENTS:
       config = AmbariConfig().getConfig()
       config.set('agent', 'prefix', "ambari_agent" + os.sep + "dummy_files")

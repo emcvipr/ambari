@@ -61,7 +61,8 @@ public class ServiceComponentImpl implements ServiceComponent {
   private final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
   private final boolean isClientComponent;
   private final boolean isMasterComponent;
-  boolean persisted = false;
+  private final boolean isVersionAdvertised;
+  volatile boolean persisted = false;
   @Inject
   private ServiceComponentDesiredStateDAO serviceComponentDesiredStateDAO;
   @Inject
@@ -101,6 +102,7 @@ public class ServiceComponentImpl implements ServiceComponent {
           stackId.getStackVersion(), service.getName(), componentName);
       isClientComponent = compInfo.isClient();
       isMasterComponent = compInfo.isMaster();
+      isVersionAdvertised = compInfo.isVersionAdvertised();
     } catch (ObjectNotFoundException e) {
       throw new RuntimeException("Trying to create a ServiceComponent"
           + " not recognized in stack info"
@@ -149,6 +151,7 @@ public class ServiceComponentImpl implements ServiceComponent {
           getName());
       isClientComponent = compInfo.isClient();
       isMasterComponent = compInfo.isMaster();
+      isVersionAdvertised = compInfo.isVersionAdvertised();
     } catch (ObjectNotFoundException e) {
       throw new AmbariException("Trying to create a ServiceComponent"
           + " not recognized in stack info"
@@ -445,6 +448,13 @@ public class ServiceComponentImpl implements ServiceComponent {
     return persisted;
   }
 
+  /**
+   * {@inheritDoc}
+   * <p/>
+   * This method uses Java locks and then delegates to internal methods which
+   * perform the JPA merges inside of a transaction. Because of this, a
+   * transaction is not necessary before this calling this method.
+   */
   @Override
   public void persist() {
     boolean clusterWriteLockAcquired = false;
@@ -510,15 +520,15 @@ public class ServiceComponentImpl implements ServiceComponent {
     }
   }
 
+  /**
+   * Merges the encapsulated {@link ServiceComponentDesiredStateEntity} inside
+   * of a new transaction. This method assumes that the appropriate write lock
+   * has already been acquired from {@link #readWriteLock}.
+   */
   @Transactional
   private void saveIfPersisted() {
-    readWriteLock.writeLock().lock();
-    try {
-      if (isPersisted()) {
-        serviceComponentDesiredStateDAO.merge(desiredStateEntity);
-      }
-    } finally {
-      readWriteLock.writeLock().unlock();
+    if (isPersisted()) {
+      serviceComponentDesiredStateDAO.merge(desiredStateEntity);
     }
   }
 
@@ -530,6 +540,12 @@ public class ServiceComponentImpl implements ServiceComponent {
   @Override
   public boolean isMasterComponent() {
     return isMasterComponent;
+  }
+
+
+  @Override
+  public boolean isVersionAdvertised() {
+    return isVersionAdvertised;
   }
 
   @Override

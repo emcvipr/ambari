@@ -118,7 +118,7 @@ App.MainHostSummaryView = Em.View.extend({
    */
   installedServices: function () {
     return App.Service.find().mapProperty('serviceName');
-  }.property('App.router.clusterController.dataLoadList.serviceMetrics'),
+  }.property('App.router.clusterController.dataLoadList.services'),
 
   /**
    * List of installed masters and slaves
@@ -153,7 +153,7 @@ App.MainHostSummaryView = Em.View.extend({
         }
         else {
           // Add new component
-          component.set('view', hostComponentViewMap[component.get('componentName')] ? hostComponentViewMap[component.get('componentName')] : App.HostComponentView);
+          component.set('viewClass', hostComponentViewMap[component.get('componentName')] ? hostComponentViewMap[component.get('componentName')] : App.HostComponentView);
           if (component.get('isMaster')) {
             // Masters should be before slaves
             var lastMasterIndex = 0, atLeastOneMasterExists = false;
@@ -276,19 +276,23 @@ App.MainHostSummaryView = Em.View.extend({
   addableComponents: function () {
     var components = [];
     var self = this;
-    var installedComponents = this.get('content.hostComponents').mapProperty('componentName');
-    var addableToHostComponents = App.StackServiceComponent.find().filterProperty('isAddableToHost');
-    var installedServices = this.get('installedServices');
+    if (this.get('content.hostComponents')) {
+      var installedComponents = this.get('content.hostComponents').mapProperty('componentName');
+      var addableToHostComponents = App.StackServiceComponent.find().filterProperty('isAddableToHost');
+      var installedServices = this.get('installedServices');
 
-    addableToHostComponents.forEach(function(addableComponent) {
-      if(installedServices.contains(addableComponent.get('serviceName')) && !installedComponents.contains(addableComponent.get('componentName'))) {
-        if ((addableComponent.get('componentName') === 'OOZIE_SERVER') && !App.router.get('mainHostDetailsController.isOozieServerAddable')) {
-          return;
+      addableToHostComponents.forEach(function (addableComponent) {
+        if (installedServices.contains(addableComponent.get('serviceName')) && !installedComponents.contains(addableComponent.get('componentName'))) {
+          if ((addableComponent.get('componentName') === 'OOZIE_SERVER') && !App.router.get('mainHostDetailsController.isOozieServerAddable')) {
+            return;
+          }
+          components.pushObject(self.addableComponentObject.create({
+            'componentName': addableComponent.get('componentName'),
+            'serviceName': addableComponent.get('serviceName')
+          }));
         }
-        components.pushObject(self.addableComponentObject.create({'componentName': addableComponent.get('componentName'), 'serviceName': addableComponent.get('serviceName')}));
-      }
-    });
-
+      });
+    }
     return components;
   }.property('content.hostComponents.length', 'installableClientComponents', 'App.components.addableToHost.@each'),
 

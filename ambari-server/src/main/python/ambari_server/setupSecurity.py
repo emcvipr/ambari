@@ -19,7 +19,10 @@ limitations under the License.
 '''
 import base64
 import fileinput
-import json
+import getpass
+import stat
+import tempfile
+import ambari_simplejson as json # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 import os
 import re
 import shutil
@@ -32,7 +35,7 @@ from ambari_commons.logging_utils import print_warning_msg, print_error_msg, pri
 from ambari_commons.os_check import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from ambari_commons.os_utils import is_root, set_file_permissions, \
-  run_os_command, search_file, is_valid_filepath
+  run_os_command, search_file, is_valid_filepath, change_owner, get_ambari_repo_file_full_name, get_file_owner
 from ambari_server.serverConfiguration import configDefaults, \
   encrypt_password, find_jdk, find_properties_file, get_alias_string, get_ambari_properties, get_conf_dir, \
   get_credential_store_location, get_full_ambari_classpath, get_is_persisted, get_is_secure, get_master_key_location, \
@@ -44,7 +47,8 @@ from ambari_server.serverConfiguration import configDefaults, \
   LDAP_PRIMARY_URL_PROPERTY, SECURITY_IS_ENCRYPTION_ENABLED, SECURITY_KEY_ENV_VAR_NAME, SECURITY_KERBEROS_JASS_FILENAME, \
   SECURITY_PROVIDER_KEY_CMD, SECURITY_MASTER_KEY_FILENAME, SSL_TRUSTSTORE_PASSWORD_ALIAS, \
   SSL_TRUSTSTORE_PASSWORD_PROPERTY, SSL_TRUSTSTORE_PATH_PROPERTY, SSL_TRUSTSTORE_TYPE_PROPERTY, \
-  SSL_API, SSL_API_PORT, DEFAULT_SSL_API_PORT, CLIENT_API_PORT
+  SSL_API, SSL_API_PORT, DEFAULT_SSL_API_PORT, CLIENT_API_PORT, JDK_NAME_PROPERTY, JCE_NAME_PROPERTY, JAVA_HOME_PROPERTY, \
+  get_resources_location, SECURITY_MASTER_KEY_LOCATION, SETUP_OR_UPGRADE_MSG
 from ambari_server.serverUtils import is_server_runing, get_ambari_server_api_base
 from ambari_server.setupActions import SETUP_ACTION, LDAP_SETUP_ACTION
 from ambari_server.userInput import get_validated_string_input, get_prompt_default, read_password, get_YN_input
@@ -134,13 +138,43 @@ def adjust_directory_permissions(ambari_user):
   keyLocation = get_master_key_location(properties)
   masterKeyFile = search_file(SECURITY_MASTER_KEY_FILENAME, keyLocation)
   if masterKeyFile:
-    configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((masterKeyFile, configDefaults.MASTER_KEY_FILE_PERMISSIONS, "{0}", "{0}", False))
+    configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((masterKeyFile, configDefaults.MASTER_KEY_FILE_PERMISSIONS, "{0}", False))
   credStoreFile = get_credential_store_location(properties)
   if os.path.exists(credStoreFile):
-    configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((credStoreFile, configDefaults.CREDENTIALS_STORE_FILE_PERMISSIONS, "{0}", "{0}", False))
+    configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((credStoreFile, configDefaults.CREDENTIALS_STORE_FILE_PERMISSIONS, "{0}", False))
   trust_store_location = properties[SSL_TRUSTSTORE_PATH_PROPERTY]
   if trust_store_location:
-    configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((trust_store_location, configDefaults.TRUST_STORE_LOCATION_PERMISSIONS, "{0}", "{0}", False))
+    configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((trust_store_location, configDefaults.TRUST_STORE_LOCATION_PERMISSIONS, "{0}", False))
+
+  # Update JDK and JCE permissions
+  resources_dir = get_resources_location(properties)
+  jdk_file_name = properties.get_property(JDK_NAME_PROPERTY)
+  jce_file_name = properties.get_property(JCE_NAME_PROPERTY)
+  java_home = properties.get_property(JAVA_HOME_PROPERTY)
+  if jdk_file_name:
+    jdk_file_path = os.path.abspath(os.path.join(resources_dir, jdk_file_name))
+    if(os.path.exists(jdk_file_path)):
+      configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((jdk_file_path, "644", "{0}", False))
+  if jce_file_name:
+    jce_file_path = os.path.abspath(os.path.join(resources_dir, jce_file_name))
+    if(os.path.exists(jce_file_path)):
+      configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((jce_file_path, "644", "{0}", False))
+  if java_home:
+    jdk_security_dir = os.path.abspath(os.path.join(java_home, configDefaults.JDK_SECURITY_DIR))
+    if(os.path.exists(jdk_security_dir)):
+      configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((jdk_security_dir, "644", "{0}", True))
+      configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((jdk_security_dir, "755", "{0}", False))
+
+  # Grant read permissions to all users. This is required when a non-admin user is configured to setup ambari-server.
+  # However, do not change ownership of the repo file to ambari user.
+
+  ambari_repo_file = get_ambari_repo_file_full_name()
+
+  if ambari_repo_file:
+    ambari_repo_file_owner = get_file_owner(ambari_repo_file)
+    configDefaults.NR_ADJUST_OWNERSHIP_LIST.append((ambari_repo_file, "644", ambari_repo_file_owner, False))
+
+
   print "Adjusting ambari-server permissions and ownership..."
 
   for pack in configDefaults.NR_ADJUST_OWNERSHIP_LIST:
@@ -148,7 +182,15 @@ def adjust_directory_permissions(ambari_user):
     mod = pack[1]
     user = pack[2].format(ambari_user)
     recursive = pack[3]
+    print_info_msg("Setting file permissions: {0} {1} {2} {3}".format(file, mod, user, recursive))
     set_file_permissions(file, mod, user, recursive)
+
+  for pack in configDefaults.NR_CHANGE_OWNERSHIP_LIST:
+    path = pack[0]
+    user = pack[1].format(ambari_user)
+    recursive = pack[2]
+    print_info_msg("Changing ownership: {0} {1} {2}".format(path, user, recursive))
+    change_owner(path, user, recursive)
 
 def configure_ldap_password():
   passwordDefault = ""
@@ -523,7 +565,7 @@ def init_ldap_properties_list_reqd(properties):
     LdapPropTemplate(properties, "authentication.ldap.usernameAttribute", "User name attribute* {0}: ", REGEX_ANYTHING, False, "uid"),
     LdapPropTemplate(properties, "authentication.ldap.baseDn", "Base DN* {0}: ", REGEX_ANYTHING, False),
     LdapPropTemplate(properties, "authentication.ldap.referral", "Referral method [follow/ignore] {0}: ", REGEX_REFERRAL, True),
-    LdapPropTemplate(properties, "authentication.ldap.bindAnonymously" "Bind anonymously* [true/false] {0}: ", REGEX_TRUE_FALSE, False, "false")
+    LdapPropTemplate(properties, "authentication.ldap.bindAnonymously", "Bind anonymously* [true/false] {0}: ", REGEX_TRUE_FALSE, False, "false")
   ]
   return ldap_properties
 
@@ -674,3 +716,73 @@ def setup_ldap():
     print 'Saving...done'
 
   return 0
+
+@OsFamilyFuncImpl(OsFamilyImpl.DEFAULT)
+def generate_env(ambari_user, current_user):
+  properties = get_ambari_properties()
+  isSecure = get_is_secure(properties)
+  (isPersisted, masterKeyFile) = get_is_persisted(properties)
+  environ = os.environ.copy()
+  # Need to handle master key not persisted scenario
+  if isSecure and not masterKeyFile:
+    prompt = False
+    masterKey = environ.get(SECURITY_KEY_ENV_VAR_NAME)
+
+    if masterKey is not None and masterKey != "":
+      pass
+    else:
+      keyLocation = environ.get(SECURITY_MASTER_KEY_LOCATION)
+
+      if keyLocation is not None:
+        try:
+          # Verify master key can be read by the java process
+          with open(keyLocation, 'r'):
+            pass
+        except IOError:
+          print_warning_msg("Cannot read Master key from path specified in "
+                            "environemnt.")
+          prompt = True
+      else:
+        # Key not provided in the environment
+        prompt = True
+
+    if prompt:
+      import pwd
+
+      masterKey = get_original_master_key(properties)
+      tempDir = tempfile.gettempdir()
+      tempFilePath = tempDir + os.sep + "masterkey"
+      save_master_key(masterKey, tempFilePath, True)
+      if ambari_user != current_user:
+        uid = pwd.getpwnam(ambari_user).pw_uid
+        gid = pwd.getpwnam(ambari_user).pw_gid
+        os.chown(tempFilePath, uid, gid)
+      else:
+        os.chmod(tempFilePath, stat.S_IREAD | stat.S_IWRITE)
+
+      if tempFilePath is not None:
+        environ[SECURITY_MASTER_KEY_LOCATION] = tempFilePath
+
+  return environ
+
+@OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
+def generate_env(ambari_user, current_user):
+  return os.environ.copy()
+
+@OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
+def ensure_can_start_under_current_user(ambari_user):
+  #Ignore the requirement to run as root. In Windows, by default the child process inherits the security context
+  # and the environment from the parent process.
+  return ""
+
+@OsFamilyFuncImpl(OsFamilyImpl.DEFAULT)
+def ensure_can_start_under_current_user(ambari_user):
+  current_user = getpass.getuser()
+  if ambari_user is None:
+    err = "Unable to detect a system user for Ambari Server.\n" + SETUP_OR_UPGRADE_MSG
+    raise FatalException(1, err)
+  if current_user != ambari_user and not is_root():
+    err = "Unable to start Ambari Server as user {0}. Please either run \"ambari-server start\" " \
+          "command as root, as sudo or as user \"{1}\"".format(current_user, ambari_user)
+    raise FatalException(1, err)
+  return current_user

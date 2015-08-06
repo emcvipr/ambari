@@ -81,11 +81,22 @@ public interface Cluster {
   List<ServiceComponentHost> getServiceComponentHosts(String hostname);
 
   /**
+   * Get all ServiceComponentHosts for a given service and optional component
+   *
+   * If the component name is <code>null</code>, all components for the requested service will be returned.
+   *
+   * @param serviceName the name a the desired service
+   * @param componentName the name a the desired component - null indicates all components for the service
+   * @return a list of found ServiceComponentHost instances
+   */
+  List<ServiceComponentHost> getServiceComponentHosts(String serviceName, String componentName);
+
+  /**
    * Get all hosts associated with this cluster.
    *
    * @return collection of hosts that are associated with this cluster
    */
-  public Collection<Host> getHosts();
+  Collection<Host> getHosts();
 
   /**
    * Get all of the hosts running the provided service and component.
@@ -95,6 +106,14 @@ public interface Cluster {
    */
   Set<String> getHosts(String serviceName, String componentName);
 
+
+  /**
+   * Adds schs to cluster AND persists them
+   * TODO consider making persisting optional
+   * @param serviceComponentHosts
+   * @throws AmbariException
+   */
+  void addServiceComponentHosts(Collection<ServiceComponentHost> serviceComponentHosts) throws AmbariException;
 
   /**
    * Remove ServiceComponentHost from cluster
@@ -188,11 +207,10 @@ public interface Cluster {
 
   /**
    * Update state of a cluster stack version for cluster based on states of host versions and stackids.
-   * @param stackId           the stack id with the version
-   * @param repositoryVersion the repository version (e.g. 2.2.1.0-100)
+   * @param repositoryVersion the repository version entity whose version is a value like 2.2.1.0-100)
    * @throws AmbariException
    */
-  void recalculateClusterVersionState(StackId stackId, String repositoryVersion) throws AmbariException;
+  void recalculateClusterVersionState(RepositoryVersionEntity repositoryVersion) throws AmbariException;
 
   /**
    * Update state of all cluster stack versions for cluster based on states of host versions.
@@ -490,9 +508,9 @@ public interface Cluster {
    * Bulk handle service component host events
    *
    * @param eventMap serviceName - event mapping
-   * @return list of failed events
+   * @return map of failed events where key is event and value is short message
    */
-  List<ServiceComponentHostEvent> processServiceComponentHostEvents(ListMultimap<String, ServiceComponentHostEvent> eventMap);
+  Map<ServiceComponentHostEvent, String> processServiceComponentHostEvents(ListMultimap<String, ServiceComponentHostEvent> eventMap);
 
   /**
    * Determine whether or not access to this cluster resource should be allowed based

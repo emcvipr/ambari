@@ -20,10 +20,37 @@ var App = require('app');
 
 App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageController.extend({
 
-  commands: ['stopRequiredServices', 'cleanMySqlServer', 'createHostComponents', 'putHostComponentsInMaintenanceMode', 'reconfigure', 'installHostComponents', 'startZooKeeperServers', 'startNameNode', 'deleteHostComponents', 'configureMySqlServer',
-  'startMySqlServer', 'startNewMySqlServer' , 'startRequiredServices'],
+  commands: [
+    'stopRequiredServices',
+    'cleanMySqlServer',
+    'createHostComponents',
+    'putHostComponentsInMaintenanceMode',
+    'reconfigure',
+    'installHostComponents',
+    'startZooKeeperServers',
+    'startNameNode',
+    'deleteHostComponents',
+    'configureMySqlServer',
+    'startMySqlServer',
+    'startNewMySqlServer',
+    'startRequiredServices'
+  ],
+
   // custom commands for Components with DB Configuration and Check
-  commandsForDB: ['createHostComponents', 'installHostComponents', 'configureMySqlServer', 'startMySqlServer', 'testDBConnection', 'stopRequiredServices', 'cleanMySqlServer', 'putHostComponentsInMaintenanceMode', 'reconfigure', 'deleteHostComponents', 'configureMySqlServer', 'startRequiredServices'],
+  commandsForDB: [
+    'createHostComponents',
+    'installHostComponents',
+    'configureMySqlServer',
+    'restartMySqlServer',
+    'testDBConnection',
+    'stopRequiredServices',
+    'cleanMySqlServer',
+    'putHostComponentsInMaintenanceMode',
+    'reconfigure',
+    'deleteHostComponents',
+    'configureMySqlServer',
+    'startRequiredServices'
+  ],
 
   clusterDeployState: 'REASSIGN_MASTER_INSTALLING',
 
@@ -308,7 +335,7 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
 
 
       if(is_remote_db || db_type !== 'mysql') {
-        this.removeTasks(['configureMySqlServer', 'startMySqlServer', 'cleanMySqlServer', 'configureMySqlServer']);
+        this.removeTasks(['configureMySqlServer', 'startMySqlServer', 'restartMySqlServer', 'cleanMySqlServer', 'configureMySqlServer']);
       }
 
       if (db_type === 'derby') {
@@ -317,7 +344,7 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
     }
 
     if ( this.get('content.reassign.component_name') !== 'MYSQL_SERVER' && !this.isComponentWithDB()) {
-      this.removeTasks(['configureMySqlServer', 'startMySqlServer', 'cleanMySqlServer', 'startNewMySqlServer', 'configureMySqlServer']);
+      this.removeTasks(['configureMySqlServer', 'startMySqlServer', 'restartMySqlServer', 'cleanMySqlServer', 'startNewMySqlServer', 'configureMySqlServer']);
     }
 
     if ( this.get('content.reassign.component_name') === 'MYSQL_SERVER' ) {
@@ -478,6 +505,9 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
         urlParams.push('(type=core-site&tag=' + data.Clusters.desired_configs['core-site'].tag + ')');
         if (App.Service.find().someProperty('serviceName', 'HBASE')) {
           urlParams.push('(type=hbase-site&tag=' + data.Clusters.desired_configs['hbase-site'].tag + ')');
+        }
+        if (App.Service.find().someProperty('serviceName', 'ACCUMULO')) {
+          urlParams.push('(type=accumulo-site&tag=' + data.Clusters.desired_configs['accumulo-site'].tag + ')');
         }
         break;
       case 'SECONDARY_NAMENODE':
@@ -647,12 +677,50 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
     if (App.get('isRMHaEnabled')) {
       if (configs['yarn-site']['yarn.resourcemanager.hostname.rm1'] === sourceHostName) {
         configs['yarn-site']['yarn.resourcemanager.hostname.rm1'] = targetHostName;
+        
+        var webAddressPort = this.getWebAddressPort(configs, 'yarn.resourcemanager.webapp.address.rm1');
+        if(webAddressPort != null)
+          configs['yarn-site']['yarn.resourcemanager.webapp.address.rm1'] = targetHostName +":"+ webAddressPort;
+        
+        var httpsWebAddressPort = this.getWebAddressPort(configs, 'yarn.resourcemanager.webapp.https.address.rm1');
+        if(httpsWebAddressPort != null)
+          configs['yarn-site']['yarn.resourcemanager.webapp.https.address.rm1'] = targetHostName +":"+ httpsWebAddressPort;
       } else {
         configs['yarn-site']['yarn.resourcemanager.hostname.rm2'] = targetHostName;
+        
+        var webAddressPort = this.getWebAddressPort(configs, 'yarn.resourcemanager.webapp.address.rm2');
+        if(webAddressPort != null)
+          configs['yarn-site']['yarn.resourcemanager.webapp.address.rm2'] = targetHostName +":"+ webAddressPort;
+        
+        var httpsWebAddressPort = this.getWebAddressPort(configs, 'yarn.resourcemanager.webapp.https.address.rm2');
+        if(httpsWebAddressPort != null)
+          configs['yarn-site']['yarn.resourcemanager.webapp.https.address.rm2'] = targetHostName +":"+ httpsWebAddressPort;
       }
     }
   },
 
+  /**
+   * Get the web address port when RM HA is enabled. 
+   * @param configs
+   * @param webAddressKey (http vs https)
+   * */
+  getWebAddressPort: function (configs, webAddressKey){
+    var result = null;
+    var rmWebAddressValue = configs['yarn-site'][webAddressKey];
+    if(rmWebAddressValue){
+      var tokens = rmWebAddressValue.split(":");
+      if(tokens.length > 1){
+        result = tokens[1];
+        result = result.replace(/^\s+|\s+$/g, '');
+      }
+    }
+    
+    if(result)  //only return non-empty result
+      return result;
+    else
+      return null;
+  },
+  
   /**
    * set specific configs which applies only to Hive related configs
    * @param configs
@@ -689,7 +757,7 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
    * @return {Boolean}
    */
   setSecureConfigs: function (secureConfigs, configs, componentName) {
-    var securityEnabled = this.get('content.securityEnabled');
+    var securityEnabled = App.get('isKerberosEnabled');
     var component = this.get('secureConfigsMap').findProperty('componentName', componentName);
     if (Em.isNone(component) || !securityEnabled) return false;
 
@@ -859,6 +927,35 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
         HostRoles: {
           state: "STARTED"
         }
+      },
+      success: 'startPolling',
+      error: 'onTaskError'
+    });
+  },
+
+  restartMySqlServer: function() {
+    var context = "Restart MySql Server";
+
+    var resource_filters = {
+      component_name: "MYSQL_SERVER",
+      hosts: App.HostComponent.find().filterProperty('componentName', 'MYSQL_SERVER').get('firstObject.hostName'),
+      service_name: "HIVE"
+    };
+
+    var operation_level = {
+      level: "HOST_COMPONENT",
+      cluster_name: this.get('content.cluster.name'),
+      service_name: "HIVE",
+      hostcomponent_name: "MYSQL_SERVER"
+    };
+
+    App.ajax.send({
+      name: 'restart.hostComponents',
+      sender: this,
+      data: {
+        context: context,
+        resource_filters: [resource_filters],
+        operation_level: operation_level
       },
       success: 'startPolling',
       error: 'onTaskError'

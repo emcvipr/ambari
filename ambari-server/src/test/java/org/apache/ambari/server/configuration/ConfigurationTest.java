@@ -158,8 +158,23 @@ public class ConfigurationTest {
     Assert.assertFalse(conf.getConfigsMap().get(Configuration.SRVR_CRT_NAME_KEY).
       equals(conf.getConfigsMap().get(Configuration.CLIENT_API_SSL_CRT_NAME_KEY)));
 
+    Assert.assertEquals("keystore.p12", conf.getConfigsMap().get(
+        Configuration.KSTR_NAME_KEY));
+    Assert.assertEquals("PKCS12", conf.getConfigsMap().get(
+        Configuration.KSTR_TYPE_KEY));
+    Assert.assertEquals("keystore.p12", conf.getConfigsMap().get(
+        Configuration.TSTR_NAME_KEY));
+    Assert.assertEquals("PKCS12", conf.getConfigsMap().get(
+        Configuration.TSTR_TYPE_KEY));
+
     Assert.assertEquals("https.keystore.p12", conf.getConfigsMap().get(
       Configuration.CLIENT_API_SSL_KSTR_NAME_KEY));
+    Assert.assertEquals("PKCS12", conf.getConfigsMap().get(
+        Configuration.CLIENT_API_SSL_KSTR_TYPE_KEY));
+    Assert.assertEquals("https.keystore.p12", conf.getConfigsMap().get(
+        Configuration.CLIENT_API_SSL_TSTR_NAME_KEY));
+    Assert.assertEquals("PKCS12", conf.getConfigsMap().get(
+        Configuration.CLIENT_API_SSL_TSTR_TYPE_KEY));
     Assert.assertEquals(passFile.getName(), conf.getConfigsMap().get(
       Configuration.CLIENT_API_SSL_CRT_PASS_FILE_NAME_KEY));
     Assert.assertEquals(password, conf.getConfigsMap().get(Configuration.CLIENT_API_SSL_CRT_PASS_KEY));
@@ -341,6 +356,25 @@ public class ConfigurationTest {
   }
 
   @Test
+  public void testIsViewRemoveUndeployedEnabled() throws Exception {
+    final Properties ambariProperties = new Properties();
+    Configuration configuration = new Configuration(ambariProperties);
+    Assert.assertFalse(configuration.isViewRemoveUndeployedEnabled());
+
+    ambariProperties.setProperty(Configuration.VIEWS_REMOVE_UNDEPLOYED, "false");
+    configuration = new Configuration(ambariProperties);
+    Assert.assertFalse(configuration.isViewRemoveUndeployedEnabled());
+
+    ambariProperties.setProperty(Configuration.VIEWS_REMOVE_UNDEPLOYED, "true");
+    configuration = new Configuration(ambariProperties);
+    Assert.assertTrue(configuration.isViewRemoveUndeployedEnabled());
+
+    ambariProperties.setProperty(Configuration.VIEWS_REMOVE_UNDEPLOYED, Configuration.VIEWS_REMOVE_UNDEPLOYED_DEFAULT);
+    configuration = new Configuration(ambariProperties);
+    Assert.assertFalse(configuration.isViewRemoveUndeployedEnabled());
+  }
+
+  @Test
   public void testGetLdapServerProperties() throws Exception {
     final Properties ambariProperties = new Properties();
     final Configuration configuration = new Configuration(ambariProperties);
@@ -401,6 +435,8 @@ public class ConfigurationTest {
     Assert.assertEquals(14400, configuration.getConnectionPoolMaximumIdle());
     Assert.assertEquals(32, configuration.getConnectionPoolMaximumSize());
     Assert.assertEquals(5, configuration.getConnectionPoolMinimumSize());
+    Assert.assertEquals(30, configuration.getConnectionPoolAcquisitionRetryAttempts());
+    Assert.assertEquals(1000, configuration.getConnectionPoolAcquisitionRetryDelay());
 
     ambariProperties.setProperty(Configuration.SERVER_JDBC_CONNECTION_POOL, ConnectionPoolType.C3P0.getName());
     ambariProperties.setProperty(Configuration.SERVER_JDBC_CONNECTION_POOL_MIN_SIZE, "1");
@@ -410,6 +446,9 @@ public class ConfigurationTest {
     ambariProperties.setProperty(Configuration.SERVER_JDBC_CONNECTION_POOL_MAX_IDLE_TIME, "5");
     ambariProperties.setProperty(Configuration.SERVER_JDBC_CONNECTION_POOL_MAX_IDLE_TIME_EXCESS, "6");
     ambariProperties.setProperty(Configuration.SERVER_JDBC_CONNECTION_POOL_IDLE_TEST_INTERVAL, "7");
+    ambariProperties.setProperty(Configuration.SERVER_JDBC_CONNECTION_POOL_ACQUISITION_RETRY_ATTEMPTS, "8");
+    ambariProperties.setProperty(Configuration.SERVER_JDBC_CONNECTION_POOL_ACQUISITION_RETRY_DELAY, "9");
+
 
     Assert.assertEquals(ConnectionPoolType.C3P0, configuration.getConnectionPoolType());
     Assert.assertEquals(3, configuration.getConnectionPoolAcquisitionSize());
@@ -419,6 +458,8 @@ public class ConfigurationTest {
     Assert.assertEquals(5, configuration.getConnectionPoolMaximumIdle());
     Assert.assertEquals(2, configuration.getConnectionPoolMaximumSize());
     Assert.assertEquals(1, configuration.getConnectionPoolMinimumSize());
+    Assert.assertEquals(8, configuration.getConnectionPoolAcquisitionRetryAttempts());
+    Assert.assertEquals(9, configuration.getConnectionPoolAcquisitionRetryDelay());
   }
 
   @Test

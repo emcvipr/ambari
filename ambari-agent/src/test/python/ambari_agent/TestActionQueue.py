@@ -23,7 +23,7 @@ from unittest import TestCase
 from ambari_agent.LiveStatus import LiveStatus
 from ambari_agent.ActionQueue import ActionQueue
 from ambari_agent.AmbariConfig import AmbariConfig
-import os, errno, time, pprint, tempfile, threading, json
+import os, errno, time, pprint, tempfile, threading
 import StringIO
 import sys
 from threading import Thread
@@ -36,14 +36,11 @@ from ambari_agent.PythonExecutor import PythonExecutor
 from ambari_agent.CommandStatusDict import CommandStatusDict
 from ambari_agent.ActualConfigHandler import ActualConfigHandler
 from ambari_agent.RecoveryManager import RecoveryManager
-from FileCache import FileCache
+from ambari_agent.FileCache import FileCache
 from ambari_commons import OSCheck
-from only_for_platform import only_for_platform, get_platform, not_for_platform, PLATFORM_LINUX, PLATFORM_WINDOWS
+from only_for_platform import not_for_platform, os_distro_value, PLATFORM_WINDOWS
 
-if get_platform() != PLATFORM_WINDOWS:
-  os_distro_value = ('Suse','11','Final')
-else:
-  os_distro_value = ('win2012serverr2','6.3','WindowsServer')
+import logging
 
 class TestActionQueue(TestCase):
   def setUp(self):
@@ -53,6 +50,8 @@ class TestActionQueue(TestCase):
 
   def tearDown(self):
     sys.stdout = sys.__stdout__
+
+  logger = logging.getLogger()
 
   datanode_install_command = {
     'commandType': 'EXECUTION_COMMAND',
@@ -193,7 +192,7 @@ class TestActionQueue(TestCase):
       'jdk_location' : '.',
       'service_package_folder' : '.',
       'command_retry_enabled' : 'true',
-      'command_retry_max_attempt_count' : '3'
+      'max_duration_for_retries' : '5'
     },
     'hostLevelParams' : {}
   }
@@ -258,7 +257,7 @@ class TestActionQueue(TestCase):
     actionQueue.stop()
     actionQueue.join()
     self.assertEqual(actionQueue.stopped(), True, 'Action queue is not stopped.')
-    self.assertTrue(process_command_mock.call_count > 1)
+    self.assertGreater(process_command_mock.call_count, 1)
 
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
@@ -377,9 +376,12 @@ class TestActionQueue(TestCase):
     # Continue command execution
     unfreeze_flag.set()
     # wait until ready
-    while actionQueue.tasks_in_progress_or_pending():
-      time.sleep(0.1)
+    check_queue = True
+    while check_queue:
       report = actionQueue.result()
+      if not actionQueue.tasks_in_progress_or_pending():
+        break
+      time.sleep(0.1)
 
     self.assertEqual(len(report['reports']), 0)
 
@@ -393,10 +395,11 @@ class TestActionQueue(TestCase):
     unfreeze_flag.set()
     #  check in progress report
     # wait until ready
-    report = actionQueue.result()
-    while actionQueue.tasks_in_progress_or_pending():
-      time.sleep(0.1)
+    while check_queue:
       report = actionQueue.result()
+      if not actionQueue.tasks_in_progress_or_pending():
+        break
+      time.sleep(0.1)
 
     self.assertEqual(len(report['reports']), 0)
 
@@ -816,12 +819,58 @@ class TestActionQueue(TestCase):
     self.assertTrue(runCommand_mock.called)
     self.assertEqual(3, runCommand_mock.call_count)
     self.assertEqual(2, sleep_mock.call_count)
-    sleep_mock.assert_has_calls([call(2), call(4)], False)
+    sleep_mock.assert_has_calls([call(2), call(3)], False)
     runCommand_mock.assert_has_calls([
-      call(command, '/tmp/ambari-agent/output-19.txt', '/tmp/ambari-agent/errors-19.txt', override_output_files=True, retry=False),
-      call(command, '/tmp/ambari-agent/output-19.txt', '/tmp/ambari-agent/errors-19.txt', override_output_files=False, retry=True),
-      call(command, '/tmp/ambari-agent/output-19.txt', '/tmp/ambari-agent/errors-19.txt', override_output_files=False, retry=True)])
+      call(command, os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'output-19.txt',
+           os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'errors-19.txt', override_output_files=True, retry=False),
+      call(command, os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'output-19.txt',
+           os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'errors-19.txt', override_output_files=False, retry=True),
+      call(command, os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'output-19.txt',
+           os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'errors-19.txt', override_output_files=False, retry=True)])
 
+
+  @patch("time.time")
+  @patch("time.sleep")
+  @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
+  @patch.object(StackVersionsFileHandler, "read_stack_version")
+  @patch.object(CustomServiceOrchestrator, "__init__")
+  def test_execute_retryable_command_with_time_lapse(self, CustomServiceOrchestrator_mock,
+                                     read_stack_version_mock, sleep_mock, time_mock
+  ):
+    CustomServiceOrchestrator_mock.return_value = None
+    dummy_controller = MagicMock()
+    actionQueue = ActionQueue(AmbariConfig(), dummy_controller)
+    python_execution_result_dict = {
+      'exitcode': 1,
+      'stdout': 'out',
+      'stderr': 'stderr',
+      'structuredOut': '',
+      'status': 'FAILED'
+    }
+
+    times_arr = [8, 10, 14, 18, 22]
+    if self.logger.isEnabledFor(logging.INFO):
+      times_arr.insert(0, 4)
+    time_mock.side_effect = times_arr
+
+    def side_effect(command, tmpoutfile, tmperrfile, override_output_files=True, retry=False):
+      return python_execution_result_dict
+
+    command = copy.deepcopy(self.retryable_command)
+    with patch.object(CustomServiceOrchestrator, "runCommand") as runCommand_mock:
+      runCommand_mock.side_effect = side_effect
+      actionQueue.execute_command(command)
+
+    #assert that python executor start
+    self.assertTrue(runCommand_mock.called)
+    self.assertEqual(2, runCommand_mock.call_count)
+    self.assertEqual(1, sleep_mock.call_count)
+    sleep_mock.assert_has_calls([call(2)], False)
+    runCommand_mock.assert_has_calls([
+      call(command, os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'output-19.txt',
+           os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'errors-19.txt', override_output_files=True, retry=False),
+      call(command, os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'output-19.txt',
+           os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'errors-19.txt', override_output_files=False, retry=True)])
 
   #retryable_command
   @patch("time.sleep")
@@ -917,7 +966,6 @@ class TestActionQueue(TestCase):
     report = actionQueue.result()
     self.assertEqual(len(report['reports']),1)
 
-  @not_for_platform(PLATFORM_WINDOWS)
   @patch.object(CustomServiceOrchestrator, "get_py_executor")
   @patch.object(CustomServiceOrchestrator, "resolve_script_path")
   @patch.object(StackVersionsFileHandler, "read_stack_version")

@@ -123,26 +123,44 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
 
   describe('#removeUnneededTasks()', function () {
     var isHaEnabled = false;
+    var commands;
+    var commandsForDB;
 
     beforeEach(function () {
       sinon.stub(App, 'get', function () {
         return isHaEnabled;
       });
 
-      controller.set('tasks', [
-        {id: 1, command: 'stopRequiredServices'},
-        {id: 2, command: 'cleanMySqlServer'},
-        {id: 3, command: 'createHostComponents'},
-        {id: 4, command: 'putHostComponentsInMaintenanceMode'},
-        {id: 5, command: 'reconfigure'},
-        {id: 6, command: 'installHostComponents'},
-        {id: 7, command: 'startZooKeeperServers'},
-        {id: 8, command: 'startNameNode'},
-        {id: 9, command: 'deleteHostComponents'},
-        {id: 10, command: 'configureMySqlServer'},
-        {id: 11, command: 'startMySqlServer'},
-        {id: 12, command: 'startRequiredServices'}
-      ]);
+      commands = [
+        { id: 1, command: 'stopRequiredServices' },
+        { id: 2, command: 'cleanMySqlServer' },
+        { id: 3, command: 'createHostComponents' },
+        { id: 4, command: 'putHostComponentsInMaintenanceMode' },
+        { id: 5, command: 'reconfigure' },
+        { id: 6, command: 'installHostComponents' },
+        { id: 7, command: 'startZooKeeperServers' },
+        { id: 8, command: 'startNameNode' },
+        { id: 9, command: 'deleteHostComponents' },
+        { id: 10, command: 'configureMySqlServer' },
+        { id: 11, command: 'startMySqlServer' },
+        { id: 12, command: 'startNewMySqlServer' },
+        { id: 13, command: 'startRequiredServices' }
+      ];
+
+      commandsForDB = [
+        { id: 1, command: 'createHostComponents' },
+        { id: 2, command: 'installHostComponents' },
+        { id: 3, command: 'configureMySqlServer' },
+        { id: 4, command: 'restartMySqlServer' },
+        { id: 5, command: 'testDBConnection' },
+        { id: 6, command: 'stopRequiredServices' },
+        { id: 7, command: 'cleanMySqlServer' },
+        { id: 8, command: 'putHostComponentsInMaintenanceMode' },
+        { id: 9, command: 'reconfigure' },
+        { id: 10, command: 'deleteHostComponents' },
+        { id: 11, command: 'configureMySqlServer' },
+        { id: 12, command: 'startRequiredServices' }
+      ];
     });
 
     afterEach(function () {
@@ -150,24 +168,25 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
     });
 
     it('hasManualSteps is false', function () {
+      controller.set('tasks', commands);
       controller.set('content.hasManualSteps', false);
 
       controller.removeUnneededTasks();
-      expect(controller.get('tasks').mapProperty('id')).to.eql([1,3,4,5,6,9,12]);
+      expect(controller.get('tasks').mapProperty('id')).to.eql([1,3,4,5,6,9,12,13]);
     });
 
     it('reassign component is not NameNode and HA disabled', function () {
+      controller.set('tasks', commands);
       controller.set('content.hasManualSteps', true);
       controller.set('content.reassign.component_name', 'COMP1');
       isHaEnabled = false;
 
-      console.log(controller.get('tasks').mapProperty('id'))
       controller.removeUnneededTasks();
-      console.log(controller.get('tasks').mapProperty('id'))
       expect(controller.get('tasks').mapProperty('id')).to.eql([1, 3, 4, 5, 6]);
     });
 
     it('reassign component is not NameNode and HA enabled', function () {
+      controller.set('tasks', commands);
       controller.set('content.hasManualSteps', true);
       controller.set('content.reassign.component_name', 'COMP1');
       isHaEnabled = true;
@@ -177,6 +196,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
     });
 
     it('reassign component is NameNode and HA disabled', function () {
+      controller.set('tasks', commands);
       controller.set('content.hasManualSteps', true);
       controller.set('content.reassign.component_name', 'NAMENODE');
       isHaEnabled = false;
@@ -186,6 +206,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
     });
 
     it('reassign component is NameNode and HA enabled', function () {
+      controller.set('tasks', commands);
       controller.set('content.hasManualSteps', true);
       controller.set('content.reassign.component_name', 'NAMENODE');
       isHaEnabled = true;
@@ -195,33 +216,36 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
     });
 
     it('reassign component is HiveServer and db type is mysql', function () {
+      controller.set('tasks', commandsForDB);
       controller.set('content.hasManualSteps', false);
       controller.set('content.databaseType', 'mysql');
       controller.set('content.reassign.component_name', 'HIVE_SERVER');
       isHaEnabled = false;
 
       controller.removeUnneededTasks();
-      expect(controller.get('tasks').mapProperty('id')).to.eql([1, 2, 3, 4, 5, 6, 9, 10, 11, 12]);
+      expect(controller.get('tasks').mapProperty('id')).to.eql([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     });
 
     it('reassign component is HiveServer and db type is not mysql', function () {
+      controller.set('tasks', commandsForDB);
       controller.set('content.hasManualSteps', false);
       controller.set('content.databaseType', 'derby');
       controller.set('content.reassign.component_name', 'HIVE_SERVER');
       isHaEnabled = false;
 
       controller.removeUnneededTasks();
-      expect(controller.get('tasks').mapProperty('id')).to.eql([1, 3, 4, 5, 6, 9, 12]);
+      expect(controller.get('tasks').mapProperty('id')).to.eql([1, 2, 6, 8, 9, 10, 12]);
     });
 
     it('reassign component is Oozie Server and db type is derby', function () {
+      controller.set('tasks', commandsForDB);
       controller.set('content.hasManualSteps', true);
       controller.set('content.databaseType', 'derby');
       controller.set('content.reassign.component_name', 'OOZIE_SERVER');
       isHaEnabled = false;
 
       controller.removeUnneededTasks();
-      expect(controller.get('tasks').mapProperty('id')).to.eql([1,3,4,5,6]);
+      expect(controller.get('tasks').mapProperty('id')).to.eql([1,2,6,8,9]);
     });
 
     it('reassign component is Oozie Server and db type is mysql', function () {
@@ -230,9 +254,9 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
       controller.set('content.reassign.component_name', 'OOZIE_SERVER');
       isHaEnabled = false;
 
-
+      controller.set('tasks', commandsForDB);
       controller.removeUnneededTasks();
-      expect(controller.get('tasks').mapProperty('id')).to.eql([1,2,3,4,5,6,9,10,11,12]);
+      expect(controller.get('tasks').mapProperty('id')).to.eql([1,2,3,4,5,6,7,8,9,10,11,12]);
     });
   });
 
@@ -487,7 +511,8 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
           'yarn-site': {tag: 5},
           'oozie-site': {tag: 6},
           'webhcat-site': {tag: 7},
-          'yarn-env': {tag: 8}
+          'yarn-env': {tag: 8},
+          'accumulo-site': {tag: 9}
         }
       }
     };
@@ -497,7 +522,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
     beforeEach(function () {
       sinon.stub(App.Service, 'find', function () {
         return services;
-      })
+      });
     });
     afterEach(function () {
       App.Service.find.restore();
@@ -506,7 +531,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
     testCases.forEach(function (test) {
       it('get config of ' + test.componentName, function () {
         expect(controller.getConfigUrlParams(test.componentName, data)).to.eql(test.result);
-      })
+      });
     });
     it('get config of NAMENODE when HBASE installed', function () {
       services = [
@@ -519,7 +544,21 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
         "(type=core-site&tag=2)",
         "(type=hbase-site&tag=3)"
       ]);
-    })
+    });
+
+    it('get config of NAMENODE when ACCUMULO installed', function () {
+      services = [
+        {
+          serviceName: 'ACCUMULO'
+        }
+      ];
+      expect(controller.getConfigUrlParams('NAMENODE', data)).to.eql([
+        "(type=hdfs-site&tag=1)",
+        "(type=core-site&tag=2)",
+        "(type=accumulo-site&tag=9)"
+      ]);
+    });
+
   });
 
   describe('#onLoadConfigsTags()', function () {
@@ -543,6 +582,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
       sinon.stub(controller, 'setSecureConfigs', Em.K);
       sinon.stub(controller, 'setSpecificNamenodeConfigs', Em.K);
       sinon.stub(controller, 'setSpecificResourceMangerConfigs', Em.K);
+      sinon.stub(controller, 'getWebAddressPort', Em.K);
       sinon.stub(controller, 'getComponentDir', Em.K);
       sinon.stub(controller, 'saveClusterStatus', Em.K);
       sinon.stub(controller, 'saveConfigsToServer', Em.K);
@@ -554,6 +594,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
       controller.setSecureConfigs.restore();
       controller.setSpecificNamenodeConfigs.restore();
       controller.setSpecificResourceMangerConfigs.restore();
+      controller.getWebAddressPort.restore();
       controller.getComponentDir.restore();
       controller.saveClusterStatus.restore();
       controller.saveConfigsToServer.restore();
@@ -774,59 +815,119 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
       isRMHaEnabled = true;
       var configs = {
         'yarn-site': {
-          'yarn.resourcemanager.hostname.rm1': 'host1'
+          'yarn.resourcemanager.hostname.rm1': 'host1',
+          'yarn.resourcemanager.webapp.address.rm1': 'host1:8088',
+          'yarn.resourcemanager.webapp.https.address.rm1': 'host1:8443'
         }
       };
       controller.setSpecificResourceMangerConfigs(configs, 'host2');
       expect(configs['yarn-site']).to.eql({
-        'yarn.resourcemanager.hostname.rm1': 'host2'
+        'yarn.resourcemanager.hostname.rm1': 'host2',
+        'yarn.resourcemanager.webapp.address.rm1': 'host2:8088',
+        'yarn.resourcemanager.webapp.https.address.rm1': 'host2:8443'
       });
     });
     it('HA enabled and resource manager 2', function () {
       isRMHaEnabled = true;
       var configs = {
         'yarn-site': {
-          'yarn.resourcemanager.hostname.rm2': 'host2'
+          'yarn.resourcemanager.hostname.rm2': 'host2',
+          'yarn.resourcemanager.webapp.address.rm2': 'host2:8088',
+          'yarn.resourcemanager.webapp.https.address.rm2': 'host2:8443'
         }
       };
       controller.setSpecificResourceMangerConfigs(configs, 'host1');
       expect(configs['yarn-site']).to.eql({
-        'yarn.resourcemanager.hostname.rm2': 'host1'
+        'yarn.resourcemanager.hostname.rm2': 'host1',
+        'yarn.resourcemanager.webapp.address.rm2': 'host1:8088',
+        'yarn.resourcemanager.webapp.https.address.rm2': 'host1:8443'
       });
     });
   });
 
+  describe('#getWebAddressPort', function(){
+    var configs = {
+        'yarn-site': {
+          'yarn.resourcemanager.hostname.rm2': 'host2',
+          'yarn.resourcemanager.webapp.address.rm2': 'host2:8088',
+          'yarn.resourcemanager.webapp.https.address.rm2': 'host2:8443'
+        }
+    };
+    
+    var httpPort = controller.getWebAddressPort(configs, 'yarn.resourcemanager.webapp.address.rm2');
+    expect(httpPort).to.eql('8088');
+    
+    var httpsPort = controller.getWebAddressPort(configs, 'yarn.resourcemanager.webapp.https.address.rm2');
+    expect(httpsPort).to.eql('8443');
+
+    configs = {
+        'yarn-site': {
+          'yarn.resourcemanager.hostname.rm2': 'host2',
+          'yarn.resourcemanager.webapp.address.rm2': 'host2:',
+          'yarn.resourcemanager.webapp.https.address.rm2': 'host2:  '
+        }
+    };
+    
+    //check for falsy conditions
+    httpPort = controller.getWebAddressPort(configs, 'yarn.resourcemanager.webapp.address.rm2');
+    var flag = "falsy"
+    if (httpPort)
+      flag = "truthy"
+    expect(flag).to.eql('falsy')
+
+    httpsPort = controller.getWebAddressPort(configs, 'yarn.resourcemanager.webapp.https.address.rm2');
+    flag = "falsy"
+    if (httpsPort)
+      flag = "truthy"
+    expect(flag).to.eql("falsy")
+
+    configs = {
+        'yarn-site': {
+          'yarn.resourcemanager.hostname.rm2': 'host2'
+        }
+    };
+
+   httpPort = controller.getWebAddressPort(configs, 'yarn.resourcemanager.webapp.address.rm2');
+   var flag = "falsy"
+   if (httpPort != null) //check for null, still part of the falsy condition checks.
+      flag = "truthy"
+    expect(flag).to.eql('falsy')
+  });
+  
   describe('#setSecureConfigs()', function () {
     it('undefined component and security disabled', function () {
       var secureConfigs = [];
-      controller.set('content.securityEnabled', false);
+      sinon.stub(App, 'get').withArgs('isKerberosEnabled').returns(false);
       controller.set('secureConfigsMap', []);
       expect(controller.setSecureConfigs(secureConfigs, {}, 'COMP1')).to.be.false;
       expect(secureConfigs).to.eql([]);
-    });
-    it('undefined component and security enabled', function () {
-      var secureConfigs = [];
-      controller.set('content.securityEnabled', true);
-      controller.set('secureConfigsMap', []);
-      expect(controller.setSecureConfigs(secureConfigs, {}, 'COMP1')).to.be.false;
-      expect(secureConfigs).to.eql([]);
+      App.get.restore();
     });
     it('component exist and security disabled', function () {
       var secureConfigs = [];
-      controller.set('content.securityEnabled', false);
+      sinon.stub(App, 'get').withArgs('isKerberosEnabled').returns(false);
       controller.set('secureConfigsMap', [{
         componentName: 'COMP1'
       }]);
       expect(controller.setSecureConfigs(secureConfigs, {}, 'COMP1')).to.be.false;
       expect(secureConfigs).to.eql([]);
+      App.get.restore();
+    });
+    it('undefined component and security enabled', function () {
+      var secureConfigs = [];
+      sinon.stub(App, 'get').withArgs('isKerberosEnabled').returns(true);
+      controller.set('secureConfigsMap', []);
+      expect(controller.setSecureConfigs(secureConfigs, {}, 'COMP1')).to.be.false;
+      expect(secureConfigs).to.eql([]);
+      App.get.restore();
     });
     it('component exist and security enabled', function () {
       var secureConfigs = [];
+      sinon.stub(App, 'get').withArgs('isKerberosEnabled').returns(true);
       var configs = {'s1': {
         'k1': 'kValue',
         'p1': 'pValue'
       }};
-      controller.set('content.securityEnabled', true);
       controller.set('secureConfigsMap', [{
         componentName: 'COMP1',
         configs: [{
@@ -842,6 +943,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
           "principal": "pValue"
         }
       ]);
+      App.get.restore();
     });
   });
 

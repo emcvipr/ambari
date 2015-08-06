@@ -90,7 +90,6 @@ module.exports = App.WizardRoute.extend({
             }
           });
           reassignMasterController.set('popup', popup);
-          reassignMasterController.loadSecurityEnabled();
           reassignMasterController.loadComponentToReassign();
           var currStep = reassignMasterController.get('currentStep');
           var currentClusterStatus = App.clusterStatus.get('value');
@@ -127,7 +126,9 @@ module.exports = App.WizardRoute.extend({
       })
     },
     next: function (router) {
+      var controller = router.get('reassignMasterController');
       App.db.setMasterComponentHosts(undefined);
+      controller.clearMasterComponentHosts();
       router.transitionTo('step2');
     },
 
@@ -142,7 +143,7 @@ module.exports = App.WizardRoute.extend({
       console.log('in reassignMaster.step2:connectOutlets');
       var controller = router.get('reassignMasterController');
       controller.setCurrentStep('2');
-      controller.dataLoading().done(function () {
+      router.get('mainController').isLoading.call(router.get('clusterController'), 'isServiceContentFullyLoaded').done(function () {
         controller.loadAllPriorSteps();
         controller.connectOutlet('reassignMasterWizardStep2', controller.get('content'));
       })
@@ -212,10 +213,10 @@ module.exports = App.WizardRoute.extend({
       var controller = router.get('reassignMasterController');
       controller.setCurrentStep('4');
       controller.setLowerStepsDisable(4);
-      controller.dataLoading().done(function () {
+      router.get('mainController').isLoading.call(router.get('clusterController'), 'isServiceContentFullyLoaded').done(function () {
         controller.loadAllPriorSteps();
         controller.connectOutlet('reassignMasterWizardStep4', controller.get('content'));
-      })
+      });
     },
     next: function (router) {
       router.get('reassignMasterController').setCurrentStep('5');
@@ -259,7 +260,7 @@ module.exports = App.WizardRoute.extend({
       console.log('in reassignMaster.step5:connectOutlets');
       var controller = router.get('reassignMasterController');
       controller.setCurrentStep('5');
-      controller.dataLoading().done(function () {
+      router.get('mainController').isLoading.call(router.get('clusterController'), 'isServiceContentFullyLoaded').done(function () {
         controller.loadAllPriorSteps();
         controller.setLowerStepsDisable(5);
         if ((controller.get('content.reassign.component_name') === 'NAMENODE') || controller.get('content.reassign.component_name') === 'SECONDARY_NAMENODE') {
@@ -289,7 +290,7 @@ module.exports = App.WizardRoute.extend({
       var controller = router.get('reassignMasterController');
       controller.setCurrentStep('6');
       controller.setLowerStepsDisable(6);
-      controller.dataLoading().done(function () {
+      router.get('mainController').isLoading.call(router.get('clusterController'), 'isServiceContentFullyLoaded').done(function () {
         controller.loadAllPriorSteps();
         controller.connectOutlet('reassignMasterWizardStep6', controller.get('content'));
       })

@@ -22,6 +22,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -34,6 +35,8 @@ import java.util.UUID;
 
 import javax.persistence.EntityManager;
 
+import junit.framework.Assert;
+import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
@@ -393,6 +396,14 @@ public class OrmTestHelper {
     clusters.mapHostToCluster(hostName, cluster.getClusterName());
   }
 
+  public void addHostComponent(Cluster cluster, String hostName, String serviceName, String componentName) throws AmbariException {
+    Service service = cluster.getService(serviceName);
+    ServiceComponent serviceComponent = service.getServiceComponent(componentName);
+    ServiceComponentHost serviceComponentHost = serviceComponent.addServiceComponentHost(hostName);
+    serviceComponentHost.setDesiredState(State.INSTALLED);
+    serviceComponentHost.persist();
+  }
+
   /**
    * Calls {@link Service#persist()} to mock a service install along with
    * creating a single {@link Host} and {@link ServiceComponentHost}.
@@ -584,7 +595,7 @@ public class OrmTestHelper {
   /**
    * Convenient method to create or to get repository version for given stack.
    *
-   * @param stack stack name
+   * @param stackId stack object
    * @param version stack version
    * @return repository version
    */
@@ -604,6 +615,8 @@ public class OrmTestHelper {
         repositoryVersion = repositoryVersionDAO.create(stackEntity, version,
             String.valueOf(System.currentTimeMillis()), "pack", "");
       } catch (Exception ex) {
+        Assert.fail(MessageFormat.format("Unable to create Repo Version for Stack {0} and version {1}",
+            stackEntity.getStackName() + "-" + stackEntity.getStackVersion(), version));
       }
     }
     return repositoryVersion;

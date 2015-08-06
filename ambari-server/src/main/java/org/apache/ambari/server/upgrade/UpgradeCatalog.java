@@ -47,6 +47,12 @@ public interface UpgradeCatalog {
   void upgradeData() throws AmbariException, SQLException;
 
   /**
+   * Defines if Upgrade Catalog should be executed last
+   * @return
+   */
+  boolean isFinal();
+
+  /**
    * Called after {@link #upgradeSchema()} and {@link #upgradeData()}, this
    * method is used to perform any operations after the catalog has finished.
    * Usually, this is cleanup work that does not directly affect the upgrade.
@@ -70,4 +76,9 @@ public interface UpgradeCatalog {
    * @return null : default
    */
   String getSourceVersion();
+
+  /**
+   * Update schema version in the database to the Target one
+   */
+  void updateDatabaseSchemaVersion();
 }

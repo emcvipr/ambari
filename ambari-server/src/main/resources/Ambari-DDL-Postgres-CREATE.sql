@@ -16,17 +16,12 @@
 -- limitations under the License.
 --
 
--- DEVELOPER COMMENT
--- Ambari is transitioning to make the host_id the FK instead of the host_name.
--- Please do not remove lines that are related to this change and are being staged.
-
 ------create tables and grant privileges to db user---------
 CREATE TABLE stack(
   stack_id BIGINT NOT NULL,
   stack_name VARCHAR(255) NOT NULL,
   stack_version VARCHAR(255) NOT NULL,
-  PRIMARY KEY (stack_id),
-  CONSTRAINT unq_stack UNIQUE(stack_name,stack_version)
+  PRIMARY KEY (stack_id)
 );
 
 CREATE TABLE clusters (
@@ -38,8 +33,8 @@ CREATE TABLE clusters (
   security_type VARCHAR(32) NOT NULL DEFAULT 'NONE',
   desired_cluster_state VARCHAR(255) NOT NULL,
   desired_stack_id BIGINT NOT NULL,
-  PRIMARY KEY (cluster_id),
-  FOREIGN KEY (desired_stack_id) REFERENCES stack(stack_id));
+  PRIMARY KEY (cluster_id)
+);
 
 CREATE TABLE clusterconfig (
   config_id BIGINT NOT NULL,
@@ -51,8 +46,8 @@ CREATE TABLE clusterconfig (
   config_data TEXT NOT NULL,
   config_attributes TEXT,
   create_timestamp BIGINT NOT NULL,
-  PRIMARY KEY (config_id),
-  FOREIGN KEY (stack_id) REFERENCES stack(stack_id));
+  PRIMARY KEY (config_id)
+);
 
 CREATE TABLE clusterconfigmapping (
   cluster_id BIGINT NOT NULL,
@@ -73,8 +68,8 @@ CREATE TABLE serviceconfig (
   user_name VARCHAR(255) NOT NULL DEFAULT '_db',
   group_id BIGINT,
   note TEXT,
-  PRIMARY KEY (service_config_id),
-  FOREIGN KEY (stack_id) REFERENCES stack(stack_id));
+  PRIMARY KEY (service_config_id)
+);
 
 CREATE TABLE serviceconfighosts (
   service_config_id BIGINT NOT NULL,
@@ -96,9 +91,9 @@ CREATE TABLE clusterstate (
   cluster_id BIGINT NOT NULL,
   current_cluster_state VARCHAR(255) NOT NULL,
   current_stack_id BIGINT NOT NULL,
-  PRIMARY KEY (cluster_id),
-  FOREIGN KEY (current_stack_id) REFERENCES stack(stack_id));
-  
+  PRIMARY KEY (cluster_id)
+);
+
 CREATE TABLE cluster_version (
   id BIGINT NOT NULL,
   repo_version_id BIGINT NOT NULL,
@@ -120,10 +115,11 @@ CREATE TABLE hostcomponentdesiredstate (
   maintenance_state VARCHAR(32) NOT NULL,
   security_state VARCHAR(32) NOT NULL DEFAULT 'UNSECURED',
   restart_required SMALLINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (cluster_id, component_name, host_id, service_name),
-  FOREIGN KEY (desired_stack_id) REFERENCES stack(stack_id));
+  PRIMARY KEY (cluster_id, component_name, host_id, service_name)
+);
 
 CREATE TABLE hostcomponentstate (
+  id BIGINT NOT NULL,
   cluster_id BIGINT NOT NULL,
   component_name VARCHAR(255) NOT NULL,
   version VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',
@@ -133,8 +129,10 @@ CREATE TABLE hostcomponentstate (
   service_name VARCHAR(255) NOT NULL,
   upgrade_state VARCHAR(32) NOT NULL DEFAULT 'NONE',
   security_state VARCHAR(32) NOT NULL DEFAULT 'UNSECURED',
-  PRIMARY KEY (cluster_id, component_name, host_id, service_name),
-  FOREIGN KEY (current_stack_id) REFERENCES stack(stack_id));
+  CONSTRAINT pk_hostcomponentstate PRIMARY KEY (id)
+);
+
+CREATE INDEX idx_host_component_state on hostcomponentstate(host_id, component_name, service_name, cluster_id);
 
 CREATE TABLE hosts (
   host_id BIGINT NOT NULL,
@@ -178,8 +176,8 @@ CREATE TABLE servicecomponentdesiredstate (
   desired_stack_id BIGINT NOT NULL,
   desired_state VARCHAR(255) NOT NULL,
   service_name VARCHAR(255) NOT NULL,
-  PRIMARY KEY (component_name, cluster_id, service_name),
-  FOREIGN KEY (desired_stack_id) REFERENCES stack(stack_id));
+  PRIMARY KEY (component_name, cluster_id, service_name)
+);
 
 CREATE TABLE servicedesiredstate (
   cluster_id BIGINT NOT NULL,
@@ -189,8 +187,8 @@ CREATE TABLE servicedesiredstate (
   service_name VARCHAR(255) NOT NULL,
   maintenance_state VARCHAR(32) NOT NULL,
   security_state VARCHAR(32) NOT NULL DEFAULT 'UNSECURED',
-  PRIMARY KEY (cluster_id, service_name),
-  FOREIGN KEY (desired_stack_id) REFERENCES stack(stack_id));
+  PRIMARY KEY (cluster_id, service_name)
+);
 
 CREATE TABLE users (
   user_id INTEGER,
@@ -230,7 +228,7 @@ CREATE TABLE host_role_command (
   retry_allowed SMALLINT DEFAULT 0 NOT NULL,
   event VARCHAR(32000) NOT NULL,
   exitcode INTEGER NOT NULL,
-  host_id BIGINT NOT NULL,
+  host_id BIGINT,
   last_attempt_time BIGINT NOT NULL,
   request_id BIGINT NOT NULL,
   role VARCHAR(255),
@@ -391,8 +389,8 @@ CREATE TABLE requestschedulebatchrequest (
 CREATE TABLE blueprint (
   blueprint_name VARCHAR(255) NOT NULL,
   stack_id BIGINT NOT NULL,
-  PRIMARY KEY(blueprint_name),
-  FOREIGN KEY (stack_id) REFERENCES stack(stack_id));
+  PRIMARY KEY(blueprint_name)
+);
 
 CREATE TABLE hostgroup (
   blueprint_name VARCHAR(255) NOT NULL,
@@ -426,6 +424,7 @@ CREATE TABLE viewmain (
   label VARCHAR(255),
   description VARCHAR(2048),
   version VARCHAR(255),
+  build VARCHAR(128),
   resource_type_id INTEGER NOT NULL,
   icon VARCHAR(255),
   icon64 VARCHAR(255),
@@ -454,6 +453,7 @@ CREATE TABLE viewinstance (
   icon VARCHAR(255),
   icon64 VARCHAR(255),
   xml_driven CHAR(1),
+  alter_names SMALLINT NOT NULL DEFAULT 1,
   cluster_handle VARCHAR(255),
   PRIMARY KEY(view_instance_id));
 
@@ -536,8 +536,7 @@ CREATE TABLE repo_version (
   display_name VARCHAR(128) NOT NULL,
   upgrade_package VARCHAR(255) NOT NULL,
   repositories TEXT NOT NULL,
-  PRIMARY KEY(repo_version_id),
-  FOREIGN KEY (stack_id) REFERENCES stack(stack_id)
+  PRIMARY KEY(repo_version_id)
 );
 
 CREATE TABLE widget (
@@ -547,7 +546,7 @@ CREATE TABLE widget (
   metrics TEXT,
   time_created BIGINT NOT NULL,
   author VARCHAR(255),
-  description VARCHAR(255),
+  description VARCHAR(2048),
   default_section_name VARCHAR(255),
   scope VARCHAR(255),
   widget_values TEXT,
@@ -649,7 +648,8 @@ ALTER TABLE viewinstance ADD CONSTRAINT UQ_viewinstance_name_id UNIQUE (view_ins
 ALTER TABLE serviceconfig ADD CONSTRAINT UQ_scv_service_version UNIQUE (cluster_id, service_name, version);
 ALTER TABLE adminpermission ADD CONSTRAINT UQ_perm_name_resource_type_id UNIQUE (permission_name, resource_type_id);
 ALTER TABLE repo_version ADD CONSTRAINT UQ_repo_version_display_name UNIQUE (display_name);
-ALTER TABLE repo_version ADD CONSTRAINT UQ_repo_version_stack_version UNIQUE (stack_id, version);
+ALTER TABLE repo_version ADD CONSTRAINT UQ_repo_version_stack_id UNIQUE (stack_id, version);
+ALTER TABLE stack ADD CONSTRAINT unq_stack UNIQUE (stack_name, stack_version);
 
 --------altering tables by creating foreign keys----------
 -- Note, Oracle has a limitation of 32 chars in the FK name, and we should use the same FK name in all DB types.
@@ -723,6 +723,16 @@ ALTER TABLE topology_host_request ADD CONSTRAINT FK_hostreq_group_id FOREIGN KEY
 ALTER TABLE topology_host_task ADD CONSTRAINT FK_hosttask_req_id FOREIGN KEY (host_request_id) REFERENCES topology_host_request (id);
 ALTER TABLE topology_logical_task ADD CONSTRAINT FK_ltask_hosttask_id FOREIGN KEY (host_task_id) REFERENCES topology_host_task (id);
 ALTER TABLE topology_logical_task ADD CONSTRAINT FK_ltask_hrc_id FOREIGN KEY (physical_task_id) REFERENCES host_role_command (task_id);
+ALTER TABLE clusters ADD CONSTRAINT FK_clusters_desired_stack_id FOREIGN KEY (desired_stack_id) REFERENCES stack(stack_id);
+ALTER TABLE clusterconfig ADD CONSTRAINT FK_clusterconfig_stack_id FOREIGN KEY (stack_id) REFERENCES stack(stack_id);
+ALTER TABLE serviceconfig ADD CONSTRAINT FK_serviceconfig_stack_id FOREIGN KEY (stack_id) REFERENCES stack(stack_id);
+ALTER TABLE clusterstate ADD CONSTRAINT FK_cs_current_stack_id FOREIGN KEY (current_stack_id) REFERENCES stack(stack_id);
+ALTER TABLE hostcomponentdesiredstate ADD CONSTRAINT FK_hcds_desired_stack_id FOREIGN KEY (desired_stack_id) REFERENCES stack(stack_id);
+ALTER TABLE hostcomponentstate ADD CONSTRAINT FK_hcs_current_stack_id FOREIGN KEY (current_stack_id) REFERENCES stack(stack_id);
+ALTER TABLE servicecomponentdesiredstate ADD CONSTRAINT FK_scds_desired_stack_id FOREIGN KEY (desired_stack_id) REFERENCES stack(stack_id);
+ALTER TABLE servicedesiredstate ADD CONSTRAINT FK_sds_desired_stack_id FOREIGN KEY (desired_stack_id) REFERENCES stack(stack_id);
+ALTER TABLE blueprint ADD CONSTRAINT FK_blueprint_stack_id FOREIGN KEY (stack_id) REFERENCES stack(stack_id);
+ALTER TABLE repo_version ADD CONSTRAINT FK_repoversion_stack_id FOREIGN KEY (stack_id) REFERENCES stack(stack_id);
 
 -- Kerberos
 CREATE TABLE kerberos_principal (
@@ -744,8 +754,8 @@ ALTER TABLE kerberos_principal_host ADD CONSTRAINT FK_krb_pr_host_principalname 
 
 -- Alerting Framework
 CREATE TABLE alert_definition (
-  definition_id BIGINT NOT NULL, 
-  cluster_id BIGINT NOT NULL, 
+  definition_id BIGINT NOT NULL,
+  cluster_id BIGINT NOT NULL,
   definition_name VARCHAR(255) NOT NULL,
   service_name VARCHAR(255) NOT NULL,
   component_name VARCHAR(255),
@@ -842,7 +852,7 @@ CREATE TABLE alert_notice (
   notify_state VARCHAR(255) NOT NULL,
   uuid VARCHAR(64) NOT NULL UNIQUE,
   PRIMARY KEY (notification_id),
-  FOREIGN KEY (target_id) REFERENCES alert_target(target_id),  
+  FOREIGN KEY (target_id) REFERENCES alert_target(target_id),
   FOREIGN KEY (history_id) REFERENCES alert_history(alert_id)
 );
 
@@ -950,7 +960,7 @@ INSERT INTO ambari_sequences (sequence_name, sequence_value)
   union all
   select 'service_config_id_seq', 1
   union all
-  select 'upgrade_id_seq', 0 
+  select 'upgrade_id_seq', 0
   union all
   select 'upgrade_group_id_seq', 0
   union all
@@ -974,7 +984,9 @@ INSERT INTO ambari_sequences (sequence_name, sequence_value)
   union all
   select 'topology_request_id_seq', 0
   union all
-  select 'topology_host_group_id_seq', 0;
+  select 'topology_host_group_id_seq', 0
+  union all
+  select 'hostcomponentstate_id_seq', 0;
 
 INSERT INTO adminresourcetype (resource_type_id, resource_type_name)
   SELECT 1, 'AMBARI'

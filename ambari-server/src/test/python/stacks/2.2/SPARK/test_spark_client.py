@@ -21,6 +21,9 @@ import json
 from mock.mock import MagicMock, patch
 from stacks.utils.RMFTestCase import *
 
+from only_for_platform import not_for_platform, PLATFORM_WINDOWS
+
+@not_for_platform(PLATFORM_WINDOWS)
 @patch("resource_management.libraries.functions.get_hdp_version", new=MagicMock(return_value="2.3.0.0-1597"))
 class TestSparkClient(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "SPARK/1.2.0.2.2/package"
@@ -137,13 +140,14 @@ class TestSparkClient(RMFTestCase):
                        call_mocks = [(0, None), (0, None)],
                        mocks_dict = mocks_dict)
 
-    self.assertResourceCalled('Execute', 'hdp-select set spark-client {0}'.format(version))
+    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'spark-client', version), sudo=True)
     self.assertNoMoreResources()
 
-    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      "conf-select create-conf-dir --package spark --stack-version 2.3.0.0-1234 --conf-version 0",
+      ('conf-select', 'set-conf-dir', '--package', 'spark', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+       mocks_dict['checked_call'].call_args_list[0][0][0])
+    self.assertEquals(
+      ('conf-select', 'create-conf-dir', '--package', 'spark', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
-    self.assertEquals(
-      "conf-select set-conf-dir --package spark --stack-version 2.3.0.0-1234 --conf-version 0",
-       mocks_dict['call'].call_args_list[1][0][0])

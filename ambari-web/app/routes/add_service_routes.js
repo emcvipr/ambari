@@ -25,63 +25,74 @@ module.exports = App.WizardRoute.extend({
   enter: function (router) {
     console.log('in /service/add:enter');
     if (App.isAccessible('ADMIN')) {
-      Em.run.next(function () {
-        var addServiceController = router.get('addServiceController');
-        App.router.get('updateController').set('isWorking', false);
-        var popup = App.ModalPopup.show({
-          classNames: ['full-width-modal'],
-          header:Em.I18n.t('services.add.header'),
-          bodyClass:  App.AddServiceView.extend({
-            controllerBinding: 'App.router.addServiceController'
-          }),
-          primary:Em.I18n.t('form.cancel'),
-          showFooter: false,
-          secondary: null,
+      // `getSecurityStatus` call is required to retrieve information related to kerberos type: Manual or automated kerberos
+      router.get('mainController').isLoading.call(router.get('clusterController'),'isClusterNameLoaded').done(function () {
+        App.router.get('mainAdminKerberosController').getSecurityStatus().always(function () {
+          Em.run.next(function () {
+            var addServiceController = router.get('addServiceController');
+            App.router.get('updateController').set('isWorking', false);
+            var popup = App.ModalPopup.show({
+              classNames: ['full-width-modal', 'add-service-wizard-modal'],
+              header: Em.I18n.t('services.add.header'),
+              bodyClass: App.AddServiceView.extend({
+                controllerBinding: 'App.router.addServiceController'
+              }),
+              primary: Em.I18n.t('form.cancel'),
+              showFooter: false,
+              secondary: null,
 
-          onPrimary:function () {
-            this.hide();
-            App.router.transitionTo('main.services.index');
-          },
-          onClose: function() {
-            this.set('showCloseButton', false); // prevent user to click "Close" many times
-            App.router.get('updateController').set('isWorking', true);
-            var self = this;
-            App.router.get('updateController').updateServices(function(){
-              App.router.get('updateController').updateServiceMetric();
+              onPrimary: function () {
+                this.hide();
+                App.router.transitionTo('main.services.index');
+              },
+              onClose: function () {
+                this.set('showCloseButton', false); // prevent user to click "Close" many times
+                App.router.get('updateController').set('isWorking', true);
+                var self = this;
+                App.router.get('updateController').updateServices(function () {
+                  App.router.get('updateController').updateServiceMetric();
+                });
+                var exitPath = addServiceController.getDBProperty('onClosePath') || 'main.services.index';
+                addServiceController.finish();
+                // We need to do recovery based on whether we are in Add Host or Installer wizard
+                App.clusterStatus.setClusterStatus({
+                  clusterName: App.router.get('content.cluster.name'),
+                  clusterState: 'DEFAULT'
+                }, {
+                  alwaysCallback: function () {
+                    self.hide();
+                    App.router.transitionTo(exitPath);
+                    location.reload();
+                  }
+                });
+
+              },
+              didInsertElement: function () {
+                this.fitHeight();
+              }
             });
-            var exitPath = addServiceController.getDBProperty('onClosePath') || 'main.services.index';
-            addServiceController.finish();
-            // We need to do recovery based on whether we are in Add Host or Installer wizard
-            App.clusterStatus.setClusterStatus({
-              clusterName: App.router.get('content.cluster.name'),
-              clusterState: 'DEFAULT'
-            }, {alwaysCallback: function() {self.hide();App.router.transitionTo(exitPath);location.reload();}});
+            addServiceController.set('popup', popup);
+            var currentClusterStatus = App.clusterStatus.get('value');
+            if (currentClusterStatus) {
+              switch (currentClusterStatus.clusterState) {
+                case 'ADD_SERVICES_DEPLOY_PREP_2' :
+                  addServiceController.setCurrentStep('5');
+                  break;
+                case 'ADD_SERVICES_INSTALLING_3' :
+                case 'SERVICE_STARTING_3' :
+                  addServiceController.setCurrentStep('6');
+                  break;
+                case 'ADD_SERVICES_INSTALLED_4' :
+                  addServiceController.setCurrentStep('7');
+                  break;
+                default:
+                  break;
+              }
+            }
 
-          },
-          didInsertElement: function(){
-            this.fitHeight();
-          }
+            router.transitionTo('step' + addServiceController.get('currentStep'));
+          });
         });
-        addServiceController.set('popup',popup);
-        var currentClusterStatus = App.clusterStatus.get('value');
-        if (currentClusterStatus) {
-          switch (currentClusterStatus.clusterState) {
-            case 'ADD_SERVICES_DEPLOY_PREP_2' :
-              addServiceController.setCurrentStep('5');
-              break;
-            case 'ADD_SERVICES_INSTALLING_3' :
-            case 'SERVICE_STARTING_3' :
-              addServiceController.setCurrentStep('6');
-              break;
-            case 'ADD_SERVICES_INSTALLED_4' :
-              addServiceController.setCurrentStep('7');
-              break;
-            default:
-              break;
-          }
-        }
-
-        router.transitionTo('step' + addServiceController.get('currentStep'));
       });
     } else {
       Em.run.next(function () {
@@ -92,9 +103,9 @@ module.exports = App.WizardRoute.extend({
   },
 
   /*connectOutlets: function (router) {
-    console.log('in /service/add:connectOutlets');
-    router.get('mainController').connectOutlet('addService');
-  },*/
+   console.log('in /service/add:connectOutlets');
+   router.get('mainController').connectOutlet('addService');
+   },*/
 
   step1: Em.Route.extend({
     route: '/step1',
@@ -120,6 +131,7 @@ module.exports = App.WizardRoute.extend({
 
       var wizardStep5Controller = router.get('wizardStep5Controller');
       wizardStep5Controller.clearRecommendations(); // Force reload recommendation between steps 1 and 2
+      addServiceController.setDBProperty('recommendations', undefined);
       router.transitionTo('step2');
     }
   }),
@@ -147,6 +159,7 @@ module.exports = App.WizardRoute.extend({
       var wizardStep6Controller = router.get('wizardStep6Controller');
       addServiceController.saveMasterComponentHosts(wizardStep5Controller);
       addServiceController.setDBProperty('slaveComponentHosts', undefined);
+      addServiceController.setDBProperty('recommendations', wizardStep5Controller.get('content.recommendations'));
       wizardStep6Controller.set('isClientsSet', false);
       router.transitionTo('step3');
     }
@@ -158,7 +171,7 @@ module.exports = App.WizardRoute.extend({
       console.log('in addService.step3:connectOutlets');
       var controller = router.get('addServiceController');
       controller.setCurrentStep('3');
-      controller.dataLoading().done(function () {
+      router.get('mainController').isLoading.call(router.get('clusterController'), 'isServiceContentFullyLoaded').done(function () {
         controller.loadAllPriorSteps().done(function () {
           var wizardStep6Controller = router.get('wizardStep6Controller');
           wizardStep6Controller.set('wizardController', controller);
@@ -166,9 +179,9 @@ module.exports = App.WizardRoute.extend({
         });
       });
     },
-    back: function(router){
+    back: function (router) {
       var controller = router.get('addServiceController');
-      if(!controller.get('content.skipMasterStep')){
+      if (!controller.get('content.skipMasterStep')) {
         router.transitionTo('step2');
       } else {
         router.transitionTo('step1');
@@ -178,8 +191,8 @@ module.exports = App.WizardRoute.extend({
       var addServiceController = router.get('addServiceController');
       var wizardStep6Controller = router.get('wizardStep6Controller');
 
-      wizardStep6Controller.callValidation(function() {
-        wizardStep6Controller.showValidationIssuesAcceptBox(function() {
+      wizardStep6Controller.callValidation(function () {
+        wizardStep6Controller.showValidationIssuesAcceptBox(function () {
           addServiceController.saveSlaveComponentHosts(wizardStep6Controller);
           addServiceController.get('content').set('serviceConfigProperties', null);
           addServiceController.setDBProperty('serviceConfigProperties', null);
@@ -201,20 +214,23 @@ module.exports = App.WizardRoute.extend({
       controller.dataLoading().done(function () {
         var wizardStep7Controller = router.get('wizardStep7Controller');
         controller.loadAllPriorSteps().done(function () {
-          controller.loadAdvancedConfigs(wizardStep7Controller);
           wizardStep7Controller.getConfigTags();
           wizardStep7Controller.set('wizardController', controller);
           controller.usersLoading().done(function () {
-            controller.connectOutlet('wizardStep7', controller.get('content'));
+            router.get('mainController').isLoading.call(router.get('clusterController'), 'isClusterNameLoaded').done(function () {
+              router.get('mainController').isLoading.call(router.get('clusterController'), 'isServiceContentFullyLoaded').done(function () {
+                controller.connectOutlet('wizardStep7', controller.get('content'));
+              });
+            });
           });
         });
       });
     },
-    back: function(router){
+    back: function (router) {
       var controller = router.get('addServiceController');
-      if(!controller.get('content.skipSlavesStep')){
+      if (!controller.get('content.skipSlavesStep')) {
         router.transitionTo('step3');
-      } else if(!controller.get('content.skipMasterStep')) {
+      } else if (!controller.get('content.skipMasterStep')) {
         router.transitionTo('step2');
       } else {
         router.transitionTo('step1');
@@ -225,7 +241,8 @@ module.exports = App.WizardRoute.extend({
       var wizardStep7Controller = router.get('wizardStep7Controller');
       addServiceController.saveServiceConfigProperties(wizardStep7Controller);
       addServiceController.saveServiceConfigGroups(wizardStep7Controller, true);
-      if (router.get('mainAdminKerberosController.securityEnabled')) {
+      if (App.get('isKerberosEnabled')) {
+        addServiceController.clearCachedStepConfigValues(router.get('kerberosWizardStep4Controller'));
         router.transitionTo('step5');
         return;
       }
@@ -246,17 +263,17 @@ module.exports = App.WizardRoute.extend({
         });
       });
     },
-    back: function(router){
+    back: function (router) {
       var controller = router.get('addServiceController');
-      if(!controller.get('content.skipConfigStep')) {
+      if (!controller.get('content.skipConfigStep')) {
         router.transitionTo('step4');
       }
       else {
-        if(!controller.get('content.skipSlavesStep')) {
+        if (!controller.get('content.skipSlavesStep')) {
           router.transitionTo('step3');
         }
         else {
-          if(!controller.get('content.skipMasterStep')) {
+          if (!controller.get('content.skipMasterStep')) {
             router.transitionTo('step2');
           }
           else {
@@ -266,8 +283,13 @@ module.exports = App.WizardRoute.extend({
       }
     },
     next: function (router) {
-      if (router.get('mainAdminKerberosController.securityEnabled')) {
-        router.get('kerberosWizardStep2Controller').createKerberosAdminSession(router.get('kerberosWizardStep4Controller.stepConfigs')[0].get('configs'));
+      if (App.Cluster.find().objectAt(0).get('isKerberosEnabled')) {
+        if (router.get('mainAdminKerberosController.isManualKerberos')) {
+          router.get('wizardStep8Controller').updateKerberosDescriptor(true);
+        } else {
+          router.get('kerberosWizardStep2Controller').createKerberosAdminSession(router.get('kerberosWizardStep4Controller.stepConfigs')[0].get('configs'));
+        }
+        router.get('addServiceController').cacheStepConfigValues(router.get('kerberosWizardStep4Controller'));
       }
       router.transitionTo('step6');
     }
@@ -286,22 +308,25 @@ module.exports = App.WizardRoute.extend({
           controller.connectOutlet('wizardStep8', controller.get('content'));
         });
       });
+      if(!!App.get('router.mainAdminKerberosController.kdc_type')){
+        router.get('kerberosWizardStep5Controller').getCSVData(true);
+      }
     },
-    back: function(router){
+    back: function (router) {
       var controller = router.get('addServiceController');
-      if (router.get('mainAdminKerberosController.securityEnabled')) {
+      if (App.get('isKerberosEnabled')) {
         router.transitionTo('step5');
         return;
       }
-      if(!controller.get('content.skipConfigStep')) {
+      if (!controller.get('content.skipConfigStep')) {
         router.transitionTo('step4');
       }
       else {
-        if(!controller.get('content.skipSlavesStep')) {
+        if (!controller.get('content.skipSlavesStep')) {
           router.transitionTo('step3');
         }
         else {
-          if(!controller.get('content.skipMasterStep')) {
+          if (!controller.get('content.skipMasterStep')) {
             router.transitionTo('step2');
           }
           else {
@@ -327,19 +352,19 @@ module.exports = App.WizardRoute.extend({
       console.log('in addService.step6:connectOutlets');
       var controller = router.get('addServiceController');
       controller.setCurrentStep('7');
+      if (!App.get('testMode')) {              //if test mode is ON don't disable prior steps link.
+        controller.setLowerStepsDisable(7);
+      }
       controller.dataLoading().done(function () {
         controller.loadAllPriorSteps().done(function () {
           var wizardStep9Controller = router.get('wizardStep9Controller');
           wizardStep9Controller.set('wizardController', controller);
-          if (!App.get('testMode')) {              //if test mode is ON don't disable prior steps link.
-            controller.setLowerStepsDisable(7);
-          }
           controller.connectOutlet('wizardStep9', controller.get('content'));
         });
       });
     },
     back: Em.Router.transitionTo('step6'),
-    retry: function(router,context) {
+    retry: function (router, context) {
       var addServiceController = router.get('addServiceController');
       var wizardStep9Controller = router.get('wizardStep9Controller');
       if (wizardStep9Controller.get('showRetry')) {
@@ -356,7 +381,7 @@ module.exports = App.WizardRoute.extend({
         }
       }
     },
-    unroutePath: function() {
+    unroutePath: function () {
       return false;
     },
     next: function (router) {
@@ -376,9 +401,9 @@ module.exports = App.WizardRoute.extend({
       console.log('in addService.step7:connectOutlets');
       var controller = router.get('addServiceController');
       controller.setCurrentStep('8');
+      controller.setLowerStepsDisable(8);
       controller.dataLoading().done(function () {
         controller.loadAllPriorSteps().done(function () {
-          controller.setLowerStepsDisable(8);
           controller.connectOutlet('wizardStep10', controller.get('content'));
         });
       });

@@ -22,6 +22,7 @@ import logging
 import os
 import getpass
 import platform
+import hostname
 import re
 import shlex
 import socket
@@ -30,6 +31,7 @@ import subprocess
 from ambari_commons.shell import shellRunner
 import time
 import uuid
+from AmbariConfig import AmbariConfig
 from ambari_commons import OSCheck, OSConst
 from ambari_commons.os_family_impl import OsFamilyImpl
 
@@ -50,11 +52,23 @@ def run_os_command(cmd):
 
 class Facter(object):
   def __init__(self):
-    pass
+    self.config = self.resolve_ambari_config()
+  
+  def resolve_ambari_config(self):
+    try:
+      config = AmbariConfig()
+      if os.path.exists(AmbariConfig.getConfigFile()):
+        config.read(AmbariConfig.getConfigFile())
+      else:
+        raise Exception("No config found, use default")
+
+    except Exception, err:
+      log.warn(err)
+    return config
 
   # Return first ip adress
   def getIpAddress(self):
-    return socket.gethostbyname(socket.getfqdn().lower())
+    return socket.gethostbyname(self.getFqdn().lower())
 
   # Returns the currently running user id
   def getId(self):
@@ -285,27 +299,24 @@ class FacterWindows(Facter):
 class FacterLinux(Facter):
   # selinux command
   GET_SE_LINUX_ST_CMD = "/usr/sbin/sestatus"
-  GET_IFCONFIG_CMD = "ifconfig"
+  GET_IFCONFIG_SHORT_CMD = "ifconfig -s"
   GET_UPTIME_CMD = "cat /proc/uptime"
   GET_MEMINFO_CMD = "cat /proc/meminfo"
 
-  # hostname command
-  GET_HOSTNAME_CMD = "/bin/hostname -f"
-
   def __init__(self):
-
-    self.DATA_IFCONFIG_OUTPUT = FacterLinux.setDataIfConfigOutput()
+    super(FacterLinux,self).__init__()
+    self.DATA_IFCONFIG_SHORT_OUTPUT = FacterLinux.setDataIfConfigShortOutput()
     self.DATA_UPTIME_OUTPUT = FacterLinux.setDataUpTimeOutput()
     self.DATA_MEMINFO_OUTPUT = FacterLinux.setMemInfoOutput()
 
   @staticmethod
-  def setDataIfConfigOutput():
+  def setDataIfConfigShortOutput():
 
     try:
-      result = os.popen(FacterLinux.GET_IFCONFIG_CMD).read()
+      result = os.popen(FacterLinux.GET_IFCONFIG_SHORT_CMD).read()
       return result
     except OSError:
-      log.warn("Can't execute {0}".format(FacterLinux.GET_IFCONFIG_CMD))
+      log.warn("Can't execute {0}".format(FacterLinux.GET_IFCONFIG_SHORT_CMD))
     return ""
 
   @staticmethod
@@ -330,17 +341,7 @@ class FacterLinux(Facter):
 
   # Returns the FQDN of the host
   def getFqdn(self):
-    # Try to use OS command to get hostname first due to Python Issue5004
-    try:
-      retcode, out, err = run_os_command(self.GET_HOSTNAME_CMD)
-      if (0 == retcode and 0 != len(out.strip())):
-        return out.strip()
-      else:
-        log.warn("Could not get fqdn using {0}".format(self.GET_HOSTNAME_CMD))
-    except OSError:
-      log.warn("Could not run {0} for fqdn".format(self.GET_HOSTNAME_CMD))
-    return socket.getfqdn().lower()
-
+    return hostname.hostname(self.config)
 
   def isSeLinux(self):
 
@@ -353,13 +354,11 @@ class FacterLinux(Facter):
       log.warn("Could not run {0}: OK".format(FacterLinux.GET_SE_LINUX_ST_CMD))
     return False
 
-  # Function that returns list of values that matches
-  # Return empty str if no matches
-  def data_return_list(self, patern, data):
-    full_list = re.findall(patern, data)
+  def return_first_words_from_list(self, list):
     result = ""
-    for i in full_list:
-      result = result + i + ","
+    for i in list:
+      if i.strip():
+        result = result + i.split()[0].strip() + ","
 
     result = re.sub(r',$', "", result)
     return result
@@ -377,35 +376,40 @@ class FacterLinux(Facter):
     import fcntl
     import struct
     primary_ip = self.getIpAddress().strip()
-    interface_pattern="(\w+)(?:.*Link encap:)"
-    if OSCheck.is_redhat7():
-      interface_pattern="(\w+)(?:.*flags=)"
-    for i in re.findall(interface_pattern, self.DATA_IFCONFIG_OUTPUT):
-      if primary_ip == self.get_ip_address_by_ifname(i.strip()).strip():
-        return socket.inet_ntoa(fcntl.ioctl(socket.socket(socket.AF_INET, socket.SOCK_DGRAM), 35099, struct.pack('256s', i))[20:24])
-        
 
+    for line in self.DATA_IFCONFIG_SHORT_OUTPUT.splitlines()[1:]:
+      if line.strip():
+        i = line.split()[0]
+        ip_address_by_ifname = self.get_ip_address_by_ifname(i.strip())
+        if ip_address_by_ifname is not None:
+          if primary_ip == ip_address_by_ifname.strip():
+            return socket.inet_ntoa(fcntl.ioctl(socket.socket(socket.AF_INET, socket.SOCK_DGRAM), 35099, struct.pack('256s', i))[20:24])
+
+    return None
       
   # Return IP by interface name
   def get_ip_address_by_ifname(self, ifname):
     import fcntl
     import struct
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    return socket.inet_ntoa(fcntl.ioctl(
+    ip_address_by_ifname = None
+    try:
+      ip_address_by_ifname = socket.inet_ntoa(fcntl.ioctl(
         s.fileno(),
         0x8915,  # SIOCGIFADDR
         struct.pack('256s', ifname[:15])
-    )[20:24])
-
+        )[20:24])
+    except Exception, err:
+      log.warn("Can't get the IP address for {0}".format(ifname))
+    
+    return ip_address_by_ifname
+      
 
   # Return interfaces
   def getInterfaces(self):
-    interface_pattern="(\w+)(?:.*Link encap:)"
-    if OSCheck.is_redhat7():
-      interface_pattern="(\w+)(?:.*flags=)"
-    result = self.data_return_list(interface_pattern, self.DATA_IFCONFIG_OUTPUT)
+    result = self.return_first_words_from_list(self.DATA_IFCONFIG_SHORT_OUTPUT.splitlines()[1:])
     if result == '':
-      log.warn("Can't get a network interfaces list from {0}".format(self.DATA_IFCONFIG_OUTPUT))
+      log.warn("Can't get a network interfaces list from {0}".format(self.DATA_IFCONFIG_SHORT_OUTPUT))
       return 'OS NOT SUPPORTED'
     else:
       return result

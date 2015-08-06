@@ -49,6 +49,7 @@ import org.apache.ambari.server.orm.entities.StageEntity;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.utils.StageUtils;
+import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -262,34 +263,45 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
         HostRoleCommandEntity hostRoleCommandEntity = hostRoleCommand.constructNewPersistenceEntity();
         hostRoleCommandEntity.setStage(stageEntity);
 
-        HostEntity hostEntity = hostDAO.findByName(hostRoleCommandEntity.getHostName());
-        if (hostEntity == null) {
-          String msg = String.format("Host %s doesn't exist in database", hostRoleCommandEntity.getHostName());
-          LOG.error(msg);
-          throw new AmbariException(msg);
-        }
-        hostRoleCommandEntity.setHostEntity(hostEntity);
+        HostEntity hostEntity = null;
+
         hostRoleCommandDAO.create(hostRoleCommandEntity);
 
         assert hostRoleCommandEntity.getTaskId() != null;
         hostRoleCommand.setTaskId(hostRoleCommandEntity.getTaskId());
 
-        try {
-          // Get the in-memory host object and its prefix to construct the output and error log paths.
-          Host hostObject = clusters.getHost(hostRoleCommandEntity.getHostName());
-          String prefix = hostObject.getPrefix();
-          if (null != prefix && !prefix.isEmpty()) {
-            if (!prefix.endsWith("/")) {
-              prefix = prefix + "/";
-            }
-            hostRoleCommand.setOutputLog(prefix + "output-" + hostRoleCommandEntity.getTaskId() + ".txt");
-            hostRoleCommand.setErrorLog(prefix + "errors-" + hostRoleCommandEntity.getTaskId() + ".txt");
-            hostRoleCommandEntity.setOutputLog(hostRoleCommand.getOutputLog());
-            hostRoleCommandEntity.setErrorLog(hostRoleCommand.getErrorLog());
+        String prefix = "";
+        String output = "output-" + hostRoleCommandEntity.getTaskId() + ".txt";
+        String error = "errors-" + hostRoleCommandEntity.getTaskId() + ".txt";
+
+        if (null != hostRoleCommandEntity.getHostId()) {
+          hostEntity = hostDAO.findById(hostRoleCommandEntity.getHostId());
+          if (hostEntity == null) {
+            String msg = String.format("Host %s doesn't exist in database", hostRoleCommandEntity.getHostName());
+            LOG.error(msg);
+            throw new AmbariException(msg);
           }
-        } catch (AmbariException e) {
-          LOG.warn("Exception in getting prefix for host and setting output and error log files.");
+          hostRoleCommandEntity.setHostEntity(hostEntity);
+
+          try {
+            // Get the in-memory host object and its prefix to construct the output and error log paths.
+            Host hostObject = clusters.getHost(hostEntity.getHostName());
+
+            if (!StringUtils.isBlank(hostObject.getPrefix())) {
+              prefix = hostObject.getPrefix();
+              if (!prefix.endsWith("/")) {
+                prefix = prefix + "/";
+              }
+            }
+          } catch (AmbariException e) {
+            LOG.warn("Exception in getting prefix for host and setting output and error log files.  Using no prefix");
+          }
         }
+
+        hostRoleCommand.setOutputLog(prefix + output);
+        hostRoleCommand.setErrorLog(prefix + error);
+        hostRoleCommandEntity.setOutputLog(hostRoleCommand.getOutputLog());
+        hostRoleCommandEntity.setErrorLog(hostRoleCommand.getErrorLog());
 
         ExecutionCommandEntity executionCommandEntity = hostRoleCommand.constructExecutionCommandEntity();
         executionCommandEntity.setHostRoleCommand(hostRoleCommandEntity);
@@ -299,7 +311,9 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
 
         executionCommandDAO.create(hostRoleCommandEntity.getExecutionCommand());
         hostRoleCommandDAO.merge(hostRoleCommandEntity);
-        hostDAO.merge(hostEntity);
+        if (null != hostEntity) {
+          hostDAO.merge(hostEntity);
+        }
       }
 
       for (RoleSuccessCriteriaEntity roleSuccessCriteriaEntity : stageEntity.getRoleSuccessCriterias()) {
@@ -458,13 +472,12 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
 
   @Override
   public void abortHostRole(String host, long requestId, long stageId, String role) {
-    String reason = "Host Role in invalid state";
+    String reason = String.format("On host %s role %s in invalid state.", host, role);
     abortHostRole(host, requestId, stageId, role, reason);
   }
 
   @Override
-  public void abortHostRole(String host, long requestId, long stageId,
-                            String role, String reason) {
+  public void abortHostRole(String host, long requestId, long stageId, String role, String reason) {
     CommandReport report = new CommandReport();
     report.setExitCode(999);
     report.setStdErr(reason);
@@ -489,9 +502,11 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
 
   @Override
   @Transactional
-  public void bulkAbortHostRole(Stage s, List<ExecutionCommand> commands) {
-    for (ExecutionCommand command : commands) {
-      abortHostRole(command.getHostname(), s.getRequestId(), s.getStageId(), command.getRole());
+  public void bulkAbortHostRole(Stage s, Map<ExecutionCommand, String> commands) {
+    for (ExecutionCommand command : commands.keySet()) {
+      String reason = String.format("On host %s role %s in invalid state.\n%s",
+              command.getHostname(), command.getRole(), commands.get(command));
+      abortHostRole(command.getHostname(), s.getRequestId(), s.getStageId(), command.getRole(), reason);
     }
   }
 
@@ -644,5 +659,19 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
       requests.add(requestFactory.createExisting(requestEntity));
     }
     return requests;
+  }
+
+  @Override
+  public void resubmitTasks(List<Long> taskIds) {
+    hostRoleCommandCache.invalidateAll(taskIds);
+
+    List<HostRoleCommandEntity> tasks = hostRoleCommandDAO.findByPKs(taskIds);
+    for (HostRoleCommandEntity task : tasks) {
+      task.setStatus(HostRoleStatus.PENDING);
+      task.setStartTime(-1L);
+      task.setEndTime(-1L);
+    }
+
+    hostRoleCommandDAO.mergeAll(tasks);
   }
 }

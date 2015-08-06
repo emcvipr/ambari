@@ -50,25 +50,26 @@
 
   <property>
     <name>ranger.service.https.attrib.clientAuth</name>
-    <value>false</value>
+    <value>want</value>
     <description></description>
   </property> 
 
   <property>
     <name>ranger.service.https.attrib.keystore.keyalias</name>
-    <value>mkey</value>
+    <value>rangeradmin</value>
     <description></description>
   </property>
 
   <property>
     <name>ranger.service.https.attrib.keystore.pass</name>
-    <value>ranger</value>
+    <value>xasecure</value>
+    <property-type>PASSWORD</property-type>
     <description></description>
   </property>
 
   <property>
     <name>ranger.https.attrib.keystore.file</name>
-    <value>/etc/ranger/admin/keys/server.jks</value>
+    <value>/etc/ranger/admin/conf/ranger-admin-keystore.jks</value>
     <description></description>
   </property>
 
@@ -80,13 +81,13 @@
 
   <property>
     <name>ranger.jpa.jdbc.driver</name>
-    <value>net.sf.log4jdbc.DriverSpy</value>
+    <value>com.mysql.jdbc.Driver</value>
     <description></description>
   </property>
 
   <property>
     <name>ranger.jpa.jdbc.url</name>
-    <value>jdbc:log4jdbc:{{db_flavor}}://{{db_host}}/{{ranger_db_name}}</value>
+    <value>jdbc:mysql://localhost</value>
     <description></description>
   </property> 
 
@@ -122,7 +123,7 @@
   </property>
 
   <property>
-    <name>ranger.solr.url</name>
+    <name>ranger.audit.solr.urls</name>
     <value>http://solr_host:6083/solr/ranger_audits</value>
     <description></description>
   </property>
@@ -177,13 +178,13 @@
 
   <property>
     <name>ranger.jpa.audit.jdbc.driver</name>
-    <value>net.sf.log4jdbc.DriverSpy</value>
+    <value>{{ranger_jdbc_driver}}</value>
     <description></description>
   </property>
 
   <property>
     <name>ranger.jpa.audit.jdbc.url</name>
-    <value>jdbc:log4jdbc:{{db_flavor}}://{{db_host}}/{{ranger_auditdb_name}}</value>
+    <value>{{audit_jdbc_url}}</value>
     <description></description>
   </property>
 
@@ -223,5 +224,36 @@
     <value>5151</value>
     <description></description>
   </property>    
+
+  <property>
+    <name>ranger.jpa.jdbc.dialect</name>
+    <value>{{jdbc_dialect}}</value>
+    <description></description>
+  </property>
+
+  <property>
+    <name>ranger.jpa.audit.jdbc.dialect</name>
+    <value>{{jdbc_dialect}}</value>
+    <description></description>
+  </property>
+
+  <property>
+    <name>ranger.audit.solr.zookeepers</name>
+    <value>NONE</value>
+    <description></description>
+  </property> 
+
+  <property>
+    <name>ranger.audit.solr.username</name>
+    <value>ranger_solr</value>
+    <description></description>
+  </property> 
+
+  <property>
+    <name>ranger.audit.solr.password</name>
+    <value>NONE</value>
+    <property-type>PASSWORD</property-type>
+    <description></description>
+  </property> 
 
 </configuration>

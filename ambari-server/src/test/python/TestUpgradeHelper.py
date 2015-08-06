@@ -47,6 +47,8 @@ class TestUpgradeHelper(TestCase):
   catalog_from = "1.3"
   catalog_to = "2.2"
   catalog_cfg_type = "my type"
+  required_service = "TEST"
+  curl_response = "{}"
   test_catalog = """{
    "version": "1.0",
    "stacks": [
@@ -63,7 +65,10 @@ class TestUpgradeHelper(TestCase):
        },
        "properties": {
          "%s": {
-           "my property": "my value"
+           "my property": {
+             "value": "my value",
+             "required-services": [\"%s\"]
+           }
          }
        },
        "property-mapping": {
@@ -76,7 +81,9 @@ class TestUpgradeHelper(TestCase):
 
   def setUp(self):
     # replace original curl call to mock
-    self.test_catalog = self.test_catalog % (self.catalog_from, self.catalog_to, self.catalog_cfg_type, self.catalog_cfg_type)
+    self.test_catalog = self.test_catalog % (self.catalog_from, self.catalog_to,
+                                             self.catalog_cfg_type, self.catalog_cfg_type,
+                                             self.required_service)
 
     self.original_curl = upgradeHelper.curl
     upgradeHelper.curl = self.magic_curl
@@ -89,19 +96,11 @@ class TestUpgradeHelper(TestCase):
     sys.stdout = self.out
 
   def magic_curl(self, *args, **kwargs):
-
-    def ret_object():
-      return ""
-
-    def communicate():
-      return "{}", ""
-
-    ret_object.returncode = 0
-    ret_object.communicate = communicate
-
-    with patch("upgradeHelper.subprocess") as subprocess:
-      subprocess.Popen.return_value = ret_object
-      self.original_curl(*args, **kwargs)
+    resp = self.curl_response
+    self.curl_response = "{}"
+    if "parse" in kwargs and isinstance(resp, str) and kwargs["parse"] == True:
+      resp = json.loads(resp)
+    return resp
 
   def tearDown(self):
     sys.stdout = sys.__stdout__
@@ -120,6 +119,8 @@ class TestUpgradeHelper(TestCase):
       to_stack = "1.3"
       logfile = "test.log"
       report = "report.txt"
+      https = False
+      port = "8080"
       warnings = []
       printonly = False
 
@@ -130,9 +131,28 @@ class TestUpgradeHelper(TestCase):
     option_parser_mock.return_value = test_mock
 
     upgradeHelper.main()
+
+    self.assertEqual("8080", upgradeHelper.Options.API_PORT)
+    self.assertEqual("http", upgradeHelper.Options.API_PROTOCOL)
     self.assertEqual(1, modify_action_mock.call_count)
     self.assertEqual({"user": options.user, "pass": options.password}, upgradeHelper.Options.API_TOKENS)
     self.assertEqual(options.clustername, upgradeHelper.Options.CLUSTER_NAME)
+
+  def test_is_services_exists(self):
+    old_services = upgradeHelper.Options.SERVICES
+
+    upgradeHelper.Options.SERVICES = set(['TEST1', 'TEST2'])
+    actual_result = upgradeHelper.is_services_exists(['TEST1'])
+
+    # check for situation with two empty sets
+    upgradeHelper.Options.SERVICES = set()
+    actual_result_1 = upgradeHelper.is_services_exists([])
+
+    upgradeHelper.Options.SERVICES = old_services
+
+    self.assertEqual(True, actual_result)
+    self.assertEqual(True, actual_result_1)
+
 
   @patch("__builtin__.open")
   @patch.object(os.path, "isfile")
@@ -154,34 +174,6 @@ class TestUpgradeHelper(TestCase):
     self.assertEquals(1, open_mock.call_count)
 
     # check for content
-    self.assertEquals(test_result, output.getvalue())
-
-  @patch("__builtin__.open")
-  @patch.object(os.path, "isfile")
-  @patch("os.remove")
-  def test_write_config(self, remove_mock, isfile_mock, open_mock):
-    test_data = {
-      "test_field": "test_value"
-    }
-    test_result = json.dumps(test_data)
-    test_cfgtype = 'cfg.me'
-    test_tag = 'tag.test'
-    test_filename = "%s_%s" % (test_cfgtype, test_tag)
-    test_result = json.dumps(test_data)
-    output = StringIO()
-    isfile_mock.return_value = True
-    open_mock.return_value = output
-
-    # execute testing function
-    upgradeHelper.write_config(test_data, test_cfgtype, test_tag)
-
-    self.assertEquals(1, isfile_mock.call_count)
-    self.assertEquals(1, remove_mock.call_count)
-    self.assertEquals(1, open_mock.call_count)
-
-    # check file name
-    self.assertEquals(test_filename, isfile_mock.call_args[0][0])
-    # check content
     self.assertEquals(test_result, output.getvalue())
 
   @patch("__builtin__.open")
@@ -318,8 +310,7 @@ class TestUpgradeHelper(TestCase):
               {
                 "request_type": "PUT",
                 "data": PUT_IN_DISABLED,
-                "validate": True,
-                "validate_expect_body": False
+                "validate": True
               }
             ]
           )
@@ -329,8 +320,7 @@ class TestUpgradeHelper(TestCase):
         (SERVICE_URL_FORMAT,),
         {
           "request_type": "DELETE",
-          "validate": True,
-          "validate_expect_body": False
+          "validate": True
         }
       ]
     )
@@ -404,7 +394,6 @@ class TestUpgradeHelper(TestCase):
         (SERVICE_URL_FORMAT.format(service),),
         {
           "validate": True,
-          "validate_expect_body": False,
           "request_type": "POST"
         }
       ])
@@ -413,7 +402,6 @@ class TestUpgradeHelper(TestCase):
           (COMPONENT_URL_FORMAT.format(service, component),),
           {
             "validate": True,
-            "validate_expect_body": False,
             "request_type": "POST"
           }
         ])
@@ -422,7 +410,6 @@ class TestUpgradeHelper(TestCase):
             (HOST_COMPONENT_URL_FORMAT.format(host, component),),
             {
               "validate": True,
-              "validate_expect_body": False,
               "request_type": "POST"
             }
           ])
@@ -431,6 +418,188 @@ class TestUpgradeHelper(TestCase):
     upgradeHelper.add_services()
 
     self.assertEqual(expected_curl_args, curl_mock.call_args_list)
+
+  @patch.object(upgradeHelper, "get_config_resp_all")
+  def test_coerce_tag(self, get_config_resp_all_mock):
+    test_catalog = """
+        {
+      "version": "1.0",
+      "stacks": [
+        {
+          "name": "HDP",
+          "old-version": "1.0",
+          "target-version": "1.1",
+          "options": {
+            "config-types":{
+              "test": {
+                "merged-copy": "yes"
+              }
+            }
+          },
+          "properties": {
+             "test": {
+               "test": "host1.com"
+            }
+          },
+          "property-mapping": {
+            "test":{
+                "map-to": "test-arr",
+                "coerce-to": "yaml-array"
+           }
+          }
+        }
+      ]
+    }
+    """
+    old_opt = upgradeHelper.Options.OPTIONS
+    options = lambda: ""
+    options.from_stack = "1.0"
+    options.to_stack = "1.1"
+    options.upgrade_json = ""
+
+    upgradeHelper.Options.OPTIONS = options
+    upgradeHelper.Options.SERVICES = [self.required_service]
+    get_config_resp_all_mock.return_value = {
+      "test": {
+        "properties": {}
+      }
+    }
+
+    ucf = UpgradeCatalogFactoryMock(test_catalog)
+    scf = upgradeHelper.ServerConfigFactory()
+
+    cfg = scf.get_config("test")
+    ucfg = ucf.get_catalog("1.0", "1.1")
+
+    cfg.merge(ucfg)
+    scf.process_mapping_transformations(ucfg)
+
+    upgradeHelper.Options.OPTIONS = old_opt
+
+    self.assertEqual(True, "test-arr" in cfg.properties)
+    self.assertEqual("['host1.com']", cfg.properties["test-arr"])
+
+  @patch.object(upgradeHelper, "get_config_resp_all")
+  def test_override_tag(self, get_config_resp_all_mock):
+    test_catalog = """
+        {
+      "version": "1.0",
+      "stacks": [
+        {
+          "name": "HDP",
+          "old-version": "1.0",
+          "target-version": "1.1",
+          "options": {
+            "config-types":{
+              "test": {
+                "merged-copy": "yes"
+              }
+            }
+          },
+          "properties": {
+             "test": {
+               "test_property": {
+                  "value": "host1.com",
+                  "override": "no"
+                }
+
+            }
+          },
+          "property-mapping": {}
+        }
+      ]
+    }
+    """
+    old_opt = upgradeHelper.Options.OPTIONS
+    options = lambda: ""
+    options.from_stack = "1.0"
+    options.to_stack = "1.1"
+    options.upgrade_json = ""
+
+    upgradeHelper.Options.OPTIONS = options
+    upgradeHelper.Options.SERVICES = [self.required_service]
+    get_config_resp_all_mock.return_value = {
+      "test": {
+        "properties": {
+          "test_property": "test host"
+        }
+      }
+    }
+
+    ucf = UpgradeCatalogFactoryMock(test_catalog)
+    scf = upgradeHelper.ServerConfigFactory()
+
+    cfg = scf.get_config("test")
+    ucfg = ucf.get_catalog("1.0", "1.1")
+
+    cfg.merge(ucfg)
+    scf.process_mapping_transformations(ucfg)
+
+    upgradeHelper.Options.OPTIONS = old_opt
+
+    self.assertEqual(True, "test_property" in cfg.properties)
+    self.assertEqual("test host", cfg.properties["test_property"])
+
+  @patch.object(upgradeHelper, "get_config_resp_all")
+  def test_replace_tag(self, get_config_resp_all_mock):
+    test_catalog = """
+        {
+      "version": "1.0",
+      "stacks": [
+        {
+          "name": "HDP",
+          "old-version": "1.0",
+          "target-version": "1.1",
+          "options": {
+            "config-types":{
+              "test": {
+                "merged-copy": "yes"
+              }
+            }
+          },
+          "properties": {
+             "test": {
+               "test": "host1.com"
+            }
+          },
+          "property-mapping": {
+            "test":{
+                "map-to": "test-arr",
+                "replace-from": "com",
+                "replace-to": "org"
+           }
+          }
+        }
+      ]
+    }
+    """
+    old_opt = upgradeHelper.Options.OPTIONS
+    options = lambda: ""
+    options.from_stack = "1.0"
+    options.to_stack = "1.1"
+    options.upgrade_json = ""
+
+    upgradeHelper.Options.OPTIONS = options
+    upgradeHelper.Options.SERVICES = [self.required_service]
+    get_config_resp_all_mock.return_value = {
+      "test": {
+        "properties": {}
+      }
+    }
+
+    ucf = UpgradeCatalogFactoryMock(test_catalog)
+    scf = upgradeHelper.ServerConfigFactory()
+
+    cfg = scf.get_config("test")
+    ucfg = ucf.get_catalog("1.0", "1.1")
+
+    cfg.merge(ucfg)
+    scf.process_mapping_transformations(ucfg)
+
+    upgradeHelper.Options.OPTIONS = old_opt
+
+    self.assertEqual(True, "test-arr" in cfg.properties)
+    self.assertEqual("host1.org", cfg.properties["test-arr"])
 
   @patch.object(upgradeHelper, "curl")
   @patch("time.time")
@@ -453,8 +622,7 @@ class TestUpgradeHelper(TestCase):
         "request_type": "PUT",
         "data": copy.deepcopy(properties_payload),
         "validate": True,
-        "soft_validation": True,
-        "validate_expect_body": True
+        "soft_validation": True
       }
     )
 
@@ -465,8 +633,7 @@ class TestUpgradeHelper(TestCase):
         "request_type": "PUT",
         "data": copy.deepcopy(properties_payload),
         "validate": True,
-        "soft_validation": True,
-        "validate_expect_body": True
+        "soft_validation": True
       }
     )
 
@@ -512,85 +679,54 @@ class TestUpgradeHelper(TestCase):
 
     self.assertEqual(expected_result, actual_result)
 
-  @patch.object(upgradeHelper, "get_config_resp")
-  def test_get_config(self, get_config_resp_mock):
-    config_type = "test type"
-    tag_name = "my tag"
-    properties = {
-      "my property": "property value"
-    }
-    property_atributes = {
-      "myproperty": "property value"
-    }
-
-    in_data = tag_name, {
-      "items": [
+  @patch.object(upgradeHelper, "curl")
+  def test_get_tez_history_url_base(self, curl_mock):
+    return_curl_data = {
+      'href': 'http://127.0.0.1:8080/api/v1/views/TEZ',
+      'ViewInfo': {'view_name': 'TEZ'},
+      'versions': [
         {
-          "tag": tag_name,
-          "type": config_type,
-          "properties": properties,
-          "properties_attributes": property_atributes
+          'ViewVersionInfo': {
+            'view_name': 'TEZ',
+            'version': '0.7.0.2.3.0.0-1319'
+          },
+          'href': 'http://127.0.0.1:8080/api/v1/views/TEZ/versions/0.7.0.2.3.0.0-1319'
         }
       ]
     }
 
-    get_config_resp_mock.return_value = in_data
-    expected_data = (properties, property_atributes)
+    curl_mock.return_value = copy.deepcopy(return_curl_data)
+
+    # build zookeeper quorum string from return_curl_data and remove trailing comas
+    expected_result = "http://127.0.0.1:8080/#/main/views/TEZ/0.7.0.2.3.0.0-1319/TEZ_CLUSTER_INSTANCE"
 
     # execute testing function
-    actual_data = upgradeHelper.get_config(config_type)
-
-    self.assertEqual(expected_data, actual_data)
-
-  def test_parse_config_resp(self):
-    cfg_type = "type 1"
-    cfg_properties = {
-      "my property": "property value"
-    }
-
-    in_data = {
-      upgradeHelper.CatConst.ITEMS_TAG: [
-        {
-          upgradeHelper.CatConst.TYPE_TAG: cfg_type,
-          upgradeHelper.CatConst.STACK_PROPERTIES: cfg_properties
-        }
-      ]
-    }
-
-    expected_result = [{
-     "type": cfg_type,
-     "properties": cfg_properties
-    }]
-
-    # execute testing function
-    actual_result = upgradeHelper.parse_config_resp(in_data)
+    actual_result = upgradeHelper.get_tez_history_url_base()
 
     self.assertEqual(expected_result, actual_result)
 
   @patch.object(upgradeHelper, "curl")
-  @patch.object(upgradeHelper, "parse_config_resp")
-  def test_get_config_resp(self, parse_config_resp_mock, curl_mock):
-    cfg_type = "my type"
-    cfg_tag = "my tag"
-    cfg_data = "test"
-    curl_responses = [
-      {
-        'Clusters': {
-          'desired_configs': {
-            cfg_type: {
-              "tag": cfg_tag
-            }
+  def test_get_ranger_xaaudit_hdfs_destination_directory(self, curl_mock):
+    return_curl_data = {
+      "host_components": [
+        {
+          "HostRoles": {
+            "host_name": "test.host.vm"
           }
         }
-      },
-      cfg_data
-    ]
-    curl_mock.side_effect = MagicMock(side_effect=curl_responses)
+      ]
+    }
+
+    curl_mock.return_value = copy.deepcopy(return_curl_data)
+
+    # build zookeeper quorum string from return_curl_data and remove trailing comas
+    expected_result = "hdfs://test.host.vm:8020/ranger/audit"
 
     # execute testing function
-    actual_tag, actual_data = upgradeHelper.get_config_resp(cfg_type, False, False)
+    actual_result = upgradeHelper.get_ranger_xaaudit_hdfs_destination_directory()
 
-    self.assertEqual((cfg_tag, cfg_data), (actual_tag, actual_data))
+    self.assertEqual(expected_result, actual_result)
+
 
   @patch.object(upgradeHelper, "curl")
   def test_get_config_resp_all(self, curl_mock):
@@ -621,8 +757,11 @@ class TestUpgradeHelper(TestCase):
     ]
 
     expected_result = {
-      cfg_type: cfg_properties
-    }
+        cfg_type: {
+          "properties": cfg_properties,
+          "tag": cfg_tag
+        }
+      }
     curl_mock.side_effect = MagicMock(side_effect=curl_resp)
 
     # execute testing function
@@ -631,155 +770,31 @@ class TestUpgradeHelper(TestCase):
     self.assertEquals(expected_result, actual_result)
     pass
 
-  @patch.object(upgradeHelper, "read_mapping")
-  @patch.object(upgradeHelper, "get_config")
-  @patch.object(upgradeHelper, "update_config_using_existing_properties")
-  @patch.object(upgradeHelper, "update_config")
-  @patch.object(upgradeHelper, "get_config_resp")
-  def test_modify_config_item(self, get_config_resp_mock, upgrade_config_mock, update_config_using_existing_properties_mock,
-                              get_config_mock, read_mapping_mock):
-    catalog_factory = UpgradeCatalogFactoryMock(self.test_catalog)
-    get_config_resp_mock.return_value = "", {}
-    catalog = catalog_factory.get_catalog(self.catalog_from, self.catalog_to)
-    cfg_type = self.catalog_cfg_type
-    read_mapping_mock.return_value = {
-      "MAPREDUCE_CLIENT": ["test.host.vm"],
-      "JOBTRACKER": ["test1.host.vm"],
-      "TASKTRACKER": ["test2.host.vm"],
-      "HISTORYSERVER": ["test3.host.vm"]
-    }
-    get_config_mock.return_value = {"my replace property": "property value 2"}, {}
-    expected_params = [
-      cfg_type,
-      {
-        "my property": {
-          "value": "my value"
-        }
-      },
-      {
-        "my property 2": "property value 2"
-      },
-    ]
-
-    # execute testing function
-    upgradeHelper.modify_config_item(cfg_type, catalog)
-
-    actual_params = [
-      update_config_using_existing_properties_mock.call_args[0][0],
-      update_config_using_existing_properties_mock.call_args[0][1],
-      update_config_using_existing_properties_mock.call_args[0][2]
-    ]
-    self.assertEquals(update_config_using_existing_properties_mock.call_count, 1)
-    self.assertEqual(upgrade_config_mock.call_count, 0)
-
-    self.assertEqual(expected_params, actual_params)
-
-  @patch.object(upgradeHelper, "UpgradeCatalogFactory", autospec=True)
-  @patch.object(upgradeHelper, "modify_config_item")
-  def test_modify_configs(self, modify_config_item_mock, factory_mock):
-    factory_mock.return_value = UpgradeCatalogFactoryMock(self.test_catalog)
-    options = lambda: ""
-    options.from_stack = self.catalog_from
-    options.to_stack = self.catalog_to
-    options.upgrade_json = ""
-
-    upgradeHelper.Options.OPTIONS = options
-
-    # execute testing function
-    upgradeHelper.modify_configs()
-
-    self.assertEqual(1, modify_config_item_mock.call_count)
-    self.assertEqual(self.catalog_cfg_type, modify_config_item_mock.call_args[0][0])
-
-  def test_rename_all_properties(self):
-    in_data_properties = {
-      "test property": "test value",
-      "rename property": "test value 2"
-    }
-    in_data_mapping = {
-      "rename property": "test property 2"
-    }
-    expect_properties = {
-      "test property": "test value",
-      "test property 2": "test value 2"
-    }
-
-    # execute testing function
-    actual_properties = upgradeHelper.rename_all_properties(in_data_properties, in_data_mapping)
-
-    self.assertEqual(expect_properties, actual_properties)
-
-  @patch.object(upgradeHelper, "update_config")
-  def test_update_config_using_existing_properties(self, update_config_mock):
-    actual_property = {
-      "actual property": "actual value"
-    }
-    actual_attrib = {
+  @patch.object(upgradeHelper, "get_config_resp_all")
+  @patch("os.mkdir")
+  @patch("os.path.exists")
+  @patch("__builtin__.open")
+  def test_backup_configs(self, open_mock, os_path_exists_mock, mkdir_mock, get_config_resp_all_mock):
+    data = {
       self.catalog_cfg_type: {
-        "attribute 1": "attribute value 1"
+        "properties": {
+          "test-property": "value"
+        },
+        "tag": "version1"
       }
     }
-    catalog_factory = UpgradeCatalogFactoryMock(self.test_catalog)
-    catalog = catalog_factory.get_catalog(self.catalog_from, self.catalog_to)
-
-    # execute testing function
-    upgradeHelper.update_config_using_existing_properties(self.catalog_cfg_type,
-                                                          catalog.get_properties(self.catalog_cfg_type),
-                                                          actual_property,
-                                                          actual_attrib,
-                                                          catalog
-                                                          )
-    expected_dict = {}
-    expected_dict.update(actual_property)
-    expected_dict.update(catalog.get_properties_as_dict(catalog.get_properties(self.catalog_cfg_type)))
-
-    expected_args = (
-      (expected_dict, self.catalog_cfg_type),
-      {
-        "attributes": actual_attrib
-      }
-    )
-
-    self.assertEqual(1, update_config_mock.call_count)
-    self.assertEqual(expected_args, tuple(update_config_mock.call_args))
-
-  @patch.object(upgradeHelper, "backup_single_config_type")
-  @patch.object(upgradeHelper, "curl")
-  def test_backup_configs(self, curl_mock, backup_single_config_type_mock):
-    curl_mock.return_value = {
-      'Clusters': {
-        'desired_configs': {
-          self.catalog_cfg_type: {
-            "tag": "my tag"
-          }
-        }
-      }
-    }
-
-    expected_args = (self.catalog_cfg_type, True)
+    os_path_exists_mock.return_value = False
+    get_config_resp_all_mock.return_value = data
+    expected = json.dumps(data[self.catalog_cfg_type]["properties"], indent=4)
+    stream = StringIO()
+    m = MagicMock()
+    m.__enter__.return_value = stream
+    open_mock.return_value = m
 
     # execute testing function
     upgradeHelper.backup_configs(self.catalog_cfg_type)
 
-    self.assertEqual(1, backup_single_config_type_mock.call_count)
-    self.assertEqual(expected_args, backup_single_config_type_mock.call_args[0])
-
-  @patch.object(upgradeHelper, "get_config_resp")
-  @patch.object(upgradeHelper, "write_config")
-  def test_backup_single_config_type(self, write_config_mock, get_config_resp_mock):
-    resp = {
-      "property": "my data"
-    }
-    tag = "my tag"
-    get_config_resp_mock.return_value = tag, resp
-    expected_args = (resp, self.catalog_cfg_type, tag)
-
-    # execute testing function
-    upgradeHelper.backup_single_config_type(self.catalog_cfg_type, False)
-
-    self.assertEqual(1, get_config_resp_mock.call_count)
-    self.assertEqual(1, write_config_mock.call_count)
-    self.assertEqual(expected_args, write_config_mock.call_args[0])
+    self.assertEqual(expected, stream.getvalue())
 
   @patch.object(upgradeHelper, "curl")
   def test_install_services(self, curl_mock):
@@ -787,7 +802,6 @@ class TestUpgradeHelper(TestCase):
       (
         ('http://127.0.0.1:8080/api/v1/clusters/test1/services/MAPREDUCE2',),
         {
-          'validate_expect_body': True,
           'request_type': 'PUT',
           'data': {
             'RequestInfo': {
@@ -805,7 +819,6 @@ class TestUpgradeHelper(TestCase):
       (
         ('http://127.0.0.1:8080/api/v1/clusters/test1/services/YARN',),
         {
-          'validate_expect_body': True,
           'request_type': 'PUT',
           'data': {
             'RequestInfo': {
@@ -828,52 +841,6 @@ class TestUpgradeHelper(TestCase):
     self.assertEqual(2, curl_mock.call_count)
     for i in range(0, 1):
       self.assertEqual(expected_args[i], tuple(curl_mock.call_args_list[i]))
-
-  def test_validate_response(self):
-    resp_in_data = [
-      ["", False],
-      ["", True],
-      ["\"href\" : \"", True]
-    ]
-    resp_expected_results = [
-      (0, ""),
-      (1, ""),
-      (0, "")
-    ]
-
-    # execute testing function
-    for i in range(0, len(resp_in_data)):
-      actual_code, actual_data = upgradeHelper.validate_response(resp_in_data[i][0], resp_in_data[i][1])
-      self.assertEqual(resp_expected_results[i], (actual_code, actual_data))
-
-  def test_configuration_item_diff(self):
-    factory_mock = UpgradeCatalogFactoryMock(self.test_catalog)
-    catalog = factory_mock.get_catalog(self.catalog_from, self.catalog_to)
-    actual_properties = {
-      self.catalog_cfg_type: {
-        "my property": {
-         "value": "my value"
-        }
-      }
-    }
-
-    expected_result = [
-      {
-        'catalog_item': {
-          'value': u'my value'
-        },
-        'property': 'my property',
-        'actual_value': {
-          'value': 'my value'
-        },
-        'catalog_value': u'my value'
-      }
-    ]
-
-    # execute testing function
-    actual_result = upgradeHelper.configuration_item_diff(self.catalog_cfg_type, catalog, actual_properties)
-
-    self.assertEqual(expected_result, actual_result)
 
   def test_configuration_diff_analyze(self):
     in_data = {
@@ -931,23 +898,30 @@ class TestUpgradeHelper(TestCase):
   @patch("__builtin__.open")
   def test_verify_configuration(self, open_mock, configuration_diff_analyze_mock, configuration_item_diff_mock,
                                 get_config_resp_all_mock, upgradecatalogfactory_mock):
+    old_opt = upgradeHelper.Options.OPTIONS
     options = lambda: ""
     options.from_stack = self.catalog_from
     options.to_stack = self.catalog_to
     options.upgrade_json = ""
 
     upgradeHelper.Options.OPTIONS = options
+    upgradeHelper.Options.SERVICES = [self.required_service]
     upgradecatalogfactory_mock.return_value = UpgradeCatalogFactoryMock(self.test_catalog)
+    get_config_resp_all_mock.return_value = {
+      self.catalog_cfg_type: {
+        "properties": {}
+      }
+    }
 
     # execute testing function
     upgradeHelper.verify_configuration()
+
+    upgradeHelper.Options.OPTIONS = old_opt
 
     self.assertEqual(1, get_config_resp_all_mock.call_count)
     self.assertEqual(1, configuration_item_diff_mock.call_count)
     self.assertEqual(1, configuration_diff_analyze_mock.call_count)
     self.assertEqual(1, open_mock.call_count)
-
-
 
 
   def test_report_formatter(self):
@@ -981,12 +955,75 @@ class TestUpgradeHelper(TestCase):
         }
     }
 
-    expected_output = "Configuration item my type: property \"my property\" is set to \"my value 1\", but should be set to \"my value\""
+    expected_output = "Configuration item my type: property \"my property\" is set to \"my value 1\", but should be set to \"my value\"\n"
 
     # execute testing function
     upgradeHelper.report_formatter(file, cfg_item, analyzed_list)
 
     self.assertEqual(expected_output, file.getvalue())
+
+  @patch.object(upgradeHelper, "get_config_resp_all")
+  def test_conditional_replace(self, get_config_resp_all_mock):
+    test_catalog = """
+        {
+      "version": "1.0",
+      "stacks": [
+        {
+          "name": "HDP",
+          "old-version": "1.0",
+          "target-version": "1.1",
+          "options": {
+            "config-types":{
+              "test": {
+                "merged-copy": "yes"
+              }
+            }
+          },
+          "properties": {
+             "test": {
+               "test": {
+                 "value": "10",
+                 "value-required": "-1"
+               },
+               "test2": {
+                 "value": "10",
+                 "value-required": "-2"
+               }
+            }
+          },
+          "property-mapping": {
+          }
+        }
+      ]
+    }
+    """
+
+    expected_properties = {"test":"10", "test2":"15"}
+
+    old_opt = upgradeHelper.Options.OPTIONS
+    options = lambda: ""
+    options.from_stack = "1.0"
+    options.to_stack = "1.1"
+    options.upgrade_json = ""
+
+    upgradeHelper.Options.OPTIONS = options
+    upgradeHelper.Options.SERVICES = [self.required_service]
+    get_config_resp_all_mock.return_value = {
+      "test": {
+        "properties": {"test":"-1", "test2":"15"}
+      }
+    }
+
+    ucf = UpgradeCatalogFactoryMock(test_catalog)
+    scf = upgradeHelper.ServerConfigFactory()
+
+    cfg = scf.get_config("test")
+    ucfg = ucf.get_catalog("1.0", "1.1")
+
+    cfg.merge(ucfg)
+    upgradeHelper.Options.OPTIONS = old_opt
+
+    self.assertEqual(expected_properties, cfg.properties)
 
 if __name__ == "__main__":
   unittest.main()

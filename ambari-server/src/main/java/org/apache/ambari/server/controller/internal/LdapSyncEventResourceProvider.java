@@ -37,6 +37,7 @@ import org.apache.ambari.server.security.ldap.LdapBatchDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.naming.OperationNotSupportedException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -401,10 +402,14 @@ public class LdapSyncEventResourceProvider extends AbstractControllerResourcePro
     while (processingEvents) {
       LdapSyncEventEntity event;
       synchronized (eventQueue) {
-        event = eventQueue.poll();
-        if (event == null) {
-          processingEvents = false;
-          return;
+        if (processingEvents) {
+          event = eventQueue.poll();
+          if (event == null) {
+            processingEvents = false;
+            return;
+          }
+        } else {
+          break;
         }
       }
 
@@ -421,6 +426,10 @@ public class LdapSyncEventResourceProvider extends AbstractControllerResourcePro
       } catch (Exception e) {
         event.setStatus(LdapSyncEventEntity.Status.ERROR);
         String msg = "Caught exception running LDAP sync. ";
+        if (e.getCause() instanceof OperationNotSupportedException) {
+          msg += "LDAP server may not support search results pagination. " +
+            "Try to turn the pagination off.";
+        }
         event.setStatusDetail(msg + e.getMessage());
         LOG.error(msg, e);
       } finally {

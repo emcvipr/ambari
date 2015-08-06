@@ -309,7 +309,7 @@ App.isEmptyObject = function(obj) {
   var empty = true;
   for (var prop in obj) { if (obj.hasOwnProperty(prop)) {empty = false; break;} }
   return empty;
-}
+};
 
 /**
  * Convert object under_score keys to camelCase
@@ -579,7 +579,7 @@ App.popover = function (self, options) {
   if (!self) return;
   self.popover(options);
   self.on("remove", function () {
-    $(this).trigger('mouseleave');
+    $(this).trigger('mouseleave').off().removeData('popover');
   });
 };
 
@@ -592,10 +592,11 @@ App.popover = function (self, options) {
  * @param {object} options
  */
 App.tooltip = function (self, options) {
+  if (!self) return;
   self.tooltip(options);
   /* istanbul ignore next */
   self.on("remove", function () {
-    $(this).trigger('mouseleave');
+    $(this).trigger('mouseleave').off().removeData('tooltip');
   });
 };
 
@@ -712,7 +713,7 @@ App.registerBoundHelper('pluralize', Em.View.extend({
       case 'controller':
         return Em.get(this, value);
       case 'view':
-        return Em.get(this, value.replace(/^view/, 'parentView'))
+        return Em.get(this, value.replace(/^view/, 'parentView'));
       default:
         break;
     }
@@ -765,6 +766,7 @@ App.registerBoundHelper('formatNull', Em.View.extend({
  * {{formatWordBreak 'apple.banana.uranium'}}
  */
 App.registerBoundHelper('formatWordBreak', Em.View.extend({
+  attributeBindings: ["data-original-title"],
   tagName: 'span',
   template: Em.Handlebars.compile('{{{view.result}}}'),
 
@@ -805,7 +807,8 @@ App.registerBoundHelper('statusIcon', Em.View.extend({
     'HOLDING': 'icon-pause',
     'ABORTED': 'icon-minus aborted',
     'TIMEDOUT': 'icon-time timedout',
-    'HOLDING_TIMEDOUT': 'icon-time timedout'
+    'HOLDING_TIMEDOUT': 'icon-time timedout',
+    'SUBITEM_FAILED': 'icon-remove failed'
   },
 
   classNameBindings: ['iconClass'],

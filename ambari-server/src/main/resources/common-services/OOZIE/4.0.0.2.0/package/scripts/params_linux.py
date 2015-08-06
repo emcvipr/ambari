@@ -21,6 +21,7 @@ from resource_management import *
 from ambari_commons.constants import AMBARI_SUDO_BINARY
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions import get_kinit_path
@@ -28,6 +29,8 @@ from resource_management.libraries.functions import get_port_from_url
 from resource_management.libraries.script.script import Script
 
 from resource_management.libraries.functions.get_lzo_packages import get_lzo_packages
+
+from urlparse import urlparse
 
 import status_params
 import os
@@ -48,11 +51,17 @@ stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
 hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
-hadoop_bin_dir = conf_select.get_hadoop_dir("bin")
-hadoop_lib_home = conf_select.get_hadoop_dir("lib")
+hadoop_bin_dir = hdp_select.get_hadoop_dir("bin")
+hadoop_lib_home = hdp_select.get_hadoop_dir("lib")
 
 #hadoop params
 if Script.is_hdp_stack_greater_or_equal("2.2"):
+  # something like 2.3.0.0-1234
+  stack_version = None
+  upgrade_stack = hdp_select._get_upgrade_stack()
+  if upgrade_stack is not None and len(upgrade_stack) == 2 and upgrade_stack[1] is not None:
+    stack_version = upgrade_stack[1]
+
   # oozie-server or oozie-client, depending on role
   oozie_root = status_params.component_directory
 
@@ -62,13 +71,17 @@ if Script.is_hdp_stack_greater_or_equal("2.2"):
   oozie_webapps_dir = format("/usr/hdp/current/{oozie_root}/oozie-server/webapps")
   oozie_webapps_conf_dir = format("/usr/hdp/current/{oozie_root}/oozie-server/conf")
   oozie_libext_dir = format("/usr/hdp/current/{oozie_root}/libext")
-  oozie_libext_customer_dir = format("/usr/hdp/current/{oozie_root}/libext-customer")
   oozie_server_dir = format("/usr/hdp/current/{oozie_root}/oozie-server")
   oozie_shared_lib = format("/usr/hdp/current/{oozie_root}/share")
   oozie_home = format("/usr/hdp/current/{oozie_root}")
   oozie_bin_dir = format("/usr/hdp/current/{oozie_root}/bin")
   oozie_examples_regex = format("/usr/hdp/current/{oozie_root}/doc")
+
+  # set the falcon home for copying JARs; if in an upgrade, then use the version of falcon that
+  # matches the version of oozie
   falcon_home = '/usr/hdp/current/falcon-client'
+  if stack_version is not None:
+    falcon_home = '/usr/hdp/{0}/falcon'.format(stack_version)
 
   conf_dir = format("/usr/hdp/current/{oozie_root}/conf")
   hive_conf_dir = format("{conf_dir}/action-conf/hive")
@@ -93,6 +106,7 @@ execute_path = oozie_bin_dir + os.pathsep + hadoop_bin_dir
 oozie_user = config['configurations']['oozie-env']['oozie_user']
 smokeuser = config['configurations']['cluster-env']['smokeuser']
 smokeuser_principal = config['configurations']['cluster-env']['smokeuser_principal_name']
+oozie_admin_users = format(config['configurations']['oozie-env']['oozie_admin_users'])
 user_group = config['configurations']['cluster-env']['user_group']
 jdk_location = config['hostLevelParams']['jdk_location']
 check_db_connection_jar_name = "DBConnectionVerification.jar"
@@ -130,8 +144,6 @@ oozie_env_sh_template = config['configurations']['oozie-env']['content']
 
 oracle_driver_jar_name = "ojdbc6.jar"
 
-java_home = config['hostLevelParams']['java_home']
-java_version = int(config['hostLevelParams']['java_version'])
 oozie_metastore_user_name = config['configurations']['oozie-site']['oozie.service.JPAService.jdbc.username']
 oozie_metastore_user_passwd = default("/configurations/oozie-site/oozie.service.JPAService.jdbc.password","")
 oozie_jdbc_connection_url = default("/configurations/oozie-site/oozie.service.JPAService.jdbc.url", "")
@@ -139,11 +151,34 @@ oozie_log_dir = config['configurations']['oozie-env']['oozie_log_dir']
 oozie_data_dir = config['configurations']['oozie-env']['oozie_data_dir']
 oozie_server_port = get_port_from_url(config['configurations']['oozie-site']['oozie.base.url'])
 oozie_server_admin_port = config['configurations']['oozie-env']['oozie_admin_port']
-if 'oozie.https.port' in config['configurations']['oozie-site'] or 'oozie.https.keystore.file' in config['configurations']['oozie-site'] or 'oozie.https.keystore.pass' in config['configurations']['oozie-site']:
+if 'export OOZIE_HTTPS_PORT' in oozie_env_sh_template or 'oozie.https.port' in config['configurations']['oozie-site'] or 'oozie.https.keystore.file' in config['configurations']['oozie-site'] or 'oozie.https.keystore.pass' in config['configurations']['oozie-site']:
   oozie_secure = '-secure'
 else:
   oozie_secure = ''
 
+https_port = None
+# try to get https port form oozie-env content
+for line in oozie_env_sh_template.splitlines():
+  result = re.match(r"export\s+OOZIE_HTTPS_PORT=(\d+)", line)
+  if result is not None:
+    https_port = result.group(1)
+# or from oozie-site.xml
+if https_port is None and 'oozie.https.port' in config['configurations']['oozie-site']:
+  https_port = config['configurations']['oozie-site']['oozie.https.port']
+
+oozie_base_url = config['configurations']['oozie-site']['oozie.base.url']
+
+# construct proper url for https
+if https_port is not None:
+  parsed_url = urlparse(oozie_base_url)
+  oozie_base_url = oozie_base_url.replace(parsed_url.scheme, "https")
+  if parsed_url.port is None:
+    oozie_base_url.replace(parsed_url.hostname, ":".join([parsed_url.hostname, str(https_port)]))
+  else:
+    oozie_base_url = oozie_base_url.replace(str(parsed_url.port), str(https_port))
+
+
+hdfs_site = config['configurations']['hdfs-site']
 fs_root = config['configurations']['core-site']['fs.defaultFS']
 
 if Script.is_hdp_stack_greater_or_equal("2.0") and Script.is_hdp_stack_less_than("2.2"):
@@ -179,6 +214,7 @@ else:
   target = format("{oozie_libext_dir}/{jdbc_driver_jar}")
 
 
+hdfs_share_dir = "/user/oozie/share"
 ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 falcon_host = default("/clusterHostInfo/falcon_server_hosts", [])
 has_falcon_host = not len(falcon_host)  == 0
@@ -193,9 +229,12 @@ oozie_hdfs_user_mode = 0775
 hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
 hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name']
+
+hdfs_site = config['configurations']['hdfs-site']
+default_fs = config['configurations']['core-site']['fs.defaultFS']
 import functools
 #create partial functions with common arguments for every HdfsResource call
-#to create hdfs directory we need to call params.HdfsResource in code
+#to create/delete hdfs directory/file/copyfromlocal we need to call params.HdfsResource in code
 HdfsResource = functools.partial(
   HdfsResource,
   user=hdfs_user,
@@ -203,9 +242,13 @@ HdfsResource = functools.partial(
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,
   hadoop_bin_dir = hadoop_bin_dir,
-  hadoop_conf_dir = hadoop_conf_dir
- )
+  hadoop_conf_dir = hadoop_conf_dir,
+  principal_name = hdfs_principal_name,
+  hdfs_site = hdfs_site,
+  default_fs = default_fs
+)
 
+is_webhdfs_enabled = config['configurations']['hdfs-site']['dfs.webhdfs.enabled']
 
 # The logic for LZO also exists in HDFS' params.py
 io_compression_codecs = default("/configurations/core-site/io.compression.codecs", None)

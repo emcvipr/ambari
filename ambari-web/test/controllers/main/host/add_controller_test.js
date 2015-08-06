@@ -912,15 +912,22 @@ describe('App.AddHostController', function () {
             {hostName: 'host1'}
           ],
           componentName: 'C1'
+        },
+        {
+          hosts: [
+            {hostName: 'host2'}
+          ],
+          componentName: 'C2'
         }
       ]);
       expect(controller.loadServiceConfigGroupsBySlaves(selectedServices)).to.be.true;
-      expect(selectedServices).to.eql([
+      expect(selectedServices.toArray()).to.eql([
         {
           "serviceId": "S1",
           "displayName": "s1",
           "hosts": [
-            "host1"
+            "host1",
+            "host2"
           ],
           "configGroupsNames": [
             "s1 Default",
@@ -1275,7 +1282,6 @@ describe('App.AddHostController', function () {
       getAllHostNames: Em.K
     };
     beforeEach(function () {
-      sinon.stub(controller, 'setCurrentStep', Em.K);
       sinon.stub(controller, 'clearAllSteps', Em.K);
       sinon.stub(controller, 'clearStorageData', Em.K);
       sinon.stub(App.updater, 'immediateRun', Em.K);
@@ -1284,7 +1290,6 @@ describe('App.AddHostController', function () {
       sinon.spy(mock, 'getAllHostNames');
     });
     afterEach(function () {
-      controller.setCurrentStep.restore();
       controller.clearAllSteps.restore();
       controller.clearStorageData.restore();
       App.updater.immediateRun.restore();
@@ -1294,7 +1299,6 @@ describe('App.AddHostController', function () {
     });
     it("", function () {
       controller.finish();
-      expect(controller.setCurrentStep.calledWith('1')).to.be.true;
       expect(controller.clearAllSteps.calledOnce).to.be.true;
       expect(controller.clearStorageData.calledOnce).to.be.true;
       expect(mock.updateAll.calledOnce).to.be.true;

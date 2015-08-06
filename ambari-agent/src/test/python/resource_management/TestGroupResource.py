@@ -18,28 +18,39 @@ limitations under the License.
 
 from unittest import TestCase
 from mock.mock import patch, MagicMock
+from only_for_platform import get_platform, not_for_platform, os_distro_value, PLATFORM_WINDOWS
+
+from ambari_commons.os_check import OSCheck
+
 from resource_management.core import Environment, Fail
 from resource_management.core.resources import Group
 from resource_management.core.system import System
 
-import subprocess
-import grp
 import os
-import pty
+import select
+import subprocess
+
+if get_platform() != PLATFORM_WINDOWS:
+  import grp
+  import pty
 
 
-@patch.object(System, "os_family", new = 'redhat')
+subproc_stdout = MagicMock()
+
+@patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+@patch.object(os, "read", new=MagicMock(return_value=None))
+@patch.object(select, "select", new=MagicMock(return_value=([subproc_stdout], None, None)))
 @patch.object(os, "environ", new = {'PATH':'/bin'})
-@patch.object(pty, "openpty", new = MagicMock(return_value=(1,5)))
+@patch("pty.openpty", new = MagicMock(return_value=(1,5)))
 @patch.object(os, "close", new=MagicMock())
 class TestGroupResource(TestCase):
 
-  @patch.object(grp, "getgrnam")
+  @patch("grp.getgrnam")
   @patch.object(subprocess, "Popen")
   def test_action_create_nonexistent(self, popen_mock, getgrnam_mock):
     subproc_mock = MagicMock()
     subproc_mock.returncode = 0
-    subproc_mock.stdout.readline = MagicMock(side_effect = ['OK'])
+    subproc_mock.stdout = subproc_stdout
     popen_mock.return_value = subproc_mock
     getgrnam_mock.side_effect = KeyError()
 
@@ -51,18 +62,18 @@ class TestGroupResource(TestCase):
     
 
     self.assertEqual(popen_mock.call_count, 1)
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E groupadd -p secure hadoop"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E groupadd -p secure hadoop"], shell=False, preexec_fn=None, stderr=-2, stdout=-1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     getgrnam_mock.assert_called_with('hadoop')
 
 
-  @patch.object(grp, "getgrnam")
+  @patch("grp.getgrnam")
   @patch.object(subprocess, "Popen")
   def test_action_create_existent(self, popen_mock, getgrnam_mock):
     subproc_mock = MagicMock()
     subproc_mock.returncode = 0
-    subproc_mock.stdout.readline = MagicMock(side_effect = ['OK'])
+    subproc_mock.stdout = subproc_stdout
     popen_mock.return_value = subproc_mock
-    getgrnam_mock.return_value = "mapred"
+    getgrnam_mock.return_value = _get_group()
 
     with Environment('/') as env:
       Group('mapred',
@@ -73,18 +84,18 @@ class TestGroupResource(TestCase):
     
 
     self.assertEqual(popen_mock.call_count, 1)
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E groupmod -p secure -g 2 mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E groupmod -p secure -g 2 mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=-1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     getgrnam_mock.assert_called_with('mapred')
 
 
-  @patch.object(grp, "getgrnam")
+  @patch("grp.getgrnam")
   @patch.object(subprocess, "Popen")
   def test_action_create_fail(self, popen_mock, getgrnam_mock):
     subproc_mock = MagicMock()
     subproc_mock.returncode = 1
-    subproc_mock.stdout.readline = MagicMock(side_effect = ['OK'])
+    subproc_mock.stdout = subproc_stdout
     popen_mock.return_value = subproc_mock
-    getgrnam_mock.return_value = "mapred"
+    getgrnam_mock.return_value = _get_group()
 
     try:
       with Environment('/') as env:
@@ -98,19 +109,19 @@ class TestGroupResource(TestCase):
     except Fail:
       pass
     self.assertEqual(popen_mock.call_count, 1)
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E groupmod -p secure -g 2 mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', "ambari-sudo.sh  PATH=/bin -H -E groupmod -p secure -g 2 mapred"], shell=False, preexec_fn=None, stderr=-2, stdout=-1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     getgrnam_mock.assert_called_with('mapred')
 
 
-  @patch.object(grp, "getgrnam")
+  @patch("grp.getgrnam")
   @patch.object(subprocess, "Popen")
   def test_action_remove(self, popen_mock, getgrnam_mock):
 
     subproc_mock = MagicMock()
     subproc_mock.returncode = 0
-    subproc_mock.stdout.readline = MagicMock(side_effect = ['OK'])
+    subproc_mock.stdout = subproc_stdout
     popen_mock.return_value = subproc_mock
-    getgrnam_mock.return_value = "mapred"
+    getgrnam_mock.return_value = _get_group()
 
     with Environment('/') as env:
       Group('mapred',
@@ -119,19 +130,19 @@ class TestGroupResource(TestCase):
     
 
     self.assertEqual(popen_mock.call_count, 1)
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', 'groupdel mapred'], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', 'ambari-sudo.sh  PATH=/bin -H -E groupdel mapred'], shell=False, preexec_fn=None, stderr=-2, stdout=-1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     getgrnam_mock.assert_called_with('mapred')
 
 
-  @patch.object(grp, "getgrnam")
+  @patch("grp.getgrnam")
   @patch.object(subprocess, "Popen")
   def test_action_remove_fail(self, popen_mock, getgrnam_mock):
 
     subproc_mock = MagicMock()
     subproc_mock.returncode = 1
-    subproc_mock.stdout.readline = MagicMock(side_effect = ['OK'])
+    subproc_mock.stdout = subproc_stdout
     popen_mock.return_value = subproc_mock
-    getgrnam_mock.return_value = "mapred"
+    getgrnam_mock.return_value = _get_group()
 
     try:
       with Environment('/') as env:
@@ -144,5 +155,15 @@ class TestGroupResource(TestCase):
       pass
 
     self.assertEqual(popen_mock.call_count, 1)
-    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', 'groupdel mapred'], shell=False, preexec_fn=None, stderr=-2, stdout=5, bufsize=1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
+    popen_mock.assert_called_with(['/bin/bash', '--login', '--noprofile', '-c', 'ambari-sudo.sh  PATH=/bin -H -E groupdel mapred'], shell=False, preexec_fn=None, stderr=-2, stdout=-1, env={'PATH': '/bin'}, cwd=None, close_fds=True)
     getgrnam_mock.assert_called_with('mapred')
+    
+def _get_group():
+  group = MagicMock()
+  group.gr_name='mapred'
+  group.gr_passwd='x'
+  group.gr_gid=0
+  group.gr_mem=[]
+  
+  return group
+  

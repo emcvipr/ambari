@@ -46,8 +46,8 @@ def prepare_rpcbind():
 
   if p!=0 and q!=0 :
     Logger.info("no portmap or rpcbind running. starting one...")
-    p, output = shell.call("service rpcbind start")
-    q, output = shell.call("service portmap start")
+    p, output = shell.call(("service", "rpcbind", "start"), sudo=True)
+    q, output = shell.call(("service", "portmap", "start"), sudo=True)
     if p!=0 and q!=0 :
       raise Fail("Failed to start rpcbind or portmap")
 
@@ -63,11 +63,6 @@ def nfsgateway(action=None, format=False):
   if action == "configure":
     return
   elif action == "start" or action == "stop":
-    Directory(params.hadoop_pid_dir_prefix,
-              mode=0755,
-              owner=params.root_user,
-              group=params.root_group
-    )
     service(
       action=action,
       name="nfs3",

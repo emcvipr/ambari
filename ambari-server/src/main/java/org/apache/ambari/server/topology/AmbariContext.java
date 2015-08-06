@@ -52,6 +52,7 @@ import org.apache.ambari.server.controller.internal.RequestImpl;
 import org.apache.ambari.server.controller.internal.ServiceResourceProvider;
 import org.apache.ambari.server.controller.internal.Stack;
 import org.apache.ambari.server.controller.predicate.EqualsPredicate;
+import org.apache.ambari.server.controller.spi.ClusterController;
 import org.apache.ambari.server.controller.spi.Predicate;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.utilities.ClusterControllerHelper;
@@ -76,6 +77,7 @@ public class AmbariContext {
 
   private static PersistedState persistedState = new PersistedStateImpl();
   private static AmbariManagementController controller;
+  private static ClusterController clusterController;
   //todo: task id's.  Use existing mechanism for getting next task id sequence
   private final static AtomicLong nextTaskId = new AtomicLong(10000);
 
@@ -85,7 +87,7 @@ public class AmbariContext {
   private static ComponentResourceProvider componentResourceProvider;
   private static HostComponentResourceProvider hostComponentResourceProvider;
 
-  private final static Logger LOG = LoggerFactory.getLogger(TopologyManager.class);
+  private final static Logger LOG = LoggerFactory.getLogger(AmbariContext.class);
 
   public boolean isClusterKerberosEnabled(String clusterName) {
     Cluster cluster;
@@ -260,11 +262,18 @@ public class AmbariContext {
     return getController().getActionManager().getNextRequestId();
   }
 
-  public synchronized AmbariManagementController getController() {
+  public synchronized static AmbariManagementController getController() {
     if (controller == null) {
       controller = AmbariServer.getController();
     }
     return controller;
+  }
+
+  public synchronized static ClusterController getClusterController() {
+    if (clusterController == null) {
+      clusterController = ClusterControllerHelper.getClusterController();
+    }
+    return clusterController;
   }
 
   public static void init(HostRoleCommandFactory factory) {
@@ -333,6 +342,51 @@ public class AmbariContext {
     }
   }
 
+  /**
+   * Verifies that all desired configurations have reached the resolved state
+   *   before proceeding with the install
+   *
+   * @param clusterName name of the cluster
+   * @param updatedConfigTypes set of config types that are required to be in the TOPOLOGY_RESOLVED state
+   *
+   * @throws AmbariException upon any system-level error that occurs
+   */
+  public void waitForConfigurationResolution(String clusterName, Set<String> updatedConfigTypes) throws AmbariException {
+    Cluster cluster = getController().getClusters().getCluster(clusterName);
+    boolean shouldWaitForResolution = true;
+    while (shouldWaitForResolution) {
+      int numOfRequestsStillRequiringResolution = 0;
+
+      // for all config types specified
+      for (String actualConfigType : updatedConfigTypes) {
+        // get the actual cluster config for comparison
+        DesiredConfig actualConfig = cluster.getDesiredConfigs().get(actualConfigType);
+        if (!actualConfig.getTag().equals(TopologyManager.TOPOLOGY_RESOLVED_TAG)) {
+          // if any expected config is not resolved, deployment must wait
+          LOG.info("Config type " + actualConfigType + " not resolved yet, Blueprint deployment will wait until configuration update is completed");
+          numOfRequestsStillRequiringResolution++;
+        } else {
+          LOG.info("Config type " + actualConfigType + " is resolved in the cluster config.");
+        }
+      }
+
+      if (numOfRequestsStillRequiringResolution == 0) {
+        // all configs are resolved, deployment can continue
+        LOG.info("All required configuration types are in the " + TopologyManager.TOPOLOGY_RESOLVED_TAG + " state.  Blueprint deployment can now continue.");
+        shouldWaitForResolution = false;
+      } else {
+        LOG.info("Waiting for " + numOfRequestsStillRequiringResolution + " configuration types to be resolved before Blueprint deployment can continue");
+
+        try {
+          // sleep before checking the config again
+          Thread.sleep(100);
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        }
+      }
+    }
+  }
+
   public boolean doesConfigurationWithTagExist(String clusterName, String tag) {
     boolean isTopologyResolved = false;
     try {
@@ -396,13 +450,17 @@ public class AmbariContext {
     for (ConfigGroup group : configGroups.values()) {
       if (group.getName().equals(qualifiedGroupName)) {
         try {
-          group.addHost(clusters.getHost(hostName));
-          group.persist();
+          Host host = clusters.getHost(hostName);
           addedHost = true;
+          if (! group.getHosts().containsKey(host.getHostId())) {
+            group.addHost(host);
+            group.persistHostMapping();
+          }
+
         } catch (AmbariException e) {
           // shouldn't occur, this host was just added to the cluster
           throw new RuntimeException(String.format(
-              "Unable to obtain newly created host '%s' from cluster '%s'", hostName, topology.getClusterName()));
+              "An error occurred while registering host '%s' with config group '%s' ", hostName, group.getName()), e);
         }
       }
     }
@@ -415,22 +473,23 @@ public class AmbariContext {
    * and the hosts associated with the host group are assigned to the config group.
    */
   private void createConfigGroupsAndRegisterHost(ClusterTopology topology, String groupName) {
-
-    //HostGroupEntity entity = hostGroup.getEntity();
     Map<String, Map<String, Config>> groupConfigs = new HashMap<String, Map<String, Config>>();
-
-    Stack stack = topology.getBlueprint().getHostGroup(groupName).getStack();
+    Stack stack = topology.getBlueprint().getStack();
 
     // get the host-group config with cluster creation template overrides
     Configuration topologyHostGroupConfig = topology.
         getHostGroupInfo().get(groupName).getConfiguration();
 
-    //handling backwards compatibility for group configs
-    //todo: doesn't belong here
-    convertGlobalProperties(topology, topologyHostGroupConfig.getProperties());
+    // only get user provided configuration for host group which includes only CCT/HG and BP/HG properties
+    Map<String, Map<String, String>> userProvidedGroupProperties =
+        topologyHostGroupConfig.getFullProperties(1);
 
-    // iterate over topo host group configs which were defined in CCT/HG and BP/HG only, no parent configs
-    for (Map.Entry<String, Map<String, String>> entry : topologyHostGroupConfig.getProperties().entrySet()) {
+    //todo: doesn't belong here.
+    //handling backwards compatibility for group configs
+    convertGlobalProperties(topology, userProvidedGroupProperties);
+
+    // iterate over topo host group configs which were defined in
+    for (Map.Entry<String, Map<String, String>> entry : userProvidedGroupProperties.entrySet()) {
       String type = entry.getKey();
       String service = stack.getServiceForConfigType(type);
       Config config = new ConfigImpl(type);
@@ -461,7 +520,7 @@ public class AmbariContext {
 
       // get the config group provider and create config group resource
       ConfigGroupResourceProvider configGroupProvider = (ConfigGroupResourceProvider)
-          ClusterControllerHelper.getClusterController().ensureResourceProvider(Resource.Type.ConfigGroup);
+          getClusterController().ensureResourceProvider(Resource.Type.ConfigGroup);
 
       try {
         configGroupProvider.createResources(Collections.singleton(request));

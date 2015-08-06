@@ -23,9 +23,8 @@ import java.util.Map;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.ServiceComponentHostResponse;
+import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.state.fsm.InvalidStateTransitionException;
-
-import com.google.inject.persist.Transactional;
 
 
 public interface ServiceComponentHost {
@@ -57,6 +56,12 @@ public interface ServiceComponentHost {
    * @return Host's hostname
    */
   public String getHostName();
+
+  /**
+   * Get the Host this object maps to
+   * @return Host Object
+   */
+  Host getHost();
 
   /**
    * Send a ServiceComponentHostState event to the StateMachine
@@ -145,7 +150,6 @@ public interface ServiceComponentHost {
 
   boolean isPersisted();
 
-  @Transactional
   void persist();
 
   void refresh();
@@ -203,9 +207,9 @@ public interface ServiceComponentHost {
 
   /**
    * Changes host version state according to state of the components installed on the host.
-   * @return The version number associated with that component in the host
+   * @return The Repository Version Entity with that component in the host
    * @throws AmbariException if host is detached from the cluster
    */
-  public String recalculateHostVersionState() throws AmbariException;
+  public RepositoryVersionEntity recalculateHostVersionState() throws AmbariException;
 
 }

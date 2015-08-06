@@ -25,7 +25,7 @@ import traceback
 from AmbariConfig import AmbariConfig
 import ConfigParser;
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 class HostCheckReportFileHandler:
 
@@ -80,7 +80,7 @@ class HostCheckReportFileHandler:
       with open(self.hostCheckCustomActionsFilePath, 'wb') as configfile:
         config.write(configfile)
     except Exception, err:
-      logger.error("Can't write host check file at %s :%s " % (self.hostCheckFilePath, err.message))
+      logger.error("Can't write host check file at %s :%s " % (self.hostCheckCustomActionsFilePath, err.message))
       traceback.print_exc()
 
   def writeHostCheckFile(self, hostInfo):
@@ -88,7 +88,7 @@ class HostCheckReportFileHandler:
       return
 
     try:
-      logger.info("Host check report at " + self.hostCheckFilePath)
+      logger.debug("Host check report at " + self.hostCheckFilePath)
       config = ConfigParser.RawConfigParser()
       config.add_section('metadata')
       config.set('metadata', 'created', str(datetime.datetime.now()))
@@ -117,6 +117,8 @@ class HostCheckReportFileHandler:
         items = []
         for itemDetail in hostInfo['stackFoldersAndFiles']:
           items.append(itemDetail['name'])
+        if os.path.exists('/usr/hdp'):
+          items.append('/usr/hdp')
         config.add_section('directories')
         config.set('directories', 'dir_list', ','.join(items))
 
@@ -138,12 +140,12 @@ class HostCheckReportFileHandler:
 
   def removeFile(self, path):
     if os.path.isfile(path):
-      logger.info("Removing old host check file at %s" % path)
+      logger.debug("Removing old host check file at %s" % path)
       os.remove(path)
 
   def touchFile(self, path):
     if not os.path.isfile(path):
-      logger.info("Creating host check file at %s" % path)
+      logger.debug("Creating host check file at %s" % path)
       open(path, 'w').close()
 
 

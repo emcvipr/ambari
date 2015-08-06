@@ -17,12 +17,14 @@
  */
 package org.apache.ambari.server.orm.dao;
 
+import java.text.MessageFormat;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
 import javax.persistence.TypedQuery;
 
+import com.google.inject.persist.Transactional;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.orm.RequiresSession;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
@@ -53,6 +55,7 @@ public class RepositoryVersionDAO extends CrudDAO<RepositoryVersionEntity, Long>
    */
   @RequiresSession
   public RepositoryVersionEntity findByDisplayName(String displayName) {
+    // TODO, this assumes that the display name is unique, but neither the code nor the DB schema enforces this.
     final TypedQuery<RepositoryVersionEntity> query = entityManagerProvider.get().createNamedQuery("repositoryVersionByDisplayName", RepositoryVersionEntity.class);
     query.setParameter("displayname", displayName);
     return daoUtils.selectSingle(query);
@@ -67,43 +70,40 @@ public class RepositoryVersionDAO extends CrudDAO<RepositoryVersionEntity, Long>
    *          version
    * @return null if there is no suitable repository version
    */
+  @RequiresSession
   public RepositoryVersionEntity findByStackAndVersion(StackId stackId,
       String version) {
-    return findByStackAndVersion(stackId.getStackName(),
-        stackId.getStackVersion(), version);
+    return findByStackNameAndVersion(stackId.getStackName(), version);
   }
 
   /**
    * Retrieves repository version by stack.
    *
-   * @param stack stack
+   * @param stackEntity Stack entity
    * @param version version
    * @return null if there is no suitable repository version
    */
+  @RequiresSession
   public RepositoryVersionEntity findByStackAndVersion(StackEntity stackEntity,
       String version) {
-    return findByStackAndVersion(stackEntity.getStackName(),
-        stackEntity.getStackVersion(), version);
+    return findByStackNameAndVersion(stackEntity.getStackName(), version);
   }
 
   /**
-   * Retrieves repository version by stack.
+   * Retrieves repository version, which is unique in this stack.
    *
-   * @param stackName
-   *          stack name
-   * @param stackVersion
-   *          stack version
-   * @param version
-   *          version
+   * @param stackName Stack name such as HDP, HDPWIN, BIGTOP
+   * @param version version
    * @return null if there is no suitable repository version
    */
   @RequiresSession
-  private RepositoryVersionEntity findByStackAndVersion(String stackName,
-      String stackVersion, String version) {
-    final TypedQuery<RepositoryVersionEntity> query = entityManagerProvider.get().createNamedQuery(
-        "repositoryVersionByStackVersion", RepositoryVersionEntity.class);
+  public RepositoryVersionEntity findByStackNameAndVersion(String stackName, String version) {
+    // TODO, need to make a unique composite key in DB using the repo_version's stack_id and version.
+    // Ideally, 1.0-1234 foo should be unique in all HDP stacks.
+    // The composite key is slightly more relaxed since it would only prevent 2.3.0-1234 multiple times in the HDP 2.3 stack.
+    // There's already business logic to prevent creating 2.3-1234 in the wrong stack such as HDP 2.2.
+    final TypedQuery<RepositoryVersionEntity> query = entityManagerProvider.get().createNamedQuery("repositoryVersionByStackNameAndVersion", RepositoryVersionEntity.class);
     query.setParameter("stackName", stackName);
-    query.setParameter("stackVersion", stackVersion);
     query.setParameter("version", version);
     return daoUtils.selectSingle(query);
   }
@@ -111,20 +111,7 @@ public class RepositoryVersionDAO extends CrudDAO<RepositoryVersionEntity, Long>
   /**
    * Retrieves repository version by stack.
    *
-   * @param version version
-   * @return null if there is no suitable repository version
-   */
-  @RequiresSession
-  public List<RepositoryVersionEntity> findByVersion(String version) {
-    final TypedQuery<RepositoryVersionEntity> query = entityManagerProvider.get().createNamedQuery("repositoryVersionByVersion", RepositoryVersionEntity.class);
-    query.setParameter("version", version);
-    return daoUtils.selectList(query);
-  }
-
-  /**
-   * Retrieves repository version by stack.
-   *
-   * @param stack
+   * @param stackId stack id
    *          stack with major version (like HDP-2.2)
    * @return null if there is no suitable repository version
    */
@@ -138,7 +125,8 @@ public class RepositoryVersionDAO extends CrudDAO<RepositoryVersionEntity, Long>
 
   /**
    * Validates and creates an object.
-   * @param stack Stack name, e.g., HDP or HDP-2.2
+   * The version must be unique within this stack name (e.g., HDP, HDPWIN, BIGTOP).
+   * @param stackEntity Stack entity.
    * @param version Stack version, e.g., 2.2 or 2.2.0.1-885
    * @param displayName Unique display name
    * @param upgradePack Optional upgrade pack, e.g, upgrade-2.2
@@ -146,6 +134,7 @@ public class RepositoryVersionDAO extends CrudDAO<RepositoryVersionEntity, Long>
    * @return Returns the object created if successful, and throws an exception otherwise.
    * @throws AmbariException
    */
+  @Transactional
   public RepositoryVersionEntity create(StackEntity stackEntity,
       String version, String displayName, String upgradePack,
       String operatingSystems) throws AmbariException {
@@ -161,12 +150,17 @@ public class RepositoryVersionDAO extends CrudDAO<RepositoryVersionEntity, Long>
       throw new AmbariException("Repository version with display name '" + displayName + "' already exists");
     }
 
-    RepositoryVersionEntity existingByStackAndVersion = findByStackAndVersion(
-        stackEntity, version);
+    RepositoryVersionEntity existingVersionInStack = findByStackNameAndVersion(stackEntity.getStackName(), version);
 
-    if (existingByStackAndVersion != null) {
-      throw new AmbariException("Repository version for stack " + stackEntity
-          + " and version " + version + " already exists");
+    if (existingVersionInStack != null) {
+      throw new AmbariException(MessageFormat.format("Repository Version for version {0} already exists, in stack {1}-{2}",
+          version, existingVersionInStack.getStack().getStackName(), existingVersionInStack.getStack().getStackVersion()));
+    }
+
+
+    StackId stackId = new StackId(stackEntity.getStackName(), stackEntity.getStackVersion() );
+    if (!RepositoryVersionEntity.isVersionInStack(stackId, version)) {
+      throw new AmbariException(MessageFormat.format("Version {0} needs to belong to stack {1}", version, stackEntity.getStackName() + "-" + stackEntity.getStackVersion()));
     }
 
     RepositoryVersionEntity newEntity = new RepositoryVersionEntity(
@@ -174,33 +168,4 @@ public class RepositoryVersionDAO extends CrudDAO<RepositoryVersionEntity, Long>
     this.create(newEntity);
     return newEntity;
   }
-
-  /**
-   * Finds the repository version, making sure if there is more than one match
-   * (unlikely) that the latest stack is chosen.
-   * @param version the version to find
-   * @return the matching repo version entity
-   */
-  public RepositoryVersionEntity findMaxByVersion(String version) {
-    List<RepositoryVersionEntity> list = findByVersion(version);
-    if (null == list || 0 == list.size()) {
-      return null;
-    } else if (1 == list.size()) {
-      return list.get(0);
-    } else {
-      Collections.sort(list, new Comparator<RepositoryVersionEntity>() {
-        @Override
-        public int compare(RepositoryVersionEntity o1, RepositoryVersionEntity o2) {
-          return VersionUtils.compareVersions(o1.getVersion(), o2.getVersion());
-        }
-      });
-
-      Collections.reverse(list);
-
-      return list.get(0);
-    }
-
-  }
-
-
 }

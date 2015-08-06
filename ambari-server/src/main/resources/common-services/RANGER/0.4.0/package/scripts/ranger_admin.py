@@ -25,8 +25,11 @@ from resource_management.core.logger import Logger
 from resource_management.core import shell
 from ranger_service import ranger_service
 import upgrade
+import os, errno
 
 class RangerAdmin(Script):
+
+  upgrade_marker_file = '/tmp/rangeradmin_ru.inprogress'
 
   def get_stack_to_component(self):
     return {"HDP": "ranger-admin"}
@@ -49,12 +52,26 @@ class RangerAdmin(Script):
     import params
 
     env.set_params(params)
-    Execute(format('{params.ranger_stop}'), user=params.unix_user)
+    Execute(format('{params.ranger_stop}'), environment={'JAVA_HOME': params.java_home}, user=params.unix_user)
+
 
   def pre_rolling_restart(self, env):
     import params
     env.set_params(params)
+
     upgrade.prestart(env, "ranger-admin")
+
+    if params.xml_configurations_supported:
+      from setup_ranger_xml import ranger, setup_ranger_db, setup_java_patch
+      ranger('ranger_admin', rolling_upgrade=True)
+      setup_ranger_db(rolling_upgrade=True)
+      setup_java_patch(rolling_upgrade=True)
+
+    self.set_ru_rangeradmin_in_progress()
+
+  def post_rolling_restart(self,env):
+     if os.path.isfile(RangerAdmin.upgrade_marker_file):
+        os.remove(RangerAdmin.upgrade_marker_file) 
 
   def start(self, env, rolling_restart=False):
     import params
@@ -68,8 +85,11 @@ class RangerAdmin(Script):
     code, output = shell.call(cmd, timeout=20)
 
     if code != 0:
-      Logger.debug('Ranger admin process not running')
-      raise ComponentIsNotRunning()
+      if self.is_ru_rangeradmin_in_progress():
+         Logger.info('Ranger admin process not running - skipping as rolling upgrade is in progress')
+      else:
+         Logger.debug('Ranger admin process not running')
+         raise ComponentIsNotRunning()
     pass
 
   def configure(self, env):
@@ -82,6 +102,24 @@ class RangerAdmin(Script):
 
     ranger('ranger_admin')
 
+  def set_ru_rangeradmin_in_progress(self):
+    config_dir = os.path.dirname(RangerAdmin.upgrade_marker_file)
+    try:
+       msg = "Starting RU"
+       if (not os.path.exists(config_dir)):
+          os.makedirs(config_dir)
+       ofp = open(RangerAdmin.upgrade_marker_file, 'w')
+       ofp.write(msg)
+       ofp.close()
+    except OSError as exc:
+       if exc.errno == errno.EEXIST and os.path.isdir(config_dir): 
+          pass
+       else:
+          raise
+
+  def is_ru_rangeradmin_in_progress(self):
+    return os.path.isfile(RangerAdmin.upgrade_marker_file)
 
 if __name__ == "__main__":
   RangerAdmin().execute()
+

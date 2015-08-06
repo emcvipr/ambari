@@ -30,8 +30,20 @@ import org.apache.velocity.exception.MethodInvocationException;
 import org.apache.velocity.exception.ParseErrorException;
 import org.apache.velocity.exception.ResourceNotFoundException;
 
-import javax.naming.*;
-import javax.naming.directory.*;
+import javax.naming.AuthenticationException;
+import javax.naming.CommunicationException;
+import javax.naming.Context;
+import javax.naming.InvalidNameException;
+import javax.naming.NamingEnumeration;
+import javax.naming.NamingException;
+import javax.naming.directory.Attribute;
+import javax.naming.directory.Attributes;
+import javax.naming.directory.BasicAttribute;
+import javax.naming.directory.BasicAttributes;
+import javax.naming.directory.DirContext;
+import javax.naming.directory.ModificationItem;
+import javax.naming.directory.SearchControls;
+import javax.naming.directory.SearchResult;
 import javax.naming.ldap.Control;
 import javax.naming.ldap.InitialLdapContext;
 import javax.naming.ldap.LdapContext;
@@ -41,13 +53,9 @@ import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Type;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
 
 /**
  * Implementation of <code>KerberosOperationHandler</code> to created principal in Active Directory
@@ -59,42 +67,19 @@ public class ADKerberosOperationHandler extends KerberosOperationHandler {
   private static final String LDAP_CONTEXT_FACTORY_CLASS = "com.sun.jndi.ldap.LdapCtxFactory";
 
   /**
-   * A Set of special characters that need to be escaped if they exist within a value in a
-   * Distinguished Name.
-   *
-   * See http://social.technet.microsoft.com/wiki/contents/articles/5312.active-directory-characters-to-escape.aspx
-   */
-  private static final Set<Character> SPECIAL_DN_CHARACTERS = Collections.unmodifiableSet(
-      new HashSet<Character>() {
-        {
-          add('/');
-          add(',');
-          add('\\');
-          add('#');
-          add('+');
-          add('<');
-          add('>');
-          add(';');
-          add('"');
-          add('=');
-          add(' ');
-        }
-      });
-
-  /**
-   * The character to use to escape a special character within a value in a Distinguished Name
-   */
-  private static final Character DN_ESCAPE_CHARACTER = '\\';
-
-  /**
    * A String containing the URL for the LDAP interface for the relevant Active Directory
    */
   private String ldapUrl = null;
 
   /**
-   * A String containing the DN of the container to create new account in
+   * A String containing the DN of the container for managing Active Directory accounts
    */
   private String principalContainerDn = null;
+
+  /**
+   * The LdapName of the container for managing Active Directory accounts
+   */
+  private LdapName principalContainerLdapName = null;
 
   /**
    * A String containing the Velocity template to use to generate the JSON structure declaring the
@@ -168,6 +153,12 @@ public class ADKerberosOperationHandler extends KerberosOperationHandler {
       throw new KerberosLDAPContainerException("principalContainerDn not provided");
     }
 
+    try {
+      this.principalContainerLdapName = new LdapName(principalContainerDn);
+    } catch (InvalidNameException e) {
+      throw new KerberosLDAPContainerException("principalContainerDn is not a valid LDAP name", e);
+    }
+
     setAdministratorCredentials(administratorCredentials);
     setDefaultRealm(realm);
     setKeyEncryptionTypes(translateEncryptionTypes(kerberosConfiguration.get(KERBEROS_ENV_ENCRYPTION_TYPES), "\\s+"));
@@ -175,7 +166,7 @@ public class ADKerberosOperationHandler extends KerberosOperationHandler {
     this.ldapContext = createLdapContext();
     this.searchControls = createSearchControls();
 
-    this.createTemplate = kerberosConfiguration.get(KERBEROS_ENV_CREATE_ATTRIBUTES_TEMPLATE);
+    this.createTemplate = kerberosConfiguration.get(KERBEROS_ENV_AD_CREATE_ATTRIBUTES_TEMPLATE);
 
     this.gson = new Gson();
 
@@ -302,12 +293,16 @@ public class ADKerberosOperationHandler extends KerberosOperationHandler {
               attribute.add(object);
             }
           } else {
-            attribute.add(value);
-
             if ("cn".equals(key) && (value != null)) {
               cn = value.toString();
+            } else if ("sAMAccountName".equals(key) && (value != null)) {
+              // Replace the following _illegal_ characters: [ ] : ; | = + * ? < > / , (space) \
+              value = value.toString().replaceAll("\\[|\\]|\\:|\\;|\\||\\=|\\+|\\*|\\?|\\<|\\>|\\/|\\\\|\\,|\\s", "_");
             }
+
+            attribute.add(value);
           }
+
           attributes.put(attribute);
         }
       }
@@ -316,8 +311,11 @@ public class ADKerberosOperationHandler extends KerberosOperationHandler {
     if (cn == null) {
       cn = deconstructedPrincipal.getNormalizedPrincipal();
     }
+
     try {
-      Name name = new CompositeName().add(String.format("cn=%s,%s", cn, principalContainerDn));
+      Rdn rdn = new Rdn("cn", cn);
+      LdapName name = new LdapName(principalContainerLdapName.getRdns());
+      name.add(name.size(), rdn);
       ldapContext.createSubcontext(name, attributes);
     } catch (NamingException ne) {
       throw new KerberosOperationException("Can not create principal : " + principal, ne);
@@ -354,7 +352,7 @@ public class ADKerberosOperationHandler extends KerberosOperationHandler {
 
       if (dn != null) {
         ldapContext.modifyAttributes(
-            escapeDNCharacters(dn),
+            new LdapName(dn),
             new ModificationItem[]{
                 new ModificationItem(DirContext.REPLACE_ATTRIBUTE, new BasicAttribute("unicodePwd", String.format("\"%s\"", password).getBytes("UTF-16LE")))
             }
@@ -395,7 +393,7 @@ public class ADKerberosOperationHandler extends KerberosOperationHandler {
       String dn = findPrincipalDN(deconstructPrincipal.getNormalizedPrincipal());
 
       if (dn != null) {
-        ldapContext.destroySubcontext(dn);
+        ldapContext.destroySubcontext(new LdapName(dn));
       }
     } catch (NamingException e) {
       throw new KerberosOperationException(String.format("Can not remove principal %s: %s", principal, e.getMessage()), e);
@@ -559,7 +557,7 @@ public class ADKerberosOperationHandler extends KerberosOperationHandler {
 
       try {
         results = ldapContext.search(
-            principalContainerDn,
+            principalContainerLdapName,
             String.format("(userPrincipalName=%s)", normalizedPrincipal),
             searchControls
         );
@@ -580,35 +578,5 @@ public class ADKerberosOperationHandler extends KerberosOperationHandler {
     }
 
     return dn;
-  }
-
-  /**
-   * Iterates through the characters of the given distinguished name to escape special characters
-   *
-   * @param dn the distinguished name to process
-   * @return the distinguished name with escaped characters
-   * @see #escapeCharacters(String, java.util.Set, Character)
-   */
-  protected String escapeDNCharacters(String dn) throws InvalidNameException {
-    if ((dn == null) || dn.isEmpty()) {
-      return dn;
-    } else {
-      LdapName name = new LdapName(dn);
-      List<Rdn> rdns = name.getRdns();
-
-      if ((rdns == null) || rdns.isEmpty()) {
-        throw new InvalidNameException(String.format("One or more RDNs are expected for a DN of %s", dn));
-      }
-
-      StringBuilder builder = new StringBuilder();
-      for (Rdn rdn : rdns) {
-        builder.insert(0,
-            String.format(",%s=%s",
-                rdn.getType(),
-                escapeCharacters((String) rdn.getValue(), SPECIAL_DN_CHARACTERS, DN_ESCAPE_CHARACTER)));
-      }
-
-      return builder.substring(1);
-    }
   }
 }

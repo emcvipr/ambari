@@ -21,12 +21,11 @@ limitations under the License.
 """
 http://apscheduler.readthedocs.org/en/v2.1.2
 """
-import json
+import ambari_simplejson as json
 import logging
 import os
 import sys
 import time
-import atexit
 
 from apscheduler.scheduler import Scheduler
 from alerts.collector import AlertCollector
@@ -34,8 +33,8 @@ from alerts.metric_alert import MetricAlert
 from alerts.port_alert import PortAlert
 from alerts.script_alert import ScriptAlert
 from alerts.web_alert import WebAlert
-
-logger = logging.getLogger()
+from ambari_agent.ExitHelper import ExitHelper
+logger = logging.getLogger(__name__)
 
 class AlertSchedulerHandler():
   FILENAME = 'definitions.json'
@@ -72,7 +71,7 @@ class AlertSchedulerHandler():
     self.config = config
 
     # register python exit handler
-    atexit.register(self.exit_handler)
+    ExitHelper().register(self.exit_handler)
 
 
   def exit_handler(self):
@@ -261,28 +260,33 @@ class AlertSchedulerHandler():
     converts the json that represents all aspects of a definition
     and makes an object that extends BaseAlert that is used for individual
     """
-    source = json_definition['source']
-    source_type = source.get('type', '')
-
-    if logger.isEnabledFor(logging.DEBUG):
-      logger.debug("[AlertScheduler] Creating job type {0} with {1}".format(source_type, str(json_definition)))
-
     alert = None
 
-    if source_type == AlertSchedulerHandler.TYPE_METRIC:
-      alert = MetricAlert(json_definition, source)
-    elif source_type == AlertSchedulerHandler.TYPE_PORT:
-      alert = PortAlert(json_definition, source)
-    elif source_type == AlertSchedulerHandler.TYPE_SCRIPT:
-      source['stacks_directory'] = self.stacks_dir
-      source['common_services_directory'] = self.common_services_dir
-      source['host_scripts_directory'] = self.host_scripts_dir
-      alert = ScriptAlert(json_definition, source, self.config)
-    elif source_type == AlertSchedulerHandler.TYPE_WEB:
-      alert = WebAlert(json_definition, source, self.config)
+    try:
+      source = json_definition['source']
+      source_type = source.get('type', '')
 
-    if alert is not None:
-      alert.set_cluster(clusterName, hostName)
+      if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("[AlertScheduler] Creating job type {0} with {1}".format(source_type, str(json_definition)))
+
+
+      if source_type == AlertSchedulerHandler.TYPE_METRIC:
+        alert = MetricAlert(json_definition, source, self.config)
+      elif source_type == AlertSchedulerHandler.TYPE_PORT:
+        alert = PortAlert(json_definition, source)
+      elif source_type == AlertSchedulerHandler.TYPE_SCRIPT:
+        source['stacks_directory'] = self.stacks_dir
+        source['common_services_directory'] = self.common_services_dir
+        source['host_scripts_directory'] = self.host_scripts_dir
+        alert = ScriptAlert(json_definition, source, self.config)
+      elif source_type == AlertSchedulerHandler.TYPE_WEB:
+        alert = WebAlert(json_definition, source, self.config)
+
+      if alert is not None:
+        alert.set_cluster(clusterName, hostName)
+
+    except Exception,exception:
+      logger.exception("[AlertScheduler] Unable to load an invalid alert definition. It will be skipped.")
 
     return alert
 
@@ -364,15 +368,7 @@ def main():
   args = list(sys.argv)
   del args[0]
 
-  try:
-    logger.setLevel(logging.DEBUG)
-  except TypeError:
-    logger.setLevel(12)
-
-  ch = logging.StreamHandler()
-  ch.setLevel(logger.level)
-  logger.addHandler(ch)
-    
+  
   ash = AlertSchedulerHandler(args[0], args[1], args[2], False)
   ash.start()
   

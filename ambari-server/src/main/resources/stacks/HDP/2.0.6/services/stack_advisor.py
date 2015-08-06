@@ -124,8 +124,8 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putYarnProperty = self.putProperty(configurations, "yarn-site", services)
     putYarnEnvProperty = self.putProperty(configurations, "yarn-env", services)
     nodemanagerMinRam = 1048576 # 1TB in mb
-    for nodemanager in self.getHostsWithComponent("YARN", "NODEMANAGER", services, hosts):
-      nodemanagerMinRam = min(nodemanager["Hosts"]["total_mem"]/1024, nodemanagerMinRam)
+    if "referenceNodeManagerHost" in clusterData:
+      nodemanagerMinRam = min(clusterData["referenceNodeManagerHost"]["total_mem"]/1024, nodemanagerMinRam)
     putYarnProperty('yarn.nodemanager.resource.memory-mb', int(round(min(clusterData['containers'] * clusterData['ramPerContainer'], nodemanagerMinRam))))
     putYarnProperty('yarn.scheduler.minimum-allocation-mb', int(clusterData['ramPerContainer']))
     putYarnProperty('yarn.scheduler.maximum-allocation-mb', int(configurations["yarn-site"]["properties"]["yarn.nodemanager.resource.memory-mb"]))
@@ -155,18 +155,25 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putHbaseProperty('hbase_master_heapsize', int(clusterData['hbaseRam']) * 1024)
 
   def recommendAmsConfigurations(self, configurations, clusterData, services, hosts):
-    putAmsEnvProperty = self.putProperty(configurations, "ams-env")
-    putAmsHbaseSiteProperty = self.putProperty(configurations, "ams-hbase-site")
-    putTimelineServiceProperty = self.putProperty(configurations, "ams-site")
-    putHbaseEnvProperty = self.putProperty(configurations, "ams-hbase-env")
+    putAmsEnvProperty = self.putProperty(configurations, "ams-env", services)
+    putAmsHbaseSiteProperty = self.putProperty(configurations, "ams-hbase-site", services)
+    putTimelineServiceProperty = self.putProperty(configurations, "ams-site", services)
+    putHbaseEnvProperty = self.putProperty(configurations, "ams-hbase-env", services)
 
     amsCollectorHosts = self.getComponentHostNames(services, "AMBARI_METRICS", "METRICS_COLLECTOR")
-    putHbaseEnvProperty("hbase_regionserver_heapsize", "1024m")
     # blockCache = 0.3, memstore = 0.35, phoenix-server = 0.15, phoenix-client = 0.25
     putAmsHbaseSiteProperty("hfile.block.cache.size", 0.3)
     putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.upperLimit", 0.35)
     putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.lowerLimit", 0.3)
     putTimelineServiceProperty("timeline.metrics.host.aggregator.ttl", 86400)
+
+    rootDir = "file:///var/lib/ambari-metrics-collector/hbase"
+    tmpDir = "/var/lib/ambari-metrics-collector/hbase-tmp"
+    if "ams-hbase-site" in services["configurations"]:
+      if "hbase.rootdir" in services["configurations"]["ams-hbase-site"]["properties"]:
+        rootDir = services["configurations"]["ams-hbase-site"]["properties"]["hbase.rootdir"]
+      if "hbase.tmp.dir" in services["configurations"]["ams-hbase-site"]["properties"]:
+        tmpDir = services["configurations"]["ams-hbase-site"]["properties"]["hbase.tmp.dir"]
 
     # TODO recommend configuration for multiple AMBARI_METRICS collectors
     if len(amsCollectorHosts) > 1:
@@ -174,8 +181,9 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     else:
       totalHostsCount = len(hosts["items"])
       # blockCache = 0.3, memstore = 0.3, phoenix-server = 0.2, phoenix-client = 0.3
+      putHbaseEnvProperty("hbase_master_heapsize", "512m")
       if totalHostsCount >= 400:
-        putHbaseEnvProperty("hbase_regionserver_heapsize", "12288m")
+        hbase_heapsize = "12288m"
         putAmsEnvProperty("metrics_collector_heapsize", "8192m")
         putAmsHbaseSiteProperty("hbase.regionserver.handler.count", 60)
         putAmsHbaseSiteProperty("hbase.regionserver.hlog.blocksize", 134217728)
@@ -188,7 +196,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
         putAmsHbaseSiteProperty("hbase_master_xmn_size", "512m")
         putAmsHbaseSiteProperty("regionserver_xmn_size", "512m")
       elif totalHostsCount >= 100:
-        putHbaseEnvProperty("hbase_regionserver_heapsize", "6144m")
+        hbase_heapsize = "6144m"
         putAmsEnvProperty("metrics_collector_heapsize", "4096m")
         putAmsHbaseSiteProperty("hbase.regionserver.handler.count", 60)
         putAmsHbaseSiteProperty("hbase.regionserver.hlog.blocksize", 134217728)
@@ -196,17 +204,36 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
         putAmsHbaseSiteProperty("hbase.hregion.memstore.flush.size", 268435456)
         putAmsHbaseSiteProperty("hbase_master_xmn_size", "512m")
       elif totalHostsCount >= 50:
-        putHbaseEnvProperty("hbase_regionserver_heapsize", "2048m")
-        putHbaseEnvProperty("hbase_master_heapsize", "512m")
+        hbase_heapsize = "2048m"
         putAmsEnvProperty("metrics_collector_heapsize", "2048m")
         putAmsHbaseSiteProperty("hbase_master_xmn_size", "256m")
       else:
         # Embedded mode heap size : master + regionserver
-        putHbaseEnvProperty("hbase_regionserver_heapsize", "512m")
-        putHbaseEnvProperty("hbase_master_heapsize", "512m")
+        hbase_heapsize = "512m"
         putAmsEnvProperty("metrics_collector_heapsize", "512m")
         putAmsHbaseSiteProperty("hbase_master_xmn_size", "128m")
       pass
+
+      if rootDir.startswith("hdfs://"):
+        putHbaseEnvProperty("hbase_regionserver_heapsize", hbase_heapsize)
+      else:
+        putHbaseEnvProperty("hbase_master_heapsize", hbase_heapsize)
+
+    mountpoint = "/"
+    for collectorHostName in amsCollectorHosts:
+      for host in hosts["items"]:
+        if host["Hosts"]["host_name"] == collectorHostName:
+          mountpoint = self.getProperMountPoint(host["Hosts"])
+          break
+    if not rootDir.startswith("hdfs://") :
+      rootDir = re.sub("^file:///|/", "", rootDir, count=1)
+      rootDir = "file://" + os.path.join(mountpoint, rootDir)
+    tmpDir = re.sub("^file:///|/", "", tmpDir, count=1)
+    tmpDir = os.path.join(mountpoint, tmpDir)
+
+    putAmsHbaseSiteProperty("hbase.rootdir", rootDir)
+    putAmsHbaseSiteProperty("hbase.tmp.dir", tmpDir)
+
     pass
 
 
@@ -251,11 +278,18 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     }
 
     if len(hosts["items"]) > 0:
-      nodeManagerHost = self.getHostWithComponent("YARN", "NODEMANAGER", services, hosts)
-      if nodeManagerHost is not None:
+      nodeManagerHosts = self.getHostsWithComponent("YARN", "NODEMANAGER", services, hosts)
+      # NodeManager host with least memory is generally used in calculations as it will work in larger hosts.
+      if nodeManagerHosts is not None and len(nodeManagerHosts) > 0:
+        nodeManagerHost = nodeManagerHosts[0];
+        for nmHost in nodeManagerHosts:
+          if nmHost["Hosts"]["total_mem"] < nodeManagerHost["Hosts"]["total_mem"]:
+            nodeManagerHost = nmHost
         host = nodeManagerHost["Hosts"]
+        cluster["referenceNodeManagerHost"] = host
       else:
         host = hosts["items"][0]["Hosts"]
+      cluster["referenceHost"] = host
       cluster["cpu"] = host["cpu_count"]
       cluster["disk"] = len(host["disk_info"])
       cluster["ram"] = int(host["total_mem"] / (1024 * 1024))
@@ -299,7 +333,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     totalAvailableRam = cluster["ram"] - cluster["reservedRam"]
     if cluster["hBaseInstalled"]:
       totalAvailableRam -= cluster["hbaseRam"]
-    cluster["totalAvailableRam"] = max(2048, totalAvailableRam * 1024)
+    cluster["totalAvailableRam"] = max(512, totalAvailableRam * 1024)
     '''containers = max(3, min (2*cores,min (1.8*DISKS,(Total available RAM) / MIN_CONTAINER_SIZE))))'''
     cluster["containers"] = round(max(3,
                                 min(2 * cluster["cpu"],
@@ -347,27 +381,6 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
   def validateClusterConfigurations(self, configurations, services, hosts):
     validationItems = []
-    hostComponents = {}
-    failureMessage = ""
-
-    for service in services["services"]:
-      for component in service["components"]:
-        if component["StackServiceComponents"]["hostnames"] is not None:
-          for hostName in component["StackServiceComponents"]["hostnames"]:
-            if hostName not in hostComponents.keys():
-              hostComponents[hostName] = []
-            hostComponents[hostName].append(component["StackServiceComponents"]["component_name"])
-
-    for host in hosts["items"]:
-      # Not enough physical memory
-      requiredMemory = getMemorySizeRequired(hostComponents[host["Hosts"]["host_name"]], configurations)
-      if host["Hosts"]["total_mem"] * 1024 < requiredMemory:  # in bytes
-        failureMessage += "Not enough physical RAM on the host {0}. " \
-                          "At least {1} MB is recommended based on components assigned.\n" \
-          .format(host["Hosts"]["host_name"], requiredMemory/1048576)  # MB
-    if failureMessage:
-      notEnoughMemoryItem = self.getWarnItem(failureMessage)
-      validationItems.extend([{"config-name": "", "item": notEnoughMemoryItem}])
 
     return self.toConfigurationValidationProblems(validationItems, "")
 
@@ -447,6 +460,8 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       for host in hosts["items"]:
         if host["Hosts"]["host_name"] == collectorHostName:
           validationItems.extend([ {"config-name": 'hbase.rootdir', "item": self.validatorEnoughDiskSpace(properties, 'hbase.rootdir', host["Hosts"], recommendedDiskSpace)}])
+          validationItems.extend([ {"config-name": 'hbase.rootdir', "item": self.validatorNotRootFs(properties, 'hbase.rootdir', host["Hosts"])}])
+          validationItems.extend([ {"config-name": 'hbase.tmp.dir', "item": self.validatorNotRootFs(properties, 'hbase.tmp.dir', host["Hosts"])}])
           break
 
     rootdir_item = None
@@ -538,12 +553,48 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
   def getErrorItem(self, message):
     return {"level": "ERROR", "message": message}
 
+  def getProperMountPoint(self, hostInfo):
+
+    # '/etc/resolv.conf', '/etc/hostname', '/etc/hosts' are docker specific mount points
+    undesirableMountPoints = ["/", "/home", "/etc/resolv.conf", "/etc/hosts",
+                              "/etc/hostname"]
+    undesirableFsTypes = ["devtmpfs", "tmpfs", "vboxsf", "CDFS"]
+    if hostInfo and "disk_info" in hostInfo:
+      mountPoints = {}
+      for mountpoint in hostInfo["disk_info"]:
+        if not (mountpoint["mountpoint"] in undesirableMountPoints or
+                mountpoint["mountpoint"].startswith(("/boot", "/mnt")) or
+                mountpoint["type"] in undesirableFsTypes or
+                mountpoint["available"] == str(0)):
+          mountPoints[mountpoint["mountpoint"]] = to_number(mountpoint["available"])
+      if mountPoints:
+        return max(mountPoints, key=mountPoints.get)
+    return "/"
+
+  def validatorNotRootFs(self, properties, propertyName, hostInfo):
+    if not propertyName in properties:
+      return self.getErrorItem("Value should be set")
+    dir = properties[propertyName]
+    if dir.startswith("hdfs://"):
+      return None
+
+    dir = re.sub("^file://", "", dir, count=1)
+    mountPoints = []
+    for mountPoint in hostInfo["disk_info"]:
+      mountPoints.append(mountPoint["mountpoint"])
+    mountPoint = getMountPointForDir(dir, mountPoints)
+
+    if "/" == mountPoint and self.getProperMountPoint(hostInfo) != mountPoint:
+      return self.getWarnItem("The root device should not be used for {0}".format(propertyName))
+
+    return None
+
   def validatorEnoughDiskSpace(self, properties, propertyName, hostInfo, reqiuredDiskSpace):
     if not propertyName in properties:
       return self.getErrorItem("Value should be set")
     dir = properties[propertyName]
     if dir.startswith("hdfs://"):
-      return None #TODO following code fails for hdfs://, is this valid check for hdfs?
+      return None
 
     dir = re.sub("^file://", "", dir, count=1)
     mountPoints = {}
@@ -607,7 +658,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     if value is None:
       return self.getErrorItem("Value can't be null or undefined")
     try:
-      valueInt = int(value.strip()[:-1])
+      valueInt = to_number(value)
       # TODO: generify for other use cases
       defaultValueInt = int(str(defaultValue).strip())
       if valueInt < defaultValueInt:
@@ -625,8 +676,12 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     defaultValue = recommendedDefaults[propertyName]
     if defaultValue is None:
       return self.getErrorItem("Config's default value can't be null or undefined")
-    if not checkXmxValueFormat(value):
+    if not checkXmxValueFormat(value) and checkXmxValueFormat(defaultValue):
+      # Xmx is in the default-value but not the value, should be an error
       return self.getErrorItem('Invalid value format')
+    if not checkXmxValueFormat(defaultValue):
+      # if default value does not contain Xmx, then there is no point in validating existing value
+      return None
     valueInt = formatXmxSizeToBytes(getXmxSize(value))
     defaultValueXmx = getXmxSize(defaultValue)
     defaultValueInt = formatXmxSizeToBytes(defaultValueXmx)
@@ -727,6 +782,11 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
     return uid_min
 
+  def mergeValidators(self, parentValidators, childValidators):
+    for service, configsDict in childValidators.iteritems():
+      if service not in parentValidators:
+        parentValidators[service] = {}
+      parentValidators[service].update(configsDict)
 
 # Validation helper methods
 def getSiteProperties(configurations, siteName):
@@ -811,7 +871,7 @@ def getMountPointForDir(dir, mountPoints):
       if dir.startswith(mountPoint):
         if bestMountFound is None:
           bestMountFound = mountPoint
-        elif bestMountFound.count(os.path.sep) < mountPoint.count(os.path.sep):
+        elif bestMountFound.count(os.path.sep) < os.path.join(mountPoint, "").count(os.path.sep):
           bestMountFound = mountPoint
 
   return bestMountFound

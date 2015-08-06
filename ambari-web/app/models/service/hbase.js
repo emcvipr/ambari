@@ -18,10 +18,7 @@
 var App = require('app');
 
 App.HBaseService = App.Service.extend({
-  version: DS.attr('string'),
-  master: function () {
-    return this.get('hostComponents').findProperty('componentName', 'HBASE_MASTER');
-  }.property('hostComponents'),
+  master: DS.belongsTo('App.HostComponent'),
   regionServersStarted: DS.attr('number'),
   regionServersInstalled: DS.attr('number'),
   regionServersTotal: DS.attr('number'),
@@ -32,7 +29,6 @@ App.HBaseService = App.Service.extend({
   masterActiveTime: DS.attr('number'),
   averageLoad: DS.attr('number'),
   regionsInTransition: DS.attr('number'),
-  revision: DS.attr('string'),
   heapMemoryUsed: DS.attr('number'),
   heapMemoryMax: DS.attr('number')
 });

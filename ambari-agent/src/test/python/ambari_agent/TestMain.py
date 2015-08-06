@@ -28,13 +28,9 @@ import tempfile
 import ConfigParser
 
 from ambari_commons import OSCheck
-from only_for_platform import get_platform, not_for_platform, only_for_platform, PLATFORM_WINDOWS, PLATFORM_LINUX
+from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
+from only_for_platform import get_platform, not_for_platform, os_distro_value, PLATFORM_WINDOWS
 from mock.mock import MagicMock, patch, ANY, Mock
-
-if get_platform() != PLATFORM_WINDOWS:
-  os_distro_value = ('Suse','11','Final')
-else:
-  os_distro_value = ('win2012serverr2','6.3','WindowsServer')
 
 with patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value)):
   from ambari_agent import NetUtil, security
@@ -45,9 +41,7 @@ with patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_
   from ambari_agent.DataCleaner import DataCleaner
   import ambari_agent.HeartbeatHandlers as HeartbeatHandlers
   from ambari_commons.os_check import OSConst, OSCheck
-
-  if get_platform() != PLATFORM_WINDOWS:
-    from ambari_commons.shell import shellRunnerLinux
+  from ambari_agent.ExitHelper import ExitHelper
 
 class TestMain(unittest.TestCase):
 
@@ -61,7 +55,7 @@ class TestMain(unittest.TestCase):
     # enable stdout
     sys.stdout = sys.__stdout__
 
-  @only_for_platform(PLATFORM_LINUX)
+  @not_for_platform(PLATFORM_WINDOWS)
   @patch("ambari_agent.HeartbeatHandlers.HeartbeatStopHandlersLinux")
   @patch("sys.exit")
   @patch("os.getpid")
@@ -130,15 +124,13 @@ class TestMain(unittest.TestCase):
     main.update_log_level(config)
     setLevel_mock.assert_called_with(logging.INFO)
 
-  @only_for_platform(PLATFORM_LINUX)
+  @not_for_platform(PLATFORM_WINDOWS)
   @patch("signal.signal")
   def test_bind_signal_handlers(self, signal_mock):
     main.bind_signal_handlers(os.getpid())
     # Check if on SIGINT/SIGTERM agent is configured to terminate
     signal_mock.assert_any_call(signal.SIGINT, HeartbeatHandlers.signal_handler)
     signal_mock.assert_any_call(signal.SIGTERM, HeartbeatHandlers.signal_handler)
-    # Check if on SIGUSR1 agent is configured to fall into debug
-    signal_mock.assert_any_call(signal.SIGUSR1, HeartbeatHandlers.debug)
 
 
   @patch("platform.linux_distribution")
@@ -206,10 +198,11 @@ class TestMain(unittest.TestCase):
   @not_for_platform(PLATFORM_WINDOWS)
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch("time.sleep")
-  @patch.object(shellRunnerLinux,"run")
   @patch("sys.exit")
   @patch("os.path.exists")
-  def test_daemonize_and_stop(self, exists_mock, sys_exit_mock, kill_mock, sleep_mock):
+  def test_daemonize_and_stop(self, exists_mock, sys_exit_mock, sleep_mock):
+    from ambari_commons.shell import shellRunnerLinux
+
     oldpid = ProcessHelper.pidfile
     pid = str(os.getpid())
     _, tmpoutfile = tempfile.mkstemp()
@@ -220,24 +213,25 @@ class TestMain(unittest.TestCase):
     saved = open(ProcessHelper.pidfile, 'r').read()
     self.assertEqual(pid, saved)
 
-    # Reuse pid file when testing agent stop
-    # Testing normal exit
-    exists_mock.return_value = False
-    main.stop_agent()
-    kill_mock.assert_called_with(['ambari-sudo.sh', 'kill', '-15', pid])
-    sys_exit_mock.assert_called_with(0)
+    with patch("ambari_commons.shell.shellRunnerLinux.run") as kill_mock:
+      # Reuse pid file when testing agent stop
+      # Testing normal exit
+      exists_mock.return_value = False
+      main.stop_agent()
+      kill_mock.assert_called_with(['ambari-sudo.sh', 'kill', '-15', pid])
+      sys_exit_mock.assert_called_with(0)
 
-    # Restore
-    kill_mock.reset_mock()
-    sys_exit_mock.reset_mock()
-    kill_mock.return_value = {'exitCode': 0, 'output': 'out', 'error': 'err'}
+      # Restore
+      kill_mock.reset_mock()
+      sys_exit_mock.reset_mock()
+      kill_mock.return_value = {'exitCode': 0, 'output': 'out', 'error': 'err'}
 
-    # Testing exit when failed to remove pid file
-    exists_mock.return_value = True
-    main.stop_agent()
-    kill_mock.assert_any_call(['ambari-sudo.sh', 'kill', '-15', pid])
-    kill_mock.assert_any_call(['ambari-sudo.sh', 'kill', '-9', pid])
-    sys_exit_mock.assert_called_with(1)
+      # Testing exit when failed to remove pid file
+      exists_mock.return_value = True
+      main.stop_agent()
+      kill_mock.assert_any_call(['ambari-sudo.sh', 'kill', '-15', pid])
+      kill_mock.assert_any_call(['ambari-sudo.sh', 'kill', '-9', pid])
+      sys_exit_mock.assert_called_with(1)
 
     # Restore
     ProcessHelper.pidfile = oldpid
@@ -288,6 +282,16 @@ class TestMain(unittest.TestCase):
     self.assertTrue(sys_exit_mock.called)
 
 
+  @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
+  def init_ambari_config_mock(self):
+    return os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "conf", "windows", "ambari-agent.ini"))
+
+  @OsFamilyFuncImpl(OsFamilyImpl.DEFAULT)
+  def init_ambari_config_mock(self):
+    return os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "conf", "unix", "ambari-agent.ini"))
+
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(socket, "gethostbyname")
   @patch.object(main, "setup_logging")
@@ -306,7 +310,8 @@ class TestMain(unittest.TestCase):
   @patch.object(DataCleaner,"__init__")
   @patch.object(PingPortListener,"start")
   @patch.object(PingPortListener,"__init__")
-  def test_main(self, ping_port_init_mock, ping_port_start_mock, data_clean_init_mock,data_clean_start_mock,
+  @patch.object(ExitHelper,"execute_cleanup")
+  def test_main(self, cleanup_mock, ping_port_init_mock, ping_port_start_mock, data_clean_init_mock,data_clean_start_mock,
                 parse_args_mock, join_mock, start_mock, Controller_init_mock, try_to_connect_mock,
                 update_log_level_mock, daemonize_mock, perform_prestart_checks_mock,
                 ambari_config_mock,
@@ -319,13 +324,12 @@ class TestMain(unittest.TestCase):
     parse_args_mock.return_value = (options, MagicMock)
     try_to_connect_mock.return_value = (0, True)
     # use default unix config
-    ambari_config_mock.return_value = os.path.abspath("../../../conf/unix/ambari-agent.ini")
+    ambari_config_mock.return_value = self.init_ambari_config_mock()
     #testing call without command-line arguments
 
     main.main()
 
     self.assertTrue(setup_logging_mock.called)
-    self.assertTrue(bind_signal_handlers_mock.called)
     if OSCheck.get_os_family() != OSConst.WINSRV_FAMILY:
       self.assertTrue(stop_mock.called)
     #self.assertTrue(resolve_ambari_config_mock.called)
@@ -339,10 +343,12 @@ class TestMain(unittest.TestCase):
     self.assertTrue(data_clean_start_mock.called)
     self.assertTrue(ping_port_init_mock.called)
     self.assertTrue(ping_port_start_mock.called)
-
+    if not OSCheck.get_os_family() == OSConst.WINSRV_FAMILY:
+      self.assertTrue(cleanup_mock.called)
     perform_prestart_checks_mock.reset_mock()
 
     # Testing call with --expected-hostname parameter
     options.expected_hostname = "test.hst"
     main.main()
     perform_prestart_checks_mock.assert_called_once_with(options.expected_hostname)
+    pass

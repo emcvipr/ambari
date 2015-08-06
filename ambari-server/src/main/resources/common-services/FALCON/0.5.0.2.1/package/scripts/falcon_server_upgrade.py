@@ -23,6 +23,9 @@ import tempfile
 
 from resource_management.core.logger import Logger
 from resource_management.core.exceptions import Fail
+from resource_management.libraries.functions import tar_archive
+from resource_management.core.resources.system import Execute
+from resource_management.core.resources.system import Directory
 
 BACKUP_TEMP_DIR = "falcon-upgrade-backup"
 BACKUP_DATA_ARCHIVE = "falcon-local-backup.tar"
@@ -51,13 +54,8 @@ def post_stop_backup():
     if os.path.exists(archive):
       os.remove(archive)
 
-    tarball = None
-    try:
-      tarball = tarfile.open(archive, "w")
-      tarball.add(directory, arcname=os.path.basename(directory))
-    finally:
-      if tarball:
-        tarball.close()
+    # backup the directory, following symlinks instead of including them
+    tar_archive.archive_directory_dereference(archive, directory)
 
 
 def pre_start_restore():
@@ -76,18 +74,12 @@ def pre_start_restore():
     if not os.path.isfile(archive):
       raise Fail("Unable to restore missing backup archive {0}".format(archive))
 
-    Logger.info('Extracting {0} to {1}'.format(archive, directory))
-
-    tarball = None
-    try:
-      tarball = tarfile.open(archive, "r")
-      tarball.extractall(directory)
-    finally:
-      if tarball:
-        tarball.close()
+    tar_archive.untar_archive(archive, directory)
 
   # cleanup
-  shutil.rmtree(os.path.join(tempfile.gettempdir(), BACKUP_TEMP_DIR))
+  Directory(os.path.join(tempfile.gettempdir(), BACKUP_TEMP_DIR),
+            action = "delete",
+  )
 
 
 def _get_directory_mappings():

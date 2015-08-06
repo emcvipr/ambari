@@ -61,14 +61,49 @@ class TestFlumeHandler(RMFTestCase):
     self.assertTrue(set_desired_mock.call_args[0][0] == 'STARTED')
 
 
-    self.assertResourceCalled('Execute', "ambari-sudo.sh su flume -l -s /bin/bash -c 'export  PATH=/bin JAVA_HOME=/usr/jdk64/jdk1.7.0_45 ; /usr/bin/flume-ng agent --name a1 --conf /etc/flume/conf/a1 --conf-file /etc/flume/conf/a1/flume.conf -Dflume.monitoring.type=ganglia -Dflume.monitoring.hosts=c6401.ambari.apache.org:8655 > /var/log/flume/a1.out 2>&1' &",
+    self.assertResourceCalled('Execute', "ambari-sudo.sh su flume -l -s /bin/bash -c 'export  PATH=/bin JAVA_HOME=/usr/jdk64/jdk1.7.0_45 ; /usr/bin/flume-ng agent --name a1 --conf /etc/flume/conf/a1 --conf-file /etc/flume/conf/a1/flume.conf -Dflume.monitoring.type=org.apache.hadoop.metrics2.sink.flume.FlumeTimelineMetricsSink -Dflume.monitoring.node=c6401.ambari.apache.org:6188 > /var/log/flume/a1.out 2>&1' &",
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
         wait_for_finish = False,
     )
-    self.assertResourceCalled('Execute', 'pgrep -o -u flume -f ^/usr/jdk64/jdk1.7.0_45.*a1.* > /var/run/flume/a1.pid',
-      logoutput = True,
-      tries = 20,
-      try_sleep = 10)
+    self.assertResourceCalled('Execute', "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -o -u flume -f '^/usr/jdk64/jdk1.7.0_45.*a1.*' | ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E tee /var/run/flume/a1.pid  && test ${PIPESTATUS[0]} -eq 0",
+        logoutput = True,
+        tries = 20,
+        try_sleep = 10,
+    )
+
+    self.assertNoMoreResources()
+
+  @patch("os.path.isfile")
+  @patch("flume.cmd_target_names")
+  @patch("flume._set_desired_state")
+  def test_start_flume_only(self, set_desired_mock, cmd_target_names_mock, os_path_isfile_mock):
+    # 1st call is to check if the conf file is there - that should be True
+    # 2nd call is to check if the process is live - that should be False
+    os_path_isfile_mock.side_effect = [True, False]
+    cmd_target_names_mock.return_value = ["a1"]
+
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
+                       classname = "FlumeHandler",
+                       command = "start",
+                       config_file="flume_only.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES)
+
+    self.assert_configure_default(check_mc=False)
+
+    self.assertTrue(set_desired_mock.called)
+    self.assertTrue(set_desired_mock.call_args[0][0] == 'STARTED')
+
+
+    self.assertResourceCalled('Execute', "ambari-sudo.sh su flume -l -s /bin/bash -c 'export  PATH=/bin JAVA_HOME=/usr/jdk64/jdk1.7.0_45 ; /usr/bin/flume-ng agent --name a1 --conf /etc/flume/conf/a1 --conf-file /etc/flume/conf/a1/flume.conf  > /var/log/flume/a1.out 2>&1' &",
+                              environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
+                              wait_for_finish = False,
+                              )
+    self.assertResourceCalled('Execute', "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -o -u flume -f '^/usr/jdk64/jdk1.7.0_45.*a1.*' | ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E tee /var/run/flume/a1.pid  && test ${PIPESTATUS[0]} -eq 0",
+                              logoutput = True,
+                              tries = 20,
+                              try_sleep = 10,
+                              )
 
     self.assertNoMoreResources()
 
@@ -91,9 +126,6 @@ class TestFlumeHandler(RMFTestCase):
 
     self.assertTrue(set_desired_mock.called)
     self.assertTrue(set_desired_mock.call_args[0][0] == 'INSTALLED')
-
-    self.assertResourceCalled('Execute', 'kill `cat /var/run/flume/a1.pid` > /dev/null 2>&1',
-      ignore_failures = True)
 
     self.assertResourceCalled('File', '/var/run/flume/a1.pid', action = ['delete'])
 
@@ -181,26 +213,37 @@ class TestFlumeHandler(RMFTestCase):
     self.assertTrue(struct_out.has_key('processes'))
     self.assertNoMoreResources()
 
-  def assert_configure_default(self):
+  def assert_configure_default(self, check_mc=True):
+    self.assertResourceCalled('Directory', '/var/run/flume',)
+    self.assertResourceCalled('Directory',
+                              '/etc/flume/conf',
+                              owner='flume',
+                              recursive=True)
 
-    self.assertResourceCalled('Directory', '/etc/flume/conf', recursive=True)
+    self.assertResourceCalled('Directory',
+                              '/var/log/flume',
+                              owner = 'flume')
 
-    self.assertResourceCalled('Directory', '/var/log/flume', owner = 'flume')
+    self.assertResourceCalled('Directory',
+                              '/etc/flume/conf/a1',
+                              owner='flume')
 
-    self.assertResourceCalled('Directory', '/etc/flume/conf/a1')
-
-    self.assertResourceCalled('PropertiesFile', '/etc/flume/conf/a1/flume.conf',
-      mode = 0644,
-      properties = build_flume(
-        self.getConfig()['configurations']['flume-conf']['content'])['a1'])
+    self.assertResourceCalled('PropertiesFile',
+                              '/etc/flume/conf/a1/flume.conf',
+                              owner='flume',
+                              mode = 0644,
+                              properties = build_flume(
+                                self.getConfig()['configurations']['flume-conf']['content'])['a1'])
 
     self.assertResourceCalled('File',
       '/etc/flume/conf/a1/log4j.properties',
       content = Template('log4j.properties.j2', agent_name = 'a1'),
+      owner='flume',
       mode = 0644)
 
     self.assertResourceCalled('File',
       '/etc/flume/conf/a1/ambari-meta.json',
+      owner='flume',
       content='{"channels_count": 1, "sinks_count": 1, "sources_count": 1}',
       mode = 0644)
 
@@ -209,25 +252,40 @@ class TestFlumeHandler(RMFTestCase):
                               content=InlineTemplate(self.getConfig()['configurations']['flume-env']['content'])
     )
 
-  def assert_configure_many(self):
+    if check_mc:
+      self.assertResourceCalled('File', "/etc/flume/conf/a1/flume-metrics2.properties",
+                                owner="flume",
+                                content=Template("flume-metrics2.properties.j2")
+      )
 
-    self.assertResourceCalled('Directory', '/etc/flume/conf', recursive=True)
+  def assert_configure_many(self):
+    self.assertResourceCalled('Directory', '/var/run/flume')
+    self.assertResourceCalled('Directory',
+                              '/etc/flume/conf',
+                              owner='flume',
+                              recursive=True)
 
     self.assertResourceCalled('Directory', '/var/log/flume', owner = 'flume')
 
     top = build_flume(self.getConfig()['configurations']['flume-conf']['content'])
 
     # a1
-    self.assertResourceCalled('Directory', '/etc/flume/conf/a1')
-    self.assertResourceCalled('PropertiesFile', '/etc/flume/conf/a1/flume.conf',
-      mode = 0644,
-      properties = top['a1'])
+    self.assertResourceCalled('Directory',
+                              '/etc/flume/conf/a1',
+                              owner='flume')
+    self.assertResourceCalled('PropertiesFile',
+                              '/etc/flume/conf/a1/flume.conf',
+                              owner='flume',
+                              mode = 0644,
+                              properties = top['a1'])
     self.assertResourceCalled('File',
       '/etc/flume/conf/a1/log4j.properties',
+      owner='flume',
       content = Template('log4j.properties.j2', agent_name = 'a1'),
       mode = 0644)
     self.assertResourceCalled('File',
       '/etc/flume/conf/a1/ambari-meta.json',
+      owner='flume',
       content='{"channels_count": 1, "sinks_count": 1, "sources_count": 1}',
       mode = 0644)
 
@@ -237,16 +295,21 @@ class TestFlumeHandler(RMFTestCase):
     )
 
     # b1
-    self.assertResourceCalled('Directory', '/etc/flume/conf/b1')
+    self.assertResourceCalled('Directory',
+                              '/etc/flume/conf/b1',
+                              owner='flume')
     self.assertResourceCalled('PropertiesFile', '/etc/flume/conf/b1/flume.conf',
       mode = 0644,
+      owner='flume',
       properties = top['b1'])
     self.assertResourceCalled('File',
       '/etc/flume/conf/b1/log4j.properties',
+      owner='flume',
       content = Template('log4j.properties.j2', agent_name = 'b1'),
       mode = 0644)
     self.assertResourceCalled('File',
       '/etc/flume/conf/b1/ambari-meta.json',
+      owner='flume',
       content='{"channels_count": 1, "sinks_count": 1, "sources_count": 1}',
       mode = 0644)
     self.assertResourceCalled('File', "/etc/flume/conf/b1/flume-env.sh",
@@ -306,10 +369,11 @@ class TestFlumeHandler(RMFTestCase):
         wait_for_finish = False,
     )
 
-    self.assertResourceCalled('Execute', 'pgrep -o -u flume -f ^/usr/jdk64/jdk1.7.0_45.*b1.* > /var/run/flume/b1.pid',
-      logoutput = True,
-      tries = 20,
-      try_sleep = 10)
+    self.assertResourceCalled('Execute', "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -o -u flume -f '^/usr/jdk64/jdk1.7.0_45.*b1.*' | ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E tee /var/run/flume/b1.pid  && test ${PIPESTATUS[0]} -eq 0",
+        logoutput = True,
+        tries = 20,
+        try_sleep = 10,
+    )
 
     self.assertNoMoreResources()
 
@@ -329,16 +393,12 @@ class TestFlumeHandler(RMFTestCase):
     self.assertTrue(glob_mock.called)
     await_flume_process_termination_mock.assert_called_with('/var/run/flume/b1.pid')
 
-    self.assertResourceCalled('Execute', 'kill `cat /var/run/flume/b1.pid` > /dev/null 2>&1',
-      ignore_failures = True)
-
     self.assertResourceCalled('File', '/var/run/flume/b1.pid', action = ['delete'])
 
     self.assertNoMoreResources()
 
   @patch("flume.find_expected_agent_names")
-  @patch("os.unlink")
-  def test_configure_with_existing(self, os_unlink_mock, expected_names_mock):
+  def test_configure_with_existing(self, expected_names_mock):
     expected_names_mock.return_value = ["x1"]
 
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
@@ -347,10 +407,9 @@ class TestFlumeHandler(RMFTestCase):
                        config_file="default.json",
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
-
-    self.assertTrue(os_unlink_mock.called)
-    os_unlink_mock.assert_called_with('/etc/flume/conf/x1/ambari-meta.json')
-
+    self.assertResourceCalled('File', '/etc/flume/conf/x1/ambari-meta.json',
+        action = ['delete'],
+    )
     self.assert_configure_default()
     self.assertNoMoreResources()
 
@@ -363,24 +422,36 @@ class TestFlumeHandler(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
 
-    self.assertResourceCalled('Directory', '/etc/flume/conf', recursive=True)
+    self.assertResourceCalled('Directory', '/var/run/flume',)
+    self.assertResourceCalled('Directory',
+                              '/etc/flume/conf',
+                              owner='flume',
+                              recursive=True)
 
-    self.assertResourceCalled('Directory', '/var/log/flume', owner = 'flume')
+    self.assertResourceCalled('Directory',
+                              '/var/log/flume',
+                              owner = 'flume')
 
-    self.assertResourceCalled('Directory', '/etc/flume/conf/a1')
+    self.assertResourceCalled('Directory',
+                              '/etc/flume/conf/a1',
+                              owner='flume')
 
-    self.assertResourceCalled('PropertiesFile', '/etc/flume/conf/a1/flume.conf',
-      mode = 0644,
-      properties = build_flume(
-        self.getConfig()['configurations']['flume-conf']['content'])['a1'])
+    self.assertResourceCalled('PropertiesFile',
+                              '/etc/flume/conf/a1/flume.conf',
+                              owner='flume',
+                              mode = 0644,
+                              properties = build_flume(
+                                self.getConfig()['configurations']['flume-conf']['content'])['a1'])
 
     self.assertResourceCalled('File',
       '/etc/flume/conf/a1/log4j.properties',
+      owner='flume',
       content = Template('log4j.properties.j2', agent_name = 'a1'),
       mode = 0644)
 
     self.assertResourceCalled('File',
       '/etc/flume/conf/a1/ambari-meta.json',
+      owner='flume',
       content='{"channels_count": 1, "sinks_count": 1, "sources_count": 1}',
       mode = 0644)
 
@@ -400,32 +471,45 @@ class TestFlumeHandler(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
 
-    self.assertResourceCalled('Directory', '/usr/hdp/current/flume-server/conf', recursive=True)
+    self.assertResourceCalled('Directory', '/var/run/flume',)
+    self.assertResourceCalled('Directory',
+                              '/usr/hdp/current/flume-server/conf',
+                              owner='flume',
+                              recursive=True)
 
-    self.assertResourceCalled('Directory', '/var/log/flume', owner = 'flume')
+    self.assertResourceCalled('Directory',
+                              '/var/log/flume',
+                              owner = 'flume')
 
-    self.assertResourceCalled('Directory', '/usr/hdp/current/flume-server/conf/a1')
+    self.assertResourceCalled('Directory',
+                              '/usr/hdp/current/flume-server/conf/a1',
+                              owner='flume')
 
-    self.assertResourceCalled('PropertiesFile', '/usr/hdp/current/flume-server/conf/a1/flume.conf',
-      mode = 0644,
-      properties = build_flume(
-        self.getConfig()['configurations']['flume-conf']['content'])['a1'])
+    self.assertResourceCalled('PropertiesFile',
+                              '/usr/hdp/current/flume-server/conf/a1/flume.conf',
+                              owner='flume',
+                              mode = 0644,
+                              properties = build_flume(
+                                self.getConfig()['configurations']['flume-conf']['content'])['a1'])
 
     self.assertResourceCalled('File',
       '/usr/hdp/current/flume-server/conf/a1/log4j.properties',
       content = Template('log4j.properties.j2', agent_name = 'a1'),
+      owner='flume',
       mode = 0644)
 
     self.assertResourceCalled('File',
       '/usr/hdp/current/flume-server/conf/a1/ambari-meta.json',
       content='{"channels_count": 1, "sinks_count": 1, "sources_count": 1}',
+      owner='flume',
       mode = 0644)
 
     content = InlineTemplate(self.getConfig()['configurations']['flume-env']['content'])
 
     self.assertTrue(content.get_content().find('/usr/hdp/current/hive-metastore') > -1)
 
-    self.assertResourceCalled('File', "/usr/hdp/current/flume-server/conf/a1/flume-env.sh",
+    self.assertResourceCalled('File',
+                              "/usr/hdp/current/flume-server/conf/a1/flume-env.sh",
                               owner="flume",
                               content=content)
 
@@ -437,7 +521,7 @@ class TestFlumeHandler(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
 
-    self.assertResourceCalled("Execute", "hdp-select set flume-server 2.2.1.0-2067")
+    self.assertResourceCalled("Execute", ('hdp-select', 'set', 'flume-server', '2.2.1.0-2067'), sudo=True)
 
 
 def build_flume(content):

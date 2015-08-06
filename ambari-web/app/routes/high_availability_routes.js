@@ -124,6 +124,7 @@ module.exports = App.WizardRoute.extend({
     next: function (router) {
       var controller = router.get('highAvailabilityWizardController');
       controller.saveNameServiceId(router.get('highAvailabilityWizardStep1Controller.content.nameServiceId'));
+      controller.clearMasterComponentHosts();
       router.transitionTo('step2');
     }
   }),
@@ -137,7 +138,7 @@ module.exports = App.WizardRoute.extend({
         controller.loadAllPriorSteps().done(function () {
           controller.connectOutlet('highAvailabilityWizardStep2', controller.get('content'));
         });
-      })
+      });
     },
     unroutePath: function () {
       return false;
@@ -173,7 +174,7 @@ module.exports = App.WizardRoute.extend({
         controller.loadAllPriorSteps().done(function () {
           controller.connectOutlet('highAvailabilityWizardStep3',  controller.get('content'));
         });
-      })
+      });
     },
     unroutePath: function () {
       return false;

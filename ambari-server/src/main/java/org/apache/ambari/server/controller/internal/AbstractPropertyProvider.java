@@ -18,6 +18,11 @@
 
 package org.apache.ambari.server.controller.internal;
 
+import org.apache.ambari.server.controller.metrics.MetricReportingAdapter;
+import org.apache.ambari.server.controller.spi.PropertyProvider;
+import org.apache.ambari.server.controller.spi.TemporalInfo;
+import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.text.DecimalFormat;
@@ -28,11 +33,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.apache.ambari.server.controller.metrics.MetricReportingAdapter;
-import org.apache.ambari.server.controller.spi.PropertyProvider;
-import org.apache.ambari.server.controller.utilities.PropertyHelper;
-import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 
 /**
  *  Abstract property provider implementation.
@@ -358,11 +358,10 @@ public abstract class AbstractPropertyProvider extends BaseProvider implements P
   }
 
   // Normalize percent values: Copied over from Ganglia Metric
-  private static Number[][] getGangliaLikeDatapoints(TimelineMetric metric) {
+  private static Number[][] getGangliaLikeDatapoints(TimelineMetric metric, TemporalInfo temporalInfo) {
     MetricReportingAdapter rpt = new MetricReportingAdapter(metric);
 
-    //TODO Don't we always need to downsample?
-    return rpt.reportMetricData(metric);
+    return rpt.reportMetricData(metric, temporalInfo);
   }
 
   /**
@@ -373,16 +372,15 @@ public abstract class AbstractPropertyProvider extends BaseProvider implements P
    *
    * @return a range of temporal data or a point in time value if not temporal
    */
-  protected static Object getValue(TimelineMetric metric, boolean isTemporal) {
-    Number[][] dataPoints = getGangliaLikeDatapoints(metric);
+  protected static Object getValue(TimelineMetric metric, TemporalInfo temporalInfo) {
+    Number[][] dataPoints = getGangliaLikeDatapoints(metric, temporalInfo);
 
     int length = dataPoints.length;
-    if (isTemporal) {
+    if (temporalInfo != null) {
       return length > 0 ? dataPoints : null;
     } else {
       // return the value of the last data point
       return length > 0 ? dataPoints[length - 1][0] : 0;
     }
   }
-
 }

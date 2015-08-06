@@ -17,6 +17,7 @@
  */
 
 var App = require('app');
+var arrayUtils = require('utils/array_utils');
 
 /**
  * Mixin with methods for config groups and overrides processing
@@ -30,7 +31,6 @@ App.ConfigOverridable = Em.Mixin.create({
    * @method createOverrideProperty
    */
   createOverrideProperty: function (event) {
-    $('.tooltip').remove();
     var serviceConfigProperty = event.contexts[0];
     var serviceConfigController = this.get('isView') ? this.get('controller') : this;
     var selectedConfigGroup = serviceConfigController.get('selectedConfigGroup');
@@ -53,7 +53,6 @@ App.ConfigOverridable = Em.Mixin.create({
         configGroups,
         serviceConfigProperty,
         function (selectedGroupInPopup) {
-          console.log("launchConfigGroupSelectionCreationDialog(): Selected/Created:", selectedGroupInPopup);
           if (selectedGroupInPopup) {
             serviceConfigController.set('overrideToAdd', serviceConfigProperty);
             serviceConfigController.set('selectedConfigGroup', selectedGroupInPopup);
@@ -63,7 +62,11 @@ App.ConfigOverridable = Em.Mixin.create({
       );
     }
     else {
-      serviceConfigController.addOverrideProperty(serviceConfigProperty, selectedConfigGroup, serviceConfigProperty.get('widget') ? serviceConfigProperty.get('value') : null);
+      var valueForOverride = (serviceConfigProperty.get('widget') || serviceConfigProperty.get('displayType') == 'checkbox') ? serviceConfigProperty.get('value') : '';
+      var override = App.config.createOverride(serviceConfigProperty, { "value": valueForOverride, "isEditable": true }, selectedConfigGroup);
+      if (isInstaller) {
+        selectedConfigGroup.get('properties').pushObject(override);
+      }
     }
     Em.$('body>.tooltip').remove();
   },
@@ -126,6 +129,9 @@ App.ConfigOverridable = Em.Mixin.create({
           var selectedConfigGroup = this.get('selectedConfigGroup');
           this.hide();
           callback(selectedConfigGroup);
+          if (!isInstaller) {
+            App.get('router.mainServiceInfoConfigsController').doSelectConfigGroup({context: selectedConfigGroup});
+          }
         } else {
           var newConfigGroupName = this.get('newConfigGroupName').trim();
           var newConfigGroup = App.ConfigGroup.create({
@@ -253,8 +259,7 @@ App.ConfigOverridable = Em.Mixin.create({
       }
     };
     sendData.sender = sendData;
-    App.ajax.send(sendData);
-    return newConfigGroupData;
+    return App.ajax.send(sendData);
   },
 
   /**
@@ -269,6 +274,7 @@ App.ConfigOverridable = Em.Mixin.create({
    * @method updateConfigurationGroup
    */
   updateConfigurationGroup: function (configGroup, successCallback, errorCallback) {
+    var configSiteTags = configGroup.get('configSiteTags') || [];
     var putConfigGroup = {
       ConfigGroup: {
         group_name: configGroup.get('name'),
@@ -279,7 +285,7 @@ App.ConfigOverridable = Em.Mixin.create({
             host_name: h
           };
         }),
-        desired_configs: configGroup.get('configSiteTags').map(function (cst) {
+        desired_configs: configSiteTags.map(function (cst) {
           return {
             type: cst.get('site'),
             tag: cst.get('tag')
@@ -358,17 +364,32 @@ App.ConfigOverridable = Em.Mixin.create({
   },
 
   /**
-   * Update config group's hosts list (clear it)
+   * Update config group's hosts list and leave only unmodified hosts in the group
    * Save updated config group on server
    * @param {App.ConfigGroup} configGroup
+   * @param {App.ConfigGroup} initialGroupState
    * @param {Function} successCallback
    * @param {Function} errorCallback
    * @method clearConfigurationGroupHosts
    */
-  clearConfigurationGroupHosts: function (configGroup, successCallback, errorCallback) {
+  clearConfigurationGroupHosts: function (configGroup, initialGroupState, successCallback, errorCallback) {
     configGroup = jQuery.extend({}, configGroup);
-    configGroup.set('hosts', []);
-    this.updateConfigurationGroup(configGroup, successCallback, errorCallback);
+    var unmodifiedHosts = this.getUnmodifiedHosts(configGroup, initialGroupState);
+    configGroup.set('hosts', unmodifiedHosts);
+    return this.updateConfigurationGroup(configGroup, successCallback, errorCallback);
+  },
+
+  /**
+   * Get the list of hosts that is not modified in the group
+   * @param configGroup - the new configuration of the group
+   * @param initialGroupState - the initial configuration of the group
+   * @returns {Array}
+   */
+  getUnmodifiedHosts: function (configGroup, initialGroupState) {
+    var currentHosts = configGroup.get('hosts');
+    var initialHosts = initialGroupState.get('hosts');
+
+    return arrayUtils.intersect(currentHosts, initialHosts);
   },
 
   /**
@@ -388,7 +409,11 @@ App.ConfigOverridable = Em.Mixin.create({
       },
       success: 'successFunction',
       error: 'errorFunction',
-      successFunction: function () {
+      successFunction: function (data, xhr, params) {
+        var groupFromModel = App.ServiceConfigGroup.find().findProperty('configGroupId', params.id);
+        if (groupFromModel) {
+          App.configGroupsMapper.deleteRecord(groupFromModel);
+        }
         if (successCallback) {
           successCallback();
         }
@@ -426,8 +451,19 @@ App.ConfigOverridable = Em.Mixin.create({
       bodyClass: Em.View.extend({
         templateName: require('templates/common/configs/saveConfigGroup')
       }),
+      onPrimary:function() {
+        if (self.get('controller.name') == 'mainServiceInfoConfigsController') {
+          self.get('controller').loadConfigGroups([self.get('controller.content.serviceName')]).done(function() {
+            var group = App.ServiceConfigGroup.find().find(function(g) {
+              return g.get('serviceName') == self.get('controller.content.serviceName') && g.get('name') == groupName;
+            });
+            self.get('controller').doSelectConfigGroup({context: group});
+          });
+        }
+        this._super();
+      },
       onSecondary: function () {
-        App.router.get('manageConfigGroupsController').manageConfigurationGroups(null, self.get('content'));
+        App.router.get('manageConfigGroupsController').manageConfigurationGroups(null, self.get('controller.content'));
         this.hide();
       }
     });

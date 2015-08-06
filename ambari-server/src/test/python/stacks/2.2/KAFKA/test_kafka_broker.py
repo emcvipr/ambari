@@ -21,6 +21,9 @@ import json
 from stacks.utils.RMFTestCase import *
 from mock.mock import patch
 
+from only_for_platform import not_for_platform, PLATFORM_WINDOWS
+
+@not_for_platform(PLATFORM_WINDOWS)
 class TestKafkaBroker(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "KAFKA/0.8.1.2.2/package"
   STACK_VERSION = "2.2"
@@ -110,7 +113,7 @@ class TestKafkaBroker(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
     self.assertResourceCalled('Execute',
-                              'hdp-select set kafka-broker %s' % version,)
+                              ('hdp-select', 'set', 'kafka-broker', version), sudo=True,)
     self.assertNoMoreResources()
 
   @patch("resource_management.core.shell.call")
@@ -132,13 +135,14 @@ class TestKafkaBroker(RMFTestCase):
                        mocks_dict = mocks_dict)
 
     self.assertResourceCalled('Execute',
-                              'hdp-select set kafka-broker %s' % version,)
+                              ('hdp-select', 'set', 'kafka-broker', version), sudo=True,)
     self.assertNoMoreResources()
 
-    self.assertEquals(2, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      "conf-select create-conf-dir --package kafka --stack-version 2.3.0.0-1234 --conf-version 0",
+      ('conf-select', 'set-conf-dir', '--package', 'kafka', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+       mocks_dict['checked_call'].call_args_list[0][0][0])
+    self.assertEquals(
+      ('conf-select', 'create-conf-dir', '--package', 'kafka', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
-    self.assertEquals(
-      "conf-select set-conf-dir --package kafka --stack-version 2.3.0.0-1234 --conf-version 0",
-       mocks_dict['call'].call_args_list[1][0][0])

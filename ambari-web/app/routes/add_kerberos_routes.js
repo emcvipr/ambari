@@ -140,7 +140,6 @@ module.exports = App.WizardRoute.extend({
 
       kerberosWizardController.saveKerberosOption(kerberosStep1controller);
       kerberosWizardController.setDBProperty('serviceConfigProperties', null);
-      kerberosWizardController.setDBProperty('advancedServiceConfig', null);
       router.transitionTo('step2');
     }
   }),
@@ -164,8 +163,10 @@ module.exports = App.WizardRoute.extend({
     },
     back: function(router) {
       var controller = router.get('kerberosWizardStep2Controller');
+      var kerberosWizardController = router.get('kerberosWizardController');
       if (!controller.get('isBackBtnDisabled')) {
-        router.transitionTo('step1')
+        kerberosWizardController.overrideVisibility(controller.get('configs'), true, []);
+        router.transitionTo('step1');
       }
     },
 
@@ -209,6 +210,7 @@ module.exports = App.WizardRoute.extend({
     next: function (router) {
       var kerberosWizardController = router.get('kerberosWizardController');
       kerberosWizardController.setDBProperty('kerberosDescriptorConfigs', null);
+      kerberosWizardController.clearCachedStepConfigValues(router.get('kerberosWizardStep4Controller'));
       router.transitionTo('step4');
     }
   }),
@@ -243,6 +245,7 @@ module.exports = App.WizardRoute.extend({
       var kerberosWizardController = router.get('kerberosWizardController');
       var step5Controller = router.get('kerberosWizardStep5Controller');
       var kerberosDescriptor = kerberosWizardController.get('kerberosDescriptorConfigs');
+      kerberosWizardController.cacheStepConfigValues(router.get('kerberosWizardStep4Controller'));
       step5Controller.postKerberosDescriptor(kerberosDescriptor).always(function (data, result, request) {
         if (result === 'error' && data.status === 409) {
           step5Controller.putKerberosDescriptor(kerberosDescriptor);
@@ -312,9 +315,16 @@ module.exports = App.WizardRoute.extend({
     back: Em.Router.transitionTo('step4'),
     next: function (router) {
       var kerberosWizardController = router.get('kerberosWizardController');
-      kerberosWizardController.setDBProperty('tasksStatuses', null);
-      kerberosWizardController.setDBProperty('tasksRequestIds', null);
-      router.transitionTo('step7');
+      var callback = function () {
+        kerberosWizardController.setDBProperty('tasksStatuses', null);
+        kerberosWizardController.setDBProperty('tasksRequestIds', null);
+        router.transitionTo('step7');
+      };
+      if (kerberosWizardController.get('skipClientInstall')) {
+        kerberosWizardController.createKerberosResources(callback);
+      } else {
+        callback();
+      }
     }
   }),
 

@@ -26,6 +26,7 @@ __all__ = ["Resource", "ResourceArgument", "ForcedListArgument",
 from resource_management.core.exceptions import Fail, InvalidArgument
 from resource_management.core.environment import Environment
 from resource_management.core.logger import Logger
+from resource_management.core.utils import PasswordString
 
 class ResourceArgument(object):
   def __init__(self, default=None, required=False):
@@ -40,7 +41,6 @@ class ResourceArgument(object):
     if self.required and value is None:
       raise InvalidArgument("Required argument %s missing" % self.name)
     return value
-
 
 class ForcedListArgument(ResourceArgument):
   def validate(self, value):
@@ -57,6 +57,12 @@ class BooleanArgument(ResourceArgument):
       raise InvalidArgument(
         "Expected a boolean for %s received %r" % (self.name, value))
     return value
+
+
+class PasswordArgument(ResourceArgument):
+  def log_str(self, key, value):
+    # Hide the passwords from text representations
+    return repr(PasswordString(value))
 
 
 class Accessor(object):
@@ -154,7 +160,12 @@ class Resource(object):
     return unicode(self)
 
   def __unicode__(self):
-    return u"%s['%s']" % (self.__class__.__name__, self.name)
+    if isinstance(self.name, basestring) and not isinstance(self.name, PasswordString):
+      name = "'" + self.name + "'" # print string cutely not with repr
+    else:
+      name = repr(self.name)
+    
+    return u"%s[%s]" % (self.__class__.__name__, name)
 
   def __getstate__(self):
     return dict(

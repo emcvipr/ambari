@@ -26,4 +26,15 @@
     <deleted>true</deleted>
   </property>
 
+  <property>
+    <name>yarn.timeline-service.recovery.enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>yarn.admin.acl</name>
+    <value>yarn</value>
+    <description> ACL of who can be admin of the YARN cluster. </description>
+  </property>
+
 </configuration>

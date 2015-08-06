@@ -152,11 +152,28 @@
     <value>0</value>
   </property>
 
-  <property require-input="true">
-    <name>create_attributes_template</name>
+  <property>
+    <name>service_check_principal_name</name>
+    <description>
+      The principal name to use when executing the Kerberos service check
+    </description>
+    <value>${cluster_name}-${short_date}</value>
+  </property>
+
+  <property>
+    <name>case_insensitive_username_rules</name>
+    <description>
+      Force principal names to resolve to lowercase local usernames in auth-to-local rules
+    </description>
+    <value>false</value>
+  </property>
+
+  <property>
+    <name>ad_create_attributes_template</name>
     <description>
       A Velocity template to use to generate a JSON-formatted document containing the set of
-      attribute names and values needed to create a new Kerberos identity in the relevant KDC.
+      attribute names and values needed to create a new Kerberos identity in the relevant
+      Active Directory.
       Variables include:
       principal_name, principal_primary, principal_instance, realm, realm_lowercase,
       normalized_principal, principal digest, password, is_service, container_dn
@@ -174,5 +191,13 @@
   "userAccountControl": "66048"
 }
     </value>
+  </property>
+
+  <property>
+    <name>kdc_create_attributes</name>
+    <description>
+      The set of attributes to use when creating a new Kerberos identity in the relevant (MIT) KDC.
+    </description>
+    <value/>
   </property>
 </configuration>

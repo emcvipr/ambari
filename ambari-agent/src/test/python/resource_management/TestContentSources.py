@@ -18,6 +18,9 @@ limitations under the License.
 
 from unittest import TestCase
 from mock.mock import patch, MagicMock
+from only_for_platform import get_platform, not_for_platform, os_distro_value, PLATFORM_WINDOWS
+
+from ambari_commons.os_check import OSCheck
 
 from resource_management.core import Environment
 from resource_management.core.system import System
@@ -25,14 +28,16 @@ from resource_management.core.source import StaticFile
 from resource_management.core.source import DownloadSource
 from resource_management.core.source import Template
 from resource_management.core.source import InlineTemplate
-from resource_management.core import sudo
+
+if get_platform() != PLATFORM_WINDOWS:
+  from resource_management.core import sudo
 
 from ambari_jinja2 import UndefinedError, TemplateNotFound
 import urllib2
 import os
 
 
-@patch.object(System, "os_family", new = 'redhat')
+@patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
 class TestContentSources(TestCase):
 
   @patch.object(os.path, "isfile")

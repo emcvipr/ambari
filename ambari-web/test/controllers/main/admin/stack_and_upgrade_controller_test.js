@@ -113,7 +113,8 @@ describe('App.MainAdminStackAndUpgradeController', function() {
   describe("#loadUpgradeData()", function() {
     beforeEach(function () {
       sinon.stub(App.ajax, 'send').returns({
-        then: Em.K
+        then: Em.K,
+        complete: Em.K
       });
     });
     afterEach(function () {
@@ -151,6 +152,36 @@ describe('App.MainAdminStackAndUpgradeController', function() {
   });
 
   describe("#loadUpgradeDataSuccessCallback()", function() {
+    var retryCases = [
+      {
+        isRetryPendingInitial: true,
+        status: 'ABORTED',
+        isRetryPending: true,
+        requestInProgress: true,
+        title: 'retry request not yet applied'
+      },
+      {
+        isRetryPendingInitial: true,
+        status: 'UPGRADING',
+        isRetryPending: false,
+        requestInProgress: false,
+        title: 'retry request applied'
+      },
+      {
+        isRetryPendingInitial: false,
+        status: 'ABORTED',
+        isRetryPending: false,
+        requestInProgress: true,
+        title: 'no retry request sent'
+      },
+      {
+        isRetryPendingInitial: false,
+        status: 'UPGRADING',
+        isRetryPending: false,
+        requestInProgress: true,
+        title: 'upgrade wasn\'t aborted'
+      }
+    ];
     beforeEach(function () {
       sinon.stub(controller, 'updateUpgradeData', Em.K);
       sinon.stub(controller, 'setDBProperty', Em.K);
@@ -182,6 +213,24 @@ describe('App.MainAdminStackAndUpgradeController', function() {
       controller.loadUpgradeDataSuccessCallback(data);
       expect(controller.updateUpgradeData.called).to.be.false;
       expect(controller.setDBProperty.called).to.be.false;
+    });
+    retryCases.forEach(function (item) {
+      it(item.title, function () {
+        var data = {
+          "Upgrade": {
+            "request_status": item.status
+          }
+        };
+        controller.setProperties({
+          isRetryPending: item.isRetryPendingInitial,
+          requestInProgress: true
+        });
+        controller.loadUpgradeDataSuccessCallback(data);
+        expect(controller.getProperties(['isRetryPending', 'requestInProgress'])).to.eql({
+          isRetryPending: item.isRetryPending,
+          requestInProgress: item.requestInProgress
+        });
+      });
     });
   });
 
@@ -252,6 +301,97 @@ describe('App.MainAdminStackAndUpgradeController', function() {
   });
 
   describe("#runPreUpgradeCheckSuccess()", function () {
+    var cases = [
+      {
+        check: {
+          "check": "Work-preserving RM/NM restart is enabled in YARN configs",
+          "status": "FAIL",
+          "reason": "FAIL",
+          "failed_on": [],
+          "check_type": "SERVICE"
+        },
+        showClusterCheckPopupCalledCount: 1,
+        upgradeCalledCount: 0,
+        title: 'popup is displayed if fails are present'
+      },
+      {
+        check: {
+          "check": "Configuration Merge Check",
+          "status": "WARNING",
+          "reason": "Conflict",
+          "failed_on": [],
+          "failed_detail": [
+            {
+              type: 't0',
+              property: 'p0',
+              current: 'c0',
+              new_stack_value: 'n0',
+              result_value: 'n0'
+            },
+            {
+              type: 't1',
+              property: 'p1',
+              current: 'c1',
+              new_stack_value: null,
+              result_value: 'c1'
+            },
+            {
+              type: 't2',
+              property: 'p2',
+              current: 'c2',
+              new_stack_value: null,
+              result_value: null
+            }
+          ],
+          "check_type": "CLUSTER",
+          "id": "CONFIG_MERGE"
+        },
+        showClusterCheckPopupCalledCount: 1,
+        upgradeCalledCount: 0,
+        configs: [
+          {
+            type: 't0',
+            name: 'p0',
+            currentValue: 'c0',
+            recommendedValue: 'n0',
+            resultingValue: 'n0',
+            isDeprecated: false,
+            willBeRemoved: false
+          },
+          {
+            type: 't1',
+            name: 'p1',
+            currentValue: 'c1',
+            recommendedValue: Em.I18n.t('popup.clusterCheck.Upgrade.configsMerge.deprecated'),
+            resultingValue: 'c1',
+            isDeprecated: true,
+            willBeRemoved: false
+          },
+          {
+            type: 't2',
+            name: 'p2',
+            currentValue: 'c2',
+            recommendedValue: Em.I18n.t('popup.clusterCheck.Upgrade.configsMerge.deprecated'),
+            resultingValue: Em.I18n.t('popup.clusterCheck.Upgrade.configsMerge.willBeRemoved'),
+            isDeprecated: true,
+            willBeRemoved: true
+          }
+        ],
+        title: 'popup is displayed if warnings are present; configs merge conflicts'
+      },
+      {
+        check: {
+          "check": "Work-preserving RM/NM restart is enabled in YARN configs",
+          "status": "PASS",
+          "reason": "OK",
+          "failed_on": [],
+          "check_type": "SERVICE"
+        },
+        showClusterCheckPopupCalledCount: 0,
+        upgradeCalledCount: 1,
+        title: 'upgrade is started if fails and warnings are absent'
+      }
+    ];
     beforeEach(function () {
       sinon.stub(App, 'showClusterCheckPopup', Em.K);
       sinon.stub(controller, 'upgrade', Em.K);
@@ -260,33 +400,25 @@ describe('App.MainAdminStackAndUpgradeController', function() {
       App.showClusterCheckPopup.restore();
       controller.upgrade.restore();
     });
-    it("shows popup", function () {
-      var check =  { items: [{
-        UpgradeChecks: {
-          "check": "Work-preserving RM/NM restart is enabled in YARN configs",
-          "status": "FAIL",
-          "reason": "FAIL",
-          "failed_on": [],
-          "check_type": "SERVICE"
+    cases.forEach(function (item) {
+      it(item.title, function () {
+        controller.runPreUpgradeCheckSuccess(
+          {
+            items: [
+              {
+                UpgradeChecks: item.check
+              }
+            ]
+          }, null, {
+            label: 'name'
+          }
+        );
+        expect(controller.upgrade.callCount).to.equal(item.upgradeCalledCount);
+        expect(App.showClusterCheckPopup.callCount).to.equal(item.showClusterCheckPopupCalledCount);
+        if (item.check.id == 'CONFIG_MERGE') {
+          expect(App.showClusterCheckPopup.firstCall.args[7]).to.eql(item.configs);
         }
-      }]};
-      controller.runPreUpgradeCheckSuccess(check,null,{label: "name"});
-      expect(controller.upgrade.called).to.be.false;
-      expect(App.showClusterCheckPopup.called).to.be.true;
-    });
-    it("runs upgrade popup", function () {
-      var check = { items: [{
-        UpgradeChecks: {
-          "check": "Work-preserving RM/NM restart is enabled in YARN configs",
-          "status": "PASS",
-          "reason": "OK",
-          "failed_on": [],
-          "check_type": "SERVICE"
-        }
-      }]};
-      controller.runPreUpgradeCheckSuccess(check,null,{label: "name"});
-      expect(controller.upgrade.called).to.be.true;
-      expect(App.showClusterCheckPopup.called).to.be.false;
+      });
     });
   });
 
@@ -405,6 +537,17 @@ describe('App.MainAdminStackAndUpgradeController', function() {
                 stage_id: 1
               })
             ]
+          }),
+          Em.Object.create({
+            group_id: 2,
+            upgradeItems: [
+              Em.Object.create({
+                stage_id: 2
+              }),
+              Em.Object.create({
+                stage_id: 3
+              })
+            ]
           })
         ]
       });
@@ -429,6 +572,30 @@ describe('App.MainAdminStackAndUpgradeController', function() {
                 }
               }
             ]
+          },
+          {
+            UpgradeGroup: {
+              group_id: 2,
+              status: 'ABORTED',
+              progress_percent: 50,
+              completed_task_count: 1
+            },
+            upgrade_items: [
+              {
+                UpgradeItem: {
+                  stage_id: 2,
+                  status: 'ABORTED',
+                  progress_percent: 99
+                }
+              },
+              {
+                UpgradeItem: {
+                  stage_id: 3,
+                  status: 'PENDING',
+                  progress_percent: 0
+                }
+              }
+            ]
           }
         ]
       };
@@ -439,6 +606,15 @@ describe('App.MainAdminStackAndUpgradeController', function() {
       expect(controller.get('upgradeData.upgradeGroups')[0].get('completed_task_count')).to.equal(3);
       expect(controller.get('upgradeData.upgradeGroups')[0].get('upgradeItems')[0].get('status')).to.equal('COMPLETED');
       expect(controller.get('upgradeData.upgradeGroups')[0].get('upgradeItems')[0].get('progress_percent')).to.equal(100);
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('hasExpandableItems')).to.be.true;
+      expect(controller.get('upgradeData.upgradeGroups')[1].get('status')).to.equal('ABORTED');
+      expect(controller.get('upgradeData.upgradeGroups')[1].get('progress_percent')).to.equal(50);
+      expect(controller.get('upgradeData.upgradeGroups')[1].get('completed_task_count')).to.equal(1);
+      expect(controller.get('upgradeData.upgradeGroups')[1].get('upgradeItems')[0].get('status')).to.equal('ABORTED');
+      expect(controller.get('upgradeData.upgradeGroups')[1].get('upgradeItems')[1].get('status')).to.equal('PENDING');
+      expect(controller.get('upgradeData.upgradeGroups')[1].get('upgradeItems')[0].get('progress_percent')).to.equal(99);
+      expect(controller.get('upgradeData.upgradeGroups')[1].get('upgradeItems')[1].get('progress_percent')).to.equal(0);
+      expect(controller.get('upgradeData.upgradeGroups')[1].get('hasExpandableItems')).to.be.false;
     });
   });
 
@@ -456,7 +632,8 @@ describe('App.MainAdminStackAndUpgradeController', function() {
             upgrade_items: [
               {
                 UpgradeItem: {
-                  stage_id: 1
+                  stage_id: 1,
+                  status: 'IN_PROGRESS'
                 }
               },
               {
@@ -471,15 +648,38 @@ describe('App.MainAdminStackAndUpgradeController', function() {
               group_id: 2
             },
             upgrade_items: []
+          },
+          {
+            UpgradeGroup: {
+              group_id: 3
+            },
+            upgrade_items: [
+              {
+                UpgradeItem: {
+                  stage_id: 3,
+                  status: 'ABORTED'
+                }
+              },
+              {
+                UpgradeItem: {
+                  stage_id: 4,
+                  status: 'PENDING'
+                }
+              }
+            ]
           }
         ]
       };
       controller.initUpgradeData(newData);
       expect(controller.get('upgradeData.Upgrade.request_id')).to.equal(1);
-      expect(controller.get('upgradeData.upgradeGroups')[0].get('group_id')).to.equal(2);
-      expect(controller.get('upgradeData.upgradeGroups')[1].get('group_id')).to.equal(1);
-      expect(controller.get('upgradeData.upgradeGroups')[1].get('upgradeItems')[0].get('stage_id')).to.equal(2);
-      expect(controller.get('upgradeData.upgradeGroups')[1].get('upgradeItems')[1].get('stage_id')).to.equal(1);
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('group_id')).to.equal(3);
+      expect(controller.get('upgradeData.upgradeGroups')[1].get('group_id')).to.equal(2);
+      expect(controller.get('upgradeData.upgradeGroups')[2].get('group_id')).to.equal(1);
+      expect(controller.get('upgradeData.upgradeGroups')[2].get('upgradeItems')[0].get('stage_id')).to.equal(2);
+      expect(controller.get('upgradeData.upgradeGroups')[2].get('upgradeItems')[1].get('stage_id')).to.equal(1);
+      expect(controller.get('upgradeData.upgradeGroups')[0].get('hasExpandableItems')).to.be.false;
+      expect(controller.get('upgradeData.upgradeGroups')[1].get('hasExpandableItems')).to.be.false;
+      expect(controller.get('upgradeData.upgradeGroups')[2].get('hasExpandableItems')).to.be.true;
     });
   });
 
@@ -555,18 +755,31 @@ describe('App.MainAdminStackAndUpgradeController', function() {
     before(function () {
       sinon.stub(App.ajax, 'send', Em.K);
       sinon.stub(controller, 'abortUpgrade');
+      sinon.stub(App.RepositoryVersion, 'find').returns([
+        Em.Object.create({
+          displayName: 'HDP-2.3',
+          repositoryVersion: '2.3'
+        })
+      ]);
     });
     after(function () {
       App.ajax.send.restore();
       controller.abortUpgrade.restore();
+      App.RepositoryVersion.find.restore();
     });
     it("make ajax call", function() {
+      controller.set('upgradeVersion', 'HDP-2.3');
       controller.downgrade(Em.Object.create({
         repository_version: '2.2',
         repository_name: 'HDP-2.2'
       }), {context: 'context'});
       expect(controller.abortUpgrade.calledOnce).to.be.true;
-      expect(App.ajax.send.getCall(0).args[0].data).to.eql({"value": '2.2', "label": 'HDP-2.2', isDowngrade: true});
+      expect(App.ajax.send.getCall(0).args[0].data).to.eql({
+        value: '2.2',
+        label: 'HDP-2.2',
+        from: '2.3',
+        isDowngrade: true
+      });
       expect(App.ajax.send.getCall(0).args[0].name).to.eql('admin.downgrade.start');
       expect(App.ajax.send.getCall(0).args[0].sender).to.eql(controller);
       expect(App.ajax.send.getCall(0).args[0].success).to.eql('upgradeSuccessCallback');
@@ -713,6 +926,30 @@ describe('App.MainAdminStackAndUpgradeController', function() {
     });
   });
 
+  describe("#getStackVersionNumber()", function(){
+    it("get stack version number", function(){
+      var repo = Em.Object.create({
+        "stackVersionType": 'HDP',
+        "stackVersion": '2.3',
+        "repositoryVersion": '2.2.1'
+      });
+      
+      var stackVersion = controller.getStackVersionNumber(repo);
+      expect(stackVersion).to.equal('2.3');
+    });
+    
+    it("get default stack version number", function(){
+      App.set('currentStackVersion', '1.2.3');
+      var repo = Em.Object.create({
+        "stackVersionType": 'HDP',
+        "repositoryVersion": '2.2.1'
+      });
+      
+      var stackVersion = controller.getStackVersionNumber(repo);
+      expect(stackVersion).to.equal('1.2.3');
+    });
+  });
+  
   describe("#saveRepoOS()", function() {
     before(function(){
       this.mock = sinon.stub(controller, 'validateRepoVersions');
