@@ -30,8 +30,9 @@ App.configGroupsMapper = App.QuickDataMapper.create({
     name: 'ConfigGroup.group_name',
     service_name: 'ConfigGroup.tag',
     description: 'ConfigGroup.description',
-    host_names: 'hosts',
-    service_id: 'ConfigGroup.tag'
+    hosts: 'hosts',
+    service_id: 'ConfigGroup.tag',
+    desired_configs: 'ConfigGroup.desired_configs'
   },
 
   /**
@@ -42,12 +43,13 @@ App.configGroupsMapper = App.QuickDataMapper.create({
     config_group_id: 'group_id',
     name: 'group_name',
     service_name: 'service_name',
-    host_names: 'hosts',
+    hosts: 'hosts',
     service_id: 'service_name'
   },
 
 
   map: function (json, mapFromVersions, serviceNames) {
+    console.time('App.configGroupsMapper');
     if (serviceNames && serviceNames.length > 0) {
       var configGroups = [];
 
@@ -59,6 +61,7 @@ App.configGroupsMapper = App.QuickDataMapper.create({
        * will not contain property for this service which mean all host belongs to default group
        */
       var hostNamesForService = {};
+      var configGroupsForService = {};
 
       if (json && json.items) {
         json.items.forEach(function (configGroup) {
@@ -75,8 +78,13 @@ App.configGroupsMapper = App.QuickDataMapper.create({
              * creating (if not exists) field in <code>hostNamesForService<code> with host names for default group
              */
             if (!hostNamesForService[configGroup.service_name]) {
-              hostNamesForService[configGroup.service_name] = $.merge([], App.get('allHostNames'));
+              hostNamesForService[configGroup.service_name] = App.get('allHostNames').slice(0);
             }
+
+            if (!configGroupsForService[configGroup.service_name]) {
+              configGroupsForService[configGroup.service_name] = [configGroup.id];
+            }
+            configGroupsForService[configGroup.service_name].push(configGroup.id);
 
             /**
              * excluding host names that belongs for current config group from default group
@@ -84,8 +92,9 @@ App.configGroupsMapper = App.QuickDataMapper.create({
             configGroup.hosts.forEach(function (host) {
               hostNamesForService[configGroup.service_name].splice(hostNamesForService[configGroup.service_name].indexOf(host), 1);
             });
-            var template = mapFromVersions ? this.get('config2') : this.get('config');
-            configGroups.push(this.parseIt(configGroup, template));
+            configGroup = this.parseIt(configGroup, (mapFromVersions ? this.get('config2') : this.get('config')));
+            configGroup.parent_config_group_id = App.ServiceConfigGroup.getParentConfigGroupId(configGroup.service_name);
+            configGroups.push(configGroup);
           }
         }, this);
       }
@@ -94,12 +103,7 @@ App.configGroupsMapper = App.QuickDataMapper.create({
        * generating default config groups
        */
       serviceNames.forEach(function (serviceName) {
-        var defaultGroup = App.ServiceConfigGroup.find().findProperty('id', serviceName + "0");
-        if (!defaultGroup) {
-          configGroups.push(this.generateDefaultGroup(serviceName, hostNamesForService[serviceName]));
-        } else {
-          defaultGroup.set('hostNames', hostNamesForService[serviceName] || App.get('allHostNames'));
-        }
+        configGroups.push(this.generateDefaultGroup(serviceName, hostNamesForService[serviceName], configGroupsForService[serviceName]));
       }, this);
 
 
@@ -109,24 +113,28 @@ App.configGroupsMapper = App.QuickDataMapper.create({
       App.store.loadMany(this.get('model'), configGroups);
       App.store.commit();
     }
+    console.timeEnd('App.configGroupsMapper');
   },
 
   /**
    * generate mock object for default config group
    * @param {string} serviceName
    * @param {string[]} [hostNames=null]
+   * @param {Array} childConfigGroups
    * @returns {{id: string, config_group_id: string, name: string, service_name: string, description: string, host_names: [string], service_id: string}}
    */
-  generateDefaultGroup: function (serviceName, hostNames) {
-    var displayName = App.StackService.find(serviceName).get('displayName');
+  generateDefaultGroup: function (serviceName, hostNames, childConfigGroups) {
     return {
-      id: serviceName + '0',
+      id: App.ServiceConfigGroup.getParentConfigGroupId(serviceName),
       config_group_id: '-1',
-      name: displayName + ' Default',
+      name: App.format.role(serviceName) + ' Default',
       service_name: serviceName,
-      description: 'Default cluster level ' + displayName + ' configuration',
-      host_names: hostNames ? hostNames : App.get('allHostNames'),
-      service_id: serviceName
+      description: 'Default cluster level ' + App.format.role(serviceName) + ' configuration',
+      hosts: hostNames ? hostNames.slice() : App.get('allHostNames').slice(),
+      child_config_groups: childConfigGroups ? childConfigGroups.uniq() : [],
+      service_id: serviceName,
+      desired_configs: [],
+      properties: []
     }
   }
 });

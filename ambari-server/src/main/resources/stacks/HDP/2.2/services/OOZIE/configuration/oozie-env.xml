@@ -100,6 +100,7 @@ export CATALINA_OPTS="${CATALINA_OPTS} -Xmx2048m -XX:MaxPermSize=256m "
 {% else %}
 export CATALINA_OPTS="${CATALINA_OPTS} -Xmx2048m"
 {% endif %}
+
     </value>
   </property>
 

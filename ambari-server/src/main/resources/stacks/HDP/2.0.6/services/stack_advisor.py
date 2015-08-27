@@ -84,7 +84,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       "YARN": self.recommendYARNConfigurations,
       "MAPREDUCE2": self.recommendMapReduce2Configurations,
       "HDFS": self.recommendHDFSConfigurations,
-      "HBASE": self.recommendHbaseEnvConfigurations,
+      "HBASE": self.recommendHbaseConfigurations,
       "AMBARI_METRICS": self.recommendAmsConfigurations
     }
 
@@ -130,6 +130,10 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putYarnProperty('yarn.scheduler.minimum-allocation-mb', int(clusterData['ramPerContainer']))
     putYarnProperty('yarn.scheduler.maximum-allocation-mb', int(configurations["yarn-site"]["properties"]["yarn.nodemanager.resource.memory-mb"]))
     putYarnEnvProperty('min_user_id', self.get_system_min_uid())
+    containerExecutorGroup = 'hadoop'
+    if 'cluster-env' in services['configurations'] and 'user_group' in services['configurations']['cluster-env']['properties']:
+      containerExecutorGroup = services['configurations']['cluster-env']['properties']['user_group']
+    putYarnProperty("yarn.nodemanager.linux-container-executor.group", containerExecutorGroup)
 
   def recommendMapReduce2Configurations(self, configurations, clusterData, services, hosts):
     putMapredProperty = self.putProperty(configurations, "mapred-site", services)
@@ -149,10 +153,19 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putHDFSProperty = self.putProperty(configurations, "hadoop-env", services)
     putHDFSProperty('namenode_opt_maxnewsize', max(int(clusterData['totalAvailableRam'] / 8), 256))
 
-  def recommendHbaseEnvConfigurations(self, configurations, clusterData, services, hosts):
+  def recommendHbaseConfigurations(self, configurations, clusterData, services, hosts):
+    # recommendations for HBase env config
     putHbaseProperty = self.putProperty(configurations, "hbase-env", services)
     putHbaseProperty('hbase_regionserver_heapsize', int(clusterData['hbaseRam']) * 1024)
     putHbaseProperty('hbase_master_heapsize', int(clusterData['hbaseRam']) * 1024)
+
+    # recommendations for HBase site config
+    putHbaseSiteProperty = self.putProperty(configurations, "hbase-site", services)
+
+    if 'hbase-site' in services['configurations'] and 'hbase.superuser' in services['configurations']['hbase-site']['properties'] \
+      and 'hbase-env' in services['configurations'] and 'hbase_user' in services['configurations']['hbase-env']['properties'] \
+      and services['configurations']['hbase-env']['properties']['hbase_user'] != services['configurations']['hbase-site']['properties']['hbase.superuser']:
+      putHbaseSiteProperty("hbase.superuser", services['configurations']['hbase-env']['properties']['hbase_user'])
 
   def recommendAmsConfigurations(self, configurations, clusterData, services, hosts):
     putAmsEnvProperty = self.putProperty(configurations, "ams-env", services)
@@ -372,8 +385,21 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
               print("SiteName: %s, method: %s\n" % (siteName, method.__name__))
               print("Site properties: %s\n" % str(siteProperties))
               print("Recommendations: %s\n********\n" % str(siteRecommendations))
-              resultItems = method(siteProperties, siteRecommendations, configurations, services, hosts)
-              items.extend(resultItems)
+              try:
+                resultItems = method(siteProperties, siteRecommendations, configurations, services, hosts)
+                items.extend(resultItems)
+              except (AttributeError, TypeError, LookupError) as e:
+                msg = "Failed to validate configuration "
+                print msg
+                print e
+                items.extend([{
+                                'message': msg,
+                                'level': 'ERROR',
+                                'config-type': siteName,
+                                'config-name': '',
+                                'type': 'configuration'
+                              }])
+
     clusterWideItems = self.validateClusterConfigurations(configurations, services, hosts)
     items.extend(clusterWideItems)
     self.validateMinMax(items, recommendedDefaults, configurations)
@@ -473,7 +499,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
     distributed_item = None
     distributed = properties.get("hbase.cluster.distributed")
-    if hbase_rootdir.startswith("hdfs://") and not distributed.lower() == "true":
+    if hbase_rootdir and hbase_rootdir.startswith("hdfs://") and not distributed.lower() == "true":
       distributed_item = self.getErrorItem("Distributed property should be set to true if hbase.rootdir points to HDFS.")
 
     validationItems.extend([{"config-name":'hbase.rootdir', "item": rootdir_item },
@@ -523,7 +549,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     hbase_site = getSiteProperties(configurations, "ams-hbase-site")
     hbase_rootdir = hbase_site.get("hbase.rootdir")
     regionServerMinMemItem = None
-    if hbase_rootdir.startswith("hdfs://"):
+    if hbase_rootdir and hbase_rootdir.startswith("hdfs://"):
       regionServerMinMemItem = self.validateMinMemorySetting(properties, 1024, 'hbase_regionserver_heapsize')
 
     validationItems = [{"config-name": "hbase_regionserver_heapsize", "item": regionServerItem},
@@ -700,14 +726,18 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     return self.toConfigurationValidationProblems(validationItems, "mapred-site")
 
   def validateYARNConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
+    clusterEnv = getSiteProperties(configurations, "cluster-env")
     validationItems = [ {"config-name": 'yarn.nodemanager.resource.memory-mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'yarn.nodemanager.resource.memory-mb')},
                         {"config-name": 'yarn.scheduler.minimum-allocation-mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'yarn.scheduler.minimum-allocation-mb')},
+                        {"config-name": 'yarn.nodemanager.linux-container-executor.group', "item": self.validatorEqualsPropertyItem(properties, "yarn.nodemanager.linux-container-executor.group", clusterEnv, "user_group")},
                         {"config-name": 'yarn.scheduler.maximum-allocation-mb', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'yarn.scheduler.maximum-allocation-mb')} ]
     return self.toConfigurationValidationProblems(validationItems, "yarn-site")
 
   def validateHbaseEnvConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
+    hbase_site = getSiteProperties(configurations, "hbase-site")
     validationItems = [ {"config-name": 'hbase_regionserver_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'hbase_regionserver_heapsize')},
-                        {"config-name": 'hbase_master_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'hbase_master_heapsize')} ]
+                        {"config-name": 'hbase_master_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'hbase_master_heapsize')},
+                        {"config-name": "hbase_user", "item": self.validatorEqualsPropertyItem(properties, "hbase_user", hbase_site, "hbase.superuser")} ]
     return self.toConfigurationValidationProblems(validationItems, "hbase-env")
 
   def validateHDFSConfigurationsEnv(self, properties, recommendedDefaults, configurations, services, hosts):

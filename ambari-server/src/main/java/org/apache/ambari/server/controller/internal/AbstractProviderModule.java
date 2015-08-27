@@ -34,6 +34,7 @@ import org.apache.ambari.server.controller.metrics.MetricHostProvider;
 import org.apache.ambari.server.controller.metrics.MetricsPropertyProvider;
 import org.apache.ambari.server.controller.metrics.MetricsReportPropertyProvider;
 import org.apache.ambari.server.controller.metrics.MetricsServiceProvider;
+import org.apache.ambari.server.controller.metrics.timeline.cache.TimelineMetricCacheProvider;
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
 import org.apache.ambari.server.controller.spi.NoSuchResourceException;
 import org.apache.ambari.server.controller.spi.Predicate;
@@ -164,6 +165,9 @@ public abstract class AbstractProviderModule implements ProviderModule,
   @Inject
   AmbariManagementController managementController;
 
+  @Inject
+  TimelineMetricCacheProvider metricCacheProvider;
+
   /**
    * The map of host components.
    */
@@ -199,6 +203,9 @@ public abstract class AbstractProviderModule implements ProviderModule,
   public AbstractProviderModule() {
     if (managementController == null) {
       managementController = AmbariServer.getController();
+    }
+    if (metricCacheProvider == null && managementController != null) {
+      metricCacheProvider = managementController.getTimelineMetricCacheProvider();
     }
   }
 
@@ -884,7 +891,8 @@ public abstract class AbstractProviderModule implements ProviderModule,
 
     return MetricsReportPropertyProvider.createInstance(
       PropertyHelper.getMetricPropertyIds(type), streamProvider,
-      configuration, hostProvider, serviceProvider, clusterNamePropertyId);
+      configuration, metricCacheProvider, hostProvider, serviceProvider,
+      clusterNamePropertyId);
   }
 
   /**
@@ -899,7 +907,7 @@ public abstract class AbstractProviderModule implements ProviderModule,
                                                              String hostNamePropertyId) {
     return MetricsPropertyProvider.createInstance(type,
       PropertyHelper.getMetricPropertyIds(type), streamProvider, configuration,
-      hostProvider, serviceProvider, clusterNamePropertyId,
+      metricCacheProvider, hostProvider, serviceProvider, clusterNamePropertyId,
       hostNamePropertyId, null);
   }
 
@@ -915,7 +923,8 @@ public abstract class AbstractProviderModule implements ProviderModule,
                                                                   String componentNamePropertyId) {
     return MetricsPropertyProvider.createInstance(type,
       PropertyHelper.getMetricPropertyIds(type), streamProvider, configuration,
-      hostProvider, serviceProvider, clusterNamePropertyId, null,
+      metricCacheProvider, hostProvider, serviceProvider,
+      clusterNamePropertyId, null,
       componentNamePropertyId);
   }
 
@@ -934,8 +943,8 @@ public abstract class AbstractProviderModule implements ProviderModule,
 
     return MetricsPropertyProvider.createInstance(type,
       PropertyHelper.getMetricPropertyIds(type), streamProvider, configuration,
-      hostProvider, serviceProvider, clusterNamePropertyId, hostNamePropertyId,
-      componentNamePropertyId);
+      metricCacheProvider, hostProvider, serviceProvider, clusterNamePropertyId,
+      hostNamePropertyId, componentNamePropertyId);
   }
 
   @Override

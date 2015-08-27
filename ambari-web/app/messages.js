@@ -904,7 +904,9 @@ Em.I18n.translations = {
   'form.validator.configKey':'Invalid Key. Only alphanumerics, hyphens, underscores, asterisks and periods are allowed.',
   'form.validator.configGroupName':'Invalid Group Name. Only alphanumerics, hyphens, spaces and underscores are allowed.',
   'form.validator.alertGroupName':'Invalid Alert Group Name. Only alphanumerics, hyphens, spaces and underscores are allowed.',
+  'form.validator.alertGroupPlaceHolder':'Alert Group Name',
   'form.validator.configKey.specific':'"{0}" is invalid Key. Only alphanumerics, hyphens, underscores, asterisks and periods are allowed.',
+  'form.validator.error.trailingSpaces': 'Cannot contain trailing whitespace',
 
   'alerts.add.header': 'Create Alert Definition',
   'alerts.add.step1.header': 'Choose Type',
@@ -1405,6 +1407,7 @@ Em.I18n.translations = {
   'admin.stackVersions.version.reinstall': "Reinstall Packages",
   'admin.stackVersions.version.performUpgrade': "Perform Upgrade",
   'admin.stackVersions.version.upgrade.pause': "Upgrade: Action Required",
+  'admin.stackVersions.version.upgrade.notFinalized.warning': "The upgrade has not been finalized yet. After the cluster is verified to be functional, do not forget to finalize the upgrade as soon as possible (within a couple of days is highly recommended) as running the cluster in unfinalized state causes extra resource requirements on HDFS.",
   'admin.stackVersions.version.upgrade.running': "Upgrade: In Process",
   'admin.stackVersions.version.upgrade.aborted': "Upgrade: Aborted",
   'admin.stackVersions.version.downgrade.pause': "Downgrade: Action Required",
@@ -1770,10 +1773,11 @@ Em.I18n.translations = {
   'services.service.config.kdc.btn.idle': 'Test KDC Connection',
   'services.service.config.database.btn.connecting': 'Connecting...',
   'services.service.config.database.msg.jdbcSetup': 'Be sure you have run:<br/>' +
-    '<b>ambari-server setup --jdbc-db={0} --jdbc-driver=/path/to/{1}/driver.jar</b> ' +
+    '<b>ambari-server setup --jdbc-db={0} --jdbc-driver=/path/to/{0}/{1}</b> ' +
     'on the Ambari Server host to make the JDBC driver available and to enable testing the database connection.',
 
   'services.service.config.configHistory.configGroup': 'Config Group',
+  'services.service.config.configHistory.configGroup.name': 'Config Group Name',
   'services.service.config.configHistory.rightArrow.tooltip': 'Show earlier versions',
   'services.service.config.configHistory.leftArrow.tooltip': 'Show later versions',
   'services.service.config.configHistory.dismissIcon.tooltip': 'Dismiss',

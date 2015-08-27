@@ -20,6 +20,7 @@
 
 import Ember from 'ember';
 import dagRules from '../utils/dag-rules';
+import utils from 'hive/utils/functions';
 
 export default Ember.View.extend({
   verticesGroups: [],
@@ -73,9 +74,8 @@ export default Ember.View.extend({
   }.observes('controller.verticesProgress.@each.value', 'verticesGroups'),
 
   jsonChanged: function () {
-    if (this.get('controller.json')) {
-      this.renderDag();
-    }
+    var json = this.get('controller.json');
+    this.renderDag();
   }.observes('controller.json'),
 
   getOffset: function (el) {
@@ -139,8 +139,6 @@ export default Ember.View.extend({
       ruleNode,
       nodeLabelValue,
       self = this;
-    
-    contents = contents || [];  
 
     if (operator.constructor === Array) {
       operator.forEach(function (childOperator) {
@@ -425,40 +423,36 @@ export default Ember.View.extend({
   },
 
   renderDag: function () {
-    var convert = function (inputObj) {
-      var array = [];
+    var json = this.get('controller.json');
+    var isVisualExplain = json && (json['STAGE PLANS'] != undefined);
+    if (isVisualExplain) {
+      this.set('edges', []);
 
-      for (var key in inputObj) {
-        if (inputObj.hasOwnProperty(key)) {
-          array.pushObject({
-            name: key,
-            value: inputObj[key]
-          });
-        }
-      }
+      // Create a new directed graph
+      var g = this.get('graph');
 
-      return array;
-    };
+      var graphData = json['STAGE PLANS']['Stage-1']['Tez'];
+      var vertices = utils.convertToArray(graphData['Vertices:']);
+      var edges = utils.convertToArray(graphData['Edges:']);
 
-    this.set('edges', []);
+      // Set an object for the graph label
+      g.setGraph({});
 
-    // Create a new directed graph
-    var g = this.get('graph');
+      // Default to assigning a new object as a label for each new edge.
+      g.setDefaultEdgeLabel(function () { return {}; });
 
-    var graphData = this.get('controller.json')['STAGE PLANS']['Stage-1']['Tez'];
-    var vertices = convert(graphData['Vertices:']);
-    var edges = convert(graphData['Edges:']);
-
-    // Set an object for the graph label
-    g.setGraph({});
-
-    // Default to assigning a new object as a label for each new edge.
-    g.setDefaultEdgeLabel(function () { return {}; });
-
-    this.setNodes(vertices)
+      this.setNodes(vertices)
         .setEdges(edges)
         .setTableNodesAndEdges(vertices)
         .createNodeGroups()
         .renderEdges();
+    } else {
+
+      if(!this.get('controller.noquery')) {
+        $('#no-visual-explain-graph').html('Visual explain is not available.');
+      }
+
+    }
+
   }
 });

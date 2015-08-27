@@ -19,6 +19,7 @@ limitations under the License.
 
 import os
 import re
+import getpass
 from copy import copy
 from resource_management.libraries.functions.version import compare_versions
 from resource_management import *
@@ -29,22 +30,23 @@ def setup_users():
   """
   import params
 
-  if not params.host_sys_prepped:
+  if not params.host_sys_prepped and not params.ignore_groupsusers_create:
     for group in params.group_list:
       Group(group,
-          ignore_failures = params.ignore_groupsusers_create
       )
 
     for user in params.user_list:
       User(user,
           gid = params.user_to_gid_dict[user],
           groups = params.user_to_groups_dict[user],
-          ignore_failures = params.ignore_groupsusers_create
       )
 
-    set_uid(params.smoke_user, params.smoke_user_dirs)
+    if params.override_uid == "true":
+      set_uid(params.smoke_user, params.smoke_user_dirs)
+    else:
+      Logger.info('Skipping setting uid for smoke user as host is sys prepped')
   else:
-    print 'Skipping creation of User and Group as host is sys prepped'
+    Logger.info('Skipping creation of User and Group as host is sys prepped or ignore_groupsusers_create flag is on')
     pass
 
 
@@ -55,10 +57,10 @@ def setup_users():
                recursive = True,
                cd_access="a",
     )
-    if not params.host_sys_prepped and params.override_hbase_uid:
+    if not params.host_sys_prepped and params.override_uid == "true":
       set_uid(params.hbase_user, params.hbase_user_dirs)
     else:
-      print 'Skipping setting uid for hbase user as host is sys prepped'
+      Logger.info('Skipping setting uid for hbase user as host is sys prepped')      
       pass
 
   if not params.host_sys_prepped:
@@ -67,7 +69,7 @@ def setup_users():
     if params.has_tez and params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.3') >= 0:
         create_tez_am_view_acls()
   else:
-    print 'Skipping setting dfs cluster admin and tez view acls as host is sys prepped'
+    Logger.info('Skipping setting dfs cluster admin and tez view acls as host is sys prepped')
 
 def create_dfs_cluster_admins():
   """
@@ -153,3 +155,59 @@ def setup_hadoop_env():
       File(os.path.join(params.hadoop_conf_dir, 'hadoop-env.sh'), owner=tc_owner,
         group=params.user_group,
         content=InlineTemplate(params.hadoop_env_sh_template))
+
+
+def setup_java():
+  """
+  Installs jdk using specific params, that comes from ambari-server
+  """
+  import params
+
+  java_exec = format("{java_home}/bin/java")
+
+  if not os.path.isfile(java_exec):
+
+    jdk_curl_target = format("{tmp_dir}/{jdk_name}")
+    java_dir = os.path.dirname(params.java_home)
+    tmp_java_dir = format("{tmp_dir}/jdk")
+
+    if not params.jdk_name:
+      return
+
+    Directory(params.artifact_dir,
+              recursive = True,
+              )
+
+    File(jdk_curl_target,
+         content = DownloadSource(format("{jdk_location}/{jdk_name}")),
+         not_if = format("test -f {jdk_curl_target}")
+    )
+
+    if params.jdk_name.endswith(".bin"):
+      chmod_cmd = ("chmod", "+x", jdk_curl_target)
+      install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && echo A | {jdk_curl_target} -noregister && {sudo} cp -rp {tmp_java_dir}/* {java_dir}")
+    elif params.jdk_name.endswith(".gz"):
+      chmod_cmd = ("chmod","a+x", java_dir)
+      install_cmd = format("mkdir -p {tmp_java_dir} && cd {tmp_java_dir} && tar -xf {jdk_curl_target} && {sudo} cp -rp {tmp_java_dir}/* {java_dir}")
+
+    Directory(java_dir
+    )
+
+    Execute(chmod_cmd,
+            sudo = True,
+            )
+
+    Execute(install_cmd,
+            )
+
+    File(format("{java_home}/bin/java"),
+         mode=0755,
+         cd_access="a",
+         )
+
+    Execute(("chgrp","-R", params.user_group, params.java_home),
+            sudo = True,
+            )
+    Execute(("chown","-R", getpass.getuser(), params.java_home),
+            sudo = True,
+            )

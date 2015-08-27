@@ -245,10 +245,12 @@ App.ClusterController = Em.Controller.extend({
     });
 
     // alerts loading doesn't affect overall progress
+    console.time('Overall alerts loading time');
     updater.updateAlertGroups(function () {
       updater.updateAlertDefinitions(function () {
         updater.updateAlertDefinitionSummary(function () {
           updater.updateUnhealthyAlertInstances(function () {
+            console.timeEnd('Overall alerts loading time');
             self.set('isAlertsLoaded', true);
           });
         });
@@ -281,9 +283,11 @@ App.ClusterController = Em.Controller.extend({
       }
 
       if (lastUpgradeData) {
-        upgradeController.setDBProperty('upgradeId', lastUpgradeData.Upgrade.request_id);
-        upgradeController.setDBProperty('isDowngrade', lastUpgradeData.Upgrade.direction === 'DOWNGRADE');
-        upgradeController.setDBProperty('upgradeState', lastUpgradeData.Upgrade.request_status);
+        upgradeController.setDBProperties({
+          upgradeId: lastUpgradeData.Upgrade.request_id,
+          isDowngrade: lastUpgradeData.Upgrade.direction === 'DOWNGRADE',
+          upgradeState: lastUpgradeData.Upgrade.request_status
+        });
         upgradeController.loadRepoVersionsToModel().done(function () {
           upgradeController.setDBProperty('upgradeVersion', App.RepositoryVersion.find().findProperty('repositoryVersion', lastUpgradeData.Upgrade.to_version).get('displayName'));
           upgradeController.initDBProperties();

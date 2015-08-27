@@ -202,6 +202,7 @@ class TestHDP206StackAdvisor(TestCase):
 
     expectedItems = [
       {"message": "Value is less than the recommended default of 512", "level": "WARN"},
+      {'message': 'Value should be set for yarn.nodemanager.linux-container-executor.group', 'level': 'ERROR'},
       {"message": "Value should be integer", "level": "ERROR"},
       {"message": "Value should be set", "level": "ERROR"}
     ]
@@ -466,6 +467,7 @@ class TestHDP206StackAdvisor(TestCase):
 
   def test_recommendYARNConfigurations(self):
     configurations = {}
+    services = {"configurations": configurations}
     clusterData = {
       "containers" : 5,
       "ramPerContainer": 256
@@ -478,6 +480,7 @@ class TestHDP206StackAdvisor(TestCase):
       },
       "yarn-site": {
         "properties": {
+          "yarn.nodemanager.linux-container-executor.group": "hadoop",
           "yarn.nodemanager.resource.memory-mb": "1280",
           "yarn.scheduler.minimum-allocation-mb": "256",
           "yarn.scheduler.maximum-allocation-mb": "1280"
@@ -485,7 +488,7 @@ class TestHDP206StackAdvisor(TestCase):
       }
     }
 
-    self.stackAdvisor.recommendYARNConfigurations(configurations, clusterData, None, None)
+    self.stackAdvisor.recommendYARNConfigurations(configurations, clusterData, services, None)
     self.assertEquals(configurations, expected)
 
   def test_recommendMapReduce2Configurations_mapMemoryLessThan2560(self):
@@ -615,7 +618,7 @@ class TestHDP206StackAdvisor(TestCase):
       actualItems.append(next)
     self.checkEqual(expectedItems, actualItems)
 
-  def test_recommendHbaseEnvConfigurations(self):
+  def test_recommendHbaseConfigurations(self):
     servicesList = ["HBASE"]
     configurations = {}
     components = []
@@ -637,7 +640,28 @@ class TestHDP206StackAdvisor(TestCase):
         }
       ]
     }
+    services = {
+      "services" : [
+      ],
+      "configurations": {
+        "hbase-site": {
+          "properties": {
+            "hbase.superuser": "hbase"
+          }
+        },
+        "hbase-env": {
+          "properties": {
+            "hbase_user": "hbase123"
+          }
+        }
+      }
+    }
     expected = {
+      'hbase-site': {
+        'properties': {
+          'hbase.superuser': 'hbase123'
+        }
+      },
       "hbase-env": {
         "properties": {
           "hbase_master_heapsize": "8192",
@@ -649,7 +673,7 @@ class TestHDP206StackAdvisor(TestCase):
     clusterData = self.stackAdvisor.getConfigurationClusterSummary(servicesList, hosts, components, None)
     self.assertEquals(clusterData['hbaseRam'], 8)
 
-    self.stackAdvisor.recommendHbaseEnvConfigurations(configurations, clusterData, None, None)
+    self.stackAdvisor.recommendHbaseConfigurations(configurations, clusterData, services, None)
     self.assertEquals(configurations, expected)
 
   def test_recommendHDFSConfigurations(self):
@@ -970,7 +994,7 @@ class TestHDP206StackAdvisor(TestCase):
     ]}
     properties = {"property1": "/var/dir"}
     # only / mountpoint - no warning
-    self.assertIsNone(self.stackAdvisor.validatorNotRootFs(properties, 'property1', hostInfo))
+    self.assertTrue(self.stackAdvisor.validatorNotRootFs(properties, 'property1', hostInfo) == None)
     # More preferable /grid/0 mountpoint - warning
     hostInfo["disk_info"].append(
       {
@@ -980,7 +1004,7 @@ class TestHDP206StackAdvisor(TestCase):
       }
     )
     warn = self.stackAdvisor.validatorNotRootFs(properties, 'property1', hostInfo)
-    self.assertIsNotNone(warn)
+    self.assertFalse(warn == None)
     self.assertEquals({'message': 'The root device should not be used for property1', 'level': 'WARN'}, warn)
 
     # Set by user /var mountpoint, which is non-root , but not preferable - no warning
@@ -991,4 +1015,4 @@ class TestHDP206StackAdvisor(TestCase):
         "mountpoint" : "/var"
       }
     )
-    self.assertIsNone(self.stackAdvisor.validatorNotRootFs(properties, 'property1', hostInfo))
+    self.assertTrue(self.stackAdvisor.validatorNotRootFs(properties, 'property1', hostInfo) == None)

@@ -101,6 +101,11 @@ public class UpgradeCatalog211 extends AbstractUpgradeCatalog {
   protected void executeDDLUpdates() throws AmbariException, SQLException {
     // change out the PK on hostcomponentstate
     executeHostComponentStateDDLUpdates();
+
+    // make viewinstanceproperty.value & viewinstancedata.value nullable
+    dbAccessor.setColumnNullable("viewinstanceproperty", "value", true);
+    dbAccessor.setColumnNullable("viewinstancedata", "value", true);
+
   }
 
   /**
@@ -229,6 +234,9 @@ public class UpgradeCatalog211 extends AbstractUpgradeCatalog {
     // make the column NON NULL now
     dbAccessor.alterColumn(HOST_COMPONENT_STATE_TABLE,
         new DBColumnInfo(HOST_COMPONENT_STATE_ID_COLUMN, Long.class, null, null, false));
+
+    // Add sequence for hostcomponentstate id
+    addSequence("hostcomponentstate_id_seq", id.get(), false);
 
     // drop the current PK
     String primaryKeyConstraintName = null;

@@ -46,7 +46,7 @@
 
       <execute-stage service="OOZIE" component="OOZIE_SERVER" title="Pre Upgrade Oozie">
         <task xsi:type="manual">
-          <message>Before continuing, please backup the Oozie Server database on {{oozie-env/oozie_hostname}}.</message>
+          <message>Before continuing, please backup the Oozie Server database on {{hosts.all}}.</message>
         </task>
       </execute-stage>
 
@@ -99,9 +99,10 @@
       <skippable>true</skippable>
       <direction>UPGRADE</direction>
       <priority>
+        <service>ZOOKEEPER</service>
         <service>HDFS</service>
-        <service>MAPREDUCE2</service>
         <service>YARN</service>
+        <service>MAPREDUCE2</service>
         <service>HBASE</service>
       </priority>
       <exclude>
@@ -135,6 +136,7 @@
       <skippable>true</skippable>
       <direction>UPGRADE</direction>
       <priority>
+        <service>ZOOKEEPER</service>
         <service>HDFS</service>
         <service>YARN</service>
         <service>HBASE</service>
@@ -220,6 +222,7 @@
       <skippable>true</skippable>
       <direction>UPGRADE</direction>
       <priority>
+        <service>ZOOKEEPER</service>
         <service>HDFS</service>
         <service>YARN</service>
         <service>HBASE</service>

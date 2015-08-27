@@ -597,9 +597,9 @@ App.AssignMasterComponents = Em.Mixin.create({
 
   /**
    * Get recommendations info from API
-   * @return {undefined}
-   * @param function(componentInstallationobjects, this) callback
-   * @param bool includeMasters
+   * @param {function}callback
+   * @param {boolean} includeMasters
+   * @method loadComponentsRecommendationsFromServer
    */
   loadComponentsRecommendationsFromServer: function(callback, includeMasters) {
     var self = this;
@@ -608,7 +608,8 @@ App.AssignMasterComponents = Em.Mixin.create({
       // Don't do AJAX call if recommendations has been already received
       // But if user returns to previous step (selecting services), stored recommendations will be cleared in routers' next handler and AJAX call will be made again
       callback(self.createComponentInstallationObjects(), self);
-    } else {
+    }
+    else {
       var selectedServices = App.StackService.find().filterProperty('isSelected').mapProperty('serviceName');
       var installedServices = App.StackService.find().filterProperty('isInstalled').mapProperty('serviceName');
       var services = installedServices.concat(selectedServices).uniq();
@@ -625,9 +626,11 @@ App.AssignMasterComponents = Em.Mixin.create({
       if (includeMasters) {
         // Made partial recommendation request for reflect in blueprint host-layout changes which were made by user in UI
         data.recommendations = self.getCurrentBlueprint();
-      } else if (!self.get('isInstallerWizard')) {
-        data.recommendations = self.getCurrentMasterSlaveBlueprint();
       }
+      else
+        if (!self.get('isInstallerWizard')) {
+          data.recommendations = self.getCurrentMasterSlaveBlueprint();
+        }
 
       return App.ajax.send({
         name: 'wizard.loadrecommendations',
@@ -636,8 +639,8 @@ App.AssignMasterComponents = Em.Mixin.create({
         success: 'loadRecommendationsSuccessCallback',
         error: 'loadRecommendationsErrorCallback'
       }).then(function () {
-            callback(self.createComponentInstallationObjects(), self);
-          });
+          callback(self.createComponentInstallationObjects(), self);
+        });
     }
   },
 
@@ -657,6 +660,10 @@ App.AssignMasterComponents = Em.Mixin.create({
         return component.get('isShownOnAddServiceAssignMasterPage') || self.get('mastersToShow').contains(component.get('componentName'));
       });
     }
+    var masterComponentsMap = {};
+    masterComponents.forEach(function(masterComponent) {
+      masterComponentsMap[masterComponent.get('componentName')] = masterComponent;
+    });
 
     var masterHosts = self.get('content.masterComponentHosts'); //saved to local storage info
     var selectedNotInstalledServices = self.get('content.services').filterProperty('isSelected').filterProperty('isInstalled', false).mapProperty('serviceName');
@@ -665,13 +672,23 @@ App.AssignMasterComponents = Em.Mixin.create({
     var resultComponents = [];
     var multipleComponentHasBeenAdded = {};
 
+    var existingHostComponentsMap = {};
+    App.HostComponent.find().forEach(function(c) {
+      existingHostComponentsMap[c.get('componentName')] = c;
+    });
+
+    var hostGroupsMap = {};
+    recommendations.blueprint_cluster_binding.host_groups.forEach(function(group) {
+      hostGroupsMap[group.name] = group;
+    });
     recommendations.blueprint.host_groups.forEach(function(host_group) {
-      var hosts = recommendations.blueprint_cluster_binding.host_groups.findProperty('name', host_group.name).hosts;
+      var hosts = hostGroupsMap[host_group.name] ? hostGroupsMap[host_group.name].hosts : [];
 
       hosts.forEach(function(host) {
         host_group.components.forEach(function(component) {
           var willBeAdded = true;
-          var fullComponent = masterComponents.findProperty('componentName', component.name);
+          //var fullComponent = masterComponents.findProperty('componentName', component.name);
+          var fullComponent = masterComponentsMap[component.name];
           // If it's master component which should be shown
           if (fullComponent) {
             // If service is already installed and not being added as a new service then render on UI only those master components
@@ -679,7 +696,7 @@ App.AssignMasterComponents = Em.Mixin.create({
             // NOTE: On upgrade there might be a prior installed service with non-installed newly introduced serviceComponent
             var isNotSelectedService = !selectedNotInstalledServices.contains(fullComponent.get('serviceName'));
             if (isNotSelectedService) {
-              willBeAdded = App.HostComponent.find().someProperty('componentName', component.name);
+              willBeAdded = existingHostComponentsMap[component.name];
             }
 
             if (willBeAdded) {
@@ -693,7 +710,8 @@ App.AssignMasterComponents = Em.Mixin.create({
                     resultComponents.push(self.createComponentInstallationObject(fullComponent, host.fqdn.toLowerCase(), saved));
                   });
                 }
-              } else {
+              }
+              else {
                 var savedComponent = masterHosts.findProperty('component', component.name);
                 resultComponents.push(self.createComponentInstallationObject(fullComponent, host.fqdn.toLowerCase(), savedComponent));
               }
@@ -720,14 +738,8 @@ App.AssignMasterComponents = Em.Mixin.create({
     componentObj.display_name = App.format.role(fullComponent.get('componentName'));
     componentObj.serviceId = fullComponent.get('serviceName');
     componentObj.isServiceCoHost = App.StackServiceComponent.find().findProperty('componentName', componentName).get('isCoHostedComponent') && !this.get('mastersToMove').contains(componentName);
-    if (savedComponent) {
-      componentObj.selectedHost = savedComponent.hostName;
-      componentObj.isInstalled = savedComponent.isInstalled;
-    } else {
-      componentObj.selectedHost = hostName;
-      componentObj.isInstalled = false;
-    }
-
+    componentObj.selectedHost = savedComponent ? savedComponent.hostName : hostName;
+    componentObj.isInstalled = savedComponent ? savedComponent.isInstalled : false;
     return componentObj;
   },
 

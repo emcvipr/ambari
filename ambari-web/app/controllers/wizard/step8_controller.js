@@ -345,12 +345,12 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
   loadConfigs: function () {
     //storedConfigs contains custom configs as well
     var configs = this.get('content.serviceConfigProperties');
-    if (configs.someProperty('name', 'hive_database')) {
+    /*if (configs.someProperty('name', 'hive_database')) {
       configs = this.removeHiveConfigs(configs);
     }
     if (configs.someProperty('name', 'oozie_database')) {
       configs = this.removeOozieConfigs(configs);
-    }
+    }*/
     configs.forEach(function (_config) {
       _config.value = (typeof _config.value === "boolean") ? _config.value.toString() : _config.value;
     });
@@ -611,47 +611,23 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
         hostsCount + ' ' + Em.I18n.t('installer.step8.hosts'));
   },
 
+  loadHiveDbValue: function() {
+    return this.loadDbValue('HIVE');
+  },
+
+  loadOozieDbValue: function() {
+    return this.loadDbValue('OOZIE');
+  },
+
   /**
    * Set displayed Hive DB value based on DB type
    * @method loadHiveDbValue
    */
-  loadHiveDbValue: function () {
-    var db, serviceConfigProperties = this.get('wizardController').getDBProperty('serviceConfigProperties'),
-      hiveDb = serviceConfigProperties.findProperty('name', 'hive_database');
-    if (hiveDb.value === 'New MySQL Database') {
-      return 'MySQL (New Database)';
-    } else if (hiveDb.value === 'New PostgreSQL Database') {
-      return 'Postgres (New Database)';
-    }
-    else {
-      if (hiveDb.value === 'Existing MySQL Database') {
-        db = serviceConfigProperties.findProperty('name', 'hive_existing_mysql_database');
-        return db.value + ' (' + hiveDb.value + ')';
-      }
-      else {
-        if (hiveDb.value === Em.I18n.t('services.service.config.hive.oozie.postgresql')) {
-          db = serviceConfigProperties.findProperty('name', 'hive_existing_postgresql_database');
-          return db.value + ' (' + hiveDb.value + ')';
-        }
-        else {
-          if (hiveDb.value === 'Existing MSSQL Server database with SQL authentication') {
-            db = serviceConfigProperties.findProperty('name', 'hive_existing_mssql_server_database');
-            return db.value + ' (' + hiveDb.value + ')';
-          }
-          else {
-            if (hiveDb.value === 'Existing MSSQL Server database with integrated authentication') {
-              db = serviceConfigProperties.findProperty('name', 'hive_existing_mssql_server_2_database');
-              return db.value + ' (' + hiveDb.value + ')';
-            }
-            else {
-              // existing oracle database
-              db = serviceConfigProperties.findProperty('name', 'hive_existing_oracle_database');
-              return db.value + ' (' + hiveDb.value + ')';
-            }
-          }
-        }
-      }
-    }
+  loadDbValue: function (serviceName) {
+    var serviceConfigProperties = this.get('wizardController').getDBProperty('serviceConfigProperties');
+    var dbFull = serviceConfigProperties.findProperty('name', serviceName.toLowerCase() + '_database'),
+      db = serviceConfigProperties.findProperty('name', serviceName.toLowerCase() + '_ambari_database');
+    return db && dbFull ? db.value + ' (' + dbFull.value + ')' : '';
   },
 
   /**
@@ -682,47 +658,6 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
       hostSuffix = Em.I18n.t('installer.step8.hosts');
     }
     serverComponent.set('component_value', zkHostNames + hostSuffix);
-  },
-
-  /**
-   * Set displayed Oozie DB value based on DB type
-   * @method loadOozieDbValue
-   */
-  loadOozieDbValue: function () {
-    var db, oozieDb = this.get('wizardController').getDBProperty('serviceConfigProperties').findProperty('name', 'oozie_database');
-    if (oozieDb.value === 'New Derby Database') {
-      db = this.get('wizardController').getDBProperty('serviceConfigProperties').findProperty('name', 'oozie_derby_database');
-      return db.value + ' (' + oozieDb.value + ')';
-    }
-    else {
-      if (oozieDb.value === 'Existing MySQL Database') {
-        db = this.get('wizardController').getDBProperty('serviceConfigProperties').findProperty('name', 'oozie_existing_mysql_database');
-        return db.value + ' (' + oozieDb.value + ')';
-      }
-      else {
-        if (oozieDb.value === Em.I18n.t('services.service.config.hive.oozie.postgresql')) {
-          db = this.get('wizardController').getDBProperty('serviceConfigProperties').findProperty('name', 'oozie_existing_postgresql_database');
-          return db.value + ' (' + oozieDb.value + ')';
-        }
-        else {
-          if (oozieDb.value === 'Existing MSSQL Server database with SQL authentication') {
-            db = this.get('wizardController').getDBProperty('serviceConfigProperties').findProperty('name', 'oozie_existing_mssql_server_database');
-            return db.value + ' (' + oozieDb.value + ')';
-          }
-          else {
-            if (oozieDb.value === 'Existing MSSQL Server database with integrated authentication') {
-              db = this.get('wizardController').getDBProperty('serviceConfigProperties').findProperty('name', 'oozie_existing_mssql_server_2_database');
-              return db.value + ' (' + oozieDb.value + ')';
-            }
-            else {
-              // existing oracle database
-              db = this.get('wizardController').getDBProperty('serviceConfigProperties').findProperty('name', 'oozie_existing_oracle_database');
-              return db.value + ' (' + oozieDb.value + ')';
-            }
-          }
-        }
-      }
-    }
   },
 
   /**
@@ -1045,8 +980,9 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
           this.updateKerberosDescriptor();
         }
       }
-      if (this.get('wizardController').getDBProperty('fileNamesToUpdate') && this.get('wizardController').getDBProperty('fileNamesToUpdate').length) {
-        this.updateConfigurations(this.get('wizardController').getDBProperty('fileNamesToUpdate'));
+      var fileNamesToUpdate = this.get('wizardController').getDBProperty('fileNamesToUpdate');
+      if (fileNamesToUpdate && fileNamesToUpdate.length) {
+        this.updateConfigurations(fileNamesToUpdate);
       }
       this.createConfigurations();
       this.applyConfigurationsToCluster(this.get('serviceConfigTags'));
@@ -1591,7 +1527,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
    * @method createConfigurationGroups
    */
   createConfigurationGroups: function () {
-    var configGroups = this.get('content.configGroups').filterProperty('isDefault', false);
+    var configGroups = this.get('content.configGroups').filterProperty('is_default', false);
     var clusterName = this.get('clusterName');
     var sendData = [];
     var updateData = [];
@@ -1606,7 +1542,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
       var groupData = {
         "cluster_name": clusterName,
         "group_name": configGroup.name,
-        "tag": configGroup.service.id,
+        "tag": configGroup.service_id,
         "description": configGroup.description,
         "hosts": [],
         "desired_configs": []
@@ -1626,7 +1562,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
         // if group is a new one, create it
         if (!configGroup.id) {
           sendData.push({"ConfigGroup": groupData});
-        } else if (configGroup.isForUpdate){
+        } else if (configGroup.is_for_update){
           // update an existing group
           groupData.id = configGroup.id;
           updateData.push({"ConfigGroup": groupData});

@@ -118,23 +118,28 @@ App.ComponentLiveTextView =  Em.View.extend({
   }.property("liveComponents", 'totalComponents')
 });
 
-App.MainDashboardServiceView = Em.View.extend({
+App.MainDashboardServiceViewWrapper = Em.Mixin.create({
+  layoutName: require('templates/main/service/service'),
+  isFullWidth: false
+});
+
+App.MainDashboardServiceView = Em.View.extend(App.MainDashboardServiceViewWrapper, {
   classNames: ['service', 'clearfix'],
 
   data: function () {
     return this.get('controller.data.' + this.get('serviceName'));
   }.property('controller.data'),
 
-  dashboardMasterComponentView : Em.View.extend({
+  dashboardMasterComponentView: Em.View.extend({
     didInsertElement: function() {
-      App.tooltip($('[rel=healthTooltip]'));
+      App.tooltip($('[rel=SummaryComponentHealthTooltip]'));
     },
     templateName: require('templates/main/service/info/summary/master_components'),
     mastersComp: function () {
-      return this.get('parentView.service.hostComponents').filterProperty('isMaster', true);
-    }.property("service"),
+      return this.get('parentView.parentView.mastersObj');
+    }.property("parentView.parentView.mastersObj"),
     willDestroyElement: function() {
-      $('[rel=healthTooltip]').tooltip('destroy');
+      $('[rel=SummaryComponentHealthTooltip]').tooltip('destroy');
     }
   }),
 

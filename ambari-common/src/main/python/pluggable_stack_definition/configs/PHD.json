@@ -1,0 +1,321 @@
+{
+  "stackName": "PHD",
+  "baseStackName": "HDP",
+  "performCommonReplacements": true,
+  "textReplacements": [
+    ["hdp-select", "distro-select"]
+   ],
+  "preservedText": ["ext-2.2", "HDP-oozie", "hdp.version", "HDP_VERSION"],
+  "uiMapping": [
+    {
+      "stackVersionNumber": "3.0",
+      "sign": "<",
+      "baseStackFolder": "HDP2"
+    }
+  ],
+  "ambariProperties": {
+    "jdk.download.supported" : "false",
+    "jce.download.supported" : "false",
+    "jdk1.7.url" : "http://DOWNLOAD_NOT_SUPPORTED",
+    "jdk1.8.url" : "http://DOWNLOAD_NOT_SUPPORTED",
+    "jdk1.7.jcpol-url" : "http://DOWNLOAD_NOT_SUPPORTED",
+    "jdk1.8.jcpol-url" : "http://DOWNLOAD_NOT_SUPPORTED",
+    "rolling.upgrade.min.stack" : "PHD-3.0"
+  },
+  "versions": [
+    {
+      "version": "2.0.6",
+      "baseVersion": "2.0.6",
+      "family": "redhat6,suse11",
+      "active": "false",
+      "services": [
+        {
+          "name": "KERBEROS"
+        },
+        {
+          "name": "AMBARI_METRICS"
+        },
+        {
+          "name": "HDFS"
+
+        },
+        {
+          "name": "ZOOKEEPER"
+        },
+        {
+          "name": "HBASE"
+        },
+        {
+          "name": "YARN"
+        },
+        {
+          "name": "MAPREDUCE2"
+        },
+        {
+          "name": "HIVE"
+        },
+        {
+          "name": "TEZ"
+        },
+        {
+          "name": "OOZIE"
+        },
+        {
+          "name": "KNOX"
+        },
+        {
+          "name": "PIG"
+        }
+      ]
+    },
+    {
+      "version": "2.1",
+      "baseVersion": "2.1",
+      "active": "false",
+      "family": "redhat6,suse11",
+      "services": [
+        {
+          "name": "KERBEROS"
+        },
+        {
+          "name": "AMBARI_METRICS"
+        },
+        {
+          "name": "HDFS"
+        },
+        {
+          "name": "ZOOKEEPER"
+        },
+        {
+          "name": "HBASE"
+        },
+        {
+          "name": "YARN"
+        },
+        {
+          "name": "MAPREDUCE2"
+        },
+        {
+          "name": "HIVE"
+        },
+        {
+          "name": "TEZ"
+        },
+        {
+          "name": "OOZIE"
+        },
+        {
+          "name": "KNOX"
+        },
+        {
+          "name": "PIG"
+        }
+      ]
+    },
+    {
+      "version": "3.0",
+      "baseVersion": "2.2",
+      "active": "true",
+      "family": "redhat6,suse11",
+      "services": [
+        {
+          "name": "KERBEROS"
+        },
+        {
+          "name": "AMBARI_METRICS"
+        },
+        {
+          "name": "HDFS"
+        },
+        {
+          "name": "ZOOKEEPER"
+        },
+        {
+          "name": "HBASE",
+          "packages":[
+            {
+              "family": "redhat6,suse11",
+              "packages": [
+                "hbase_3_0_*"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "YARN"
+        },
+        {
+          "name": "MAPREDUCE2"
+        },
+        {
+          "name": "HIVE"
+        },
+        {
+          "name": "TEZ"
+        },
+        {
+          "name": "OOZIE",
+          "packages":[
+            {
+              "family": "redhat6,suse11",
+              "packages": [
+                "oozie_3_0_*"
+              ]
+            },
+            {
+              "family": "any",
+              "packages": [
+                "zip",
+                "extjs"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "KNOX",
+          "packages":[
+            {
+              "family": "redhat6,suse11",
+              "packages": [
+                "knox_3_0_*"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "PIG"
+        }
+      ]
+    },
+    {
+      "version": "3.3",
+      "baseVersion": "2.3",
+      "active": "true",
+      "family": "redhat6,redhat7,suse11",
+      "services": [
+        {
+          "name": "KERBEROS"
+        },
+        {
+          "name": "AMBARI_METRICS"
+        },
+        {
+          "name": "HDFS"
+        },
+        {
+          "name": "ZOOKEEPER"
+        },
+        {
+          "name": "HBASE"
+        },
+        {
+          "name": "YARN"
+        },
+        {
+          "name": "MAPREDUCE2"
+        },
+        {
+          "name": "HIVE",
+          "packages":[
+            {
+              "family": "any",
+              "packages": [
+                {
+                  "name": "mysql-connector-java",
+                  "skipUpgrade": "true"
+                }
+              ]
+            },
+            {
+              "family": "redhat6,redhat7,suse11",
+              "packages": [
+                "hive_3_3_*",
+                "hive_3_3_*-hcatalog",
+                "hive_3_3_*-webhcat"
+              ]
+            },
+            {
+              "family": "redhat6,suse11",
+              "packages": [
+                {
+                  "name": "mysql",
+                  "skipUpgrade": "true"
+                }
+              ]
+            },
+            {
+              "family": "redhat7",
+              "packages": [
+                {
+                  "name": "mysql-community-release",
+                  "skipUpgrade": "true"
+                },
+                {
+                  "name": "mysql-community-server",
+                  "skipUpgrade": "true"
+                }
+              ]
+            },
+            {
+              "family": "redhat6",
+              "packages": [
+                {
+                  "name": "mysql-server",
+                  "skipUpgrade": "true"
+                }
+              ]
+            },
+            {
+              "family": "suse11",
+              "packages": [
+                {
+                  "name": "mysql-client",
+                  "skipUpgrade": "true"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TEZ"
+        },
+        {
+          "name": "OOZIE",
+          "packages":[
+            {
+              "family": "redhat6,redhat7,suse11",
+              "packages": [
+                "oozie_3_3_*"
+              ]
+            },
+            {
+              "family": "any",
+              "packages": [
+                "zip",
+                {
+                  "name": "mysql-connector-java",
+                  "skipUpgrade": "true"
+                },
+                "extjs"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "KNOX"
+        },
+        {
+          "name": "PIG",
+          "packages":[
+            {
+              "family": "redhat6,redhat7,suse11",
+              "packages": [
+                "pig_3_3_*"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -21,7 +21,7 @@ App.MainAlertDefinitionDetailsController = Em.Controller.extend({
   name: 'mainAlertDefinitionDetailsController',
 
   alerts: function () {
-    return App.AlertInstance.find().toArray()
+    return App.AlertInstanceLocal.find().toArray()
         .filterProperty('definitionId', this.get('content.id'));
   }.property('App.router.mainAlertInstancesController.isLoaded', 'App.router.mainAlertInstancesController.reload'),
 
@@ -304,5 +304,28 @@ App.MainAlertDefinitionDetailsController = Em.Controller.extend({
         this.hide();
       }
     });
+  },
+
+  /**
+   * Router transition to service page
+   * @param event
+   */
+  goToService: function (event) {
+    if (event && event.context) {
+      App.router.transitionTo('main.services.service.summary', event.context);
+    }
+  },
+
+  /**
+   * Router transition to host level alerts page
+   * @param {object} event
+   * @method goToHostAlerts
+   */
+  goToHostAlerts: function (event) {
+    if (event && event.context) {
+      App.router.get('mainHostDetailsController').set('referer', App.router.location.lastSetURL);
+      App.router.transitionTo('main.hosts.hostDetails.alerts', event.context);
+    }
   }
+
 });

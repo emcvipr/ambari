@@ -21,13 +21,17 @@ limitations under the License.
 from stacks.utils.RMFTestCase import *
 from mock.mock import MagicMock, call, patch
 from resource_management import Hook
+import getpass
+import os
 
 @patch.object(Hook, "run_custom_hook", new = MagicMock())
 class TestHookBeforeInstall(RMFTestCase):
   TMP_PATH = '/tmp/hbase-hbase'
 
+  @patch("os.path.isfile")
+  @patch.object(getpass, "getuser", new = MagicMock(return_value='some_user'))
   @patch("os.path.exists")
-  def test_hook_default(self, os_path_exists_mock):
+  def test_hook_default(self, os_path_exists_mock, os_path_isfile_mock):
 
     def side_effect(path):
       if path == "/etc/hadoop/conf":
@@ -35,6 +39,7 @@ class TestHookBeforeInstall(RMFTestCase):
       return False
 
     os_path_exists_mock.side_effect = side_effect
+    os_path_isfile_mock.side_effect = [False, True, True, True, True]
 
     self.executeScript("2.0.6/hooks/before-ANY/scripts/hook.py",
                        classname="BeforeAnyHook",
@@ -43,87 +48,69 @@ class TestHookBeforeInstall(RMFTestCase):
     )
 
     self.assertResourceCalled('Group', 'hadoop',
-        ignore_failures = False,
     )
     self.assertResourceCalled('Group', 'nobody',
-        ignore_failures = False,
     )
     self.assertResourceCalled('Group', 'users',
-        ignore_failures = False,
     )
     self.assertResourceCalled('User', 'hive',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'oozie',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'users'],
     )
     self.assertResourceCalled('User', 'nobody',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'nobody'],
     )
     self.assertResourceCalled('User', 'ambari-qa',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'users'],
     )
     self.assertResourceCalled('User', 'flume',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'hdfs',
-        ignore_failures = False,
         gid = 'hadoop',
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'storm',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'mapred',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'hbase',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'tez',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'users'],
     )
     self.assertResourceCalled('User', 'zookeeper',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'falcon',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'users'],
     )
     self.assertResourceCalled('User', 'sqoop',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'yarn',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('User', 'hcat',
         gid = 'hadoop',
-        ignore_failures = False,
         groups = [u'hadoop'],
     )
     self.assertResourceCalled('File', '/tmp/changeUid.sh',
@@ -179,4 +166,29 @@ class TestHookBeforeInstall(RMFTestCase):
         owner = 'hdfs',
         group = 'hadoop'
     )
+
+    self.assertResourceCalled('Directory', '/tmp/AMBARI-artifacts/',
+                              recursive = True,
+                              )
+    self.assertResourceCalled('File', '/tmp/jdk-7u67-linux-x64.tar.gz',
+                              content = DownloadSource('http://c6401.ambari.apache.org:8080/resources//jdk-7u67-linux-x64.tar.gz'),
+                              not_if = 'test -f /tmp/jdk-7u67-linux-x64.tar.gz',
+                              )
+    self.assertResourceCalled('Directory', '/usr/jdk64',)
+    self.assertResourceCalled('Execute', ('chmod', 'a+x', u'/usr/jdk64'),
+                              sudo = True
+                              )
+    self.assertResourceCalled('Execute', 'mkdir -p /tmp/jdk && cd /tmp/jdk && tar -xf /tmp/jdk-7u67-linux-x64.tar.gz && ambari-sudo.sh cp -rp /tmp/jdk/* /usr/jdk64'
+                              )
+    self.assertResourceCalled('File', '/usr/jdk64/jdk1.7.0_45/bin/java',
+                              mode = 0755,
+                              cd_access = "a",
+                              )
+    self.assertResourceCalled('Execute', ('chgrp', '-R', u'hadoop', u'/usr/jdk64/jdk1.7.0_45'),
+                              sudo = True,
+                              )
+    self.assertResourceCalled('Execute', ('chown', '-R', 'some_user', u'/usr/jdk64/jdk1.7.0_45'),
+                              sudo = True,
+                              )
+
     self.assertNoMoreResources()

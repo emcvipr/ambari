@@ -75,6 +75,9 @@ App.TableServerViewMixin = Em.Mixin.create({
    * @param type
    */
   updateFilter: function (iColumn, value, type) {
+    // Do not even trigger update flow if it's a blank update
+    if (this.isBlankFilterUpdate(iColumn, value, type)) { return; }
+
     var self = this;
     this.set('controller.resetStartIndex', false);
     this.saveFilterConditions(iColumn, value, type, false);
@@ -91,12 +94,36 @@ App.TableServerViewMixin = Em.Mixin.create({
   },
 
   /**
+   * 1) Has previous saved filter
+   * 2) Value to update is empty
+   * 3) Value to update is same as before
+   * Returns true if (!1&&2 || 1&&3)
+   * @param iColumn
+   * @param value
+   * @param type
+   * @returns {boolean|*}
+   */
+  isBlankFilterUpdate: function(iColumn, value, type) {
+    var result = false;
+    var filterConfitions = this.get('filterConditions');
+    var filterCondition = filterConfitions? filterConfitions.findProperty('iColumn', iColumn) : null;
+    if ((!filterCondition && Em.isEmpty(value))
+    || (filterCondition && filterCondition.value == value)
+    || (filterCondition && typeof filterCondition.value == 'object'
+        && JSON.stringify(filterCondition.value) == JSON.stringify(value))) {
+      result = true;
+    }
+    return result;
+  },
+
+  /**
    * success callback for updater request
    */
   updaterSuccessCb: function () {
     clearTimeout(this.get('timeOut'));
     this.set('filteringComplete', true);
     this.propertyDidChange('pageContent');
+    App.loadTimer.finish('Hosts Page');
   },
 
   /**

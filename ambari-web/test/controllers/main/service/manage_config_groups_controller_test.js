@@ -18,12 +18,14 @@
 
 var App = require('app');
 var c;
+
 describe('App.ManageConfigGroupsController', function() {
   var controller = App.ManageConfigGroupsController.create({});
 
   beforeEach(function() {
     c = App.ManageConfigGroupsController.create({});
   });
+
 	var manageConfigGroupsController = App.ManageConfigGroupsController.create({});
 
 	describe('#addConfigGroup', function() {
@@ -157,6 +159,36 @@ describe('App.ManageConfigGroupsController', function() {
 
   });
 
+  describe('#deleteConfigGroup', function () {
+
+    beforeEach(function() {
+
+      var defaultGroup = Em.Object.create({
+        hosts: ['h2', 'h3'],
+        isDefault: true
+      });
+
+      var selectedGroup = Em.Object.create({
+        hosts: ['h1'],
+        parentConfigGroup: defaultGroup
+      });
+
+      c.reopen({
+        configGroups: [defaultGroup, selectedGroup],
+        selectedConfigGroup: selectedGroup
+      });
+    });
+
+    it('after deleting some config group, Default should be selected', function () {
+
+      c.deleteConfigGroup();
+
+      expect(c.get('selectedConfigGroup.hosts')).to.include.members(['h1','h2','h3']);
+      expect(c.get('selectedConfigGroup.isDefault')).to.be.true;
+    });
+
+  });
+
   describe("#manageConfigurationGroups", function () {
     var service = Em.Object.create({});
     manageConfigGroupsController.set('hostsModifiedConfigGroups', {});
@@ -283,11 +315,11 @@ describe('App.ManageConfigGroupsController', function() {
       });
       describe("#runClearCGQueue()", function () {
         beforeEach(function () {
-          sinon.stub(manageConfigGroupsController, 'clearConfigurationGroupHosts', Em.K);
+          sinon.stub(manageConfigGroupsController, 'updateConfigurationGroup', Em.K);
           sinon.stub(manageConfigGroupsController, 'deleteConfigurationGroup', Em.K);
         });
         afterEach(function () {
-          manageConfigGroupsController.clearConfigurationGroupHosts.restore();
+          manageConfigGroupsController.updateConfigurationGroup.restore();
           manageConfigGroupsController.deleteConfigurationGroup.restore();
         });
         it("", function () {
@@ -296,7 +328,7 @@ describe('App.ManageConfigGroupsController', function() {
             toClearHosts: [Em.Object.create()],
             toDelete: [1]
           });
-          expect(manageConfigGroupsController.clearConfigurationGroupHosts.calledOnce).to.be.true;
+          expect(manageConfigGroupsController.updateConfigurationGroup.calledOnce).to.be.true;
           expect(manageConfigGroupsController.deleteConfigurationGroup.calledOnce).to.be.true;
         });
       });

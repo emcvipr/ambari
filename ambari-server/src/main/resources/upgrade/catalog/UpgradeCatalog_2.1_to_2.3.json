@@ -55,7 +55,7 @@
           "hive_security_authorization": {
             "value": "{HIVE_SECURITY_AUTHORIZATION}",
             "template": "yes",
-            "override": "no"
+            "resolve-dependency": "yes"
           }
         },
         "falcon-startup.properties": {
@@ -258,6 +258,10 @@
           "phoenix.functions.allowUserDefinedFunctions": "true",
           "fs.hdfs.impl": "org.apache.hadoop.hdfs.DistributedFileSystem",
           "hbase.bucketcache.percentage.in.combinedcache": {"remove": "yes"},
+          "hbase.coprocessor.enabled": {
+            "value": "true",
+            "override": "yes"
+          },
           "hbase.bulkload.staging.dir": {
             "value": "/apps/hbase/staging",
             "override": "no"

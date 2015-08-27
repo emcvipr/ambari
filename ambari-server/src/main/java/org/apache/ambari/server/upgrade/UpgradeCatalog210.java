@@ -1416,8 +1416,6 @@ public class UpgradeCatalog210 extends AbstractUpgradeCatalog {
                 && RangerHBaseConfig.getProperties().containsKey("ranger-hbase-plugin-enabled")
                 && cluster.getDesiredConfigByType("hbase-site") != null) {
             Map<String, String> newHBaseSiteProperties = new HashMap<String, String>();
-            Set<String> removeRangerHiveProperties = new HashSet<String>();
-            removeRangerHiveProperties.add("ranger-hbase-plugin-enabled");
 
             if (RangerHBaseConfig.getProperties().get("ranger-hbase-plugin-enabled") != null
                   && RangerHBaseConfig.getProperties().get("ranger-hbase-plugin-enabled").equalsIgnoreCase("yes")) {
@@ -1426,8 +1424,6 @@ public class UpgradeCatalog210 extends AbstractUpgradeCatalog {
             }
             boolean updateProperty = cluster.getDesiredConfigByType("hbase-site").getProperties().containsKey("hbase.security.authorization");
             updateConfigurationPropertiesForCluster(cluster, "hbase-site", newHBaseSiteProperties, updateProperty, true);
-            updateConfigurationPropertiesForCluster(cluster, "ranger-hbase-plugin-properties", new HashMap<String, String>(),
-                                                     removeRangerHiveProperties, false, true);
           }
         }
       }
@@ -1570,10 +1566,10 @@ public class UpgradeCatalog210 extends AbstractUpgradeCatalog {
             }
             //hive metastore and client_heapsize are added for HDP2, we should check if it exists and not add it for HDP1
             if (!cluster.getDesiredConfigByType("hive-env").getProperties().containsKey("hive.client.heapsize")) {
-              hiveEnvProps.put("hive.client.heapsize", "512m");
+              hiveEnvProps.put("hive.client.heapsize", "512");
             }
             if (!cluster.getDesiredConfigByType("hive-env").getProperties().containsKey("hive.metastore.heapsize")) {
-              hiveEnvProps.put("hive.metastore.heapsize", "1024m");
+              hiveEnvProps.put("hive.metastore.heapsize", "1024");
             }
             if (cluster.getDesiredConfigByType("hive-env").getProperties().containsKey("hive_security_authorization") &&
                     "none".equalsIgnoreCase(cluster.getDesiredConfigByType("hive-env").getProperties().get("hive_security_authorization"))) {
@@ -1684,7 +1680,7 @@ public class UpgradeCatalog210 extends AbstractUpgradeCatalog {
                 final int regionserver_max_direct_memory_size = regionserver_total_ram - regionserver_heap_size;
                 final int bucketcache_offheap_memory = regionserver_max_direct_memory_size - reserved_offheap_memory;
 
-                hbaseSiteProps.put("hbase.bucketcache.size", block_cache_heap + bucketcache_offheap_memory + "m");
+                hbaseSiteProps.put("hbase.bucketcache.size", String.valueOf(block_cache_heap + bucketcache_offheap_memory));
                 hbaseSiteProps.put("hbase.bucketcache.ioengine", "offheap");
                 hbaseEnvProps.put("hbase_max_direct_memory_size", String.valueOf(regionserver_max_direct_memory_size));
               } else {

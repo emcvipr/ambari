@@ -133,6 +133,7 @@ falcon_user = config['configurations']['falcon-env']['falcon_user']
 hdfs_exclude_file = default("/clusterHostInfo/decom_dn_hosts", [])
 exclude_file_path = config['configurations']['hdfs-site']['dfs.hosts.exclude']
 update_exclude_file_only = default("/commandParams/update_exclude_file_only",False)
+command_phase = default("/commandParams/phase","")
 
 klist_path_local = get_klist_path(default('/configurations/kerberos-env/executable_search_paths', None))
 kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
@@ -426,7 +427,7 @@ if has_ranger_admin:
 
   downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
   driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
-  driver_curl_target = format("{java_share_dir}/{jdbc_jar_name}")
+  driver_curl_target = format("{hadoop_lib_home}/{jdbc_jar_name}")
 
   hdfs_ranger_plugin_config = {
     'username': repo_config_username,

@@ -107,43 +107,7 @@ App.ManageAlertGroupsController = Em.Controller.extend({
    * observes if any group changed including: group name, newly created group, deleted group, group with definitions/notifications changed
    * @type {{toDelete: App.AlertGroup[], toSet: App.AlertGroup[], toCreate: App.AlertGroup[]}}
    */
-  defsModifiedAlertGroups: function () {
-    if (!this.get('isLoaded')) {
-      return false;
-    }
-    var groupsToDelete = [];
-    var groupsToSet = [];
-    var groupsToCreate = [];
-    var groups = this.get('alertGroups'); //current alert groups
-    var originalGroups = this.get('originalAlertGroups'); // original alert groups
-    var originalGroupsIds = originalGroups.mapProperty('id');
-    groups.forEach(function (group) {
-      var originalGroup = originalGroups.findProperty('id', group.get('id'));
-      if (originalGroup) {
-        // should update definitions or notifications
-        if (!(JSON.stringify(group.get('definitions').slice().sort()) === JSON.stringify(originalGroup.get('definitions').slice().sort()))
-          || !(JSON.stringify(group.get('notifications').slice().sort()) === JSON.stringify(originalGroup.get('notifications').slice().sort()))) {
-          groupsToSet.push(group.set('id', originalGroup.get('id')));
-        } else if (group.get('name') !== originalGroup.get('name')) {
-          // should update name
-          groupsToSet.push(group.set('id', originalGroup.get('id')));
-        }
-        originalGroupsIds = originalGroupsIds.without(group.get('id'));
-      } else {
-        // should add new group
-        groupsToCreate.push(group);
-      }
-    });
-    // should delete groups
-    originalGroupsIds.forEach(function (id) {
-      groupsToDelete.push(originalGroups.findProperty('id', id));
-    }, this);
-    return {
-      toDelete: groupsToDelete,
-      toSet: groupsToSet,
-      toCreate: groupsToCreate
-    };
-  }.property('selectedAlertGroup.definitions.@each', 'selectedAlertGroup.definitions.length', 'selectedAlertGroup.notifications.@each', 'selectedAlertGroup.notifications.length', 'alertGroups', 'isLoaded'),
+  defsModifiedAlertGroups: {},
 
   /**
    * Determines if some group was edited/created/deleted
@@ -158,18 +122,81 @@ App.ManageAlertGroupsController = Em.Controller.extend({
   }.property('defsModifiedAlertGroups'),
 
   /**
+   * Check when some config group was changed and updates <code>defsModifiedAlertGroups</code> once
+   * @method defsModifiedAlertGroupsObs
+   */
+  defsModifiedAlertGroupsObs: function() {
+    Em.run.once(this, this.defsModifiedAlertGroupsObsOnce);
+  }.observes('selectedAlertGroup.definitions.@each', 'selectedAlertGroup.definitions.length', 'selectedAlertGroup.notifications.@each', 'selectedAlertGroup.notifications.length', 'alertGroups', 'isLoaded'),
+
+  /**
+   * Update <code>defsModifiedAlertGroups</code>-value
+   * Called once in the <code>defsModifiedAlertGroupsObs</code>
+   * @method defsModifiedAlertGroupsObsOnce
+   * @returns {boolean}
+   */
+  defsModifiedAlertGroupsObsOnce: function() {
+    if (!this.get('isLoaded')) {
+      return false;
+    }
+    var groupsToDelete = [];
+    var groupsToSet = [];
+    var groupsToCreate = [];
+    var groups = this.get('alertGroups'); //current alert groups
+    var originalGroups = this.get('originalAlertGroups'); // original alert groups
+    var mappedOriginalGroups = {}; // map is faster than `originalGroups.findProperty('id', ...)`
+    originalGroups.forEach(function(group) {
+      mappedOriginalGroups[group.get('id')] = group;
+    });
+    var originalGroupsIds = originalGroups.mapProperty('id');
+
+    groups.forEach(function (group) {
+      var originalGroup = mappedOriginalGroups[group.get('id')];
+      if (originalGroup) {
+        // should update definitions or notifications
+        if (JSON.stringify(group.get('definitions').slice().sort()) !== JSON.stringify(originalGroup.get('definitions').slice().sort())
+          || JSON.stringify(group.get('notifications').slice().sort()) !== JSON.stringify(originalGroup.get('notifications').slice().sort())) {
+          groupsToSet.push(group.set('id', originalGroup.get('id')));
+        }
+        else
+        if (group.get('name') !== originalGroup.get('name')) {
+          // should update name
+          groupsToSet.push(group.set('id', originalGroup.get('id')));
+        }
+        originalGroupsIds = originalGroupsIds.without(group.get('id'));
+      }
+      else {
+        // should add new group
+        groupsToCreate.push(group);
+      }
+    });
+    // should delete groups
+    originalGroupsIds.forEach(function (id) {
+      groupsToDelete.push(originalGroups.findProperty('id', id));
+    });
+
+    this.set('defsModifiedAlertGroups', {
+      toDelete: groupsToDelete,
+      toSet: groupsToSet,
+      toCreate: groupsToCreate
+    });
+  },
+
+  /**
    * Load all Alert Notifications from server
    * @returns {$.ajax}
    * @method loadAlertNotifications
    */
   loadAlertNotifications: function () {
-    this.set('isLoaded', false);
-    this.set('alertGroups', []);
-    this.set('originalAlertGroups', []);
-    this.set('selectedAlertGroup', null);
-    this.set('isRemoveButtonDisabled', true);
-    this.set('isRenameButtonDisabled', true);
-    this.set('isDuplicateButtonDisabled', true);
+    this.setProperties({
+      isLoaded: false,
+      alertGroups: [],
+      originalAlertGroups: [],
+      selectedAlertGroup: null,
+      isRemoveButtonDisabled: true,
+      isRenameButtonDisabled: true,
+      isDuplicateButtonDisabled: true
+    });
     return App.ajax.send({
       name: 'alerts.notifications',
       sender: this,
@@ -244,10 +271,12 @@ App.ManageAlertGroupsController = Em.Controller.extend({
         notifications: targets
       });
     });
-    this.set('alertGroups', alertGroups);
-    this.set('isLoaded', true);
-    this.set('originalAlertGroups', this.copyAlertGroups(this.get('alertGroups')));
-    this.set('selectedAlertGroup', this.get('alertGroups')[0]);
+    this.setProperties({
+      alertGroups: alertGroups,
+      isLoaded: true,
+      originalAlertGroups: this.copyAlertGroups(alertGroups),
+      selectedAlertGroup: this.get('alertGroups')[0]
+    });
   },
 
   /**
@@ -257,9 +286,11 @@ App.ManageAlertGroupsController = Em.Controller.extend({
   buttonObserver: function () {
     var selectedAlertGroup = this.get('selectedAlertGroup');
     var flag = selectedAlertGroup && selectedAlertGroup.get('default');
-    this.set('isRemoveButtonDisabled', flag);
-    this.set('isRenameButtonDisabled', flag);
-    this.set('isDuplicateButtonDisabled', false);
+    this.setProperties({
+      isRemoveButtonDisabled: flag,
+      isRenameButtonDisabled: flag,
+      isDuplicateButtonDisabled: false
+    });
   }.observes('selectedAlertGroup'),
 
   /**
@@ -433,10 +464,7 @@ App.ManageAlertGroupsController = Em.Controller.extend({
   addDefinitionsCallback: function (selectedDefs) {
     var group = this.get('selectedAlertGroup');
     if (selectedDefs) {
-      var alertGroupDefs = group.get('definitions');
-      selectedDefs.forEach(function (defObj) {
-        alertGroupDefs.pushObject(defObj);
-      }, this);
+      group.get('definitions').pushObjects(selectedDefs);
     }
   },
 
@@ -729,7 +757,7 @@ App.ManageAlertGroupsController = Em.Controller.extend({
           label: function () {
             return this.get('displayName') + ' (' + this.get('definitions.length') + ')';
           }.property('displayName', 'definitions.length'),
-          definitions: [],
+          definitions: self.get('selectedAlertGroup.definitions').slice(0),
           notifications: self.get('alertGlobalNotifications'),
           isAddDefinitionsDisabled: false
         });

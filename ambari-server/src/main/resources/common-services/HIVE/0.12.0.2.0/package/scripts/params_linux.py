@@ -174,6 +174,9 @@ if hive_metastore_db_type == "mssql":
 hive_user = config['configurations']['hive-env']['hive_user']
 #JDBC driver jar name
 hive_jdbc_driver = config['configurations']['hive-site']['javax.jdo.option.ConnectionDriverName']
+# NOT SURE THAT IT'S A GOOD IDEA TO USE PATH TO CLASS IN DRIVER, MAYBE IT WILL BE BETTER TO USE DB TYPE.
+# BECAUSE PATH TO CLASSES COULD BE CHANGED
+sqla_db_used = False
 if hive_jdbc_driver == "com.microsoft.sqlserver.jdbc.SQLServerDriver":
   jdbc_jar_name = "sqljdbc4.jar"
   jdbc_symlink_name = "mssql-jdbc-driver.jar"
@@ -186,14 +189,26 @@ elif hive_jdbc_driver == "org.postgresql.Driver":
 elif hive_jdbc_driver == "oracle.jdbc.driver.OracleDriver":
   jdbc_jar_name = "ojdbc.jar"
   jdbc_symlink_name = "oracle-jdbc-driver.jar"
+elif hive_jdbc_driver == "sap.jdbc4.sqlanywhere.IDriver":
+  jdbc_jar_name = "sajdbc4.jar"
+  jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
+  sqla_db_used = True
 
 check_db_connection_jar_name = "DBConnectionVerification.jar"
 check_db_connection_jar = format("/usr/lib/ambari-agent/{check_db_connection_jar_name}")
-hive_jdbc_drivers_list = ["com.microsoft.sqlserver.jdbc.SQLServerDriver","com.mysql.jdbc.Driver","org.postgresql.Driver","oracle.jdbc.driver.OracleDriver"]
+hive_jdbc_drivers_list = ["com.microsoft.sqlserver.jdbc.SQLServerDriver","com.mysql.jdbc.Driver",
+                          "org.postgresql.Driver","oracle.jdbc.driver.OracleDriver","sap.jdbc4.sqlanywhere.IDriver"]
 downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 prepackaged_ojdbc_symlink = format("{hive_lib}/ojdbc6.jar")
 templeton_port = config['configurations']['webhcat-site']['templeton.port']
 
+#constants for type2 jdbc
+if sqla_db_used:
+  jars_path_in_archive = format("{tmp_dir}/sqla-client-jdbc/java/*")
+  libs_path_in_archive = format("{tmp_dir}/sqla-client-jdbc/native/lib64/*")
+  downloaded_custom_connector = format("{tmp_dir}/sqla-client-jdbc.tar.gz")
+  jdbc_libs_dir = format("{hive_lib}/native/lib64")
+  libs_in_hive_lib = format("{jdbc_libs_dir}/*")
 
 #common
 hive_metastore_hosts = config['clusterHostInfo']['hive_metastore_host']
@@ -261,8 +276,11 @@ hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 yarn_user = config['configurations']['yarn-env']['yarn_user']
 user_group = config['configurations']['cluster-env']['user_group']
 artifact_dir = format("{tmp_dir}/AMBARI-artifacts/")
+# Need this for yarn.nodemanager.recovery.dir in yarn-site
+yarn_log_dir_prefix = config['configurations']['yarn-env']['yarn_log_dir_prefix']
 
 target = format("{hive_lib}/{jdbc_jar_name}")
+jars_in_hive_lib = format("{hive_lib}/*.jar")
 
 jdk_location = config['hostLevelParams']['jdk_location']
 driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
@@ -273,7 +291,10 @@ start_metastore_path = format("{tmp_dir}/start_metastore_script")
 hadoop_heapsize = config['configurations']['hadoop-env']['hadoop_heapsize']
 
 if 'role' in config and config['role'] in ["HIVE_SERVER", "HIVE_METASTORE"]:
-  hive_heapsize = config['configurations']['hive-site']['hive.heapsize']
+  if Script.is_hdp_stack_less_than("2.2"):
+    hive_heapsize = config['configurations']['hive-site']['hive.heapsize']
+  else:
+    hive_heapsize = config['configurations']['hive-env']['hive.heapsize']
 else:
   hive_heapsize = config['configurations']['hive-env']['hive.client.heapsize']
 
@@ -381,9 +402,11 @@ atlas_hosts = default('/clusterHostInfo/atlas_server_hosts', [])
 has_atlas = len(atlas_hosts) > 0
 classpath_addition = ""
 atlas_plugin_package = "atlas-metadata*-hive-plugin"
+atlas_ubuntu_plugin_package = "atlas-metadata.*-hive-plugin"
 
 if not has_atlas:
   hive_exclude_packages.append(atlas_plugin_package)
+  hive_exclude_packages.append(atlas_ubuntu_plugin_package)
 else:
   # hive-site
   hive_site_config['atlas.cluster.name'] = config['clusterName']
@@ -510,7 +533,7 @@ if has_ranger_admin:
   ranger_downloaded_custom_connector = format("{tmp_dir}/{ranger_jdbc_jar_name}")
   
   ranger_driver_curl_source = format("{jdk_location}/{ranger_jdbc_symlink_name}")
-  ranger_driver_curl_target = format("{java_share_dir}/{ranger_jdbc_jar_name}")
+  ranger_driver_curl_target = format("{hive_lib}/{ranger_jdbc_jar_name}")
 
   hive_ranger_plugin_config = {
     'username': repo_config_username,
