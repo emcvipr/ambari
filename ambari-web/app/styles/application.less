@@ -376,6 +376,40 @@ footer {
   }
 }
 
+.nav.top-nav-menu,
+.nav-list.nav-services {
+  .service-caption {
+    display: inline-block;
+    width: 100%;
+    &.with-alert {
+      width: 80%;
+    }
+  }
+  .icon-caption {
+    display: inline-block;
+    width: 20%;
+  }
+}
+
+.nav.top-nav-menu {
+  .icon-caption {
+    .alerts-count {
+      position: relative;
+      top: 1px;
+    }
+  }
+}
+
+.nav-list.nav-services {
+  .icon-caption {
+    .alerts-count {
+      position: relative;
+      top: 2px;
+    }
+  }
+}
+
+
 .row-fluid .tinyoffset {
   margin-left: 3%!important;
 }
@@ -2006,7 +2040,7 @@ a:focus {
     font-size: 11px;
   }
   .upgrade-status-warning {
-    color: @health-status-orange;
+    color: @health-status-red;
   }
   tr td:first-child {
     width: 180px;
@@ -2018,6 +2052,10 @@ a:focus {
       text-decoration: none;
     }
   }
+}
+
+.edit-link {
+  cursor: pointer;
 }
 
 #security-stages {
@@ -3084,7 +3122,7 @@ table.graphs {
       padding-left: 4px!important;
       padding-right: 1px!important;
       padding-right: 10px\9!important;
-      width: 1.6%;
+      width: 1.5%;
       width: 13px\9!important;
     }
     .col2,
@@ -3104,18 +3142,18 @@ table.graphs {
     th:first-child + th + th + th + th{
       padding-left: 1px!important;
       padding-right: 1px!important;
-      width: 1.6%;
+      width: 1.5%;
       width: 13px\9!important;
     }
     .col5,
     td:first-child + td + td + td + td + td,
     th:first-child + th + th + th + th + th {
-      width: 10%!important;
+      width: 9%!important;
     }
     .col6,
     td:first-child + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th {
-      width: 15%!important;
+      width: 13.6%!important;
     }
     .col7,
     td:first-child + td + td + td + td + td + td + td,
@@ -3126,31 +3164,34 @@ table.graphs {
     .col8,
     td:first-child + td + td + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th + th + th{
-      width: 7%!important;
+      width: 6.4%!important;
     }
 
     .col9,
     td:first-child + td + td + td + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th + th + th + th{
-      width: 11%!important;
+      width: 9%!important;
     }
 
     .col10,
     td:first-child + td + td + td + td + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th + th + th + th + th{
-      width: 10%!important;
+      width: 9%!important;
     }
 
     .col11,
     td:first-child + td + td + td + td + td + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th + th + th + th + th +th{
-      width: 13%!important;
+      width: 11%!important;
+      a {
+        word-wrap: break-word;
+      }
     }
 
     .col12,
     td:first-child + td + td + td + td + td + td + td + td + td + td + td + td,
     th:first-child + th + th + th + th + th + th + th + th + th + th + th +th{
-      width: 13%!important;
+      width: 11%!important;
     }
 
     td.name {
@@ -4634,33 +4675,47 @@ ul.inline li {
         }
       }
 
+      .col4,
+      td:first-child + td + td + td + td,
+      th:first-child + th + th + th + th{
+        width: 1.4%;
+      }
+
       .col5,
       td:first-child + td + td + td + td + td,
       th:first-child + th + th + th + th + th {
-        width: 13%!important;
+        width: 11.7%!important;
       }
 
       .col6,
       td:first-child + td + td + td + td + td + td,
       th:first-child + th + th + th + th + th + th{
-        width: 10%!important;
+        width: 9%!important;
       }
 
       .col7,
       td:first-child + td + td + td + td + td + td + td,
       th:first-child + th + th + th + th + th + th + th{
-        width: 10%!important;
+        width: 9%!important;
       }
 
       .col8,
       td:first-child + td + td + td + td + td + td + td + td,
       th:first-child + th + th + th + th + th + th + th + th{
-        width: 10%!important;
+        width: 9%!important;
       }
       .col9,
       td:first-child + td + td + td + td + td + td + td + td + td,
       th:first-child + th + th + th + th + th + th + th + th + th{
-        width: 10%!important;
+        width: 9%!important;
+      }
+      .col11,
+      .col12,
+      td:first-child + td + td + td + td + td + td + td + td + td + td + td,
+      th:first-child + th + th + th + th + th + th + th + th + th + th +th,
+      td:first-child + td + td + td + td + td + td + td + td + td + td + td + td,
+      th:first-child + th + th + th + th + th + th + th + th + th + th + th +th{
+        width: 11.2%!important;
       }
       td.name .trim_hostname{
         width: 82%!important;
@@ -5384,6 +5439,11 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
   .select-create-config-group-div {
     margin-left: 20px;
     margin-bottom: 20px;
+    .btn-group >.dropdown-menu {
+      max-height: 160px;
+      max-width: 300px;
+      overflow: scroll;
+    }
   }
   .message{
     color: #777;
@@ -5585,16 +5645,16 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
       width: 40%;
     }
     th:first-child + th {
-      width: 40%;
+      width: 30%;
     }
     th:first-child + th + th {
-      width: 16px;
+      width: 10%;
     }
     th:first-child + th + th + th {
-      width: 16px;
+      width: 10%;
     }
     th:first-child + th + th + th + th {
-      width: 16px;
+      width: 10%;
     }
     td.agent-status {
       width: 125px;
@@ -5644,10 +5704,10 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
     margin: 0 5px 5px 0;
     float: right;
     width:60px;
-    position: relative;
+    position: static;
   }
   .flume-agents-actions {
-    position: absolute;
+    position: static;
     a {
       text-decoration: none;
     }
@@ -5655,6 +5715,9 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
       padding: 2px 6px;
       font-size: 11px;
       line-height: 17px;
+    }
+    .dropdown-menu {
+      position: absolute;
     }
   }
   .scrollable-container {
@@ -5841,6 +5904,12 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
   margin-left: -10px;
 }
 
+.attach-to-bottom-right {
+  position: fixed;
+  bottom: 10px;
+  right: 10px;
+}
+
 .version-labels, .version-info-bar, .version-box {
   .label, .badge {
     font-weight: normal;
@@ -5875,5 +5944,17 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
         }
       }
     }
+  }
+}
+
+.typeahead.dropdown-menu {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.config-groups-dropdown {
+  display: inline-block;
+  input[type="text"] {
+    margin-bottom: 2px;
   }
 }

@@ -262,6 +262,8 @@
             <exclude>contrib/addons/test/dataServices/jmx/data/cluster_configuration.json.nohbase</exclude>
             <exclude>contrib/ambari-scom/msi/src/GUI_Ambari.sln</exclude>
             <exclude>contrib/fast-hdfs-resource/dependency-reduced-pom.xml</exclude>
+            <exclude>contrib/agent-simulator/docker_image/package_list.txt</exclude>
+            <exclude>contrib/agent-simulator/config/cluster.txt</exclude>
             <exclude>version</exclude>
             <!--IDE and GIT files-->
             <exclude>**/.idea/</exclude>
@@ -301,6 +303,8 @@
             <exclude>contrib/ambari-scom/ambari-scom-server/pass.txt</exclude>
             <exclude>contrib/ambari-scom/*/rat.txt</exclude>
             <exclude>contrib/ambari-scom/metrics-sink/target/**</exclude>
+            <exclude>contrib/ru_magician/lgpl_license.txt</exclude>
+            <exclude>contrib/ru_magician/README.md</exclude>
             <exclude>contrib/views/*/target/**</exclude>
             <exclude>contrib/views/hive/src/main/resources/ui/hive-web/vendor/codemirror/**</exclude>
             <exclude>contrib/views/hive/src/main/resources/ui/hive-web/.bowerrc</exclude>

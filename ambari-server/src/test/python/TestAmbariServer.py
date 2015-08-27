@@ -60,7 +60,7 @@ with patch("platform.linux_distribution", return_value = os_distro_value):
         from ambari_server.resourceFilesKeeper import ResourceFilesKeeper, KeeperException
         from ambari_server.serverConfiguration import configDefaults, \
           check_database_name_property, OS_FAMILY_PROPERTY, \
-          find_properties_file, get_ambari_classpath, get_ambari_jars, get_ambari_properties, get_JAVA_HOME, get_share_jars, \
+          find_properties_file, get_ambari_classpath, get_ambari_jars, get_ambari_properties, get_JAVA_HOME, \
           parse_properties_file, read_ambari_user, update_ambari_properties, update_properties_2, write_property, find_jdk, \
           AMBARI_CONF_VAR, AMBARI_SERVER_LIB, JDBC_DATABASE_PROPERTY, JDBC_RCA_PASSWORD_FILE_PROPERTY, \
           PERSISTENCE_TYPE_PROPERTY, JDBC_URL_PROPERTY, get_conf_dir, JDBC_USER_NAME_PROPERTY, JDBC_PASSWORD_PROPERTY, \
@@ -795,7 +795,6 @@ class TestAmbariServer(TestCase):
     sys.stdout = sys.__stdout__
     pass
 
-
   @not_for_platform(PLATFORM_WINDOWS)
   @patch("time.sleep")
   @patch("subprocess.Popen")
@@ -816,7 +815,6 @@ class TestAmbariServer(TestCase):
     retcode, out, err = PGConfig._restart_postgres()
     self.assertEqual(1, retcode)
     pass
-
 
   @not_for_platform(PLATFORM_WINDOWS)
   @patch("shlex.split")
@@ -862,7 +860,6 @@ class TestAmbariServer(TestCase):
     self.assertTrue(splitMock.called)
     pass
 
-
   @not_for_platform(PLATFORM_WINDOWS)
   @patch("ambari_server.serverConfiguration.get_conf_dir")
   @patch("ambari_server.serverConfiguration.search_file")
@@ -897,7 +894,6 @@ class TestAmbariServer(TestCase):
       os.unlink(tf1.name)
     pass
 
-
   @not_for_platform(PLATFORM_WINDOWS)
   @patch("ambari_server.dbConfiguration.decrypt_password_for_alias")
   @patch("ambari_server.dbConfiguration_linux.run_os_command")
@@ -925,7 +921,6 @@ class TestAmbariServer(TestCase):
     self.assertTrue(run_os_command_mock.called)
     self.assertEqual((0, None, None), result)
     pass
-
 
   @not_for_platform(PLATFORM_WINDOWS)
   @patch("ambari_server.dbConfiguration.decrypt_password_for_alias")
@@ -955,7 +950,6 @@ class TestAmbariServer(TestCase):
     self.assertEqual(2, sleep_mock.call_count)
     pass
 
-
   @not_for_platform(PLATFORM_WINDOWS)
   @patch("ambari_server.dbConfiguration.decrypt_password_for_alias")
   @patch("time.sleep")
@@ -984,7 +978,6 @@ class TestAmbariServer(TestCase):
     self.assertEqual(1, sleep_mock.call_count)
     pass
 
-
   @not_for_platform(PLATFORM_WINDOWS)
   @patch("ambari_server.serverSetup.get_YN_input")
   @patch("ambari_server.serverSetup.run_os_command")
@@ -1003,7 +996,6 @@ class TestAmbariServer(TestCase):
     self.assertTrue(run_os_command_mock.called)
     self.assertTrue(getYNInput_mock.called)
     pass
-
 
   @not_for_platform(PLATFORM_WINDOWS)
   @patch("ambari_server.serverConfiguration.print_info_msg")
@@ -1035,23 +1027,6 @@ class TestAmbariServer(TestCase):
     self.assertTrue(printInfoMsg_mock.called)
     pass
 
-
-  @patch("glob.glob")
-  @patch("ambari_server.serverConfiguration.print_info_msg")
-  def test_get_share_jars(self, printInfoMsg_mock, globMock):
-    globMock.return_value = ["one", "two"]
-    expected = "one" + os.pathsep + "two" + os.pathsep + \
-               "one" + os.pathsep + "two" + os.pathsep + \
-               "one" + os.pathsep + "two"
-    result = get_share_jars()
-    self.assertEqual(expected, result)
-    globMock.return_value = []
-    expected = ""
-    result = get_share_jars()
-    self.assertEqual(expected, result)
-    pass
-
-
   @patch("glob.glob")
   @patch("ambari_server.serverConfiguration.print_info_msg")
   @patch("ambari_server.serverConfiguration.get_ambari_properties")
@@ -1059,13 +1034,11 @@ class TestAmbariServer(TestCase):
     globMock.return_value = ["one"]
     result = get_ambari_classpath()
     self.assertTrue(get_ambari_jars() in result)
-    self.assertTrue(get_share_jars() in result)
     globMock.return_value = []
     result = get_ambari_classpath()
     self.assertTrue(get_ambari_jars() in result)
     self.assertFalse(":" in result[2:])
     pass
-
 
   @not_for_platform(PLATFORM_WINDOWS)
   @patch("ambari_server.serverConfiguration.print_info_msg")
@@ -1197,6 +1170,8 @@ class TestAmbariServer(TestCase):
     # Test ambari repo file permission change call
     #
 
+    # Test the case when ambari repo file is available
+
     # Reset the set_file_permissions() mock function
     set_file_permissions_mock.reset_mock()
 
@@ -1208,6 +1183,16 @@ class TestAmbariServer(TestCase):
 
     # Set up the mock function for os_utils.get_file_owner()
     get_file_owner_mock.return_value = "dummy.root"
+
+    # Set os.path.exists to return true when the input file is an ambari repo file
+    def file_exists_side_effect(*args, **kwargs):
+      if args[0] == get_ambari_repo_file_full_name_mock():
+        return True
+      else:
+        return False
+
+    exists_mock.side_effect = file_exists_side_effect
+    exists_mock.return_value = None
 
     try:
       # Clear the list of files whose permissions are to be changed
@@ -1245,6 +1230,59 @@ class TestAmbariServer(TestCase):
 
       # Ensure that the ambari repo file entry was found
       self.assertTrue(entry_found)
+
+    finally:
+      # Restore the permissions list
+      configDefaults.NR_ADJUST_OWNERSHIP_LIST = old_adjust_owner_list
+    pass
+
+    #Test the case when ambari repo file is unavailable
+
+    # Reset the set_file_permissions() mock function
+    set_file_permissions_mock.reset_mock()
+
+    # Save the existing permissions list
+    old_adjust_owner_list = configDefaults.NR_ADJUST_OWNERSHIP_LIST
+
+    # Set up the mock function for os_utils.get_ambari_repo_file_full_name()
+    get_ambari_repo_file_full_name_mock.return_value = "ambari.dummy.repo"
+
+    # Set up the mock function for os_utils.get_file_owner()
+    get_file_owner_mock.return_value = "dummy.root"
+
+    # Set os.path.exists to return false always
+    exists_mock.side_effect = None
+    exists_mock.return_value = False
+
+    try:
+      # Clear the list of files whose permissions are to be changed
+      configDefaults.NR_ADJUST_OWNERSHIP_LIST = [
+      ]
+
+      # Call the function to be tested.
+      adjust_directory_permissions("dummy_user")
+
+      # One of the entries in NR_ADJUST_OWNERSHIP_LIST should be the full path to the ambari repo file.
+      # These are the expected values:
+
+      ambari_repo_file_entry = (
+        get_ambari_repo_file_full_name_mock(),
+        '644',
+        get_file_owner_mock(),
+        False
+      )
+
+      # Assert the arguments to the call set_file_permissions() - got from NR_ADJUST_OWNERSHIP_LIST
+      # Flag to ensure we found our entry in the set_file_permissions() call
+      entry_found = False
+
+      for args_entry in set_file_permissions_mock.call_args_list:
+        if args_entry[0][0] == ambari_repo_file_entry[0]:  # File name
+          entry_found = True
+          break
+
+      # Ensure that the ambari repo file entry was not found
+      self.assertFalse(entry_found)
 
     finally:
       # Restore the permissions list
@@ -1328,7 +1366,6 @@ class TestAmbariServer(TestCase):
     run_os_command_mock.reset_mock()
     print_warning_msg_mock.reset_mock()
     pass
-
 
   @not_for_platform(PLATFORM_WINDOWS)
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
@@ -1462,7 +1499,6 @@ class TestAmbariServer(TestCase):
     self.assertEquals(result, 0)
     self.assertEquals(userChecks.user, "dummy_domain\\dummy_user")
     pass
-
 
   @not_for_platform(PLATFORM_WINDOWS)
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
@@ -2578,6 +2614,8 @@ class TestAmbariServer(TestCase):
       p.process_pair("jdk1.jcpol-file", "some-jcpol.zip")
       p.process_pair("jdk1.home", "C:\\jdk1")
       p.process_pair("jdk1.re", "(jdk.*)/jre")
+      p.process_pair("jdk.download.supported", "true")
+      p.process_pair("jce.download.supported", "true")
 
       pem_side_effect1 = [False, True, False]
 
@@ -2598,6 +2636,8 @@ class TestAmbariServer(TestCase):
       p.process_pair("jdk1.jcpol-file", "some-jcpol.tar.gz")
       p.process_pair("jdk1.home", "/jdk1")
       p.process_pair("jdk1.re", "(jdk.*)/jre")
+      p.process_pair("jdk.download.supported", "true")
+      p.process_pair("jce.download.supported", "true")
 
       pem_side_effect1 = [True, False, True, False]
 
@@ -4630,7 +4670,9 @@ class TestAmbariServer(TestCase):
   @patch("ambari_server.serverConfiguration.get_ambari_classpath")
   @patch("ambari_server.serverUpgrade.run_os_command")
   @patch("ambari_server.serverUpgrade.get_java_exe_path")
-  def test_run_schema_upgrade(self, java_exe_path_mock, run_os_command_mock,
+  @patch("ambari_server.serverUpgrade.get_ambari_properties")
+  @patch("ambari_server.serverUpgrade.get_YN_input")
+  def test_run_schema_upgrade(self, get_YN_input_mock, get_ambari_properties_mock, java_exe_path_mock, run_os_command_mock,
                               get_ambari_classpath_mock, get_conf_dir_mock,
                               read_ambari_user_mock, generate_env_mock,
                               ensure_can_start_under_current_user_mock):
@@ -4645,6 +4687,10 @@ class TestAmbariServer(TestCase):
     generate_env_mock.return_value = environ
     ensure_can_start_under_current_user_mock.return_value = "root"
     read_ambari_user_mock.return_value = "ambari"
+    properties = Properties()
+    properties.process_pair(PERSISTENCE_TYPE_PROPERTY, "local")
+    get_ambari_properties_mock.return_value = properties
+    get_YN_input_mock.return_value = True
 
     run_schema_upgrade()
 
@@ -4656,8 +4702,6 @@ class TestAmbariServer(TestCase):
     self.assertTrue(get_conf_dir_mock.called)
     self.assertTrue(run_os_command_mock.called)
     run_os_command_mock.assert_called_with(command, env=environ)
-    pass
-
 
   @patch("ambari_server.serverConfiguration.get_conf_dir")
   @patch("ambari_server.serverConfiguration.get_ambari_classpath")
@@ -4876,7 +4920,8 @@ class TestAmbariServer(TestCase):
   @patch("ambari_server.serverUpgrade.upgrade_local_repo")
   @patch("ambari_server.serverUpgrade.move_user_custom_actions")
   @patch("ambari_server.serverUpgrade.update_krb_jaas_login_properties")
-  def test_upgrade_from_161(self, update_krb_jaas_login_properties_mock, move_user_custom_actions_mock, upgrade_local_repo_mock, get_ambari_properties_mock,
+  @patch("ambari_server.serverUpgrade.update_ambari_env")
+  def test_upgrade_from_161(self, update_ambari_env_mock, update_krb_jaas_login_properties_mock, move_user_custom_actions_mock, upgrade_local_repo_mock, get_ambari_properties_mock,
                             get_ambari_properties_2_mock, get_ambari_properties_3_mock, get_ambari_version_mock, write_property_mock,
                             is_root_mock, update_ambari_properties_mock, find_properties_file_mock, run_os_command_mock,
                             run_schema_upgrade_mock, read_ambari_user_mock, print_warning_msg_mock,
@@ -4921,6 +4966,7 @@ class TestAmbariServer(TestCase):
 
     is_root_mock.return_value = True
     update_ambari_properties_mock.return_value = 0
+    update_ambari_env_mock.return_value = 0
     get_ambari_version_mock.return_value = "1.7.0"
     move_user_custom_actions_mock.return_value = None
     update_krb_jaas_login_properties_mock.return_value = -2
@@ -5031,7 +5077,7 @@ class TestAmbariServer(TestCase):
     get_ambari_properties_mock.return_value = properties
     get_ambari_properties_3_mock.side_effect = get_ambari_properties_2_mock.side_effect = [properties, properties2, properties2]
 
-    isfile_mock.side_effect = [False, True, False]
+    isfile_mock.side_effect = [False, True, False, False]
 
     try:
       upgrade(args)
@@ -5093,7 +5139,8 @@ class TestAmbariServer(TestCase):
   @patch("ambari_server.serverUpgrade.upgrade_local_repo")
   @patch("ambari_server.serverUpgrade.move_user_custom_actions")
   @patch("ambari_server.serverUpgrade.update_krb_jaas_login_properties")
-  def test_upgrade(self, update_krb_jaas_login_properties_mock, move_user_custom_actions, upgrade_local_repo_mock,
+  @patch("ambari_server.serverUpgrade.update_ambari_env")
+  def test_upgrade(self, update_ambari_env_mock, update_krb_jaas_login_properties_mock, move_user_custom_actions, upgrade_local_repo_mock,
                    get_ambari_properties_mock, get_ambari_properties_2_mock, get_ambari_properties_3_mock,
                    is_root_mock, get_ambari_version_mock, get_ambari_version_2_mock,
                    parse_properties_file_mock,
@@ -5128,6 +5175,7 @@ class TestAmbariServer(TestCase):
     get_ambari_properties_3_mock.return_value = get_ambari_properties_2_mock.return_value = \
       get_ambari_properties_mock.return_value = properties
     update_ambari_properties_mock.return_value = 0
+    update_ambari_env_mock.return_value = 0
     run_schema_upgrade_mock.return_value = 0
     isfile_mock.return_value = False
     get_ambari_version_2_mock.return_value = get_ambari_version_mock.return_value = CURR_AMBARI_VERSION
@@ -6238,7 +6286,7 @@ class TestAmbariServer(TestCase):
 
     isdir_mock.return_value = True
 
-    isfile_mock.side_effect = [True, False, False]
+    isfile_mock.side_effect = [True, False, False, False]
 
     del args.database_index
     del args.persistence_type
@@ -6260,7 +6308,7 @@ class TestAmbariServer(TestCase):
     get_ambari_properties_mock.reset_mock()
     os_symlink_mock.reset_mock()
 
-    isfile_mock.side_effect = [False, False, False]
+    isfile_mock.side_effect = [False, False, False, False]
 
     check_jdbc_drivers(args)
 

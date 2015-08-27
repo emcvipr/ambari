@@ -132,23 +132,50 @@ App.config = Em.Object.create({
 
   configMapping: require('data/HDP2/config_mapping'),
 
-  preDefinedSiteProperties: function () {
-    var sitePropertiesForCurrentStack = this.preDefinedConfigFile('site_properties');
-    var serviceNames = App.StackService.find().mapProperty('serviceName').concat('MISC');
-    var properties = [];
+  customStackMapping: require('data/custom_stack_map'),
+
+  mapCustomStack: function () {
+    var
+      baseStackFolder = App.get('currentStackName'),
+      singMap = {
+        "1": ">",
+        "-1": "<",
+        "0": "="
+      };
+
+    this.get('customStackMapping').every(function (stack) {
+      if(stack.stackName == App.get('currentStackName')){
+        var versionCompare = Em.compare(App.get('currentStackVersionNumber'), stack.stackVersionNumber);
+        if(singMap[versionCompare+""] === stack.sign){
+          baseStackFolder = stack.baseStackFolder;
+          return false;
+        }
+      }
+      return true;
+    });
+
+    return baseStackFolder;
+  },
+
+  allPreDefinedSiteProperties: function() {
+    var sitePropertiesForCurrentStack = this.preDefinedConfigFile(this.mapCustomStack(), 'site_properties');
     if (sitePropertiesForCurrentStack) {
-      properties =  sitePropertiesForCurrentStack.configProperties;
+      return sitePropertiesForCurrentStack.configProperties;
     } else if (App.get('isHadoop23Stack')) {
-      properties = require('data/HDP2.3/site_properties').configProperties;
+      return require('data/HDP2.3/site_properties').configProperties;
     } else if (App.get('isHadoop22Stack')) {
-      properties = require('data/HDP2.2/site_properties').configProperties;
+      return require('data/HDP2.2/site_properties').configProperties;
     } else {
-      properties = require('data/HDP2/site_properties').configProperties;
+      return require('data/HDP2/site_properties').configProperties;
     }
-    return properties.filter(function(p) {
+  }.property('App.isHadoop22Stack', 'App.isHadoop23Stack'),
+
+  preDefinedSiteProperties: function () {
+    var serviceNames = App.StackService.find().mapProperty('serviceName').concat('MISC');
+    return this.get('allPreDefinedSiteProperties').filter(function(p) {
       return serviceNames.contains(p.serviceName);
     });
-  }.property('App.isHadoop22Stack', 'App.isHadoop23Stack'),
+  }.property('allPreDefinedSiteProperties'),
 
   /**
    * map of <code>preDefinedSiteProperties</code> provide search by index
@@ -163,9 +190,9 @@ App.config = Em.Object.create({
     return map;
   }.property('preDefinedSiteProperties'),
 
-  preDefinedConfigFile: function(file) {
+  preDefinedConfigFile: function(folder, file) {
     try {
-      return require('data/{0}/{1}'.format(App.get('currentStackName'), file));
+      return require('data/{0}/{1}'.format(folder, file));
     } catch (err) {
       // the file doesn't exist, which might be expected.
     }
@@ -276,16 +303,19 @@ App.config = Em.Object.create({
         var id = this.configId(index, siteConfig.type);
         var configsPropertyDef = this.get('preDefinedSitePropertiesMap')[id];
         var advancedConfig = App.StackConfigProperty.find(id);
-
-        var template = this.createDefaultConfig(index, filename, !!advancedConfig, configsPropertyDef);
-        var serviceConfigObj = this.mergeStaticProperties(template, advancedConfig);
+        var isStackProperty = !!advancedConfig.get('id') || !!configsPropertyDef;
+        var template = this.createDefaultConfig(index, serviceName, filename, isStackProperty, configsPropertyDef);
+        var serviceConfigObj = isStackProperty ? this.mergeStaticProperties(template, advancedConfig) : template;
 
         if (serviceConfigObj.isRequiredByAgent !== false) {
           var formattedValue = this.formatPropertyValue(serviceConfigObj, properties[index]);
           serviceConfigObj.value = serviceConfigObj.savedValue = formattedValue;
           serviceConfigObj.isFinal = serviceConfigObj.savedIsFinal = finalAttributes[index] === "true";
           serviceConfigObj.isEditable = this.getIsEditable(serviceConfigObj, selectedConfigGroup, canEdit);
-          serviceConfigObj.isVisible = serviceConfigObj.isVisible === false ? false : serviceName === 'MISC' ? true : serviceConfigObj.displayType !== 'user';
+          serviceConfigObj.isVisible = serviceConfigObj.isVisible !== false || serviceName === 'MISC';
+          if (serviceName!='MISC' && serviceConfigObj.category === "Users and Groups") {
+            serviceConfigObj.category = this.getDefaultCategory(advancedConfig, filename);
+          }
           serviceConfigObj.serviceName = serviceName;
         }
 
@@ -302,12 +332,13 @@ App.config = Em.Object.create({
    * These property values has the lowest priority and can be overriden be stack/UI
    * config property but is used when such properties are absent in stack/UI configs
    * @param {string} name
+   * @param {string} serviceName
    * @param {string} fileName
    * @param {boolean} definedInStack
    * @param {Object} [coreObject]
    * @returns {Object}
    */
-  createDefaultConfig: function(name, fileName, definedInStack, coreObject) {
+  createDefaultConfig: function(name, serviceName, fileName, definedInStack, coreObject) {
     return $.extend({
       /** core properties **/
       name: name,
@@ -319,8 +350,8 @@ App.config = Em.Object.create({
       /** UI and Stack properties **/
       recommendedValue: null,
       recommendedIsFinal: null,
-      supportsFinal: false,
-      serviceName: 'MISC',
+      supportsFinal: this.shouldSupportFinal(serviceName, fileName),
+      serviceName: serviceName,
       defaultDirectory: '',
       displayName: this.getDefaultDisplayName(name, fileName),
       displayType: this.getDefaultDisplayType(name, fileName, coreObject ? coreObject.value : ''),
@@ -335,7 +366,6 @@ App.config = Em.Object.create({
       id: 'site property',
       isRequiredByAgent:  true,
       isReconfigurable: true,
-      isObserved: false,
       unit: null,
       hasInitialValue: false,
       isOverridable: true,
@@ -463,6 +493,11 @@ App.config = Em.Object.create({
         displayType = Em.get(serviceConfigProperty, 'displayType') || Em.get(serviceConfigProperty, 'valueAttributes.type'),
         category = Em.get(serviceConfigProperty, 'category');
     switch (displayType) {
+      case 'content':
+      case 'advanced':
+      case 'multiLine':
+        return this.trimProperty({ displayType: displayType, value: value });
+        break;
       case 'directories':
         if (['DataNode', 'NameNode'].contains(category)) {
           return value.split(',').sort().join(',');//TODO check if this code is used
@@ -533,6 +568,10 @@ App.config = Em.Object.create({
   mergePreDefinedWithStack: function (selectedServiceNames) {
     var mergedConfigs = [];
 
+    var uiPersistentProperties = [
+      this.configId('oozie_hostname', 'oozie-env.xml'),
+      this.configId('oozie_ambari_database', 'oozie-env.xml')
+    ];
     var configTypes = App.StackService.find().filter(function(service) {
       return selectedServiceNames.contains(service.get('serviceName'));
     }).map(function(item) {
@@ -552,13 +591,35 @@ App.config = Em.Object.create({
 
       var name = preDefined ? preDefined.name : advanced.get('name');
       var filename = preDefined ? preDefined.filename : advanced.get('filename');
+      var isUIOnly = Em.getWithDefault(preDefined || {}, 'isRequiredByAgent', true) === false;
+      /*
+        Take properties that:
+          - UI specific only, marked with <code>isRequiredByAgent: false</code>
+          - Present in stack definition, mapped to <code>App.StackConfigProperty</code>
+          - Related to configuration for alerts notification, marked with <code>filename: "alert_notification"</code>
+          - Property that filename supported by Service's config type, <code>App.StackService:configType</code>
+          - Property that not defined in stack but should be saved, see <code>uiPersistentProperties</code>
+       */
+      if (!(uiPersistentProperties.contains(id) || isUIOnly || advanced.get('id')) && filename != 'alert_notification') {
+        return;
+      }
+      var serviceName = preDefined ? preDefined.serviceName : advanced.get('serviceName');
       if (configTypes.contains(this.getConfigTagFromFileName(filename))) {
-        var configData = this.createDefaultConfig(name, filename, true, preDefined || {});
+        var configData = this.createDefaultConfig(name, serviceName, filename, true, preDefined || {});
+        if (configData.recommendedValue) {
+          configData.value = configData.recommendedValue;
+        }
 
-        configData = this.mergeStaticProperties(configData, advanced.get('id') ? advanced : null, null, ['name', 'filename']);
+        if (advanced.get('id')) {
+          configData = this.mergeStaticProperties(configData, advanced, null, ['name', 'filename']);
+        }
 
-        if (['directory' ,'directories'].contains(configData.displayType)) {
-          configData.value = configData.recommendedValue || configData.defaultDirectory || '';
+        if (['directory' ,'directories'].contains(configData.displayType) && configData.defaultDirectory) {
+          configData.value = configData.defaultDirectory;
+        } else if (advanced && advanced.get('id')) {
+          var configValue = this.formatPropertyValue(advanced, advanced.get('value'));
+          // for property which value is single/multiple spaces set single space as well
+          configData.value = configData.recommendedValue = /^\s+$/.test("" + configValue) ? " " : configValue;
         }
 
         mergedConfigs.push(configData);
@@ -747,9 +808,9 @@ App.config = Em.Object.create({
       'zk_user': 'ZooKeeper User',
       'metadata_user': 'Atlas User',
       'ignore_groupsusers_create': 'Skip group modifications during install',
-      'override_hbase_uid': 'Have Ambari manage UIDs'
+      'override_uid': 'Have Ambari manage UIDs'
     };
-    var checkboxProperties = ['ignore_groupsusers_create', 'override_hbase_uid'];
+    var checkboxProperties = ['ignore_groupsusers_create', 'override_uid'];
     if (Em.isArray(config.property_type)) {
       if (config.property_type.contains('USER') || config.property_type.contains('ADDITIONAL_USER_PROPERTY') || config.property_type.contains('GROUP')) {
         propertyData.id = "puppet var";
@@ -1072,7 +1133,7 @@ App.config = Em.Object.create({
         isVisible: stored.isVisible,
         isFinal: stored.isFinal,
         savedIsFinal: stored.savedIsFinal,
-        supportsFinal: stored.supportsFinal,
+        supportsFinal: this.shouldSupportFinal(stored.serviceName, stored.filename),
         showLabel: stored.showLabel !== false,
         category: stored.category
       };
@@ -1343,10 +1404,14 @@ App.config = Em.Object.create({
    * @returns {boolean}
    */
   shouldSupportFinal: function (serviceName, filename) {
-    if (!serviceName || serviceName == 'MISC' || !filename) {
+    var unsupportedServiceNames = ['MISC', 'Cluster'];
+    if (!serviceName || unsupportedServiceNames.contains(serviceName) || !filename) {
       return false;
     } else {
       var stackService = App.StackService.find().findProperty('serviceName', serviceName);
+      if (!stackService) {
+        return false;
+      }
       var supportsFinal = this.getConfigTypesInfoFromService(stackService).supportsFinal;
       var matchingConfigType = supportsFinal.find(function (configType) {
         return filename.startsWith(configType);
@@ -1422,7 +1487,7 @@ App.config = Em.Object.create({
   mergeStoredValue: function(base, stored) {
     if (stored) {
       base.forEach(function (p) {
-        var sp = stored.findProperty("name", p.name);
+        var sp = stored.filterProperty("filename", p.filename).findProperty("name", p.name);
         if (sp) {
           p.set("value", sp.value);
         }

@@ -27,7 +27,17 @@ import xml.etree.ElementTree as ET
 from xml.dom import minidom
 import re
 from os.path import join
+import random
+import string
 
+UI_MAPPING_TEMPLATE = """var App = require('app');
+module.exports = {0};
+"""
+UI_MAPPING_MAP = {"2.2":"HDP2.2",
+                  "2.3":"HDP2.3"}
+
+def generate_random_string(size=7, chars=string.ascii_uppercase + string.digits):
+  return ''.join(random.choice(chars) for _ in range(size))
 
 class _named_dict(dict):
   """
@@ -56,7 +66,6 @@ class _named_dict(dict):
       return self[item]
     else:
       dict.__getattr__(self, item)
-
 
 def copy_tree(src, dest, exclude=None, post_copy=None):
   """
@@ -95,9 +104,17 @@ def copy_tree(src, dest, exclude=None, post_copy=None):
     if post_copy:
       post_copy(_src, _dest)
 
-# TODO: Add support for default text replacements based on stack version mapping
 def process_replacements(file_path, config_data, stack_version_changes):
-  file_data = open(file_path, 'r').read().decode(encoding='utf-8')
+  file_data = open(file_path, 'r').read().decode('utf-8')
+
+  # save user-defined text before replacements
+  preserved_map = {}
+  if "preservedText" in config_data:
+    for preserved in config_data.preservedText:
+      rnd = generate_random_string()
+      file_data = file_data.replace(preserved, rnd)
+      preserved_map[rnd] = preserved
+
   # replace user defined values
   if 'textReplacements' in config_data:
     for _from, _to in config_data['textReplacements']:
@@ -108,6 +125,7 @@ def process_replacements(file_path, config_data, stack_version_changes):
   if not file_path.endswith(".xml"):
     for _from, _to in stack_version_changes.iteritems():
       file_data = file_data.replace(_from, _to)
+      file_data = process_version_replace(file_data, _from, _to)
   # preform common replacements
   if 'performCommonReplacements' in config_data and config_data.performCommonReplacements:
     for from_version, to_version in stack_version_changes.iteritems():
@@ -115,9 +133,23 @@ def process_replacements(file_path, config_data, stack_version_changes):
       file_data = file_data.replace('HDP '+from_version, config_data.stackName+" "+to_version)
     file_data = file_data.replace('hdp', config_data.stackName.lower())
     file_data = file_data.replace('HDP', config_data.stackName)
+  if preserved_map:
+    for _from, _to in preserved_map.iteritems():
+      file_data = file_data.replace(_from, _to)
   with open(file_path, "w") as target:
-    target.write(file_data.encode(encoding='utf-8'))
+    target.write(file_data.encode('utf-8'))
   return file_path
+
+def process_version_replace(text, base_version, version):
+  dash_base_version = base_version.replace('.', '-')
+  dash_version = version.replace('.', '-')
+  underscore_base_version = base_version.replace('.', '_')
+  underscore_version = version.replace('.', '_')
+  if dash_base_version in text:
+    text = text.replace(dash_base_version, dash_version)
+  if underscore_base_version in text:
+    text = text.replace(underscore_base_version, underscore_version)
+  return text
 
 
 def process_metainfo(file_path, config_data, stack_version_changes, common_services = []):
@@ -228,16 +260,7 @@ def process_metainfo(file_path, config_data, stack_version_changes, common_servi
                       name_tag = package_tag.find('name')
                       for base_version in stack_version_changes:
                         version = stack_version_changes[base_version]
-                        dash_base_version = base_version.replace('.', '-')
-                        dash_version = version.replace('.', '-')
-                        underscore_base_version = base_version.replace('.', '_')
-                        underscore_version = version.replace('.', '_')
-                        if dash_base_version in name_tag.text:
-                          name_tag.text = name_tag.text.replace(dash_base_version, dash_version)
-                          break
-                        elif underscore_base_version in name_tag.text:
-                          name_tag.text = name_tag.text.replace(underscore_base_version, underscore_version)
-                          break
+                        name_tag.text = process_version_replace(name_tag.text, base_version, version)
     tree.write(file_path)
   return file_path
 
@@ -316,6 +339,15 @@ def process_repoinfo_xml(file_path, config_data, stack_version_changes, stack):
     #########################################################################################
     tree = ET.parse(file_path)
     root = tree.getroot()
+    remove_list = list()
+    if 'family' in stack:
+      for os_tag in root.getiterator("os"):
+        os_family = os_tag.get('family')
+        if os_family not in stack.family:
+          remove_list.append(os_tag)
+    for os_tag in remove_list:
+      root.remove(os_tag)
+
     # Update all base urls
     for baseurl_tag in root.getiterator('baseurl'):
       baseurl_tag.text = 'http://SET_REPO_URL'
@@ -437,7 +469,6 @@ class GeneratorHelper(object):
         self.copy_common_services(parent_services)
     pass
 
-
   def copy_resource_management(self):
     source_folder = join(os.path.abspath(join(self.resources_folder, "..", "..", "..", "..")),
                          'ambari-common', 'src', 'main', 'python', 'resource_management')
@@ -453,6 +484,59 @@ class GeneratorHelper(object):
 
     copy_tree(source_folder, target_folder, ignored_files, post_copy=post_copy)
 
+  def copy_ambari_properties(self):
+    source_ambari_properties = join(os.path.abspath(join(self.resources_folder, "..", "..", "..", "..")),
+                         'ambari-server', 'conf', 'unix', "ambari.properties")
+    target_ambari_properties = join(self.output_folder, 'conf', 'unix', 'ambari.properties')
+    target_dirname = os.path.dirname(target_ambari_properties)
+
+    if not os.path.exists(target_dirname):
+      os.makedirs(target_dirname)
+    propertyMap = {}
+    if "ambariProperties" in self.config_data:
+      propertyMap = self.config_data.ambariProperties
+
+    with open(source_ambari_properties, 'r') as in_file:
+      with open(target_ambari_properties, 'w') as out_file:
+        for line in in_file:
+          property = line.split('=')[0]
+          if property in propertyMap:
+            out_file.write('='.join([property, propertyMap[property]]))
+            out_file.write(os.linesep)
+          else:
+            out_file.write(line)
+
+  def generate_ui_mapping(self):
+    stack_name = self.config_data.stackName
+    records = []
+    for _from, _to in self.stack_version_changes.iteritems():
+      base_stack_folder = UI_MAPPING_MAP[_from] if _from in UI_MAPPING_MAP else "HDP2"
+      record = {"stackName": stack_name,
+                "stackVersionNumber": _to,
+                "sign": "=",
+                "baseStackFolder": base_stack_folder}
+      records.append(record)
+    if "uiMapping" in self.config_data:
+      for mapping in self.config_data.uiMapping:
+        mapping["stackName"] = stack_name
+        records.append(mapping)
+    js_file_content = UI_MAPPING_TEMPLATE.format(json.dumps(records, indent=2))
+    open(os.path.join(self.output_folder, "custom_stack_map.js"),"w").write(js_file_content)
+    pass
+
+  def copy_custom_actions(self):
+    original_folder = os.path.join(self.resources_folder, 'custom_actions')
+    target_folder = os.path.join(self.output_folder, 'custom_actions')
+    ignored_files = ['.pyc']
+
+    def post_copy(src, target):
+      # process python files
+      if target.endswith('.py'):
+        # process script.py
+        process_py_files(target, self.config_data, self.stack_version_changes)
+        return
+
+    copy_tree(original_folder, target_folder, ignored_files, post_copy=post_copy)
 
 def main(argv):
   HELP_STRING = 'GenerateStackDefinition.py -c <config> -r <resources_folder> -o <output_folder>'
@@ -483,6 +567,9 @@ def main(argv):
   gen_helper.copy_stacks()
   gen_helper.copy_resource_management()
   gen_helper.copy_common_services()
+  gen_helper.copy_ambari_properties()
+  gen_helper.generate_ui_mapping()
+  gen_helper.copy_custom_actions()
 
 
 if __name__ == "__main__":

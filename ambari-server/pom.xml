@@ -41,6 +41,9 @@
     <ambari-admin-dir>${basedir}/../ambari-admin</ambari-admin-dir>
     <contrib-views-dir>${basedir}/../contrib/views</contrib-views-dir>
     <resourceManagementSrcLocation>${project.basedir}/../ambari-common/src/main/python/resource_management</resourceManagementSrcLocation>
+    <customStackMap>${basedir}/../ambari-web/app/data/custom_stack_map.js</customStackMap>
+    <customActionsRoot>src/main/resources/custom_actions</customActionsRoot>
+    <ambariProperties>conf/unix/ambari.properties</ambariProperties>
     <commonServicesSrcLocation>target/classes/common-services</commonServicesSrcLocation>
     <stacksSrcLocation>target/classes/stacks/${stack.distribution}</stacksSrcLocation>
     <tarballResourcesFolder>src/main/resources</tarballResourcesFolder>
@@ -294,6 +297,14 @@
               </dependency>
             </mapping>
             <mapping>
+              <directory>/usr/lib/ambari-server/app/data</directory>
+              <sources>
+                <source>
+                  <location>${customStackMap}</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
               <directory>/usr/lib/ambari-server/web</directory>
               <sources>
                 <source>
@@ -393,7 +404,7 @@
               <configuration>true</configuration>
               <sources>
                 <source>
-                  <location>conf/unix/ambari.properties</location>
+                  <location>${ambariProperties}</location>
                 </source>
                 <source>
                   <location>conf/unix/log4j.properties</location>
@@ -500,6 +511,12 @@
                 </source>
                 <source>
                   <location>src/main/resources/Ambari-DDL-SQLServer-DROP.sql</location>
+                </source>
+                <source>
+                  <location>target/classes/Ambari-DDL-SQLAnywhere-CREATE.sql</location>
+                </source>
+                <source>
+                  <location>src/main/resources/Ambari-DDL-SQLAnywhere-DROP.sql</location>
                 </source>
                 <source>
                   <location>${project.build.directory}/DBConnectionVerification.jar</location>
@@ -658,7 +675,7 @@
               <groupname>root</groupname>
               <sources>
                 <source>
-                  <location>src/main/resources/custom_actions</location>
+                  <location>${customActionsRoot}</location>
                 </source>
               </sources>
             </mapping>
@@ -779,7 +796,7 @@
               </mapper>
             </data>
             <data>
-              <src>conf/unix/ambari.properties</src>
+              <src>${ambariProperties}</src>
               <type>file</type>
               <mapper>
                 <type>perm</type>
@@ -955,6 +972,22 @@
               </mapper>
             </data>
             <data>
+              <src>target/classes/Ambari-DDL-SQLAnywhere-CREATE.sql</src>
+              <type>file</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>/var/lib/ambari-server/resources</prefix>
+              </mapper>
+            </data>
+            <data>
+              <src>src/main/resources/Ambari-DDL-SQLAnywhere-DROP.sql</src>
+              <type>file</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>/var/lib/ambari-server/resources</prefix>
+              </mapper>
+            </data>
+            <data>
               <src>${project.build.directory}/DBConnectionVerification.jar</src>
               <type>file</type>
               <mapper>
@@ -1082,6 +1115,14 @@
               </mapper>
             </data>
             <data>
+              <src>${customStackMap}</src>
+              <type>file</type>
+              <mapper>
+                <type>perm</type>
+                <prefix>/usr/lib/ambari-server/app/data</prefix>
+              </mapper>
+            </data>
+            <data>
               <src>src/main/python/os_check_type.py</src>
               <type>file</type>
               <mapper>
@@ -1109,7 +1150,7 @@
               </mapper>
             </data>
             <data>
-              <src>src/main/resources/custom_actions</src>
+              <src>${customActionsRoot}</src>
               <type>directory</type>
               <mapper>
                 <type>perm</type>
@@ -1519,6 +1560,9 @@
         </property>
       </activation>
       <properties>
+        <customActionsRoot>target/pluggable-stack-definition/custom_actions</customActionsRoot>
+        <customStackMap>target/pluggable-stack-definition/custom_stack_map.js</customStackMap>
+        <ambariProperties>target/pluggable-stack-definition/conf/unix/ambari.properties</ambariProperties>
         <resourceManagementSrcLocation>target/pluggable-stack-definition/python/resource_management</resourceManagementSrcLocation>
         <commonServicesSrcLocation>target/pluggable-stack-definition/common-services</commonServicesSrcLocation>
         <stacksSrcLocation>target/pluggable-stack-definition/stacks/${stack.distribution}</stacksSrcLocation>
@@ -1636,11 +1680,23 @@
       <groupId>org.apache.directory.server</groupId>
       <artifactId>apacheds-server-annotations</artifactId>
       <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>net.sf.ehcache</groupId>
+          <artifactId>ehcache-core</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.directory.server</groupId>
       <artifactId>apacheds-core-integ</artifactId>
       <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>net.sf.ehcache</groupId>
+          <artifactId>ehcache-core</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.directory.server</groupId>
@@ -1655,11 +1711,23 @@
     <dependency>
       <groupId>org.apache.directory.server</groupId>
       <artifactId>apacheds-kerberos-codec</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>net.sf.ehcache</groupId>
+          <artifactId>ehcache-core</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.directory.server</groupId>
       <artifactId>apacheds-core</artifactId>
       <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>net.sf.ehcache</groupId>
+          <artifactId>ehcache-core</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.directory.server</groupId>
@@ -1945,6 +2013,11 @@
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-annotations</artifactId>
       <version>2.1.4</version>
+    </dependency>
+    <dependency>
+      <groupId>net.sf.ehcache</groupId>
+      <artifactId>ehcache</artifactId>
+      <version>2.10.0</version>
     </dependency>
   </dependencies>
 

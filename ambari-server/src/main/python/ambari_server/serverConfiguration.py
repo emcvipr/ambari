@@ -60,6 +60,7 @@ BOOTSTRAP_DIR_PROPERTY = "bootstrap.dir"
 
 AMBARI_CONF_VAR = "AMBARI_CONF_DIR"
 AMBARI_PROPERTIES_FILE = "ambari.properties"
+AMBARI_ENV_FILE = "ambari-env.sh"
 AMBARI_KRB_JAAS_LOGIN_FILE = "krb5JAASLogin.conf"
 GET_FQDN_SERVICE_URL = "server.fqdn.service.url"
 
@@ -79,6 +80,8 @@ AMBARI_VERSION_VAR = "AMBARI_VERSION_VAR"
 JAVA_HOME_PROPERTY = "java.home"
 JDK_NAME_PROPERTY = "jdk.name"
 JCE_NAME_PROPERTY = "jce.name"
+JDK_DOWNLOAD_SUPPORTED_PROPERTY = "jdk.download.supported"
+JCE_DOWNLOAD_SUPPORTED_PROPERTY = "jce.download.supported"
 
 # JDBC
 JDBC_PATTERNS = {"oracle": "*ojdbc*.jar", "mysql": "*mysql*.jar", "mssql": "*sqljdbc*.jar"}
@@ -90,6 +93,7 @@ JDBC_DATABASE_NAME_PROPERTY = "server.jdbc.database_name"       # E.g., ambari. 
 JDBC_HOSTNAME_PROPERTY = "server.jdbc.hostname"
 JDBC_PORT_PROPERTY = "server.jdbc.port"
 JDBC_POSTGRES_SCHEMA_PROPERTY = "server.jdbc.postgres.schema"   # Only for postgres, defaults to same value as DB name
+JDBC_SQLA_SERVER_NAME = "server.jdbc.sqla.server_name"
 
 JDBC_USER_NAME_PROPERTY = "server.jdbc.user.name"
 JDBC_PASSWORD_PROPERTY = "server.jdbc.user.passwd"
@@ -171,9 +175,92 @@ SETUP_OR_UPGRADE_MSG = "- If this is a new setup, then run the \"ambari-server s
 
 DEFAULT_DB_NAME = "ambari"
 
+class ServerDatabaseType(object):
+  internal = 0
+  remote = 1
+
+
+class ServerDatabaseEntry(object):
+  def __init__(self, name, title, db_type, aliases=None):
+    """
+    :type name str
+    :type title str
+    :type db_type int
+    :type aliases list
+    """
+    self.__name = name
+    self.__title = title
+    self.__type = db_type
+    if aliases is None:
+      aliases = []
+
+    self.__aliases = aliases
+
+  @property
+  def name(self):
+    return self.__name
+
+  @property
+  def title(self):
+    return self.__title
+
+  @property
+  def dbtype(self):
+    return self.__type
+
+  def __str__(self):
+    return self.name
+
+  def __eq__(self, other):
+    if other is None:
+      return False
+
+    if isinstance(other, ServerDatabaseEntry):
+      return self.name == other.name and self.dbtype == other.dbtype
+    elif isinstance(other, str):
+      return self.name == other or other in self.__aliases
+
+    raise RuntimeError("Not compatible type")
+
+
+class ServerDatabases(object):
+  postgres = ServerDatabaseEntry("postgres", "Postgres", ServerDatabaseType.remote)
+  oracle = ServerDatabaseEntry("oracle", "Oracle", ServerDatabaseType.remote)
+  mysql = ServerDatabaseEntry("mysql", "MySQL", ServerDatabaseType.remote)
+  mssql = ServerDatabaseEntry("mssql", "MSSQL", ServerDatabaseType.remote)
+  derby = ServerDatabaseEntry("derby", "Derby", ServerDatabaseType.remote)
+  sqlanywhere = ServerDatabaseEntry("sqlanywhere", "SQL Anywhere", ServerDatabaseType.remote)
+  postgres_internal = ServerDatabaseEntry("postgres", "Embedded Postgres", ServerDatabaseType.internal, aliases=['embedded'])
+
+  @staticmethod
+  def databases():
+    props = ServerDatabases.__dict__
+    r_props = []
+    for p in props:
+      if isinstance(props[p], ServerDatabaseEntry):
+        r_props.append(props[p].name)
+
+    return set(r_props)
+
+  @staticmethod
+  def match(name):
+    """
+    :type name str
+    :rtype ServerDatabaseEntry
+    """
+    props = ServerDatabases.__dict__
+
+    for p in props:
+      if isinstance(props[p], ServerDatabaseEntry):
+        if name == props[p]:
+          return props[p]
+
+    return None
+
 class ServerConfigDefaults(object):
   def __init__(self):
     self.JAVA_SHARE_PATH = "/usr/share/java"
+    self.SHARE_PATH = "/usr/share"
     self.OUT_DIR = os.sep + os.path.join("var", "log", "ambari-server")
     self.SERVER_OUT_FILE = os.path.join(self.OUT_DIR, "ambari-server.out")
     self.SERVER_LOG_FILE = os.path.join(self.OUT_DIR, "ambari-server.log")
@@ -189,8 +276,10 @@ class ServerConfigDefaults(object):
     self.DEFAULT_CONF_DIR = ""
     self.PID_DIR = os.sep + os.path.join("var", "run", "ambari-server")
     self.DEFAULT_LIBS_DIR = ""
+    self.DEFAULT_VLIBS_DIR = ""
 
     self.AMBARI_PROPERTIES_BACKUP_FILE = ""
+    self.AMBARI_ENV_BACKUP_FILE = ""
     self.AMBARI_KRB_JAAS_LOGIN_BACKUP_FILE = ""
 
     # ownership/permissions mapping
@@ -288,8 +377,10 @@ class ServerConfigDefaultsLinux(ServerConfigDefaults):
     # Configuration defaults
     self.DEFAULT_CONF_DIR = "/etc/ambari-server/conf"
     self.DEFAULT_LIBS_DIR = "/usr/lib/ambari-server"
+    self.DEFAULT_VLIBS_DIR = "/var/lib/ambari-server"
 
     self.AMBARI_PROPERTIES_BACKUP_FILE = "ambari.properties.rpmsave"
+    self.AMBARI_ENV_BACKUP_FILE = "ambari-env.sh.rpmsave"
     self.AMBARI_KRB_JAAS_LOGIN_BACKUP_FILE = "krb5JAASLogin.conf.rpmsave"
     # ownership/permissions mapping
     # path - permissions - user - group - recursive
@@ -438,6 +529,14 @@ def get_value_from_properties(properties, key, default=""):
     return default
   return value
 
+def get_views_dir(properties):
+  views_dir = properties.get_property(VIEWS_DIR_PROPERTY)
+  if views_dir is None or views_dir == "":
+    views_dirs = glob.glob("/var/lib/ambari-server/resources/views/work")
+  else:
+    views_dirs = glob.glob(views_dir + "/work")
+  return views_dirs
+
 def get_admin_views_dir(properties):
   views_dir = properties.get_property(VIEWS_DIR_PROPERTY)
   if views_dir is None or views_dir == "":
@@ -501,19 +600,34 @@ def get_ambari_version(properties):
   return version
 
 def get_db_type(properties):
+  """
+  :rtype ServerDatabaseEntry
+  """
   db_type = None
-  if properties[JDBC_URL_PROPERTY]:
+  persistence_type = properties[PERSISTENCE_TYPE_PROPERTY]
+
+  if properties[JDBC_DATABASE_PROPERTY]:
+    db_type = ServerDatabases.match(properties[JDBC_DATABASE_PROPERTY])
+    if db_type == ServerDatabases.postgres and persistence_type == "local":
+      db_type = ServerDatabases.postgres_internal
+
+  if properties[JDBC_URL_PROPERTY] and db_type is None:
     jdbc_url = properties[JDBC_URL_PROPERTY].lower()
-    if "postgres" in jdbc_url:
-      db_type = "postgres"
-    elif "oracle" in jdbc_url:
-      db_type = "oracle"
-    elif "mysql" in jdbc_url:
-      db_type = "mysql"
-    elif "sqlserver" in jdbc_url:
-      db_type = "mssql"
-    elif "derby" in jdbc_url:
-      db_type = "derby"
+    if str(ServerDatabases.postgres) in jdbc_url:
+      db_type = ServerDatabases.postgres
+    elif str(ServerDatabases.oracle) in jdbc_url:
+      db_type = ServerDatabases.oracle
+    elif str(ServerDatabases.mysql) in jdbc_url:
+      db_type = ServerDatabases.mysql
+    elif str(ServerDatabases.mssql) in jdbc_url:
+      db_type = ServerDatabases.mssql
+    elif str(ServerDatabases.derby) in jdbc_url:
+      db_type = ServerDatabases.derby
+    elif str(ServerDatabases.sqlanywhere) in jdbc_url:
+      db_type = ServerDatabases.sqlanywhere
+
+  if persistence_type == "local" and db_type is None:
+    db_type = ServerDatabases.postgres_internal
 
   return db_type
 
@@ -528,19 +642,19 @@ def check_database_name_property(upgrade=False):
     return -1
 
   version = get_ambari_version(properties)
-  if upgrade and (properties[JDBC_DATABASE_PROPERTY] not in ["postgres", "oracle", "mysql", "mssql", "derby"]
+  if upgrade and (properties[JDBC_DATABASE_PROPERTY] not in ServerDatabases.databases()
                     or properties.has_key(JDBC_RCA_SCHEMA_PROPERTY)):
     # This code exists for historic reasons in which property names changed from Ambari 1.6.1 to 1.7.0
     persistence_type = properties[PERSISTENCE_TYPE_PROPERTY]
     if persistence_type == "remote":
-      db_name = properties["server.jdbc.schema"]  # this was a property in Ambari 1.6.1, but not after 1.7.0
+      db_name = properties[JDBC_RCA_SCHEMA_PROPERTY]  # this was a property in Ambari 1.6.1, but not after 1.7.0
       if db_name:
         write_property(JDBC_DATABASE_NAME_PROPERTY, db_name)
 
       # If DB type is missing, attempt to reconstruct it from the JDBC URL
       db_type = properties[JDBC_DATABASE_PROPERTY]
-      if db_type is None or db_type.strip().lower() not in ["postgres", "oracle", "mysql", "mssql", "derby"]:
-        db_type = get_db_type(properties)
+      if db_type is None or db_type.strip().lower() not in ServerDatabases.databases():
+        db_type = get_db_type(properties).name
         if db_type:
           write_property(JDBC_DATABASE_PROPERTY, db_type)
 
@@ -825,6 +939,26 @@ def update_krb_jaas_login_properties():
 
   return 0
 
+def update_ambari_env():
+  prev_env_file = search_file(configDefaults.AMBARI_ENV_BACKUP_FILE, configDefaults.DEFAULT_VLIBS_DIR)
+  env_file = search_file(AMBARI_ENV_FILE, configDefaults.DEFAULT_VLIBS_DIR)
+
+  # Previous env file does not exist
+  if (not prev_env_file) or (prev_env_file is None):
+    print_warning_msg("Can not find %s file from previous version, skipping restore of environment settings" %
+                      configDefaults.AMBARI_ENV_BACKUP_FILE)
+    return 0
+
+  try:
+    if env_file is not None:
+      os.remove(env_file)
+      os.rename(prev_env_file, env_file)
+      print_warning_msg("Original file %s kept" % AMBARI_ENV_FILE)
+  except OSError as e:
+    print "Couldn't move %s file: %s" % (prev_env_file, e)
+    return -1
+
+  return 0
 
 def update_ambari_properties():
   prev_conf_file = search_file(configDefaults.AMBARI_PROPERTIES_BACKUP_FILE, get_conf_dir())
@@ -1069,16 +1203,6 @@ def get_ambari_jars():
                  + default_jar_location)
     return default_jar_location
 
-def get_share_jars():
-  share_jars = ""
-  file_list = []
-  file_list.extend(glob.glob(configDefaults.JAVA_SHARE_PATH + os.sep + "*mysql*"))
-  file_list.extend(glob.glob(configDefaults.JAVA_SHARE_PATH + os.sep + "*sqljdbc*"))
-  file_list.extend(glob.glob(configDefaults.JAVA_SHARE_PATH + os.sep + "*ojdbc*"))
-  if len(file_list) > 0:
-    share_jars = string.join(file_list, os.pathsep)
-  return share_jars
-
 def get_jdbc_cp():
   jdbc_jar_path = ""
   properties = get_ambari_properties()
@@ -1091,9 +1215,6 @@ def get_ambari_classpath():
   jdbc_cp = get_jdbc_cp()
   if len(jdbc_cp) > 0:
     ambari_cp = ambari_cp + os.pathsep + jdbc_cp
-  share_cp = get_share_jars()
-  if len(share_cp) > 0:
-    ambari_cp = ambari_cp + os.pathsep + share_cp
   return ambari_cp
 
 def get_full_ambari_classpath(conf_dir = None):

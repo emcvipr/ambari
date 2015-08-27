@@ -81,6 +81,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
    * called when trigger property(<code>refreshTriggers</code>) is changed
    */
   refresh: function () {
+    App.loadTimer.start('Hosts Page');
     this.set('filteringComplete', false);
     var updaterMethodName = this.get('updater.tableUpdaterMap')[this.get('tableName')];
     this.get('updater')[updaterMethodName](this.updaterSuccessCb.bind(this), this.updaterErrorCb.bind(this), true);
@@ -180,7 +181,8 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
    */
   willInsertElement: function () {
     if (!this.get('controller.showFilterConditionsFirstLoad')) {
-      this.clearFilterCondition();
+      var didClearedSomething = this.clearFilterCondition();
+      this.set('controller.filterChangeHappened', didClearedSomething);
     }
     this._super();
     this.set('startIndex', this.get('controller.startIndex'));
@@ -202,7 +204,6 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     this.addObserver('startIndex', this, 'updatePagination');
     this.addObserver('displayLength', this, 'updatePagination');
     this.addObserver('filteredCount', this, this.updatePaging);
-    this.overlayObserver();
   },
 
   willDestroyElement: function () {
@@ -211,8 +212,15 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
 
   onInitialLoad: function () {
     if (this.get('tableFilteringComplete')) {
-      this.refresh();
+      if (this.get('controller.filterChangeHappened')) {
+        this.refresh();
+      } else {
+        // no refresh but still need to enable pagination controls
+        this.propertyDidChange('filteringComplete');
+      }
     }
+    // reset filter change marker
+    this.set('controller.filterChangeHappened', false);
   }.observes('tableFilteringComplete'),
 
   /**
@@ -911,40 +919,35 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     filterView: filters.componentFieldView.extend({
       templateName: require('templates/main/host/component_filter'),
 
-
-      /**
-       * Components which will be shown in component filter
-       * @returns {Array}
-       */
-      componentsForFilter: function () {
-        var installedComponents = App.StackServiceComponent.find().toArray();
-        installedComponents.setEach('checkedForHostFilter', false);
-        return installedComponents;
-      }.property('App.router.clusterController.isLoaded'),
-
       /**
        * Master components
        * @returns {Array}
        */
       masterComponents: function () {
-        return this.get('componentsForFilter').filterProperty('isMaster', true);
-      }.property('componentsForFilter'),
+        var components = App.MasterComponent.find().rejectProperty('totalCount', 0);
+        components.setEach('checkedForHostFilter', false);
+        return components;
+      }.property('App.router.clusterController.isComponentsStateLoaded'),
 
       /**
        * Slave components
        * @returns {Array}
        */
       slaveComponents: function () {
-        return this.get('componentsForFilter').filterProperty('isSlave', true);
-      }.property('componentsForFilter'),
+        var components = App.SlaveComponent.find().rejectProperty('totalCount', 0);
+        components.setEach('checkedForHostFilter', false);
+        return components;
+      }.property('App.router.clusterController.isComponentsStateLoaded'),
 
       /**
        * Client components
        * @returns {Array}
        */
       clientComponents: function () {
-        return this.get('componentsForFilter').filterProperty('isClient', true);
-      }.property('componentsForFilter'),
+        var components = App.ClientComponent.find().rejectProperty('totalCount', 0);
+        components.setEach('checkedForHostFilter', false);
+        return components;
+      }.property('App.router.clusterController.isComponentsStateLoaded'),
 
       /**
        * Checkbox for quick selecting/deselecting of master components

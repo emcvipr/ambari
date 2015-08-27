@@ -38,6 +38,7 @@ TRANSLATIONS = {
     settings: 'Settings',
     visualExplain: 'Visual Explain',
     tez: 'Tez',
+    visualization: 'Visualization',
     notifications: 'Notifications',
     expand: 'Expand query panel',
     makeSettingGlobal: 'Make setting global',
@@ -113,7 +114,8 @@ TRANSLATIONS = {
       visualExplain: 'Visual Explain',
       tez: 'TEZ',
       status: 'Status: ',
-      messages: 'Messages'
+      messages: 'Messages',
+      visualization: 'Visualization'
     },
     download: 'Save results...',
     tableSample: '{{tableName}} sample'
@@ -227,6 +229,12 @@ TRANSLATIONS = {
       'not.deployed': "Tez View isn't deployed.",
       'no.instance': "No instance of Tez View found.",
       'no.dag': "No DAG available"
+    }
+  },
+
+  hive: {
+    errors: {
+      'no.query': "No query to process."
     }
   },
 

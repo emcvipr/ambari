@@ -315,7 +315,7 @@ describe('App.config', function () {
     });
 
     it('bigtop site properties should be ok.', function() {
-      var bigtopSiteProperties = App.config.preDefinedConfigFile('site_properties');
+      var bigtopSiteProperties = App.config.preDefinedConfigFile('BIGTOP', 'site_properties');
       expect(bigtopSiteProperties).to.be.ok;
     });
 
@@ -818,6 +818,12 @@ describe('App.config', function () {
         filename: 's0-env',
         shouldSupportFinal: false,
         title: 'final attribute not supported'
+      },
+      {
+        serviceName: 'Cluster',
+        filename: 'krb5-conf.xml',
+        shouldSupportFinal: false,
+        title: 'kerberos descriptor identities don\'t support final'
       }
     ];
 
@@ -892,7 +898,7 @@ describe('App.config', function () {
 
     var configProperty = App.ServiceConfigProperty.create(template);
 
-    var group = App.ConfigGroup.create({name: "group1"});
+    var group = Em.Object.create({name: "group1"});
 
     it('creates override with save properties as original config', function() {
       var override = App.config.createOverride(configProperty, {}, group);
@@ -1212,6 +1218,9 @@ describe('App.config', function () {
       sinon.stub(App.config, 'getDefaultIsShowLabel', function() {
         return true;
       });
+      sinon.stub(App.config, 'shouldSupportFinal', function() {
+        return true;
+      });
     });
 
     after(function() {
@@ -1220,6 +1229,7 @@ describe('App.config', function () {
       App.config.getDefaultCategory.restore();
       App.config.getIsSecure.restore();
       App.config.getDefaultIsShowLabel.restore();
+      App.config.shouldSupportFinal.restore();
     });
 
     var res = {
@@ -1233,8 +1243,8 @@ describe('App.config', function () {
       /** UI and Stack properties **/
       recommendedValue: null,
       recommendedIsFinal: null,
-      supportsFinal: false,
-      serviceName: 'MISC',
+      supportsFinal: true,
+      serviceName: 'pServiceName',
       defaultDirectory: '',
       displayName: 'pDisplayName',
       displayType: 'pDisplayType',
@@ -1249,7 +1259,6 @@ describe('App.config', function () {
       id: 'site property',
       isRequiredByAgent:  true,
       isReconfigurable: true,
-      isObserved: false,
       unit: null,
       hasInitialValue: false,
       isOverridable: true,
@@ -1259,8 +1268,8 @@ describe('App.config', function () {
       radioName: null,
       belongsToService: []
     };
-    it('create default config object', function() {
-      expect(App.config.createDefaultConfig('pName','pFileName', true)).to.eql(res);
+    it('create default config object', function () {
+      expect(App.config.createDefaultConfig('pName', 'pServiceName', 'pFileName', true)).to.eql(res);
     });
     it('runs proper methods', function() {
       expect(App.config.getDefaultDisplayName.calledWith('pName','pFileName')).to.be.true;
@@ -1268,6 +1277,7 @@ describe('App.config', function () {
       expect(App.config.getDefaultCategory.calledWith(true, 'pFileName')).to.be.true;
       expect(App.config.getIsSecure.calledWith('pName')).to.be.true;
       expect(App.config.getDefaultIsShowLabel.calledWith('pName', 'pFileName')).to.be.true;
+      expect(App.config.shouldSupportFinal.calledWith('pServiceName', 'pFileName')).to.be.true;
     });
   });
 

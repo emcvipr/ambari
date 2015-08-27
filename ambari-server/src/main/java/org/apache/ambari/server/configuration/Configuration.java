@@ -127,6 +127,8 @@ public class Configuration {
   public static final String CLIENT_API_SSL_CRT_PASS_FILE_NAME_KEY = "client.api.ssl.cert_pass_file";
   public static final String CLIENT_API_SSL_CRT_PASS_KEY = "client.api.ssl.crt_pass";
   public static final String CLIENT_API_SSL_KEY_NAME_KEY = "client.api.ssl.key_name";
+  public static final String ENABLE_AUTO_AGENT_CACHE_UPDATE_KEY = "agent.auto.cache.update";
+  public static final String ENABLE_AUTO_AGENT_CACHE_UPDATE_DEFAULT = "true";
   public static final String CHECK_REMOTE_MOUNTS_KEY = "agent.check.remote.mounts";
   public static final String CHECK_REMOTE_MOUNTS_DEFAULT = "true";
   public static final String CHECK_MOUNTS_TIMEOUT_KEY = "agent.check.mounts.timeout";
@@ -170,6 +172,10 @@ public class Configuration {
   public static final String SERVER_JDBC_DRIVER_KEY = "server.jdbc.driver";
   public static final String SERVER_JDBC_URL_KEY = "server.jdbc.url";
   public static final String SERVER_JDBC_PROPERTIES_PREFIX = "server.jdbc.properties.";
+  public static final String ROLLING_UPGRADE_MIN_STACK_KEY = "rolling.upgrade.min.stack";
+  public static final String ROLLING_UPGRADE_MAX_STACK_KEY = "rolling.upgrade.max.stack";
+  public static final String ROLLING_UPGRADE_MIN_STACK_DEFAULT = "HDP-2.2";
+  public static final String ROLLING_UPGRADE_MAX_STACK_DEFAULT = "";
 
   public static final String SERVER_JDBC_CONNECTION_POOL = "server.jdbc.connection-pool";
   public static final String SERVER_JDBC_CONNECTION_POOL_MIN_SIZE = "server.jdbc.connection-pool.min-size";
@@ -405,6 +411,25 @@ public class Configuration {
   private static final String DEFAULT_JDBC_POOL_ACQUISITION_RETRY_ATTEMPTS = "30";
   private static final String DEFAULT_JDBC_POOL_ACQUISITION_RETRY_DELAY = "1000";
 
+  // Timeline Metrics Cache settings
+  private static final String TIMELINE_METRICS_CACHE_DISABLE = "server.timeline.metrics.cache.disabled";
+  private static final String TIMELINE_METRICS_CACHE_MAX_ENTRIES = "server.timeline.metrics.cache.max.entries";
+  private static final String DEFAULT_TIMELINE_METRICS_CACHE_MAX_ENTRIES = "50";
+  private static final String TIMELINE_METRICS_CACHE_TTL = "server.timeline.metrics.cache.entry.ttl.seconds";
+  private static final String DEFAULT_TIMELINE_METRICS_CACHE_TTL = "3600";
+  private static final String TIMELINE_METRICS_CACHE_IDLE_TIME = "server.timeline.metrics.cache.entry.idle.seconds";
+  private static final String DEFAULT_TIMELINE_METRICS_CACHE_IDLE_TIME = "300";
+  private static final String TIMELINE_METRICS_REQUEST_READ_TIMEOUT = "server.timeline.metrics.cache.read.timeout.millis";
+  private static final String DEFAULT_TIMELINE_METRICS_REQUEST_READ_TIMEOUT = "10000";
+  private static final String TIMELINE_METRICS_REQUEST_INTERVAL_READ_TIMEOUT = "server.timeline.metrics.cache.interval.read.timeout.millis";
+  private static final String DEFAULT_TIMELINE_METRICS_REQUEST_INTERVAL_READ_TIMEOUT = "5000";
+  private static final String TIMELINE_METRICS_REQUEST_CONNECT_TIMEOUT = "server.timeline.metrics.cache.connect.timeout.millis";
+  private static final String DEFAULT_TIMELINE_METRICS_REQUEST_CONNECT_TIMEOUT = "5000";
+  private static final String TIMELINE_METRICS_REQUEST_CATCHUP_INTERVAL = "server.timeline.metrics.cache.catchup.interval";
+  private static final String DEFAULT_TIMELINE_METRICS_REQUEST_CATCHUP_INTERVAL = "300000";
+  private static final String TIMELINE_METRICS_CACHE_HEAP_PERCENT = "server.timeline.metrics.cache.heap.percent";
+  private static final String DEFAULT_TIMELINE_METRICS_CACHE_HEAP_PERCENT = "15%";
+
   /**
    * The full path to the XML file that describes the different alert templates.
    */
@@ -442,7 +467,8 @@ public class Configuration {
     ORACLE("oracle"),
     MYSQL("mysql"),
     DERBY("derby"),
-    SQL_SERVER("sqlserver");
+    SQL_SERVER("sqlserver"),
+    SQL_ANYWHERE("sqlanywhere");
 
     private static final Map<String, DatabaseType> m_mappedTypes =
         new HashMap<String, Configuration.DatabaseType>(5);
@@ -529,6 +555,9 @@ public class Configuration {
       CHECK_REMOTE_MOUNTS_KEY, CHECK_REMOTE_MOUNTS_DEFAULT));
     agentConfigsMap.put(CHECK_MOUNTS_TIMEOUT_KEY, properties.getProperty(
       CHECK_MOUNTS_TIMEOUT_KEY, CHECK_MOUNTS_TIMEOUT_DEFAULT));
+
+    agentConfigsMap.put(ENABLE_AUTO_AGENT_CACHE_UPDATE_KEY, properties.getProperty(
+        ENABLE_AUTO_AGENT_CACHE_UPDATE_KEY, ENABLE_AUTO_AGENT_CACHE_UPDATE_DEFAULT));
 
     configsMap = new HashMap<String, String>();
     configsMap.putAll(agentConfigsMap);
@@ -671,6 +700,15 @@ public class Configuration {
    */
   public String getProperty(String key) {
     return properties.getProperty(key);
+  }
+
+  /**
+   * Get the property value for the given key.
+   *
+   * @return the property value
+   */
+  public String getProperty(String key, String defaultValue) {
+    return properties.getProperty(key, defaultValue);
   }
 
   /**
@@ -831,6 +869,14 @@ public class Configuration {
 
   public String getStackAdvisorScript() {
     return properties.getProperty(STACK_ADVISOR_SCRIPT, STACK_ADVISOR_SCRIPT_DEFAULT);
+  }
+
+  public String getRollingUpgradeMinStack() {
+    return properties.getProperty(ROLLING_UPGRADE_MIN_STACK_KEY, ROLLING_UPGRADE_MIN_STACK_DEFAULT);
+  }
+
+  public String getRollingUpgradeMaxStack() {
+    return properties.getProperty(ROLLING_UPGRADE_MAX_STACK_KEY, ROLLING_UPGRADE_MAX_STACK_DEFAULT);
   }
 
   /**
@@ -996,7 +1042,7 @@ public class Configuration {
    */
   public String getApiGzipMinSize() {
     return properties.getProperty(API_GZIP_MIN_COMPRESSION_SIZE_KEY,
-        API_GZIP_MIN_COMPRESSION_SIZE_DEFAULT);
+      API_GZIP_MIN_COMPRESSION_SIZE_DEFAULT);
   }
 
   /**
@@ -1239,7 +1285,7 @@ public class Configuration {
 
   public int getConnectionMaxIdleTime() {
     return Integer.parseInt(properties.getProperty
-        (SERVER_CONNECTION_MAX_IDLE_TIME, String.valueOf("900000")));
+      (SERVER_CONNECTION_MAX_IDLE_TIME, String.valueOf("900000")));
   }
 
   /**
@@ -1278,7 +1324,7 @@ public class Configuration {
 
   public int getOneWayAuthPort() {
     return Integer.parseInt(properties.getProperty(SRVR_ONE_WAY_SSL_PORT_KEY,
-                                                   String.valueOf(SRVR_ONE_WAY_SSL_PORT_DEFAULT)));
+      String.valueOf(SRVR_ONE_WAY_SSL_PORT_DEFAULT)));
   }
 
   public int getTwoWayAuthPort() {
@@ -1371,7 +1417,7 @@ public class Configuration {
 
   public Integer getRequestReadTimeout() {
     return Integer.parseInt(properties.getProperty(REQUEST_READ_TIMEOUT,
-        REQUEST_READ_TIMEOUT_DEFAULT));
+      REQUEST_READ_TIMEOUT_DEFAULT));
   }
 
   public Integer getRequestConnectTimeout() {
@@ -1381,7 +1427,7 @@ public class Configuration {
 
   public String getExecutionSchedulerConnections() {
     return properties.getProperty(EXECUTION_SCHEDULER_CONNECTIONS,
-                                  DEFAULT_SCHEDULER_MAX_CONNECTIONS);
+      DEFAULT_SCHEDULER_MAX_CONNECTIONS);
   }
 
   public Long getExecutionSchedulerMisfireToleration() {
@@ -1407,7 +1453,7 @@ public class Configuration {
 
   public String getCustomActionDefinitionPath() {
     return properties.getProperty(CUSTOM_ACTION_DEFINITION_KEY,
-                                  CUSTOM_ACTION_DEFINITION_DEF_VALUE);
+      CUSTOM_ACTION_DEFINITION_DEF_VALUE);
   }
 
   public int getAgentPackageParallelCommandsLimit() {
@@ -1456,7 +1502,7 @@ public class Configuration {
    */
   public int getClientThreadPoolSize() {
     return Integer.parseInt(properties.getProperty(
-        CLIENT_THREADPOOL_SIZE_KEY, String.valueOf(CLIENT_THREADPOOL_SIZE_DEFAULT)));
+      CLIENT_THREADPOOL_SIZE_KEY, String.valueOf(CLIENT_THREADPOOL_SIZE_DEFAULT)));
   }
 
   /**
@@ -1494,7 +1540,7 @@ public class Configuration {
    */
   public long getViewExtractionThreadPoolTimeout() {
     return Long.parseLong(properties.getProperty(
-        VIEW_EXTRACTION_THREADPOOL_TIMEOUT_KEY, String.valueOf(VIEW_EXTRACTION_THREADPOOL_TIMEOUT_DEFAULT)));
+      VIEW_EXTRACTION_THREADPOOL_TIMEOUT_KEY, String.valueOf(VIEW_EXTRACTION_THREADPOOL_TIMEOUT_DEFAULT)));
   }
 
   /**
@@ -1507,8 +1553,8 @@ public class Configuration {
    */
   public int getHttpSessionInactiveTimeout() {
     return Integer.parseInt(properties.getProperty(
-        SERVER_HTTP_SESSION_INACTIVE_TIMEOUT,
-        "1800"));
+      SERVER_HTTP_SESSION_INACTIVE_TIMEOUT,
+      "1800"));
   }
 
   /**
@@ -1526,7 +1572,7 @@ public class Configuration {
    */
   public int getAlertEventPublisherPoolSize() {
     return Integer.parseInt(properties.getProperty(
-        ALERTS_EXECUTION_SCHEDULER_THREADS_KEY, ALERTS_EXECUTION_SCHEDULER_THREADS_DEFAULT));
+      ALERTS_EXECUTION_SCHEDULER_THREADS_KEY, ALERTS_EXECUTION_SCHEDULER_THREADS_DEFAULT));
   }
 
   /**
@@ -1589,7 +1635,7 @@ public class Configuration {
    */
   public int getKdcConnectionCheckTimeout() {
     return Integer.parseInt(properties.getProperty(
-        KDC_CONNECTION_CHECK_TIMEOUT_KEY, KDC_CONNECTION_CHECK_TIMEOUT_DEFAULT));
+      KDC_CONNECTION_CHECK_TIMEOUT_KEY, KDC_CONNECTION_CHECK_TIMEOUT_DEFAULT));
   }
 
   /**
@@ -1624,6 +1670,8 @@ public class Configuration {
       databaseType = DatabaseType.DERBY;
     } else if (dbUrl.contains(DatabaseType.SQL_SERVER.getName())) {
       databaseType = DatabaseType.SQL_SERVER;
+    } else if (dbUrl.contains(DatabaseType.SQL_ANYWHERE.getName())) {
+      databaseType = DatabaseType.SQL_ANYWHERE;
     } else {
       throw new RuntimeException(
           "The database type could be not determined from the JDBC URL "
@@ -1774,4 +1822,87 @@ public class Configuration {
     }
   }
 
+  /**
+   * Max allowed entries in metrics cache.
+   * @deprecated Ehcache only supports either a max heap bytes or entries.
+   */
+  @Deprecated
+  public int getMetricCacheMaxEntries() {
+    return Integer.parseInt(properties.getProperty(TIMELINE_METRICS_CACHE_MAX_ENTRIES,
+      DEFAULT_TIMELINE_METRICS_CACHE_MAX_ENTRIES));
+  }
+
+  /**
+   * Eviction time for entries in metrics cache.
+   */
+  public int getMetricCacheTTLSeconds() {
+    return Integer.parseInt(properties.getProperty(TIMELINE_METRICS_CACHE_TTL,
+      DEFAULT_TIMELINE_METRICS_CACHE_TTL));
+  }
+
+  /**
+   * Max time to idle for entries in the cache.
+   */
+  public int getMetricCacheIdleSeconds() {
+    return Integer.parseInt(properties.getProperty(TIMELINE_METRICS_CACHE_IDLE_TIME,
+        DEFAULT_TIMELINE_METRICS_CACHE_IDLE_TIME));
+  }
+
+  /**
+   * Separate timeout settings for metrics cache.
+   * @return milliseconds
+   */
+  public int getMetricsRequestReadTimeoutMillis() {
+    return Integer.parseInt(properties.getProperty(TIMELINE_METRICS_REQUEST_READ_TIMEOUT,
+      DEFAULT_TIMELINE_METRICS_REQUEST_READ_TIMEOUT));
+  }
+
+  /**
+   * Separate timeout settings for metrics cache.
+   * Timeout on reads for update requests made for smaller time intervals.
+   *
+   * @return milliseconds
+   */
+  public int getMetricsRequestIntervalReadTimeoutMillis() {
+    return Integer.parseInt(properties.getProperty(TIMELINE_METRICS_REQUEST_INTERVAL_READ_TIMEOUT,
+      DEFAULT_TIMELINE_METRICS_REQUEST_INTERVAL_READ_TIMEOUT));
+  }
+
+  /**
+   * Separate timeout settings for metrics cache.
+   * @return milliseconds
+   */
+  public int getMetricsRequestConnectTimeoutMillis() {
+    return Integer.parseInt(properties.getProperty(TIMELINE_METRICS_REQUEST_CONNECT_TIMEOUT,
+      DEFAULT_TIMELINE_METRICS_REQUEST_CONNECT_TIMEOUT));
+  }
+
+  /**
+   * Diable metrics caching.
+   * @return true / false
+   */
+  public boolean isMetricsCacheDisabled() {
+    return Boolean.parseBoolean(properties.getProperty(TIMELINE_METRICS_CACHE_DISABLE, "false"));
+  }
+
+  /**
+   * Constant fudge factor subtracted from the cache update requests to
+   * account for unavailability of data on the trailing edge due to buffering.
+   */
+  public Long getMetricRequestBufferTimeCatchupInterval() {
+    return Long.parseLong(properties.getProperty(TIMELINE_METRICS_REQUEST_CATCHUP_INTERVAL,
+      DEFAULT_TIMELINE_METRICS_REQUEST_CATCHUP_INTERVAL));
+  }
+
+  /**
+   * Percentage of total heap allocated to metrics cache, default is 15%.
+   * Default heap setting for the server is 2 GB so max allocated heap size
+   * for this cache is 300 MB.
+   */
+  public String getMetricsCacheManagerHeapPercent() {
+    String percent = properties.getProperty(TIMELINE_METRICS_CACHE_HEAP_PERCENT,
+      DEFAULT_TIMELINE_METRICS_CACHE_HEAP_PERCENT);
+
+    return percent.trim().endsWith("%") ? percent.trim() : percent.trim() + "%";
+  }
 }
