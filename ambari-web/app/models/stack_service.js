@@ -54,7 +54,6 @@ App.StackService = DS.Model.extend({
   // Is the service a distributed filesystem
   isDFS: function () {
     var dfsServices = ['HDFS', 'GLUSTERFS'];
-    console.log("IN isDFS() serviceType = " + this.get('serviceType'));
     if( this.get('serviceType') == 'HCFS' || dfsServices.contains(this.get('serviceName')) )
     	return true;
     else
