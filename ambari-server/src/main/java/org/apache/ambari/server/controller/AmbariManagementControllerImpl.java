@@ -50,6 +50,7 @@ import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -1839,8 +1840,16 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       }
     }
 
-    LOG.info("Adding service type info in createHostAction:: " + serviceInfo.getServiceType());
-    execCmd.setServiceType(serviceInfo.getServiceType());
+    //Populate service type info to identify if the stack is meant for HCFS
+    Iterator<Service> it = cluster.getServices().values().iterator();
+    while(it.hasNext()) {
+        ServiceInfo serviceInfoInstance = ambariMetaInfo.getService(stackId.getStackName(),stackId.getStackVersion(), it.next().getName());
+        if(serviceInfoInstance.getServiceType() != null) {
+            LOG.info("Adding service type info in createHostAction:: " + serviceInfoInstance.getServiceType());
+            execCmd.setServiceType(serviceInfoInstance.getServiceType());
+            break;
+        }
+    }
     
     execCmd.setConfigurations(configurations);
     execCmd.setConfigurationAttributes(configurationAttributes);
