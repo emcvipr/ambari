@@ -45,6 +45,8 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
 
   addMiscTabToPage: true,
 
+  selectedServiceNameTrigger: null,
+
   /**
    * Is Submit-click processing now
    * @type {bool}
@@ -912,7 +914,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
         delete configsMap[type][_config.name];
       }
     });
-    self.setServiceDatabaseConfigs(configs);
     //add user properties
 
     Em.keys(configsMap).forEach(function (filename) {
@@ -937,36 +938,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
     });
   },
 
-  /**
-   * Check if Oozie or Hive use existing database then need
-   * to restore missed properties
-   *
-   * @param {Object[]} configs
-   **/
-  setServiceDatabaseConfigs: function (configs) {
-    var serviceNames = this.get('installedServiceNames').filter(function (serviceName) {
-      return ['OOZIE', 'HIVE'].contains(serviceName);
-    });
-    serviceNames.forEach(function (serviceName) {
-      var propertyPrefix = serviceName.toLowerCase();
-      var dbTypeConfig = configs.findProperty('name', propertyPrefix + '_database');
-      if (!/existing/gi.test(dbTypeConfig.value)) return;
-      var dbHostName = propertyPrefix + '_hostname';
-      var database = dbTypeConfig.value.match(/MySQL|PostgreSQL|Oracle|Derby|MSSQL/gi)[0];
-      var dbPrefix = database.toLowerCase();
-      if (database.toLowerCase() == 'mssql') {
-        if (/integrated/gi.test(dbTypeConfig.value)) {
-          dbPrefix = 'mssql_server_2';
-        } else {
-          dbPrefix = 'mssql_server';
-        }
-      }
-      var propertyName = propertyPrefix + '_existing_' + dbPrefix + '_host';
-      var existingDBConfig = configs.findProperty('name', propertyName);
-      if (existingDBConfig && !existingDBConfig.value)
-        existingDBConfig.value = existingDBConfig.savedValue = configs.findProperty('name', dbHostName).value;
-    }, this);
-  },
   /**
    * Add group ids to <code>groupsToDelete</code>
    * Also save <code>groupsToDelete</code> to local storage
@@ -1427,6 +1398,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
       {
         var service = errorServices[0];
         this.set('selectedService', service);
+        this.propertyDidChange('selectedServiceNameTrigger');
         $('a[href="#' + service.serviceName + '"]').tab('show');
       }
     }

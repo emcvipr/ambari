@@ -1653,43 +1653,6 @@ describe('App.InstallerStep7Controller', function () {
 
   });
 
-  describe('#setServiceDatabaseConfigs', function () {
-
-    var controller = App.WizardStep7Controller.create({
-      installedServiceNames: ['OOZIE', 'HIVE']
-    });
-    var configs = [
-      {
-        name: 'hive_database',
-        value: 'MySQL',
-        serviceName: 'HIVE',
-        filename: 'hbase-site.xml'
-      },
-      {
-        name: 'oozie_database',
-        value: 'MySQL',
-        serviceName: 'OOZIE',
-        filename: 'ams-hbase-site.xml'
-      }
-    ];
-
-    it('should handle properties with the same name', function () {
-      var services = Em.A([
-        Em.Object.create({
-          isInstalled: true,
-          serviceName: 'SQOOP'
-        }),
-        Em.Object.create({
-          isInstalled: true,
-          serviceName: 'HDFS'
-        })
-      ]);
-      controller.setServiceDatabaseConfigs(configs);
-      var properties = configs.filterProperty('name', 'hive_database');
-      expect(properties).to.have.length(1);
-    });
-  });
-
   describe('#getAmbariDatabaseSuccess', function () {
 
     var controller = App.WizardStep7Controller.create({
@@ -1880,6 +1843,12 @@ describe('App.InstallerStep7Controller', function () {
   });
 
   describe('#toggleIssuesFilter', function () {
+    beforeEach(function () {
+      sinon.stub(installerStep7Controller, 'propertyDidChange', Em.K);
+    });
+    afterEach(function () {
+      installerStep7Controller.propertyDidChange.restore();
+    });
     it('should toggle issues filter', function () {
       var issuesFilter = installerStep7Controller.get('filterColumns').findProperty('attributeName', 'hasIssues');
       issuesFilter.set('selected', false);
@@ -1887,6 +1856,31 @@ describe('App.InstallerStep7Controller', function () {
       expect(issuesFilter.get('selected')).to.be.true;
       installerStep7Controller.toggleIssuesFilter();
       expect(issuesFilter.get('selected')).to.be.false;
+    });
+    it('selected service should be changed', function () {
+      installerStep7Controller.setProperties({
+        selectedService: {
+          errorCount: 0,
+          configGroups: []
+        },
+        stepConfigs: [
+          {
+            errorCount: 1,
+            configGroups: []
+          },
+          {
+            errorCount: 2,
+            configGroups: []
+          }
+        ]
+      });
+      installerStep7Controller.toggleIssuesFilter();
+      expect(installerStep7Controller.get('selectedService')).to.eql({
+        errorCount: 1,
+        configGroups: []
+      });
+      expect(installerStep7Controller.propertyDidChange.calledOnce).to.be.true;
+      expect(installerStep7Controller.propertyDidChange.calledWith('selectedServiceNameTrigger')).to.be.true;
     });
   });
 

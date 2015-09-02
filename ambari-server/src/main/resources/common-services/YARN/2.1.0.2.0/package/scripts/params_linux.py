@@ -118,6 +118,12 @@ hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 smokeuser = config['configurations']['cluster-env']['smokeuser']
 smokeuser_principal = config['configurations']['cluster-env']['smokeuser_principal_name']
 security_enabled = config['configurations']['cluster-env']['security_enabled']
+nm_security_marker = '/var/lib/hadoop-yarn/nm_security_enabled'
+current_nm_security_state = os.path.isfile(nm_security_marker)
+toggle_nm_security = (current_nm_security_state and not security_enabled) or (not current_nm_security_state and security_enabled)
+rm_security_marker = "/var/lib/hadoop-yarn/rm_security_enabled"
+current_rm_security_state = os.path.isfile(rm_security_marker)
+toggle_rm_security = (current_rm_security_state and not security_enabled) or (not current_rm_security_state and security_enabled)
 smoke_user_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
 yarn_executor_container_group = config['configurations']['yarn-site']['yarn.nodemanager.linux-container-executor.group']
 yarn_nodemanager_container_executor_class =  config['configurations']['yarn-site']['yarn.nodemanager.container-executor.class']
@@ -145,6 +151,7 @@ mapred_pid_dir_prefix = status_params.mapred_pid_dir_prefix
 mapred_log_dir_prefix = config['configurations']['mapred-env']['mapred_log_dir_prefix']
 mapred_env_sh_template = config['configurations']['mapred-env']['content']
 yarn_env_sh_template = config['configurations']['yarn-env']['content']
+yarn_nodemanager_recovery_dir = default('/configurations/yarn-site/yarn.nodemanager.recovery.dir', None)
 
 if len(rm_hosts) > 1:
   additional_rm_host = rm_hosts[1]
@@ -341,7 +348,7 @@ if has_ranger_admin:
     elif xa_audit_db_flavor and xa_audit_db_flavor == 'oracle':
       jdbc_jar_name = "ojdbc6.jar"
       jdbc_symlink_name = "oracle-jdbc-driver.jar"
-      audit_jdbc_url = format('jdbc:oracle:thin:\@//{xa_db_host}')
+      audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
       jdbc_driver = "oracle.jdbc.OracleDriver"
     elif xa_audit_db_flavor and xa_audit_db_flavor == 'postgres':
       jdbc_jar_name = "postgresql.jar"
@@ -353,6 +360,11 @@ if has_ranger_admin:
       jdbc_symlink_name = "mssql-jdbc-driver.jar"
       audit_jdbc_url = format('jdbc:sqlserver://{xa_db_host};databaseName={xa_audit_db_name}')
       jdbc_driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+    elif xa_audit_db_flavor and xa_audit_db_flavor == 'sqla':
+      jdbc_jar_name = "sajdbc4.jar"
+      jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
+      audit_jdbc_url = format('jdbc:sqlanywhere:database={xa_audit_db_name};host={xa_db_host}')
+      jdbc_driver = "sap.jdbc4.sqlanywhere.IDriver"
 
     downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 
@@ -364,3 +376,7 @@ if has_ranger_admin:
     ssl_keystore_password = unicode(config['configurations']['ranger-yarn-policymgr-ssl']['xasecure.policymgr.clientssl.keystore.password']) if xml_configurations_supported else None
     ssl_truststore_password = unicode(config['configurations']['ranger-yarn-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password']) if xml_configurations_supported else None
     credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None
+
+    #For SQLA explicitly disable audit to DB for Ranger
+    if xa_audit_db_flavor == 'sqla':
+      xa_audit_db_is_enabled = False

@@ -142,7 +142,7 @@ App.QuickViewLinks = Em.View.extend({
     } else if (hosts.length == 1) {
 
       quickLinks = this.get('content.quickLinks').map(function (item) {
-        var protocol = self.setProtocol(item.get('service_id'), self.get('configProperties'), self.ambariProperties());
+        var protocol = self.setProtocol(item.get('service_id'), self.get('configProperties'), self.ambariProperties(), item);
         if (item.get('template')) {
           var port = item.get('http_config') && self.setPort(item, protocol);
           if (['FALCON', 'OOZIE', 'ATLAS'].contains(item.get('service_id'))) {
@@ -326,7 +326,7 @@ App.QuickViewLinks = Em.View.extend({
    * @returns {string} "https" or "http" only!
    * @method setProtocol
    */
-  setProtocol: function (service_id, configProperties, ambariProperties) {
+  setProtocol: function (service_id, configProperties, ambariProperties, item) {
     var hadoopSslEnabled = false;
     if (configProperties && configProperties.length > 0) {
       var hdfsSite = configProperties.findProperty('type', 'hdfs-site');
@@ -379,6 +379,22 @@ App.QuickViewLinks = Em.View.extend({
           }
         }
         return "http";
+        break;
+      case "OOZIE":
+        var site = configProperties.findProperty('type', 'oozie-site');
+        var properties = site && site.properties;
+        var url = properties && properties['oozie.base.url'];
+        var re = new RegExp(item.get('regex'));
+        var portValue = url && url.match(re);
+        var port = portValue && portValue.length && portValue[1];
+        var protocol = 'http';
+        var isHttpsPropertiesEnabled = properties && (properties['oozie.https.port'] ||
+                                                      properties['oozie.https.keystore.file'] ||
+                                                      properties['oozie.https.keystore.pass']);
+        if (port === '11443' || isHttpsPropertiesEnabled) {
+          protocol = 'https';
+        }
+        return protocol;
         break;
       case "RANGER":
         var rangerProperties = configProperties && configProperties.findProperty('type', 'ranger-admin-site');
@@ -442,6 +458,7 @@ App.QuickViewLinks = Em.View.extend({
 
     var re = new RegExp(item.get('regex'));
     var portValue = propertyValue.match(re);
+
     return  portValue[1];
   },
 

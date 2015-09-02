@@ -30,12 +30,6 @@ from os.path import join
 import random
 import string
 
-UI_MAPPING_TEMPLATE = """var App = require('app');
-module.exports = {0};
-"""
-UI_MAPPING_MAP = {"2.2":"HDP2.2",
-                  "2.3":"HDP2.3"}
-
 def generate_random_string(size=7, chars=string.ascii_uppercase + string.digits):
   return ''.join(random.choice(chars) for _ in range(size))
 
@@ -375,6 +369,91 @@ def process_py_files(file_path, config_data, stack_version_changes):
 def process_xml_files(file_path, config_data, stack_version_changes):
   return process_replacements(file_path, config_data, stack_version_changes)
 
+def process_config_xml(file_path, config_data):
+  tree = ET.parse(file_path)
+  root = tree.getroot()
+  #############################################################################################
+  # <resource_dir>/common-services/<service_name>/<service_version>/configuration/<config>.xml
+  #############################################################################################
+  COMMON_SERVICES_CONFIG_PATH_REGEX = r'common-services/([A-Za-z_-]+)/([0-9\.]+)/configuration/([A-Za-z0-9_-]+).xml'
+  #############################################################################################
+  # <resource_dir>/stacks/<stack_name>/<stack_version>/services/<service_name>/configuration/<config>.xml
+  #############################################################################################
+  STACK_SERVICE_CONFIG_PATH_REGEX = r'stacks/([A-Za-z_-]+)/([0-9\.]+)/services/([A-Za-z_-]+)/configuration/([A-Za-z0-9_-]+).xml'
+  #############################################################################################
+  # <resource_dir>/stacks/<stack_name>/<stack_version>/configuration/<config>.xml
+  #############################################################################################
+  STACK_CONFIG_PATH_REGEX = r'stacks/([A-Za-z_-]+)/([0-9\.]+)/configuration/([A-Za-z0-9_-]+).xml'
+
+  #########################################################################################
+  # Override stack config properties
+  #########################################################################################
+  match = re.search(COMMON_SERVICES_CONFIG_PATH_REGEX, file_path)
+  if match:
+    #############################################################################################
+    # Config file path in common services
+    #############################################################################################
+    path_service_name = match.group(1)
+    path_service_version = match.group(2)
+    path_config_name = match.group(3)
+    if 'common-services' in config_data:
+      for service in config_data['common-services']:
+        if service.name == path_service_name:
+          for serviceVersion in service.versions:
+            if serviceVersion.version == path_service_version:
+              if 'configurations' in serviceVersion:
+                for conf in serviceVersion['configurations']:
+                  if conf.name == path_config_name:
+                    for property_tag in root.findall('property'):
+                      property_name = property_tag.find('name').text
+                      if property_name in conf.properties:
+                        value_tag = property_tag.find('value')
+                        value_tag.text = conf.properties[property_name]
+  else:
+    match = re.search(STACK_SERVICE_CONFIG_PATH_REGEX, file_path)
+    if match:
+      #############################################################################################
+      # Config file path for a service in stack
+      #############################################################################################
+      path_stack_name = match.group(1)
+      path_stack_version = match.group(2)
+      path_service_name = match.group(3)
+      path_config_name = match.group(4)
+      for stack in config_data.versions:
+        if stack.version == path_stack_version:
+          for service in stack.services:
+            if service.name == path_service_name:
+              if 'configurations' in service:
+                for conf in service['configurations']:
+                  if conf.name == path_config_name:
+                    for property_tag in root.findall('property'):
+                      property_name = property_tag.find('name').text
+                      if property_name in conf.properties:
+                        value_tag = property_tag.find('value')
+                        value_tag.text = conf.properties[property_name]
+    else:
+      match = re.search(STACK_CONFIG_PATH_REGEX, file_path)
+      if match:
+        #############################################################################################
+        # Config file path for global stack configs
+        #############################################################################################
+        path_stack_name = match.group(1)
+        path_stack_version = match.group(2)
+        path_config_name = match.group(3)
+        for stack in config_data.versions:
+          if stack.version == path_stack_version:
+            if 'configurations' in stack:
+              for conf in stack['configurations']:
+                if conf.name == path_config_name:
+                  for property_tag in root.findall('property'):
+                    property_name = property_tag.find('name').text
+                    if property_name in conf.properties:
+                      value_tag = property_tag.find('value')
+                      value_tag.text = conf.properties[property_name]
+
+  tree.write(file_path)
+  return file_path
+
 class GeneratorHelper(object):
   def __init__(self, config_data, resources_folder, output_folder):
     self.config_data = config_data
@@ -415,6 +494,9 @@ class GeneratorHelper(object):
           # process repoinfo.xml
           if target.endswith('repoinfo.xml'):
             target = process_repoinfo_xml(target, self.config_data, self.stack_version_changes, stack)
+          if os.path.basename(os.path.dirname(target)) == 'configuration':
+            # process configuration xml
+            target = process_config_xml(target, self.config_data)
           # process upgrade-x.x.xml
           _upgrade_re = re.compile('upgrade-(.*)\.xml')
           result = re.search(_upgrade_re, target)
@@ -456,6 +538,9 @@ class GeneratorHelper(object):
           # process metainfo.xml
           if target.endswith('metainfo.xml'):
             process_metainfo(target, self.config_data, self.stack_version_changes, parent_services)
+          if os.path.basename(os.path.dirname(target)) == 'configuration':
+            # process configuration xml
+            target = process_config_xml(target, self.config_data)
           # process generic xml
           if target.endswith('.xml'):
             process_xml_files(target, self.config_data, self.stack_version_changes)
@@ -498,32 +583,24 @@ class GeneratorHelper(object):
 
     with open(source_ambari_properties, 'r') as in_file:
       with open(target_ambari_properties, 'w') as out_file:
+        replaced_properties = []
         for line in in_file:
           property = line.split('=')[0]
           if property in propertyMap:
             out_file.write('='.join([property, propertyMap[property]]))
             out_file.write(os.linesep)
+            replaced_properties.append(property)
           else:
             out_file.write(line)
 
-  def generate_ui_mapping(self):
-    stack_name = self.config_data.stackName
-    records = []
-    for _from, _to in self.stack_version_changes.iteritems():
-      base_stack_folder = UI_MAPPING_MAP[_from] if _from in UI_MAPPING_MAP else "HDP2"
-      record = {"stackName": stack_name,
-                "stackVersionNumber": _to,
-                "sign": "=",
-                "baseStackFolder": base_stack_folder}
-      records.append(record)
-    if "uiMapping" in self.config_data:
-      for mapping in self.config_data.uiMapping:
-        mapping["stackName"] = stack_name
-        records.append(mapping)
-    js_file_content = UI_MAPPING_TEMPLATE.format(json.dumps(records, indent=2))
-    open(os.path.join(self.output_folder, "custom_stack_map.js"),"w").write(js_file_content)
-    pass
+        if len(propertyMap) - len(replaced_properties) > 0:
+          out_file.write(os.linesep)  #make sure we don't break last entry from original properties
 
+        for key in propertyMap:
+          if key not in replaced_properties:
+            out_file.write('='.join([key, propertyMap[key]]))
+            out_file.write(os.linesep)
+            
   def copy_custom_actions(self):
     original_folder = os.path.join(self.resources_folder, 'custom_actions')
     target_folder = os.path.join(self.output_folder, 'custom_actions')
@@ -568,7 +645,6 @@ def main(argv):
   gen_helper.copy_resource_management()
   gen_helper.copy_common_services()
   gen_helper.copy_ambari_properties()
-  gen_helper.generate_ui_mapping()
   gen_helper.copy_custom_actions()
 
 

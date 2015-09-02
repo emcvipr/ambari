@@ -251,6 +251,7 @@ describe('App.ServiceConfigRadioButtons', function () {
 
     afterEach(function () {
       App.get.restore();
+      view.sendRequestRorDependentConfigs.restore();
     });
 
     after(function () {
@@ -261,6 +262,7 @@ describe('App.ServiceConfigRadioButtons', function () {
       it(item.title, function () {
         sinon.stub(App, 'get').withArgs('currentStackName').returns('HDP').withArgs('currentStackVersion').returns(item.currentStackVersion);
         view = App.ServiceConfigRadioButtons.create({parentView: item.parentView});
+        sinon.stub(view, 'sendRequestRorDependentConfigs', Em.K);
         view.setProperties({
           categoryConfigsAll: item.parentView.get('serviceConfigs'),
           serviceConfig: item.serviceConfig
@@ -378,7 +380,7 @@ describe('App.CheckDBConnectionView', function () {
       ],
       categoryConfigsAll = [
         Em.Object.create({
-          name: 'oozie_hostname',
+          name: 'oozieserver_host',
           value: 'h0'
         }),
         Em.Object.create({
@@ -386,7 +388,7 @@ describe('App.CheckDBConnectionView', function () {
           value: 'h1'
         }),
         Em.Object.create({
-          name: 'hive_hostname',
+          name: 'hivemetastore_host',
           value: 'h2'
         }),
         Em.Object.create({

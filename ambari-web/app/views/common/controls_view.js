@@ -90,7 +90,7 @@ App.SupportsDependentConfigs = Ember.Mixin.create({
    * @returns {$.Deferred}
    */
   sendRequestRorDependentConfigs: function(config) {
-    if (!config.get('isValid')) return $.Deferred().resolve().promise();
+    if (!config || !config.get('isValid')) return $.Deferred().resolve().promise();
     if (App.get('isClusterSupportsEnhancedConfigs') && ['mainServiceInfoConfigsController','wizardStep7Controller'].contains(this.get('controller.name'))) {
       var name = config.get('name');
       var saveRecommended = (this.get('config.value') === this.get('config.recommendedValue'));
@@ -441,6 +441,14 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
   },
 
   /**
+   * Radio buttons that are not DB options and should not trigger any observer or change any other property's value
+   * Ranger service -> "Authentication method" property is an example for non DB related radio button
+   */
+  nonDBRadioButtons: function() {
+    return this.get('dontUseHandleDbConnection').without('DB_FLAVOR');
+  }.property('dontUseHandleDbConnection'),
+
+  /**
    * properties with these names don'use handleDBConnectionProperty method
    */
   dontUseHandleDbConnection: function () {
@@ -497,8 +505,8 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
   }.property('serviceConfig.serviceName', 'serviceConfig.value'),
 
   onOptionsChange: function () {
-    // The following if condition will be satisfied only for installer wizard flow
-    if (this.get('hostNameProperty')) {
+    this.sendRequestRorDependentConfigs(this.get('serviceConfig'));
+    if (this.get('hostNameProperty') && !this.get('nonDBRadioButtons').contains(this.get('serviceConfig.name'))) {
       /** if new db is selected host name must be same as master of selected service (and can't be changed)**/
       if (this.get('isNewDb')) {
         var initProperty = this.get('hostNameProperty.recommendedValue') || this.get('hostNameProperty.savedValue');
@@ -683,7 +691,18 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
       additionalView1 = shouldAdditionalViewsBeSet ? App.CheckDBConnectionView.extend({databaseName: dbType}) : null,
       additionalView2 = shouldAdditionalViewsBeSet ? Ember.View.extend({
         template: Ember.Handlebars.compile('<div class="alert">{{{view.message}}}</div>'),
-        message: Em.I18n.t('services.service.config.database.msg.jdbcSetup').format(dbType, driver)
+        message: function() {
+          var message;
+          var jdbcDriverSetupMsg = Em.I18n.t('services.service.config.database.msg.jdbcSetup').format(dbType, driver);
+          var isWizardPage =  ['addServiceController', 'installerController'].contains(this.get('controller.wizardController.name'));
+          if (currentDBType === 'SQLA' && isWizardPage) {
+            var sqlaDbSupportMsg = Em.I18n.t('stack.specific.sqla.support.msg');
+            message = sqlaDbSupportMsg + jdbcDriverSetupMsg;
+          } else {
+            message = jdbcDriverSetupMsg;
+          }
+          return message;
+        }.property()
       }) : null;
     if (propertyAppendTo1) {
       Em.run.next(function () {
@@ -1129,9 +1148,9 @@ App.CheckDBConnectionView = Ember.View.extend({
   /** @property {String} masterHostName - host name location of Master Component related to Service **/
   masterHostName: function() {
     var serviceMasterMap = {
-      'OOZIE': 'oozie_hostname',
+      'OOZIE': 'oozieserver_host',
       'HDFS': 'hadoop_host',
-      'HIVE': 'hive_hostname',
+      'HIVE': 'hivemetastore_host',
       'KERBEROS': 'kdc_host',
       'RANGER': 'rangerserver_host'
     };

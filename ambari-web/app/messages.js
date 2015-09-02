@@ -63,6 +63,7 @@ Em.I18n.translations = {
   'add': 'Add',
   'op': 'op',
   'ops': 'ops',
+  'or': 'or',
 
 
   'common.access':'Access',
@@ -381,6 +382,9 @@ Em.I18n.translations = {
   'popup.dependent.configs.dependencies.service.plural': 'in {0} services',
 
   'popup.dependent.configs.dependencies.for.groups': 'You are changing not default group, please select config group to which you want to save dependent configs from other services',
+
+  'popup.jdkValidation.header': 'Unsupported JDK',
+  'popup.jdkValidation.body': 'The {0} Stack requires JDK {1} but Ambari is configured for JDK {2}. This could result in error or problems with running your cluster.',
 
   'login.header':'Sign in',
   'login.username':'Username',
@@ -721,10 +725,10 @@ Em.I18n.translations = {
   'installer.step4.ambariMetricsCheck.popup.header':'Limited Functionality Warning',
   'installer.step4.ambariMetricsCheck.popup.body':'Ambari Metrics collects metrics from the cluster and makes them available to Ambari.  If you do not install Ambari Metrics service, metrics will not be accessible from Ambari.  Are you sure you want to proceed without Ambari Metrics?',
   'installer.step4.rangerRequirements.popup.header': 'Ranger Requirements',
-  'installer.step4.rangerRequirements.popup.body.requirements': '<ol><li>You must have an <strong>MySQL/Oracle/Postgres/MSSQL Server</strong> database instance running to be used by Ranger.</li>' +
-    '<li>In Assign Masters step of this wizard, you will be prompted to specify which host for the Ranger Admin. On that host, you <strong>must have DB Client installed</strong> for Ranger to access to the database. (Note: This is only applicable for only Ranger 0.4.0)</li>' +
+  'installer.step4.rangerRequirements.popup.body.requirements': '<ol><li>You must have an <strong>MySQL/Oracle/Postgres/MSSQL/SQLA Server</strong> database instance running to be used by Ranger.</li>' +
+    '<li>In Assign Masters step of this wizard, you will be prompted to specify which host for the Ranger Admin. On that host, you <strong>must have DB Client installed</strong> for Ranger to access to the database. (Note: This is applicable for only Ranger 0.4.0)</li>' +
     '<li>Ensure that the access for the DB Admin user is enabled in DB server from any host.</li>' +
-    '<li>Execute the following command on the Ambari Server host. Replace <code>database-type</code> with <strong>mysql|oracle|postgres|mssql</strong> and <code>/jdbc/driver/path</code> based on the location of corresponding JDBC driver:' +
+    '<li>Execute the following command on the Ambari Server host. Replace <code>database-type</code> with <strong>mysql|oracle|postgres|mssql|sqlanywhere</strong> and <code>/jdbc/driver/path</code> based on the location of corresponding JDBC driver:' +
     '<pre>ambari-server setup --jdbc-db={database-type} --jdbc-driver={/jdbc/driver/path}</pre></li></ol>',
   'installer.step4.rangerRequirements.popup.body.confirmation': 'I have met all the requirements above.',
   'installer.step4.sparkWarning.popup.body': 'Spark requires HDP 2.2.2 or later. Attempting to install Spark to a HDP 2.2.0 cluster will fail. Confirm you are using HDP 2.2.2 or later packages. Are you sure you want to proceed?',
@@ -778,9 +782,9 @@ Em.I18n.translations = {
   'installer.step7.popup.mySQLWarning.confirmation.body': 'You will be brought back to the \"Assign Masters\" step and will lose all your current customizations. Are you sure?',
   'installer.step7.popup.database.connection.header': 'Database Connectivity Warning',
   'installer.step7.popup.database.connection.body': 'You have not run or passed the database connection test for: {0}. It is highly recommended that you pass the connection test before proceeding to prevent failures during deployment.',
-  'installer.step7.popup.validation.failed.header': 'Validation failed.',
+  'installer.step7.popup.validation.failed.header': 'Consistency Check Failed',
   'installer.step7.popup.validation.failed.body': 'Some services are not properly configured. You have to change the highlighted configs according to the recommended values.',
-  'installer.step7.popup.validation.request.failed.body': 'Config validation failed.',
+  'installer.step7.popup.validation.request.failed.body': 'The configuration changes could not be validated for consistency due to an unknown error.  Your changes have not been saved yet.  Would you like to proceed and save the changes?',
   'installer.step7.popup.validation.warning.header': 'Configurations',
   'installer.step7.popup.validation.warning.body': 'Some service configurations are not configured properly. We recommend you review and change the highlighted configuration values. Are you sure you want to proceed without correcting configurations?',
   'installer.step7.popup.oozie.derby.warning': 'Derby is not recommended for production use. With Derby, Oozie Server HA and concurrent connection support will not be available.',
@@ -1775,7 +1779,7 @@ Em.I18n.translations = {
   'services.service.config.database.msg.jdbcSetup': 'Be sure you have run:<br/>' +
     '<b>ambari-server setup --jdbc-db={0} --jdbc-driver=/path/to/{0}/{1}</b> ' +
     'on the Ambari Server host to make the JDBC driver available and to enable testing the database connection.',
-
+  'stack.specific.sqla.support.msg': '<b>Please note that SQLA database option is only supported on HDP-2.3.2 or higher.</b><br/>',
   'services.service.config.configHistory.configGroup': 'Config Group',
   'services.service.config.configHistory.configGroup.name': 'Config Group Name',
   'services.service.config.configHistory.rightArrow.tooltip': 'Show earlier versions',
@@ -1803,6 +1807,16 @@ Em.I18n.translations = {
   'services.service.restartAll.confirmButton': 'Confirm Restart All',
   'services.service.restartAll.confirmMsg': 'You are about to restart {0}',
   'services.service.restartAll.warningMsg.turnOnMM': 'This will trigger alerts as the service is restarted. To suppress alerts, turn on Maintenance Mode for {0} prior to running restart all',
+  'services.service.stop.HDFS.warningMsg.checkPointNA': 'Could not determine the age of the last HDFS checkpoint. Please ensure that you have a recent checkpoint. Otherwise, the NameNode(s) can take a very long time to start up.',
+  'services.service.stop.HDFS.warningMsg.checkPointTooOld.instructions':
+    '<br><ol>' +
+    '<li>Login to the NameNode host <b>{0}</b>.</li>' +
+    '<li>Put the NameNode in Safe Mode (read-only mode):' +
+    '<div class="code-snippet">sudo su hdfs -l -c \'hdfs dfsadmin -safemode enter\'</div></li>' +
+    '<li>Once in Safe Mode, create a Checkpoint:' +
+    '<div class="code-snippet">sudo su hdfs -l -c \'hdfs dfsadmin -saveNamespace\'</div></li>' +
+    '</ol>',
+  'services.service.stop.HDFS.warningMsg.checkPointTooOld': 'The last HDFS checkpoint is older than 12 hours. Make sure that you have taken a checkpoint before proceeding. Otherwise, the NameNode(s) can take a very long time to start up.',
   'services.service.config_groups_popup.header':'Manage {0} Configuration Groups',
   'services.service.config_groups_popup.notice':'You can apply different sets of {{serviceName}} configurations to groups of hosts by managing {{serviceName}} Configuration Groups and their host membership.  Hosts belonging to a {{serviceName}} Configuration Group have the same set of configurations for {{serviceName}}. Each host belongs to one {{serviceName}} Configuration Group.',
   'services.service.config_groups_popup.rename':'Rename',

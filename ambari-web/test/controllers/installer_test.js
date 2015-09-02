@@ -469,7 +469,11 @@ describe('App.InstallerController', function () {
       var loadStacks = false;
       var checker = {
         loadStacks: function() {
-          loadStacks = true;
+          return {
+            always: function() {
+              loadStacks = true;
+            }
+          };
         }
       };
       installerController.loadMap['1'][0].callback.call(checker);
@@ -965,6 +969,165 @@ describe('App.InstallerController', function () {
       });
     });
 
+  });
+
+  describe('#validateJDKVersion', function() {
+    var tests = [
+      {
+        isCustomJDK: false,
+        ambariProperties: {
+          'java.version': '1.8'
+        },
+        successCallbackCalled: false,
+        popupCalled: true,
+        stacks: [Em.Object.create({
+          minJdkVersion: '1.6',
+          maxJdkVersion: '1.7',
+          isSelected: true
+        })],
+        m: 'JDK 1.8, stack supports 1.6-1.7 popup should be displayed'
+      },
+      {
+        isCustomJDK: false,
+        ambariProperties: {
+          'java.version': '1.8'
+        },
+        successCallbackCalled: true,
+        popupCalled: false,
+        stacks: [Em.Object.create({
+          minJdkVersion: '1.6',
+          maxJdkVersion: '1.8',
+          isSelected: true
+        })],
+        m: 'JDK 1.8, stack supports 1.7-1.8 procceed installation without warning'
+      },
+      {
+        isCustomJDK: false,
+        ambariProperties: {
+          'java.version': '1.5'
+        },
+        successCallbackCalled: false,
+        popupCalled: true,
+        stacks: [Em.Object.create({
+          minJdkVersion: '1.6',
+          maxJdkVersion: '1.8',
+          isSelected: true
+        })],
+        m: 'JDK 1.5, stack supports 1.6-1.8, popup should be displayed'
+      },
+      {
+        isCustomJDK: false,
+        ambariProperties: {
+          'java.version': '1.5'
+        },
+        successCallbackCalled: true,
+        popupCalled: false,
+        stacks: [Em.Object.create({
+          minJdkVersion: null,
+          maxJdkVersion: null,
+          isSelected: true
+        })],
+        m: 'JDK 1.5, stack supports max and min are null, procceed installation without warning'
+      },
+      {
+        isCustomJDK: false,
+        ambariProperties: {
+          'java.version': '1.5'
+        },
+        successCallbackCalled: true,
+        popupCalled: false,
+        stacks: [Em.Object.create({
+          minJdkVersion: '1.5',
+          maxJdkVersion: null,
+          isSelected: true
+        })],
+        m: 'JDK 1.5, stack supports max is missed and min is 1.5, procceed installation without warning'
+      },
+      {
+        isCustomJDK: false,
+        ambariProperties: {
+          'java.version': '1.6'
+        },
+        successCallbackCalled: false,
+        popupCalled: true,
+        stacks: [Em.Object.create({
+          minJdkVersion: '1.5',
+          maxJdkVersion: null,
+          isSelected: true
+        })],
+        m: 'JDK 1.6, stack supports max is missed and min is 1.5, popup should be displayed'
+      },
+      {
+        isCustomJDK: false,
+        ambariProperties: {
+          'java.version': '1.5'
+        },
+        successCallbackCalled: true,
+        popupCalled: false,
+        stacks: [Em.Object.create({
+          minJdkVersion: null,
+          maxJdkVersion: '1.5',
+          isSelected: true
+        })],
+        m: 'JDK 1.5, stack supports max 1.5 and min is missed, procceed installation without warning'
+      },
+      {
+        isCustomJDK: false,
+        ambariProperties: {
+          'java.version': '1.5'
+        },
+        successCallbackCalled: false,
+        popupCalled: true,
+        stacks: [Em.Object.create({
+          minJdkVersion: null,
+          maxJdkVersion: '1.8',
+          isSelected: true
+        })],
+        m: 'JDK 1.5, stack supports max 1.8 and min is missed, popup should be displayed'
+      },
+      {
+        isCustomJDK: false,
+        ambariProperties: {
+          'java.version': '1.8'
+        },
+        successCallbackCalled: true,
+        popupCalled: false,
+        stacks: [Em.Object.create({
+          isSelected: true
+        })],
+        m: 'JDK 1.8, min, max jdk missed in stack definition, procceed installation without warning'
+      },
+      {
+        isCustomJDK: true,
+        ambariProperties: {
+          'java.version': '1.8'
+        },
+        successCallbackCalled: true,
+        popupCalled: false,
+        stacks: [Em.Object.create({
+          minJdkVersion: '1.6',
+          maxJdkVersion: '1.8',
+          isSelected: true
+        })],
+        m: 'JDK 1.8, custom jdk location used, procceed installation without warning'
+      }
+    ];
+
+    tests.forEach(function(test) {
+      it(test.m, function() {
+        sinon.stub(App.Stack, 'find').returns(test.stacks);
+        sinon.stub(App.router, 'get').withArgs('clusterController.isCustomJDK').returns(test.isCustomJDK)
+          .withArgs('clusterController.ambariProperties').returns(test.ambariProperties);
+        sinon.stub(App, 'showConfirmationPopup', Em.K);
+        var successCallback = sinon.spy();
+        installerController.validateJDKVersion(successCallback);
+        expect(successCallback.called).to.be.eql(test.successCallbackCalled);
+        expect(App.showConfirmationPopup.called).to.be.eql(test.popupCalled);
+        App.router.get.restore();
+        App.Stack.find.restore();
+        App.showConfirmationPopup.restore();
+      });
+    });
   });
 
 });
