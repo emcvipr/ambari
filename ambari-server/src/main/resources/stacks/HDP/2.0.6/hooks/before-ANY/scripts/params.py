@@ -37,8 +37,8 @@ from ambari_commons.constants import AMBARI_SUDO_BINARY
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
-service_type = default("serviceType","")
-print "Service type:: ", service_type
+service_type = default("/commandParams/service_type", "")
+print "**Service type**:: ", service_type
 
 artifact_dir = format("{tmp_dir}/AMBARI-artifacts/")
 jdk_name = default("/hostLevelParams/jdk_name", None)

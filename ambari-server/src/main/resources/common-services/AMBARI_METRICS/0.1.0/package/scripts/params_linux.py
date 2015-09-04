@@ -48,3 +48,7 @@ hbase_conf_dir = "/etc/ams-hbase/conf"
 
 limits_conf_dir = "/etc/security/limits.d"
 sudo = AMBARI_SUDO_BINARY
+
+service_type = default("/commandParams/service_type", "")
+print "**Service type**:: ", service_type
+

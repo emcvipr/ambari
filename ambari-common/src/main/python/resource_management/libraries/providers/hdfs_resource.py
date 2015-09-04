@@ -50,7 +50,8 @@ RESOURCE_TO_JSON_FIELDS = {
   'mode': 'mode',
   'recursive_chown': 'recursiveChown',
   'recursive_chmod': 'recursiveChmod',
-  'change_permissions_for_parents': 'changePermissionforParents'
+  'change_permissions_for_parents': 'changePermissionforParents',
+  'service_type': 'service_type'
 }
 
 class HdfsResourceJar:
@@ -381,6 +382,11 @@ class HdfsResourceWebHDFS:
 class HdfsResourceProvider(Provider):
   def __init__(self, resource):
     super(HdfsResourceProvider,self).__init__(resource)
+
+    print '***********************************************************************************************'
+    print "Service type:: ", getattr(resource, 'service_type')
+    print '***********************************************************************************************'
+
     self.assert_parameter_is_set('hdfs_site')
     
     self.webhdfs_enabled = self.resource.hdfs_site['dfs.webhdfs.enabled']
