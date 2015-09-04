@@ -38,7 +38,6 @@ config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
 service_type = default("serviceType","")
-print "Service type:: ", service_type
 
 artifact_dir = format("{tmp_dir}/AMBARI-artifacts/")
 jdk_name = default("/hostLevelParams/jdk_name", None)
