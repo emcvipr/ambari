@@ -127,7 +127,7 @@ var hdp2properties = [
     "displayName": "Access time precision",
     "recommendedValue": "0",
     "displayType": "long",
-    "category": "NFS_GATEWAY",
+    "category": "General",
     "serviceName": "HDFS",
     "filename": "hdfs-site.xml",
     "index": 2
@@ -298,7 +298,6 @@ var hdp2properties = [
     "id": "site property",
     "name": "yarn.nodemanager.remote-app-log-dir",
     "displayName": "yarn.nodemanager.remote-app-log-dir",
-    "displayType": "directory",
     "serviceName": "YARN",
     "filename": "yarn-site.xml",
     "category": "NODEMANAGER"
