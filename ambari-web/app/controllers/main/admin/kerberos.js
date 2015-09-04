@@ -466,7 +466,7 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
 
 
   makeConfigsEditable: function () {
-    if (!this.get('stepConfigs') || !this.get('stepConfigs.length')) {
+    if (this.get('stepConfigs') && this.get('stepConfigs.length')) {
       this.set('isEditMode', true);
       this.get('stepConfigs').forEach(function (_stepConfig) {
         _stepConfig.get('configs').setEach('isEditable', true);
@@ -521,7 +521,13 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
       });
     };
     this.updateKerberosDescriptor(kerberosDescriptor, configs);
-    this.restartServicesAfterRegenerate(false, callback);
+    if (this.get('isManualKerberos')) {
+      callback().done(function () {
+        self.regenerateKeytabsRequest(false,false);
+      });
+    } else {
+      this.restartServicesAfterRegenerate(false, callback);
+    }
   }
 
 });

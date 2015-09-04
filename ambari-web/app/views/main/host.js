@@ -181,7 +181,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
    */
   willInsertElement: function () {
     if (!this.get('controller.showFilterConditionsFirstLoad')) {
-      var didClearedSomething = this.clearFilterCondition();
+      var didClearedSomething = this.clearFilterConditionsFromLocalStorage();
       this.set('controller.filterChangeHappened', didClearedSomething);
     }
     this._super();
@@ -435,6 +435,15 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
       });
     }
     var hostNamesSkipped = hostsToSkip.mapProperty('hostName');
+    if (operationData.action === 'PASSIVE_STATE') {
+      hostNamesSkipped = [];
+      var outOfSyncHosts = App.StackVersion.find().findProperty('isCurrent').get('outOfSyncHosts');
+      for (var i = 0; i < outOfSyncHosts.length; i++) {
+        if (hostNames.contains(outOfSyncHosts[i])) {
+          hostNamesSkipped.push(outOfSyncHosts[i]);
+        }
+      }
+    }
     var message;
     if (operationData.componentNameFormatted) {
       message = Em.I18n.t('hosts.bulkOperation.confirmation.hostComponents').format(operationData.message, operationData.componentNameFormatted, hostNames.length);
@@ -474,7 +483,17 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
       bodyClass: Em.View.extend({
         templateName: require('templates/main/host/bulk_operation_confirm_popup'),
         message: message,
-        warningInfo: Em.I18n.t('hosts.bulkOperation.warningInfo.body'),
+        warningInfo: function() {
+          switch (operationData.action) {
+            case "DECOMMISSION":
+              return Em.I18n.t('hosts.bulkOperation.warningInfo.body');
+            case "PASSIVE_STATE":
+              return operationData.state === 'OFF' ? Em.I18n.t('hosts.passiveMode.popup.version.mismatch.multiple')
+              .format(App.StackVersion.find().findProperty('isCurrent').get('repositoryVersion.repositoryVersion')) : "";
+            default:
+              return ""
+          }
+        }.property(),
         textareaVisible: false,
         textTrigger: function() {
           this.set('textareaVisible', !this.get('textareaVisible'));
@@ -1155,5 +1174,22 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
    */
   colPropAssoc: function () {
     return this.get('controller.colPropAssoc');
-  }.property('controller.colPropAssoc')
+  }.property('controller.colPropAssoc'),
+
+  /**
+   * Run <code>clearFilter</code> in the each child filterView
+   */
+  clearFilters: function() {
+    // clean filters stored in-memory and local storage
+    this.set('filterConditions', []);
+    this.clearFilterConditionsFromLocalStorage();
+    // clean UI
+    this.get('_childViews').forEach(function(childView) {
+      if (childView['clearFilter']) {
+        childView.clearFilter();
+      }
+    });
+    // force refresh
+    this.refresh();
+  }
 });
