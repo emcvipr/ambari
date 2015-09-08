@@ -184,7 +184,7 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
                              action="create_on_execute",
                              owner=params.hbase_user,
                              mode=0775,
-                             service_type=params.service_type
+                             dfs_type=params.dfs_type
         )
 
         params.HdfsResource(params.hbase_staging_dir,
@@ -192,7 +192,7 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
                              action="create_on_execute",
                              owner=params.hbase_user,
                              mode=0711,
-                             service_type=params.service_type
+                             dfs_type=params.dfs_type
         )
 
         params.HdfsResource(None, action="execute")

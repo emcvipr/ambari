@@ -24,6 +24,7 @@ from resource_management.libraries.functions import format
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.script.script import Script
+from resource_management.core.logger import Logger
 
 import status_params
 
@@ -156,8 +157,8 @@ hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_nam
 hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
 
-service_type = default("/commandParams/service_type", "")
-print "**Service type**:: ", service_type
+dfs_type = default("/commandParams/dfs_type", "")
+Logger.info(format("**FS type**:: {dfs_type}"))
 
 # dfs.namenode.https-address
 import functools
@@ -174,5 +175,5 @@ HdfsResource = functools.partial(
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
   default_fs = default_fs,
-  service_type = service_type
+  dfs_type = dfs_type
 )

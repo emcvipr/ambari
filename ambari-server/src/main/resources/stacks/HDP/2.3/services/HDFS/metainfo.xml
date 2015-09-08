@@ -21,7 +21,6 @@
     <service>
       <name>HDFS</name>
       <version>2.7.1.2.3</version>
-      <serviceType>HCFS</serviceType>
 
       <components>
         <component>

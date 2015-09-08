@@ -27,11 +27,12 @@ from resource_management.libraries.functions.version import format_hdp_stack_ver
 
 from resource_management.core.system import System
 from ambari_commons.os_check import OSCheck
+from resource_management.core.logger import Logger
 
 config = Script.get_config()
 
-service_type = default("/commandParams/service_type", "")
-print "**Service type**:: ", service_type
+dfs_type = default("/commandParams/dfs_type", "")
+Logger.info(format("**FS type**:: {dfs_type}"))
 
 sudo = AMBARI_SUDO_BINARY
 
@@ -92,5 +93,5 @@ user_group = config['configurations']['cluster-env']['user_group']
 namenode_host = default("/clusterHostInfo/namenode_host", [])
 has_namenode = not len(namenode_host) == 0
 
-if has_namenode:
+if has_namenode or dfs_type == 'HCFS':
   hadoop_conf_dir = conf_select.get_hadoop_conf_dir(force_latest_on_upgrade=True)

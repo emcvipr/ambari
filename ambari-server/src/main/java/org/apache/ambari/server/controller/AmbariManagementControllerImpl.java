@@ -1901,8 +1901,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     	LOG.info("Iterating service type Instance in createHostAction:: " + serviceInfoInstance.getName());
     	if(serviceInfoInstance.getServiceType() != null) {
     	    LOG.info("Adding service type info in createHostAction:: " + serviceInfoInstance.getServiceType());
-    	    //execCmd.setServiceType(serviceInfoInstance.getServiceType());
-            commandParams.put("service_type",serviceInfoInstance.getServiceType());
+            commandParams.put("dfs_type",serviceInfoInstance.getServiceType());
     	    break;
     	}
     }

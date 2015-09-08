@@ -29,7 +29,7 @@ from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries import functions
-
+from resource_management.core.logger import Logger
 
 import status_params
 
@@ -50,8 +50,6 @@ YARN_SERVER_ROLE_DIRECTORY_MAP = {
 # server configurations
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
-
-print "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ config:: ", config 
 
 stack_name = default("/hostLevelParams/stack_name", None)
 
@@ -251,8 +249,8 @@ hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_nam
 hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
 
-service_type = default("/commandParams/service_type", "")
-print "**Service type**:: ", service_type
+dfs_type = default("/commandParams/dfs_type", "")
+Logger.info(format("**FS type**:: {dfs_type}"))
 
 
 import functools
@@ -269,7 +267,7 @@ HdfsResource = functools.partial(
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
   default_fs = default_fs,
-  service_type = service_type
+  dfs_type = dfs_type
  )
 update_exclude_file_only = default("/commandParams/update_exclude_file_only",False)
 
