@@ -95,13 +95,16 @@ App.SupportsDependentConfigs = Ember.Mixin.create({
       var controller = this.get('controller');
       var type = App.config.getConfigTagFromFileName(config.get('filename'));
       var p = App.StackConfigProperty.find(App.config.configId(name, type));
-      if (p && p.get('propertyDependedBy.length') > 0) {
-        return controller.getRecommendationsForDependencies([{
-          "type": type,
-          "name": name
-        }], false, function() {
-          controller.removeCurrentFromDependentList(config, saveRecommended);
-        });
+       if ((p && p.get('propertyDependedBy.length') > 0 || p.get('displayType') === 'user') && config.get('oldValue') !== config.get('value')) {
+         var old = config.get('oldValue');
+         config.set('oldValue', config.get('value'));
+         return controller.getRecommendationsForDependencies([{
+           "type": type,
+           "name": name,
+           "old_value": Em.isNone(old) ? config.get('initialValue') : old
+         }], false, function() {
+           controller.removeCurrentFromDependentList(config, saveRecommended);
+         });
       } else {
         controller.removeCurrentFromDependentList(config, saveRecommended);
       }
@@ -168,18 +171,15 @@ App.ServiceConfigTextField = Ember.TextField.extend(App.ServiceConfigPopoverSupp
   classNameBindings: 'textFieldClassName',
   placeholderBinding: 'serviceConfig.savedValue',
 
-  keyPress: function (event) {
-    if (event.keyCode == 13) {
-      return false;
-    }
+  onValueUpdate: function () {
     var self = this;
     delay(function(){
       self.sendRequestRorDependentConfigs(self.get('serviceConfig'));
     }, 500);
-  },
+  }.observes('serviceConfig.value'),
+
   //Set editDone true for last edited config text field parameter
   focusOut: function () {
-    this.sendRequestRorDependentConfigs(this.get('serviceConfig'));
     this.get('serviceConfig').set("editDone", true);
   },
   //Set editDone false for all current category config text field parameter
@@ -212,17 +212,12 @@ App.ServiceConfigTextFieldWithUnit = Ember.View.extend(App.ServiceConfigPopoverS
   classNames: ['input-append', 'with-unit'],
   placeholderBinding: 'serviceConfig.savedValue',
 
-  //Set editDone true for last edited config text field parameter
-  focusOut: function () {
-    this.sendRequestRorDependentConfigs(this.get('serviceConfig'));
-  },
-
-  keyPress: function (event) {
+  onValueUpdate: function () {
     var self = this;
     delay(function(){
       self.sendRequestRorDependentConfigs(self.get('serviceConfig'));
     }, 500);
-  },
+  }.observes('serviceConfig.value'),
 
   templateName: require('templates/wizard/controls_service_config_textfield_with_unit')
 });
@@ -276,16 +271,13 @@ App.ServiceConfigPasswordField = Ember.TextField.extend({
  */
 App.ServiceConfigTextArea = Ember.TextArea.extend(App.ServiceConfigPopoverSupport, App.ServiceConfigCalculateId, App.SupportsDependentConfigs, {
 
-  focusOut: function () {
-    this.sendRequestRorDependentConfigs(this.get('serviceConfig'));
-  },
 
-  keyPress: function (event) {
+  onValueUpdate: function () {
     var self = this;
     delay(function(){
       self.sendRequestRorDependentConfigs(self.get('serviceConfig'));
     }, 500);
-  },
+  }.observes('serviceConfig.value'),
 
   valueBinding: 'serviceConfig.value',
   rows: 4,
@@ -426,7 +418,7 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
   didInsertElement: function () {
     // on page render, automatically populate JDBC URLs only for default database settings
     // so as to not lose the user's customizations on these fields
-    //if (['addServiceController', 'installerController'].contains(this.get('controller.wizardController.name'))) {
+    if (['addServiceController', 'installerController'].contains(this.get('controller.wizardController.name')) && !App.StackService.find(this.get('serviceConfig.serviceName')).get('isInstalled')) {
       if (this.get('isNewDb') || this.get('dontUseHandleDbConnection').contains(this.get('serviceConfig.name'))) {
         this.onOptionsChange();
       } else {
@@ -435,7 +427,7 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
         }
         this.handleDBConnectionProperty();
       }
-    //}
+    }
   },
 
   /**
@@ -747,17 +739,8 @@ App.ServiceConfigRadioButton = Ember.Checkbox.extend({
       console.debug('App.ServiceConfigRadioButton.onChecked');
       this.set('parentView.serviceConfig.value', this.get('value'));
       var components = this.get('parentView.serviceConfig.options');
-      if (components) {
-        components.forEach(function (_component) {
-          if (_component.foreignKeys) {
-            _component.foreignKeys.forEach(function (_componentName) {
-              if (this.get('parentView.parentView.serviceConfigs') && this.get('parentView.parentView.serviceConfigs').someProperty('name', _componentName)) {
-                var component = this.get('parentView.parentView.serviceConfigs').findProperty('name', _componentName);
-                component.set('isVisible', _component.displayName === this.get('value'));
-              }
-            }, this);
-          }
-        }, this);
+      if (components && components.someProperty('foreignKeys')) {
+        this.get('controller.stepConfigs').findProperty('serviceName', this.get('parentView.serviceConfig.serviceName')).propertyDidChange('errorCount');
       }
     });
   }.observes('checked'),

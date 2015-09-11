@@ -90,6 +90,7 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
           putYarnPropertyAttribute('yarn.nodemanager.linux-container-executor.cgroups.mount-path', 'delete', 'true')
 
   def recommendHDFSConfigurations(self, configurations, clusterData, services, hosts):
+    super(HDP22StackAdvisor, self).recommendHDFSConfigurations(configurations, clusterData, services, hosts)
     putHdfsSiteProperty = self.putProperty(configurations, "hdfs-site", services)
     putHdfsSitePropertyAttribute = self.putPropertyAttribute(configurations, "hdfs-site")
     putHdfsSiteProperty("dfs.datanode.max.transfer.threads", 16384 if clusterData["hBaseInstalled"] else 4096)
@@ -1174,11 +1175,6 @@ class HDP22StackAdvisor(HDP21StackAdvisor):
   def getNotValuableComponents(self):
     result = super(HDP22StackAdvisor, self).getNotValuableComponents()
     result.extend(['METRICS_MONITOR'])
-    return result
-
-  def getNotPreferableOnServerComponents(self):
-    result = super(HDP22StackAdvisor, self).getNotPreferableOnServerComponents()
-    result.extend(['METRICS_COLLECTOR'])
     return result
 
   def getCardinalitiesDict(self):

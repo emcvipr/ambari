@@ -677,7 +677,102 @@ class TestHDP206StackAdvisor(TestCase):
     self.assertEquals(configurations, expected)
 
   def test_recommendHDFSConfigurations(self):
-    configurations = {}
+    configurations = {
+      "hadoop-env": {
+        "properties": {
+          "hdfs_user": "hdfs",
+          "proxyuser_group": "users"
+        }
+      },
+      "hive-env": {
+        "properties": {
+          "webhcat_user": "webhcat",
+          "hive_user": "hive"
+        }
+      },
+      "oozie-env": {
+        "properties": {
+          "oozie_user": "oozie"
+        }
+      },
+      "falcon-env": {
+        "properties": {
+          "falcon_user": "falcon"
+        }
+      }
+    }
+
+    hosts = {
+      "items": [
+        {
+          "href": "/api/v1/hosts/host1",
+          "Hosts": {
+            "cpu_count": 1,
+            "host_name": "c6401.ambari.apache.org",
+            "os_arch": "x86_64",
+            "os_type": "centos6",
+            "ph_cpu_count": 1,
+            "public_host_name": "c6401.ambari.apache.org",
+            "rack_info": "/default-rack",
+            "total_mem": 2097152
+          }
+        }]}
+
+    services = {
+      "services": [
+        {
+          "StackServices": {
+            "service_name": "HDFS"
+          }, "components": []
+        },
+        {
+          "StackServices": {
+            "service_name": "FALCON"
+          }, "components": []
+        },
+        {
+          "StackServices": {
+            "service_name": "HIVE"
+          }, "components": [{
+          "href": "/api/v1/stacks/HDP/versions/2.0.6/services/HIVE/components/HIVE_SERVER",
+          "StackServiceComponents": {
+            "advertise_version": "true",
+            "cardinality": "1",
+            "component_category": "MASTER",
+            "component_name": "HIVE_SERVER",
+            "custom_commands": [],
+            "display_name": "Hive Server",
+            "is_client": "false",
+            "is_master": "true",
+            "service_name": "HIVE",
+            "stack_name": "HDP",
+            "stack_version": "2.0.6",
+            "hostnames": ["c6401.ambari.apache.org"]
+          }, }]
+        },
+        {
+          "StackServices": {
+            "service_name": "OOZIE"
+          }, "components": [{
+          "href": "/api/v1/stacks/HDP/versions/2.0.6/services/HIVE/components/OOZIE_SERVER",
+          "StackServiceComponents": {
+            "advertise_version": "true",
+            "cardinality": "1",
+            "component_category": "MASTER",
+            "component_name": "OOZIE_SERVER",
+            "custom_commands": [],
+            "display_name": "Oozie Server",
+            "is_client": "false",
+            "is_master": "true",
+            "service_name": "HIVE",
+            "stack_name": "HDP",
+            "stack_version": "2.0.6",
+            "hostnames": ["c6401.ambari.apache.org"]
+          }, }]
+        }],
+      "configurations": configurations
+    }
+
     clusterData = {
       "totalAvailableRam": 2048
     }
@@ -685,13 +780,86 @@ class TestHDP206StackAdvisor(TestCase):
       'hadoop-env': {
         'properties': {
           'namenode_heapsize': '1024',
-          'namenode_opt_newsize' : '256',
-          'namenode_opt_maxnewsize' : '256'
+          'namenode_opt_newsize': '256',
+          'namenode_opt_maxnewsize': '256',
+          'hdfs_user': 'hdfs',
+          "proxyuser_group": "users"
+        }
+      },
+      "core-site": {
+        "properties": {
+          "hadoop.proxyuser.hdfs.hosts": "*",
+          "hadoop.proxyuser.hdfs.groups": "*",
+          "hadoop.proxyuser.hive.hosts": "c6401.ambari.apache.org",
+          "hadoop.proxyuser.hive.groups": "*",
+          "hadoop.proxyuser.webhcat.hosts": "c6401.ambari.apache.org",
+          "hadoop.proxyuser.webhcat.groups": "users",
+          "hadoop.proxyuser.oozie.groups": "*",
+          "hadoop.proxyuser.oozie.hosts": "c6401.ambari.apache.org",
+          "hadoop.proxyuser.falcon.groups": "users",
+          "hadoop.proxyuser.falcon.hosts": "*"
+        }
+      },
+      "hive-env": {
+        "properties": {
+          "hive_user": "hive",
+          "webhcat_user": "webhcat"
+        }
+      },
+      "oozie-env": {
+        "properties": {
+          "oozie_user": "oozie"
+        }
+      },
+      "falcon-env": {
+        "properties": {
+          "falcon_user": "falcon"
         }
       }
     }
 
-    self.stackAdvisor.recommendHDFSConfigurations(configurations, clusterData, '', '')
+    self.stackAdvisor.recommendHDFSConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
+    configurations["hadoop-env"]["properties"]['hdfs_user'] = "hdfs1"
+
+    changedConfigurations = [{"type":"hadoop-env",
+                              "name":"hdfs_user",
+                              "old_value":"hdfs"}]
+
+    services["changed-configurations"] = changedConfigurations
+    services['configurations'] = configurations
+
+    core_site = {
+      "properties": {
+        "hadoop.proxyuser.hdfs1.hosts": "*",
+        "hadoop.proxyuser.hdfs1.groups": "*",
+        "hadoop.proxyuser.hdfs.hosts": "*",
+        "hadoop.proxyuser.hdfs.groups": "*",
+        "hadoop.proxyuser.hive.hosts": "c6401.ambari.apache.org",
+        "hadoop.proxyuser.hive.groups": "*",
+        "hadoop.proxyuser.webhcat.hosts": "c6401.ambari.apache.org",
+        "hadoop.proxyuser.webhcat.groups": "users",
+        "hadoop.proxyuser.oozie.groups": "*",
+        "hadoop.proxyuser.oozie.hosts": "c6401.ambari.apache.org",
+        "hadoop.proxyuser.falcon.groups": "users",
+        "hadoop.proxyuser.falcon.hosts": "*"
+      },
+      "property_attributes": {
+        "hadoop.proxyuser.hdfs.hosts": {
+          "delete": "true"
+        },
+        "hadoop.proxyuser.hdfs.groups": {
+          "delete": "true"
+        }
+      }
+
+    }
+
+    expected["core-site"] = core_site
+    expected["hadoop-env"]["properties"]["hdfs_user"] = "hdfs1"
+
+    self.stackAdvisor.recommendHDFSConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
 
   def test_validateHDFSConfigurationsEnv(self):
@@ -915,11 +1083,11 @@ class TestHDP206StackAdvisor(TestCase):
 
   def test_getProperMountPoint(self):
     hostInfo = None
-    self.assertEquals("/", self.stackAdvisor.getProperMountPoint(hostInfo))
+    self.assertEquals(["/"], self.stackAdvisor.getPreferredMountPoints(hostInfo))
     hostInfo = {"some_key": []}
-    self.assertEquals("/", self.stackAdvisor.getProperMountPoint(hostInfo))
+    self.assertEquals(["/"], self.stackAdvisor.getPreferredMountPoints(hostInfo))
     hostInfo["disk_info"] = []
-    self.assertEquals("/", self.stackAdvisor.getProperMountPoint(hostInfo))
+    self.assertEquals(["/"], self.stackAdvisor.getPreferredMountPoints(hostInfo))
     # root mountpoint with low space available
     hostInfo["disk_info"].append(
       {
@@ -928,7 +1096,7 @@ class TestHDP206StackAdvisor(TestCase):
         "mountpoint" : "/"
       }
     )
-    self.assertEquals("/", self.stackAdvisor.getProperMountPoint(hostInfo))
+    self.assertEquals(["/"], self.stackAdvisor.getPreferredMountPoints(hostInfo))
     # tmpfs with more space available
     hostInfo["disk_info"].append(
       {
@@ -937,7 +1105,7 @@ class TestHDP206StackAdvisor(TestCase):
         "mountpoint" : "/dev/shm"
       }
     )
-    self.assertEquals("/", self.stackAdvisor.getProperMountPoint(hostInfo))
+    self.assertEquals(["/"], self.stackAdvisor.getPreferredMountPoints(hostInfo))
     # /boot with more space available
     hostInfo["disk_info"].append(
       {
@@ -946,7 +1114,7 @@ class TestHDP206StackAdvisor(TestCase):
         "mountpoint" : "/boot/grub"
       }
     )
-    self.assertEquals("/", self.stackAdvisor.getProperMountPoint(hostInfo))
+    self.assertEquals(["/"], self.stackAdvisor.getPreferredMountPoints(hostInfo))
     # /boot with more space available
     hostInfo["disk_info"].append(
       {
@@ -955,7 +1123,7 @@ class TestHDP206StackAdvisor(TestCase):
         "mountpoint" : "/mnt/external_hdd"
       }
     )
-    self.assertEquals("/", self.stackAdvisor.getProperMountPoint(hostInfo))
+    self.assertEquals(["/"], self.stackAdvisor.getPreferredMountPoints(hostInfo))
     # virtualbox fs with more space available
     hostInfo["disk_info"].append(
       {
@@ -964,7 +1132,7 @@ class TestHDP206StackAdvisor(TestCase):
         "mountpoint" : "/vagrant"
       }
     )
-    self.assertEquals("/", self.stackAdvisor.getProperMountPoint(hostInfo))
+    self.assertEquals(["/"], self.stackAdvisor.getPreferredMountPoints(hostInfo))
     # proper mountpoint with more space available
     hostInfo["disk_info"].append(
       {
@@ -973,7 +1141,7 @@ class TestHDP206StackAdvisor(TestCase):
         "mountpoint" : "/grid/0"
       }
     )
-    self.assertEquals("/grid/0", self.stackAdvisor.getProperMountPoint(hostInfo))
+    self.assertEquals(["/grid/0", "/"], self.stackAdvisor.getPreferredMountPoints(hostInfo))
     # proper mountpoint with more space available
     hostInfo["disk_info"].append(
       {
@@ -982,7 +1150,7 @@ class TestHDP206StackAdvisor(TestCase):
         "mountpoint" : "/grid/1"
       }
     )
-    self.assertEquals("/grid/1", self.stackAdvisor.getProperMountPoint(hostInfo))
+    self.assertEquals(["/grid/1", "/grid/0", "/"], self.stackAdvisor.getPreferredMountPoints(hostInfo))
 
   def test_validateNonRootFs(self):
     hostInfo = {"disk_info": [
@@ -1003,9 +1171,10 @@ class TestHDP206StackAdvisor(TestCase):
         "mountpoint" : "/grid/0"
       }
     )
+
     warn = self.stackAdvisor.validatorNotRootFs(properties, 'property1', hostInfo)
     self.assertFalse(warn == None)
-    self.assertEquals({'message': 'The root device should not be used for property1', 'level': 'WARN'}, warn)
+    self.assertEquals({'message': 'It is not recommended to use root partition for property1', 'level': 'WARN'}, warn)
 
     # Set by user /var mountpoint, which is non-root , but not preferable - no warning
     hostInfo["disk_info"].append(
