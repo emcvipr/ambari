@@ -32,14 +32,12 @@ from resource_management.libraries.functions.version import format_hdp_stack_ver
 from resource_management.libraries.functions.version import compare_versions
 from ambari_commons.os_check import OSCheck
 from ambari_commons.constants import AMBARI_SUDO_BINARY
-from resource_management.core.logger import Logger
 
 
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
 dfs_type = default("/commandParams/dfs_type", "")
-Logger.info(format("**FS type**:: {dfs_type}"))
 
 artifact_dir = format("{tmp_dir}/AMBARI-artifacts/")
 jdk_name = default("/hostLevelParams/jdk_name", None)

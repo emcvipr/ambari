@@ -22,7 +22,6 @@ from resource_management import *
 from resource_management.libraries.functions import conf_select
 from ambari_commons import OSCheck
 from ambari_commons.constants import AMBARI_SUDO_BINARY
-from resource_management.core.logger import Logger
 
 config = Script.get_config()
 
@@ -51,5 +50,4 @@ limits_conf_dir = "/etc/security/limits.d"
 sudo = AMBARI_SUDO_BINARY
 
 dfs_type = default("/commandParams/dfs_type", "")
-Logger.info(format("**FS type**:: {dfs_type}"))
 

@@ -24,7 +24,6 @@ from resource_management.libraries.functions import format
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.script.script import Script
-from resource_management.core.logger import Logger
 
 import status_params
 
@@ -161,7 +160,6 @@ hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
 
 dfs_type = default("/commandParams/dfs_type", "")
-Logger.info(format("**FS type**:: {dfs_type}"))
 
 # dfs.namenode.https-address
 import functools

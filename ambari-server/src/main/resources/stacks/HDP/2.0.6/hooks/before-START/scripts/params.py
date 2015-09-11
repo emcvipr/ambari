@@ -27,7 +27,6 @@ from resource_management.libraries.functions import format
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
 from ambari_commons.os_check import OSCheck
 from resource_management.libraries.script.script import Script
-from resource_management.core.logger import Logger
 
 config = Script.get_config()
 
@@ -35,7 +34,6 @@ stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
 dfs_type = default("/commandParams/dfs_type", "")
-Logger.info(format("**FS type**:: {dfs_type}"))
 
 # hadoop default params
 mapreduce_libs_path = "/usr/lib/hadoop-mapreduce/*"

@@ -34,7 +34,6 @@ from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.functions import is_empty
 from resource_management.libraries.functions import get_unique_id_and_date
 from resource_management.libraries.script.script import Script
-from resource_management.core.logger import Logger
 
 from resource_management.libraries.functions.substitute_vars import substitute_vars
 
@@ -190,7 +189,6 @@ hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
 
 dfs_type = default("/commandParams/dfs_type", "")
-Logger.info(format("**FS type**:: {dfs_type}"))
 
 import functools
 #create partial functions with common arguments for every HdfsResource call

@@ -27,12 +27,10 @@ from resource_management.libraries.functions.version import format_hdp_stack_ver
 
 from resource_management.core.system import System
 from ambari_commons.os_check import OSCheck
-from resource_management.core.logger import Logger
 
 config = Script.get_config()
 
 dfs_type = default("/commandParams/dfs_type", "")
-Logger.info(format("**FS type**:: {dfs_type}"))
 
 sudo = AMBARI_SUDO_BINARY
 

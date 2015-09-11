@@ -81,7 +81,7 @@ class HdfsResource(Resource):
   default_fs = ResourceArgument()
 
   # To support HCFS
-  dfs_type = ResourceArgument()
+  dfs_type = ResourceArgument(default="")
 
   #action 'execute' immediately creates all pending files/directories in efficient manner
   #action 'create_delayed/delete_delayed' adds file/directory to list of pending directories
