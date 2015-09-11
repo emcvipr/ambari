@@ -1938,9 +1938,16 @@ class TestHDP22StackAdvisor(TestCase):
       "services":  [ {
         "StackServices": {
           "service_name": "AMBARI_METRICS"
-        },"components": [{
+        },
+        "components": [{
           "StackServiceComponents": {
             "component_name": "METRICS_COLLECTOR",
+            "hostnames": ["host1"]
+          }
+
+        }, {
+          "StackServiceComponents": {
+            "component_name": "METRICS_MONITOR",
             "hostnames": ["host1"]
           }
 
@@ -1957,10 +1964,11 @@ class TestHDP22StackAdvisor(TestCase):
       }]
     }
 
+    # 1-node cluster
     expected = {
       "ams-hbase-env": {
         "properties": {
-          "hbase_master_heapsize": "512m"
+          "hbase_master_heapsize": "540m"
           }
       },
       "ams-env": {
@@ -1972,6 +1980,7 @@ class TestHDP22StackAdvisor(TestCase):
         "properties": {
           "hbase.regionserver.global.memstore.lowerLimit": "0.3",
           "hbase.regionserver.global.memstore.upperLimit": "0.35",
+          "hbase.hregion.memstore.flush.size": "134217728",
           "hfile.block.cache.size": "0.3",
           "hbase.rootdir": "file:///var/lib/ambari-metrics-collector/hbase",
           "hbase.tmp.dir": "/var/lib/ambari-metrics-collector/hbase-tmp",
@@ -1980,13 +1989,118 @@ class TestHDP22StackAdvisor(TestCase):
       },
       "ams-site": {
         "properties": {
+          "timeline.metrics.cluster.aggregate.splitpoints": "",
+          "timeline.metrics.host.aggregate.splitpoints": "",
           "timeline.metrics.host.aggregator.ttl": "86400"
         }
       }
     }
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
-    
+
+    # 100-nodes cluster, but still only 1 sink (METRICS_COLLECTOR)
+    for i in range(2, 101):
+      hosts['items'].extend([{
+        "Hosts": {
+          "host_name": "host" + str(i)
+          }
+      }])
+
+    services['services'] = [
+      {
+        "StackServices": {
+          "service_name": "AMBARI_METRICS"
+        },
+        "components": [
+          {
+            "StackServiceComponents": {
+              "component_name": "METRICS_COLLECTOR",
+              "hostnames": ["host1"]
+            }
+          },
+          {
+            "StackServiceComponents": {
+              "component_name": "METRICS_MONITOR",
+              "hostnames": ["host" + str(i) for i in range(1, 101)]
+            }
+          }
+        ]
+      }
+    ]
+    expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '1034m'
+    expected["ams-env"]['properties']['metrics_collector_heapsize'] = '512m'
+
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
+    # Still 100 nodes, but with HDFS and YARN services installed on all nodes
+    services['services'] = [
+      {
+        "StackServices": {
+          "service_name": "HDFS"
+        },
+        "components": [
+          {
+            "StackServiceComponents": {
+              "component_name": "NAMENODE",
+              "hostnames": ["host1"]
+            }
+          },
+          {
+            "StackServiceComponents": {
+              "component_name": "DATANODE",
+              "hostnames": ["host" + str(i) for i in range(1, 101)]
+            }
+          }
+        ]
+      },
+      {
+        "StackServices": {
+          "service_name": "YARN"
+        },
+        "components": [
+          {
+            "StackServiceComponents": {
+              "component_name": "RESOURCEMANAGER",
+              "hostnames": ["host1"]
+            }
+          },
+          {
+            "StackServiceComponents": {
+              "component_name": "NODEMANAGER",
+              "hostnames": ["host" + str(i) for i in range(1, 101)]
+            }
+          }
+        ]
+      },
+      {
+        "StackServices": {
+          "service_name": "AMBARI_METRICS"
+        },
+        "components": [
+          {
+            "StackServiceComponents": {
+              "component_name": "METRICS_COLLECTOR",
+              "hostnames": ["host1"]
+            }
+          },
+          {
+            "StackServiceComponents": {
+              "component_name": "METRICS_MONITOR",
+              "hostnames": ["host" + str(i) for i in range(1, 101)]
+            }
+          }
+        ]
+      }
+
+    ]
+    expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '1601m'
+    expected["ams-env"]['properties']['metrics_collector_heapsize'] = '512m'
+    # expected["ams-hbase-site"]['properties']['hbase_master_xmn_size'] = '256m'
+
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
   def test_recommendHbaseConfigurations(self):
     servicesList = ["HBASE"]
     configurations = {}
@@ -2223,6 +2337,9 @@ class TestHDP22StackAdvisor(TestCase):
       },
       'hdfs-site': {
         "properties": {"dfs.datanode.data.dir": "/path/1,/path/2,/path/3,/path/4"}
+      },
+      "hadoop-env": {
+        "properties": {"hdfs_user": "hdfs"}
       }
     }
     clusterData = {
@@ -2236,7 +2353,8 @@ class TestHDP22StackAdvisor(TestCase):
         'properties': {
           'namenode_heapsize': '1024',
           'namenode_opt_newsize' : '128',
-          'namenode_opt_maxnewsize' : '128'
+          'namenode_opt_maxnewsize' : '128',
+          "hdfs_user": "hdfs"
         },
         'property_attributes': {
           'dtnode_heapsize': {'maximum': '2048'},
@@ -2258,6 +2376,12 @@ class TestHDP22StackAdvisor(TestCase):
       'ranger-hdfs-plugin-properties': {
         'properties': {
           'ranger-hdfs-plugin-enabled': 'Yes'
+        }
+      },
+      "core-site": {
+        "properties": {
+          "hadoop.proxyuser.hdfs.hosts": "*",
+          "hadoop.proxyuser.hdfs.groups": "*",
         }
       }
     }

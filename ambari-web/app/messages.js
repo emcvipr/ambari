@@ -908,7 +908,6 @@ Em.I18n.translations = {
   'form.validator.configKey':'Invalid Key. Only alphanumerics, hyphens, underscores, asterisks and periods are allowed.',
   'form.validator.configGroupName':'Invalid Group Name. Only alphanumerics, hyphens, spaces and underscores are allowed.',
   'form.validator.alertGroupName':'Invalid Alert Group Name. Only alphanumerics, hyphens, spaces and underscores are allowed.',
-  'form.validator.alertGroupPlaceHolder':'Alert Group Name',
   'form.validator.configKey.specific':'"{0}" is invalid Key. Only alphanumerics, hyphens, underscores, asterisks and periods are allowed.',
   'form.validator.error.trailingSpaces': 'Cannot contain trailing whitespace',
 
@@ -1782,7 +1781,6 @@ Em.I18n.translations = {
     'on the Ambari Server host to make the JDBC driver available and to enable testing the database connection.',
   'stack.specific.sqla.support.msg': '<b>Please note that SQLA database option is only supported on HDP-2.3.2 or higher.</b><br/>',
   'services.service.config.configHistory.configGroup': 'Config Group',
-  'services.service.config.configHistory.configGroup.name': 'Config Group Name',
   'services.service.config.configHistory.rightArrow.tooltip': 'Show earlier versions',
   'services.service.config.configHistory.leftArrow.tooltip': 'Show later versions',
   'services.service.config.configHistory.dismissIcon.tooltip': 'Dismiss',
@@ -1813,9 +1811,9 @@ Em.I18n.translations = {
     '<br><ol>' +
     '<li>Login to the NameNode host <b>{0}</b>.</li>' +
     '<li>Put the NameNode in Safe Mode (read-only mode):' +
-    '<div class="code-snippet">sudo su hdfs -l -c \'hdfs dfsadmin -safemode enter\'</div></li>' +
+    '<div class="code-snippet">sudo su {1} -l -c \'hdfs dfsadmin -safemode enter\'</div></li>' +
     '<li>Once in Safe Mode, create a Checkpoint:' +
-    '<div class="code-snippet">sudo su hdfs -l -c \'hdfs dfsadmin -saveNamespace\'</div></li>' +
+    '<div class="code-snippet">sudo su {1} -l -c \'hdfs dfsadmin -saveNamespace\'</div></li>' +
     '</ol>',
   'services.service.stop.HDFS.warningMsg.checkPointTooOld': 'The last HDFS checkpoint is older than 12 hours. Make sure that you have taken a checkpoint before proceeding. Otherwise, the NameNode(s) can take a very long time to start up.',
   'services.service.config_groups_popup.header':'Manage {0} Configuration Groups',

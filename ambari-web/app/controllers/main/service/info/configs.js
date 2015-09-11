@@ -51,7 +51,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
    */
   configGroups: function() {
     return this.get('groupsStore').filterProperty('serviceName', this.get('content.serviceName'));
-  }.property('content.serviceName', 'groupsStore.length', 'groupStore.@each.name'),
+  }.property('content.serviceName', 'groupsStore'),
 
   dependentConfigGroups: function() {
     if (this.get('dependentServiceNames.length') === 0) return [];
@@ -89,6 +89,13 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
   serviceConfigVersionNote: '',
 
   versionLoaded: false,
+
+  /**
+   * Determines when data about config groups is loaded
+   * Including recommendations with information about hosts in the each group
+   * @type {boolean}
+   */
+  configGroupsAreLoaded: false,
 
   dependentServiceNames: [],
   /**
@@ -263,7 +270,8 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
       versionLoaded: false,
       filter: '',
       serviceConfigVersionNote: '',
-      dependentServiceNames: []
+      dependentServiceNames: [],
+      configGroupsAreLoaded: false
     });
     this.get('filterColumns').setEach('selected', false);
     this.clearConfigs();

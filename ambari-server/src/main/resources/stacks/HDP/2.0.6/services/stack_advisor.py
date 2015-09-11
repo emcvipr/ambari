@@ -19,6 +19,7 @@ limitations under the License.
 
 import re
 import os
+import sys
 from math import ceil
 
 from stack_advisor import DefaultStackAdvisor
@@ -144,7 +145,72 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putMapredProperty('mapreduce.map.java.opts', "-Xmx" + str(int(round(0.8 * clusterData['mapMemory']))) + "m")
     putMapredProperty('mapreduce.reduce.java.opts', "-Xmx" + str(int(round(0.8 * clusterData['reduceMemory']))) + "m")
     putMapredProperty('mapreduce.task.io.sort.mb', min(int(round(0.4 * clusterData['mapMemory'])), 1024))
- 
+
+  def recommendHadoopProxyUsers (self, configurations, services, hosts):
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    users = {}
+
+    if 'forced-configurations' not in services:
+      services["forced-configurations"] = []
+
+    if "HDFS" in servicesList:
+      if "hadoop-env" in services["configurations"] and "hdfs_user" in services["configurations"]["hadoop-env"]["properties"]:
+        hdfs_user = services["configurations"]["hadoop-env"]["properties"]["hdfs_user"]
+        if not hdfs_user in users:
+          users[hdfs_user] = {"propertyHosts" : "*","propertyGroups" : "*", "config" : "hadoop-env", "propertyName" : "hdfs_user"}
+
+    if "OOZIE" in servicesList:
+      if "oozie-env" in services["configurations"] and "oozie_user" in services["configurations"]["oozie-env"]["properties"]:
+        oozie_user = services["configurations"]["oozie-env"]["properties"]["oozie_user"]
+        oozieServerrHost = self.getHostWithComponent("OOZIE", "OOZIE_SERVER", services, hosts)
+        if oozieServerrHost is not None:
+          oozieServerHostName = oozieServerrHost["Hosts"]["public_host_name"]
+        if not oozie_user in users:
+          users[oozie_user] = {"propertyHosts" : oozieServerHostName,"propertyGroups" : "*", "config" : "oozie-env", "propertyName" : "oozie_user"}
+
+    if "HIVE" in servicesList:
+      print "HIVE INSIDE"
+      if "hive-env" in services["configurations"] and "hive_user" in services["configurations"]["hive-env"]["properties"] \
+              and "webhcat_user" in services["configurations"]["hive-env"]["properties"]:
+        print "HIVE INSIDE1"
+        hive_user = services["configurations"]["hive-env"]["properties"]["hive_user"]
+        webhcat_user = services["configurations"]["hive-env"]["properties"]["webhcat_user"]
+        if "hadoop-env" in services["configurations"] and "proxyuser_group" in services["configurations"]["hadoop-env"]["properties"]:
+          proxy_user_group = services["configurations"]["hadoop-env"]["properties"]["proxyuser_group"]
+        hiveServerrHost = self.getHostWithComponent("HIVE", "HIVE_SERVER", services, hosts)
+        if hiveServerrHost is not None:
+          hiveServerHostName = hiveServerrHost["Hosts"]["public_host_name"]
+        if not hive_user in users:
+          users[hive_user] = {"propertyHosts" : hiveServerHostName,"propertyGroups" : "*", "config" : "hive-env", "propertyName" : "hive_user"}
+        if not webhcat_user in users:
+          users[webhcat_user] = {"propertyHosts" : hiveServerHostName,"propertyGroups" : proxy_user_group, "config" : "hive-env", "propertyName" : "webhcat_user"}
+
+    if "FALCON" in servicesList:
+      if "falcon-env" in services["configurations"] and "falcon_user" in services["configurations"]["falcon-env"]["properties"]:
+        falconUser = services["configurations"]["falcon-env"]["properties"]["falcon_user"]
+        if "hadoop-env" in services["configurations"] and "proxyuser_group" in services["configurations"]["hadoop-env"]["properties"]:
+          proxy_user_group = services["configurations"]["hadoop-env"]["properties"]["proxyuser_group"]
+        if not falconUser in users:
+          users[falconUser] = {"propertyHosts" : "*","propertyGroups" : proxy_user_group, "config" : "falcon-env", "propertyName" : "falcon_user"}
+
+    putCoreSiteProperty = self.putProperty(configurations, "core-site", services)
+    putCoreSitePropertyAttribute = self.putPropertyAttribute(configurations, "core-site")
+
+    for user_name, user_properties in users.iteritems():
+      # Add properties "hadoop.proxyuser.*.hosts", "hadoop.proxyuser.*.groups" to core-site for all users
+      putCoreSiteProperty("hadoop.proxyuser.{0}.hosts".format(user_name) , user_properties["propertyHosts"])
+      putCoreSiteProperty("hadoop.proxyuser.{0}.groups".format(user_name) , user_properties["propertyGroups"])
+
+      # Remove old properties if user was renamed
+      userOldValue = getOldValue(self, services, user_properties["config"], user_properties["propertyName"])
+      if userOldValue is not None:
+        putCoreSitePropertyAttribute("hadoop.proxyuser.{0}.hosts".format(userOldValue), 'delete', 'true')
+        putCoreSitePropertyAttribute("hadoop.proxyuser.{0}.groups".format(userOldValue), 'delete', 'true')
+        services["forced-configurations"].append({"type" : "core-site", "name" : "hadoop.proxyuser.{0}.hosts".format(userOldValue)})
+        services["forced-configurations"].append({"type" : "core-site", "name" : "hadoop.proxyuser.{0}.groups".format(userOldValue)})
+        services["forced-configurations"].append({"type" : "core-site", "name" : "hadoop.proxyuser.{0}.hosts".format(user_name)})
+        services["forced-configurations"].append({"type" : "core-site", "name" : "hadoop.proxyuser.{0}.groups".format(user_name)})
+
   def recommendHDFSConfigurations(self, configurations, clusterData, services, hosts):
     putHDFSProperty = self.putProperty(configurations, "hadoop-env", services)
     putHDFSProperty('namenode_heapsize', max(int(clusterData['totalAvailableRam'] / 2), 1024))
@@ -152,6 +218,9 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putHDFSProperty('namenode_opt_newsize', max(int(clusterData['totalAvailableRam'] / 8), 128))
     putHDFSProperty = self.putProperty(configurations, "hadoop-env", services)
     putHDFSProperty('namenode_opt_maxnewsize', max(int(clusterData['totalAvailableRam'] / 8), 256))
+
+    # recommendations for "hadoop.proxyuser.*.hosts", "hadoop.proxyuser.*.groups" properties in core-site
+    self.recommendHadoopProxyUsers(configurations, services, hosts)
 
   def recommendHbaseConfigurations(self, configurations, clusterData, services, hosts):
     # recommendations for HBase env config
@@ -167,6 +236,55 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       and services['configurations']['hbase-env']['properties']['hbase_user'] != services['configurations']['hbase-site']['properties']['hbase.superuser']:
       putHbaseSiteProperty("hbase.superuser", services['configurations']['hbase-env']['properties']['hbase_user'])
 
+  def getAmsMemoryRecommendation(self, services, hosts):
+    # MB per sink in hbase heapsize
+    HEAP_PER_MASTER_COMPONENT = 50
+    HEAP_PER_SLAVE_COMPONENT = 10
+
+    schMemoryMap = {
+      "HDFS": {
+        "NAMENODE": HEAP_PER_MASTER_COMPONENT,
+        "DATANODE": HEAP_PER_SLAVE_COMPONENT
+      },
+      "YARN": {
+        "RESOURCEMANAGER": HEAP_PER_MASTER_COMPONENT,
+      },
+      "HBASE": {
+        "HBASE_MASTER": HEAP_PER_MASTER_COMPONENT,
+        "HBASE_REGIONSERVER": HEAP_PER_SLAVE_COMPONENT
+      },
+      "ACCUMULO": {
+        "ACCUMULO_MASTER": HEAP_PER_MASTER_COMPONENT,
+        "ACCUMULO_TSERVER": HEAP_PER_SLAVE_COMPONENT
+      },
+      "KAFKA": {
+        "KAFKA_BROKER": HEAP_PER_MASTER_COMPONENT
+      },
+      "FLUME": {
+        "FLUME_HANDLER": HEAP_PER_SLAVE_COMPONENT
+      },
+      "STORM": {
+        "NIMBUS": HEAP_PER_MASTER_COMPONENT,
+      },
+      "AMBARI_METRICS": {
+        "METRICS_COLLECTOR": HEAP_PER_MASTER_COMPONENT,
+        "METRICS_MONITOR": HEAP_PER_SLAVE_COMPONENT
+      }
+    }
+    total_sinks_count = 0
+    # minimum heap size
+    hbase_heapsize = 500
+    for serviceName, componentsDict in schMemoryMap.items():
+      for componentName, multiplier in componentsDict.items():
+        schCount = len(
+          self.getHostsWithComponent(serviceName, componentName, services,
+                                     hosts))
+        hbase_heapsize += int((schCount * multiplier) ** 0.9)
+        total_sinks_count += schCount
+    collector_heapsize = int(hbase_heapsize/4 if hbase_heapsize > 2048 else 512)
+
+    return collector_heapsize, hbase_heapsize, total_sinks_count
+
   def recommendAmsConfigurations(self, configurations, clusterData, services, hosts):
     putAmsEnvProperty = self.putProperty(configurations, "ams-env", services)
     putAmsHbaseSiteProperty = self.putProperty(configurations, "ams-hbase-site", services)
@@ -174,11 +292,6 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putHbaseEnvProperty = self.putProperty(configurations, "ams-hbase-env", services)
 
     amsCollectorHosts = self.getComponentHostNames(services, "AMBARI_METRICS", "METRICS_COLLECTOR")
-    # blockCache = 0.3, memstore = 0.35, phoenix-server = 0.15, phoenix-client = 0.25
-    putAmsHbaseSiteProperty("hfile.block.cache.size", 0.3)
-    putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.upperLimit", 0.35)
-    putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.lowerLimit", 0.3)
-    putTimelineServiceProperty("timeline.metrics.host.aggregator.ttl", 86400)
 
     rootDir = "file:///var/lib/ambari-metrics-collector/hbase"
     tmpDir = "/var/lib/ambari-metrics-collector/hbase-tmp"
@@ -188,16 +301,46 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       if "hbase.tmp.dir" in services["configurations"]["ams-hbase-site"]["properties"]:
         tmpDir = services["configurations"]["ams-hbase-site"]["properties"]["hbase.tmp.dir"]
 
-    # TODO recommend configuration for multiple AMBARI_METRICS collectors
+    mountpoints = ["/"]
+    for collectorHostName in amsCollectorHosts:
+      for host in hosts["items"]:
+        if host["Hosts"]["host_name"] == collectorHostName:
+          mountpoints = self.getPreferredMountPoints(host["Hosts"])
+          break
+    if not rootDir.startswith("hdfs://"):
+      rootDir = re.sub("^file:///|/", "", rootDir, count=1)
+      rootDir = "file://" + os.path.join(mountpoints[0], rootDir)
+    tmpDir = re.sub("^file:///|/", "", tmpDir, count=1)
+    if len(mountpoints) > 1 and not rootDir.startswith("hdfs://"):
+      tmpDir = os.path.join(mountpoints[1], tmpDir)
+    else:
+      tmpDir = os.path.join(mountpoints[0], tmpDir)
+    putAmsHbaseSiteProperty("hbase.rootdir", rootDir)
+    putAmsHbaseSiteProperty("hbase.tmp.dir", tmpDir)
+
+    collector_heapsize, hbase_heapsize, total_sinks_count = self.getAmsMemoryRecommendation(services, hosts)
+
+    putAmsEnvProperty("metrics_collector_heapsize", str(collector_heapsize) + "m")
+
+    # blockCache = 0.3, memstore = 0.35, phoenix-server = 0.15, phoenix-client = 0.25
+    putAmsHbaseSiteProperty("hfile.block.cache.size", 0.3)
+    putAmsHbaseSiteProperty("hbase.hregion.memstore.flush.size", 134217728)
+    putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.upperLimit", 0.35)
+    putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.lowerLimit", 0.3)
+    putTimelineServiceProperty("timeline.metrics.host.aggregator.ttl", 86400)
+
+    # Embedded mode heap size : master + regionserver
+    if rootDir.startswith("hdfs://"):
+      putHbaseEnvProperty("hbase_master_heapsize", "512m")
+      putHbaseEnvProperty("hbase_regionserver_heapsize", str(hbase_heapsize) + "m")
+    else:
+      putHbaseEnvProperty("hbase_master_heapsize", str(hbase_heapsize) + "m")
+
     if len(amsCollectorHosts) > 1:
       pass
     else:
-      totalHostsCount = len(hosts["items"])
       # blockCache = 0.3, memstore = 0.3, phoenix-server = 0.2, phoenix-client = 0.3
-      putHbaseEnvProperty("hbase_master_heapsize", "512m")
-      if totalHostsCount >= 400:
-        hbase_heapsize = "12288m"
-        putAmsEnvProperty("metrics_collector_heapsize", "8192m")
+      if total_sinks_count >= 2000:
         putAmsHbaseSiteProperty("hbase.regionserver.handler.count", 60)
         putAmsHbaseSiteProperty("hbase.regionserver.hlog.blocksize", 134217728)
         putAmsHbaseSiteProperty("hbase.regionserver.maxlogs", 64)
@@ -208,48 +351,43 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
         putTimelineServiceProperty("phoenix.query.maxGlobalMemoryPercentage", 30)
         putAmsHbaseSiteProperty("hbase_master_xmn_size", "512m")
         putAmsHbaseSiteProperty("regionserver_xmn_size", "512m")
-      elif totalHostsCount >= 100:
-        hbase_heapsize = "6144m"
-        putAmsEnvProperty("metrics_collector_heapsize", "4096m")
+      elif total_sinks_count >= 500:
         putAmsHbaseSiteProperty("hbase.regionserver.handler.count", 60)
         putAmsHbaseSiteProperty("hbase.regionserver.hlog.blocksize", 134217728)
         putAmsHbaseSiteProperty("hbase.regionserver.maxlogs", 64)
         putAmsHbaseSiteProperty("hbase.hregion.memstore.flush.size", 268435456)
         putAmsHbaseSiteProperty("hbase_master_xmn_size", "512m")
-      elif totalHostsCount >= 50:
-        hbase_heapsize = "2048m"
-        putAmsEnvProperty("metrics_collector_heapsize", "2048m")
+      elif total_sinks_count >= 250:
         putAmsHbaseSiteProperty("hbase_master_xmn_size", "256m")
       else:
-        # Embedded mode heap size : master + regionserver
-        hbase_heapsize = "512m"
-        putAmsEnvProperty("metrics_collector_heapsize", "512m")
         putAmsHbaseSiteProperty("hbase_master_xmn_size", "128m")
       pass
 
-      if rootDir.startswith("hdfs://"):
-        putHbaseEnvProperty("hbase_regionserver_heapsize", hbase_heapsize)
-      else:
-        putHbaseEnvProperty("hbase_master_heapsize", hbase_heapsize)
+    #split points
+    scriptDir = os.path.dirname(os.path.abspath(__file__))
+    metricsDir = os.path.join(scriptDir, '../../../../common-services/AMBARI_METRICS/0.1.0/package')
+    serviceMetricsDir = os.path.join(metricsDir, 'files', 'service-metrics')
+    sys.path.append(os.path.join(metricsDir, 'scripts'))
+    mode = 'distributed' if rootDir.startswith("hdfs://") else 'embedded'
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
 
-    mountpoint = "/"
-    for collectorHostName in amsCollectorHosts:
-      for host in hosts["items"]:
-        if host["Hosts"]["host_name"] == collectorHostName:
-          mountpoint = self.getProperMountPoint(host["Hosts"])
-          break
-    if not rootDir.startswith("hdfs://") :
-      rootDir = re.sub("^file:///|/", "", rootDir, count=1)
-      rootDir = "file://" + os.path.join(mountpoint, rootDir)
-    tmpDir = re.sub("^file:///|/", "", tmpDir, count=1)
-    tmpDir = os.path.join(mountpoint, tmpDir)
+    from split_points import FindSplitPointsForAMSRegions
+    split_point_finder = FindSplitPointsForAMSRegions(
+      configurations["ams-hbase-site"]["properties"],
+      configurations["ams-hbase-env"]["properties"],
+      serviceMetricsDir, mode, servicesList)
 
-    putAmsHbaseSiteProperty("hbase.rootdir", rootDir)
-    putAmsHbaseSiteProperty("hbase.tmp.dir", tmpDir)
+    result = split_point_finder.get_split_points()
+    precision_splits = ' '
+    aggregate_splits = ' '
+    if result.precision:
+      precision_splits = result.precision
+    if result.aggregate:
+      aggregate_splits = result.aggregate
+    putTimelineServiceProperty("timeline.metrics.host.aggregate.splitpoints", ','.join(precision_splits))
+    putTimelineServiceProperty("timeline.metrics.cluster.aggregate.splitpoints", ','.join(aggregate_splits))
 
     pass
-
-
 
   def getHostsWithComponent(self, serviceName, componentName, services, hosts):
     if services is not None and hosts is not None and serviceName in [service["StackServices"]["service_name"] for service in services["services"]]:
@@ -455,28 +593,20 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     amsCollectorHosts = self.getComponentHostNames(services, "AMBARI_METRICS", "METRICS_COLLECTOR")
     ams_site = getSiteProperties(configurations, "ams-site")
 
+    collector_heapsize, hbase_heapsize, total_sinks_count = self.getAmsMemoryRecommendation(services, hosts)
     recommendedDiskSpace = 10485760
     # TODO validate configuration for multiple AMBARI_METRICS collectors
     if len(amsCollectorHosts) > 1:
       pass
     else:
-      totalHostsCount = len(hosts["items"])
-      if totalHostsCount > 400:
+      if total_sinks_count > 2000:
         recommendedDiskSpace  = 104857600  # * 1k == 100 Gb
-      elif totalHostsCount > 100:
+      elif total_sinks_count > 500:
         recommendedDiskSpace  = 52428800  # * 1k == 50 Gb
-      elif totalHostsCount > 50:
+      elif total_sinks_count > 250:
         recommendedDiskSpace  = 20971520  # * 1k == 20 Gb
 
-
     validationItems = []
-    for collectorHostName in amsCollectorHosts:
-      for host in hosts["items"]:
-        if host["Hosts"]["host_name"] == collectorHostName:
-          validationItems.extend([ {"config-name": 'hbase.rootdir', "item": self.validatorEnoughDiskSpace(properties, 'hbase.rootdir', host["Hosts"], recommendedDiskSpace)}])
-          validationItems.extend([ {"config-name": 'hbase.rootdir', "item": self.validatorNotRootFs(properties, 'hbase.rootdir', host["Hosts"])}])
-          validationItems.extend([ {"config-name": 'hbase.tmp.dir', "item": self.validatorNotRootFs(properties, 'hbase.tmp.dir', host["Hosts"])}])
-          break
 
     rootdir_item = None
     op_mode = ams_site.get("timeline.metrics.service.operation.mode")
@@ -493,14 +623,46 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     validationItems.extend([{"config-name":'hbase.rootdir', "item": rootdir_item },
                             {"config-name":'hbase.cluster.distributed', "item": distributed_item }])
 
+    for collectorHostName in amsCollectorHosts:
+      for host in hosts["items"]:
+        if host["Hosts"]["host_name"] == collectorHostName:
+          validationItems.extend([{"config-name": 'hbase.rootdir', "item": self.validatorEnoughDiskSpace(properties, 'hbase.rootdir', host["Hosts"], recommendedDiskSpace)}])
+          validationItems.extend([{"config-name": 'hbase.rootdir', "item": self.validatorNotRootFs(properties, 'hbase.rootdir', host["Hosts"])}])
+          validationItems.extend([{"config-name": 'hbase.tmp.dir', "item": self.validatorNotRootFs(properties, 'hbase.tmp.dir', host["Hosts"])}])
+
+          dn_hosts = self.getComponentHostNames(services, "HDFS", "DATANODE")
+          # if METRICS_COLLECTOR is co-hosted with DATANODE
+          if not hbase_rootdir.startswith("hdfs") and \
+            dn_hosts and collectorHostName in dn_hosts:
+            # cross-check dfs.datanode.data.dir and hbase.rootdir
+            # they shouldn't share same disk partition IO
+            hdfs_site = getSiteProperties(configurations, "hdfs-site")
+            mountPoints = []
+            for mountPoint in host["Hosts"]["disk_info"]:
+              mountPoints.append(mountPoint["mountpoint"])
+            hbase_rootdir_mountpoint = getMountPointForDir(hbase_rootdir, mountPoints)
+            if ams_site and hdfs_site and "dfs.datanode.data.dir" in hdfs_site:
+              for dfs_datadir in hdfs_site.get("dfs.datanode.data.dir").split(","):
+                mountPoints = []
+                for mountPoint in host["Hosts"]["disk_info"]:
+                  mountPoints.append(mountPoint["mountpoint"])
+                dfs_datadir_mountpoint = getMountPointForDir(dfs_datadir, mountPoints)
+                if dfs_datadir_mountpoint == hbase_rootdir_mountpoint:
+                  item = self.getWarnItem("Consider not using {0} partition for storing metrics data. "
+                                          "{0} is already used by datanode to store HDFS data".format(hbase_rootdir_mountpoint))
+                  validationItems.extend([{"config-name":'hbase.rootdir', "item": item}])
+                  break
+
     return self.toConfigurationValidationProblems(validationItems, "ams-hbase-site")
 
   def validateAmsHbaseEnvConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
-    regionServerItem = self.validatorLessThenDefaultValue(properties, recommendedDefaults, "hbase_regionserver_heapsize")
+    regionServerItem = self.validatorLessThenDefaultValue(properties, recommendedDefaults, "hbase_regionserver_heapsize") ## FIXME if new service added
     masterItem = self.validatorLessThenDefaultValue(properties, recommendedDefaults, "hbase_master_heapsize")
     ams_env = getSiteProperties(configurations, "ams-env")
+    amsHbaseSite = getSiteProperties(configurations, "ams-hbase-site")
     logDirItem = self.validatorEqualsPropertyItem(properties, "hbase_log_dir",
                                                   ams_env, "metrics_collector_log_dir")
+    validationItems = []
     masterHostItem = None
 
     if masterItem is None:
@@ -531,6 +693,27 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
               masterHostItem = self.getWarnItem(
                 masterHostMessage.format(
                   collectorHostName, str(", ".join(hostMasterComponents[collectorHostName]))))
+
+          # Check for unused RAM on AMS Collector node
+          hostComponents = []
+          for service in services["services"]:
+            for component in service["components"]:
+              if component["StackServiceComponents"]["hostnames"] is not None:
+                if collectorHostName in component["StackServiceComponents"]["hostnames"]:
+                  hostComponents.append(component["StackServiceComponents"]["component_name"])
+
+          requiredMemory = getMemorySizeRequired(hostComponents, configurations)
+          unusedMemory = host["Hosts"]["total_mem"] * 1024 - requiredMemory # in bytes
+          hbase_rootdir = amsHbaseSite.get("hbase.rootdir")
+          if unusedMemory > 4294967296:  # warn user, if more than 4GB RAM is unused
+            propertyToIncrease = "hbase_regionserver_heapsize" if hbase_rootdir.startswith("hdfs://") else "hbase_master_heapsize"
+            collector_heapsize = int((unusedMemory - 4294967296)/5) + to_number(ams_env.get("metrics_collector_heapsize"))*1048576
+            hbase_heapsize = int((unusedMemory - 4294967296)*4/5) + to_number(properties.get(propertyToIncrease))*1048576
+            msg = "{0} MB RAM is unused on the host {1} based on components " \
+                  "assigned. Consider allocating  {2} MB to metrics_collector_heapsize in ams-env and {3} MB to {4} in ams-hbase-env"
+
+            unusedMemoryHbaseItem = self.getWarnItem(msg.format(unusedMemory/1048576, collectorHostName, collector_heapsize/1048576, hbase_heapsize/1048576, propertyToIncrease))
+            validationItems.extend([{"config-name": propertyToIncrease, "item": unusedMemoryHbaseItem}])
       pass
 
     # Check RS memory in distributed mode since we set default as 512m
@@ -540,11 +723,13 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     if hbase_rootdir and hbase_rootdir.startswith("hdfs://"):
       regionServerMinMemItem = self.validateMinMemorySetting(properties, 1024, 'hbase_regionserver_heapsize')
 
-    validationItems = [{"config-name": "hbase_regionserver_heapsize", "item": regionServerItem},
-                       {"config-name": "hbase_regionserver_heapsize", "item": regionServerMinMemItem},
-                       {"config-name": "hbase_master_heapsize", "item": masterItem},
-                       {"config-name": "hbase_master_heapsize", "item": masterHostItem},
-                       {"config-name": "hbase_log_dir", "item": logDirItem}]
+    validationItems.extend([
+      {"config-name": "hbase_regionserver_heapsize", "item": regionServerItem},
+      {"config-name": "hbase_regionserver_heapsize", "item": regionServerMinMemItem},
+      {"config-name": "hbase_master_heapsize", "item": masterItem},
+      {"config-name": "hbase_master_heapsize", "item": masterHostItem},
+      {"config-name": "hbase_log_dir", "item": logDirItem}
+    ])
     return self.toConfigurationValidationProblems(validationItems, "ams-hbase-env")
 
 
@@ -567,23 +752,25 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
   def getErrorItem(self, message):
     return {"level": "ERROR", "message": message}
 
-  def getProperMountPoint(self, hostInfo):
+  def getPreferredMountPoints(self, hostInfo):
 
     # '/etc/resolv.conf', '/etc/hostname', '/etc/hosts' are docker specific mount points
     undesirableMountPoints = ["/", "/home", "/etc/resolv.conf", "/etc/hosts",
                               "/etc/hostname"]
     undesirableFsTypes = ["devtmpfs", "tmpfs", "vboxsf", "CDFS"]
+    mountPoints = []
     if hostInfo and "disk_info" in hostInfo:
-      mountPoints = {}
+      mountPointsDict = {}
       for mountpoint in hostInfo["disk_info"]:
         if not (mountpoint["mountpoint"] in undesirableMountPoints or
                 mountpoint["mountpoint"].startswith(("/boot", "/mnt")) or
                 mountpoint["type"] in undesirableFsTypes or
                 mountpoint["available"] == str(0)):
-          mountPoints[mountpoint["mountpoint"]] = to_number(mountpoint["available"])
-      if mountPoints:
-        return max(mountPoints, key=mountPoints.get)
-    return "/"
+          mountPointsDict[mountpoint["mountpoint"]] = to_number(mountpoint["available"])
+      if mountPointsDict:
+        mountPoints = sorted(mountPointsDict, key=mountPointsDict.get, reverse=True)
+    mountPoints.append("/")
+    return mountPoints
 
   def validatorNotRootFs(self, properties, propertyName, hostInfo):
     if not propertyName in properties:
@@ -598,8 +785,8 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       mountPoints.append(mountPoint["mountpoint"])
     mountPoint = getMountPointForDir(dir, mountPoints)
 
-    if "/" == mountPoint and self.getProperMountPoint(hostInfo) != mountPoint:
-      return self.getWarnItem("The root device should not be used for {0}".format(propertyName))
+    if "/" == mountPoint and self.getPreferredMountPoints(hostInfo)[0] != mountPoint:
+      return self.getWarnItem("It is not recommended to use root partition for {0}".format(propertyName))
 
     return None
 
@@ -741,7 +928,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     return ['JOURNALNODE', 'ZKFC', 'GANGLIA_MONITOR']
 
   def getNotPreferableOnServerComponents(self):
-    return ['GANGLIA_SERVER']
+    return ['GANGLIA_SERVER', 'METRICS_COLLECTOR']
 
   def getCardinalitiesDict(self):
     return {
@@ -763,8 +950,8 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       'HIVE_SERVER': {6: 1, 31: 2, "else": 4},
       'HIVE_METASTORE': {6: 1, 31: 2, "else": 4},
       'WEBHCAT_SERVER': {6: 1, 31: 2, "else": 4},
-      'METRICS_COLLECTOR': {"else": 2},
-      }
+      'METRICS_COLLECTOR': {3: 2, 6: 2, 31: 3, "else": 5},
+    }
 
   def get_system_min_uid(self):
     login_defs = '/etc/login.defs'
@@ -805,6 +992,15 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       if service not in parentValidators:
         parentValidators[service] = {}
       parentValidators[service].update(configsDict)
+
+def getOldValue(self, services, configType, propertyName):
+  if services:
+    if 'changed-configurations' in services.keys():
+      changedConfigs = services["changed-configurations"]
+      for changedConfig in changedConfigs:
+        if changedConfig["type"] == configType and changedConfig["name"]== propertyName and "old_value" in changedConfig:
+          return changedConfig["old_value"]
+  return None
 
 # Validation helper methods
 def getSiteProperties(configurations, siteName):
@@ -880,7 +1076,7 @@ def getMountPointForDir(dir, mountPoints):
   """
   bestMountFound = None
   if dir:
-    dir = dir.strip().lower()
+    dir = re.sub("^file:///", "", dir, count=1).strip().lower()
 
     # If the path is "/hadoop/hdfs/data", then possible matches for mounts could be
     # "/", "/hadoop/hdfs", and "/hadoop/hdfs/data".

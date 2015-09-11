@@ -31,6 +31,24 @@ class HDP21StackAdvisor(HDP206StackAdvisor):
 
   def recommendOozieConfigurations(self, configurations, clusterData, services, hosts):
     if "FALCON_SERVER" in clusterData["components"]:
+      putOozieSiteProperty = self.putProperty(configurations, "oozie-site", services)
+
+      if "falcon-env" in services["configurations"] and "falcon_user" in services["configurations"]["falcon-env"]["properties"]:
+        falconUser = services["configurations"]["falcon-env"]["properties"]["falcon_user"]
+        putOozieSiteProperty("oozie.service.ProxyUserService.proxyuser.{0}.groups".format(falconUser) , "*")
+        putOozieSiteProperty("oozie.service.ProxyUserService.proxyuser.{0}.hosts".format(falconUser) , "*")
+        falconUserOldValue = getOldValue(self, services, "falcon-env", "falcon_user")
+        if falconUserOldValue is not None:
+          if 'forced-configurations' not in services:
+            services["forced-configurations"] = []
+          putOozieSitePropertyAttribute = self.putPropertyAttribute(configurations, "oozie-site")
+          putOozieSitePropertyAttribute("oozie.service.ProxyUserService.proxyuser.{0}.groups".format(falconUserOldValue), 'delete', 'true')
+          putOozieSitePropertyAttribute("oozie.service.ProxyUserService.proxyuser.{0}.hosts".format(falconUserOldValue), 'delete', 'true')
+          services["forced-configurations"].append({"type" : "oozie-site", "name" : "oozie.service.ProxyUserService.proxyuser.{0}.hosts".format(falconUserOldValue)})
+          services["forced-configurations"].append({"type" : "oozie-site", "name" : "oozie.service.ProxyUserService.proxyuser.{0}.groups".format(falconUserOldValue)})
+          services["forced-configurations"].append({"type" : "oozie-site", "name" : "oozie.service.ProxyUserService.proxyuser.{0}.hosts".format(falconUser)})
+          services["forced-configurations"].append({"type" : "oozie-site", "name" : "oozie.service.ProxyUserService.proxyuser.{0}.groups".format(falconUser)})
+
       putMapredProperty = self.putProperty(configurations, "oozie-site")
       putMapredProperty("oozie.services.ext",
                         "org.apache.oozie.service.JMSAccessorService," +
@@ -56,7 +74,7 @@ class HDP21StackAdvisor(HDP206StackAdvisor):
 
 
   def getNotPreferableOnServerComponents(self):
-    return ['STORM_UI_SERVER', 'DRPC_SERVER', 'STORM_REST_API', 'NIMBUS', 'GANGLIA_SERVER']
+    return ['STORM_UI_SERVER', 'DRPC_SERVER', 'STORM_REST_API', 'NIMBUS', 'GANGLIA_SERVER', 'METRICS_COLLECTOR']
 
   def getNotValuableComponents(self):
     return ['JOURNALNODE', 'ZKFC', 'GANGLIA_MONITOR', 'APP_TIMELINE_SERVER']
