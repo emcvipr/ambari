@@ -18,33 +18,12 @@
 
 package org.apache.ambari.server.api.services;
 
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.reset;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
-import java.io.File;
-import java.io.FileReader;
-import java.lang.reflect.Field;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.UUID;
-
-import javax.persistence.EntityManager;
-
+import com.google.gson.Gson;
+import com.google.inject.AbstractModule;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.util.Modules;
 import junit.framework.Assert;
-
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.StackAccessException;
 import org.apache.ambari.server.configuration.Configuration;
@@ -96,11 +75,29 @@ import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.gson.Gson;
-import com.google.inject.AbstractModule;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.util.Modules;
+import javax.persistence.EntityManager;
+import java.io.File;
+import java.io.FileReader;
+import java.lang.reflect.Field;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.UUID;
+
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.reset;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class AmbariMetaInfoTest {
 
@@ -753,6 +750,7 @@ public class AmbariMetaInfoTest {
     PropertyInfo inheritedProperty = null;
     PropertyInfo newProperty = null;
     PropertyInfo newEnhancedProperty = null;
+    PropertyInfo propertyWithExtraValueAttributes = null;
     PropertyInfo originalProperty = null;
 
     PropertyDependencyInfo propertyDependencyInfo =
@@ -777,6 +775,8 @@ public class AmbariMetaInfoTest {
         newEnhancedProperty = propertyInfo;
       } else if (propertyInfo.getName().equals("yarn.nodemanager.aux-services")) {
         originalProperty = propertyInfo;
+      } else if (propertyInfo.getName().equals("property.with.extra.value.attributes")) {
+        propertyWithExtraValueAttributes = propertyInfo;
       }
     }
 
@@ -814,6 +814,14 @@ public class AmbariMetaInfoTest {
     Assert.assertEquals("256", newEnhancedProperty.getPropertyValueAttributes().getIncrementStep());
     Assert.assertNull(newEnhancedProperty.getPropertyValueAttributes().getEntries());
     Assert.assertNull(newEnhancedProperty.getPropertyValueAttributes().getEntriesEditable());
+
+    // property with extra value attributes
+    Assert.assertTrue(propertyWithExtraValueAttributes.getPropertyValueAttributes().getEmptyValueValid());
+    Assert.assertTrue(propertyWithExtraValueAttributes.getPropertyValueAttributes().getVisible());
+    Assert.assertTrue(propertyWithExtraValueAttributes.getPropertyValueAttributes().getReadOnly());
+    Assert.assertEquals(Boolean.FALSE, propertyWithExtraValueAttributes.getPropertyValueAttributes().getEditableOnlyAtInstall());
+    Assert.assertEquals(Boolean.FALSE, propertyWithExtraValueAttributes.getPropertyValueAttributes().getOverridable());
+    Assert.assertEquals(Boolean.FALSE, propertyWithExtraValueAttributes.getPropertyValueAttributes().getShowPropertyName());
 
     // Original property
     Assert.assertNotNull(originalProperty);
@@ -1736,7 +1744,7 @@ public class AmbariMetaInfoTest {
 
     AlertDefinitionDAO dao = injector.getInstance(AlertDefinitionDAO.class);
     List<AlertDefinitionEntity> definitions = dao.findAll(clusterId);
-    assertEquals(10, definitions.size());
+    assertEquals(9, definitions.size());
 
     // figure out how many of these alerts were merged into from the
     // non-stack alerts.json
@@ -1749,7 +1757,7 @@ public class AmbariMetaInfoTest {
     }
 
     assertEquals(1, hostAlertCount);
-    assertEquals(9, definitions.size() - hostAlertCount);
+    assertEquals(8, definitions.size() - hostAlertCount);
 
     for (AlertDefinitionEntity definition : definitions) {
       definition.setScheduleInterval(28);
@@ -1759,7 +1767,7 @@ public class AmbariMetaInfoTest {
     metaInfo.reconcileAlertDefinitions(clusters);
 
     definitions = dao.findAll();
-    assertEquals(10, definitions.size());
+    assertEquals(9, definitions.size());
 
     for (AlertDefinitionEntity definition : definitions) {
       assertEquals(28, definition.getScheduleInterval().intValue());
@@ -1768,7 +1776,7 @@ public class AmbariMetaInfoTest {
     // find all enabled for the cluster should find 6 (the ones from HDFS;
     // it will not find the agent alert since it's not bound to the cluster)
     definitions = dao.findAllEnabled(cluster.getClusterId());
-    assertEquals(9, definitions.size());
+    assertEquals(8, definitions.size());
 
     // create new definition
     AlertDefinitionEntity entity = new AlertDefinitionEntity();
@@ -1787,19 +1795,19 @@ public class AmbariMetaInfoTest {
 
     // verify the new definition is found (6 HDFS + 1 new one)
     definitions = dao.findAllEnabled(cluster.getClusterId());
-    assertEquals(10, definitions.size());
+    assertEquals(9, definitions.size());
 
     // reconcile, which should disable our bad definition
     metaInfo.reconcileAlertDefinitions(clusters);
 
     // find all enabled for the cluster should find 6
     definitions = dao.findAllEnabled(cluster.getClusterId());
-    assertEquals(9, definitions.size());
+    assertEquals(8, definitions.size());
 
     // find all should find 6 HDFS + 1 disabled + 1 agent alert + 2 server
     // alerts
     definitions = dao.findAll();
-    assertEquals(11, definitions.size());
+    assertEquals(10, definitions.size());
 
     entity = dao.findById(entity.getDefinitionId());
     assertFalse(entity.getEnabled());
@@ -1838,7 +1846,7 @@ public class AmbariMetaInfoTest {
 
     Assert.assertNotNull(descriptor);
     Assert.assertNotNull(descriptor.getProperties());
-    Assert.assertEquals(2, descriptor.getProperties().size());
+    Assert.assertEquals(3, descriptor.getProperties().size());
 
     Assert.assertNotNull(descriptor.getIdentities());
     Assert.assertEquals(1, descriptor.getIdentities().size());
