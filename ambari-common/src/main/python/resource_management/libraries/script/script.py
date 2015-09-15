@@ -61,7 +61,7 @@ USAGE = """Usage: {0} <COMMAND> <JSON_CONFIG> <BASEDIR> <STROUTPUT> <LOGGING_LEV
 <BASEDIR> path to service metadata dir. Ex: /var/lib/ambari-agent/cache/common-services/HDFS/2.1.0.2.0/package
 <STROUTPUT> path to file with structured command output (file will be created). Ex:/tmp/my.txt
 <LOGGING_LEVEL> log level for stdout. Ex:DEBUG,INFO
-<TMP_DIR> temporary directory for executable scripts. Ex: /var/lib/ambari-agent/data/tmp
+<TMP_DIR> temporary directory for executable scripts. Ex: /var/lib/ambari-agent/tmp
 """
 
 _PASSWORD_MAP = {"/configurations/cluster-env/hadoop.user.name":"/configurations/cluster-env/hadoop.user.password"}
@@ -362,7 +362,8 @@ class Script(object):
     from this list
     
     exclude_packages - list of regexes (possibly raw strings as well), the
-    packages which match the regex won't be installed
+    packages which match the regex won't be installed.
+    NOTE: regexes don't have Python syntax, but simple package regexes which support only * and .* and ?
     """
     config = self.get_config()
     if 'host_sys_prepped' in config['hostLevelParams']:
@@ -401,8 +402,9 @@ class Script(object):
   @staticmethod
   def matches_any_regexp(string, regexp_list):
     for regex in regexp_list:
-      # adding ^ and $ to correctly match raw strings from begining to the end
-      if re.match('^' + regex + '$', string):
+      # we cannot use here Python regex, since * will create some troubles matching plaintext names. 
+      package_regex = '^' + re.escape(regex).replace('\\.\\*','.*').replace("\\?", ".").replace("\\*", ".*") + '$'
+      if re.match(package_regex, string):
         return True
     return False
 

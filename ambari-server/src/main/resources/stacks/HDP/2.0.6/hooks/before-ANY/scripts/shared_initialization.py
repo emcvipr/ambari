@@ -132,8 +132,8 @@ def set_uid(user, user_dirs):
 def setup_hadoop_env():
   import params
   stackversion = params.stack_version_unformatted
-  Logger.info("Service Type: {0}".format(params.service_type))
-  if params.has_namenode or stackversion.find('Gluster') >= 0 or params.service_type == 'HCFS':
+  Logger.info("FS Type: {0}".format(params.dfs_type))
+  if params.has_namenode or stackversion.find('Gluster') >= 0 or params.dfs_type == 'HCFS':
     if params.security_enabled:
       tc_owner = "root"
     else:
@@ -156,6 +156,13 @@ def setup_hadoop_env():
         group=params.user_group,
         content=InlineTemplate(params.hadoop_env_sh_template))
 
+    # Create tmp dir for java.io.tmpdir
+    # Handle a situation when /tmp is set to noexec
+    Directory(params.hadoop_java_io_tmpdir,
+              owner=params.hdfs_user,
+              group=params.user_group,
+              mode=0777
+    )
 
 def setup_java():
   """

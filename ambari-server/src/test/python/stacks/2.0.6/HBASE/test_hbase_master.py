@@ -248,6 +248,7 @@ class TestHBaseMaster(RMFTestCase):
     self.assertResourceCalled('File', '/etc/hbase/conf/hbase-env.sh',
       owner = 'hbase',
       content = InlineTemplate(self.getConfig()['configurations']['hbase-env']['content']),
+      group = 'hadoop',
     )
     self.assertResourceCalled('TemplateConfig', '/etc/hbase/conf/hadoop-metrics2-hbase.properties',
       owner = 'hbase',
@@ -280,6 +281,7 @@ class TestHBaseMaster(RMFTestCase):
         
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'hbase',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'directory',
@@ -292,6 +294,7 @@ class TestHBaseMaster(RMFTestCase):
         
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'hbase',
         hadoop_bin_dir = '/usr/bin',
         type = 'directory',
@@ -305,6 +308,7 @@ class TestHBaseMaster(RMFTestCase):
         
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'], hdfs_site=self.getConfig()['configurations']['hdfs-site'], principal_name=UnknownConfigurationMock(), default_fs='hdfs://c6401.ambari.apache.org:8020',
         hadoop_conf_dir = '/etc/hadoop/conf',
     )
@@ -360,6 +364,7 @@ class TestHBaseMaster(RMFTestCase):
     self.assertResourceCalled('File', '/etc/hbase/conf/hbase-env.sh',
       owner = 'hbase',
       content = InlineTemplate(self.getConfig()['configurations']['hbase-env']['content']),
+      group = 'hadoop',
     )
     self.assertResourceCalled('TemplateConfig', '/etc/hbase/conf/hadoop-metrics2-hbase.properties',
       owner = 'hbase',
@@ -395,6 +400,7 @@ class TestHBaseMaster(RMFTestCase):
         
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'hbase',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'directory',
@@ -407,6 +413,7 @@ class TestHBaseMaster(RMFTestCase):
         
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'hbase',
         hadoop_bin_dir = '/usr/bin',
         type = 'directory',
@@ -420,6 +427,7 @@ class TestHBaseMaster(RMFTestCase):
         
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'], hdfs_site=self.getConfig()['configurations']['hdfs-site'], principal_name='hdfs', default_fs='hdfs://c6401.ambari.apache.org:8020',
         hadoop_conf_dir = '/etc/hadoop/conf',
     )
@@ -486,7 +494,9 @@ class TestHBaseMaster(RMFTestCase):
 
     self.assertResourceCalled('File', '/usr/hdp/current/hbase-master/conf/hbase-env.sh',
       owner = 'hbase',
-      content = InlineTemplate(self.getConfig()['configurations']['hbase-env']['content']))
+      content = InlineTemplate(self.getConfig()['configurations']['hbase-env']['content']),
+      group = 'hadoop'
+    )
 
     self.assertResourceCalled('TemplateConfig', '/usr/hdp/current/hbase-master/conf/hadoop-metrics2-hbase.properties',
       owner = 'hbase',
@@ -520,6 +530,7 @@ class TestHBaseMaster(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = UnknownConfigurationMock(),
         user = 'hdfs',
+        dfs_type = '',
         owner = 'hbase',
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
         type = 'directory',
@@ -534,6 +545,7 @@ class TestHBaseMaster(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = UnknownConfigurationMock(),
         user = 'hdfs',
+        dfs_type = '',
         owner = 'hbase',
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
         type = 'directory',
@@ -549,6 +561,7 @@ class TestHBaseMaster(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = UnknownConfigurationMock(),
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'],
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
     )

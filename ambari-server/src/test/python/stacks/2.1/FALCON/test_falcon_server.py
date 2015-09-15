@@ -105,7 +105,8 @@ class TestFalconServer(RMFTestCase):
     )
     self.assertResourceCalled('File', '/etc/falcon/conf/falcon-env.sh',
                               content = InlineTemplate(self.getConfig()['configurations']['falcon-env']['content']),
-                              owner = 'falcon'
+                              owner = 'falcon',
+                              group = 'hadoop'
                               )
     self.assertResourceCalled('File', '/etc/falcon/conf/client.properties',
                               content = Template('client.properties.j2'),
@@ -132,6 +133,7 @@ class TestFalconServer(RMFTestCase):
         keytab = UnknownConfigurationMock(),
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'falcon',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'directory',
@@ -148,6 +150,7 @@ class TestFalconServer(RMFTestCase):
         keytab = UnknownConfigurationMock(),
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'falcon',
         group='users',
         hadoop_conf_dir = '/etc/hadoop/conf',
@@ -165,6 +168,7 @@ class TestFalconServer(RMFTestCase):
         keytab = UnknownConfigurationMock(),
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'], hdfs_site=self.getConfig()['configurations']['hdfs-site'], principal_name=UnknownConfigurationMock(), default_fs='hdfs://c6401.ambari.apache.org:8020',
         hadoop_conf_dir = '/etc/hadoop/conf',
     )
@@ -263,6 +267,7 @@ class TestFalconServer(RMFTestCase):
     self.assertResourceCalled('File', '/usr/hdp/current/falcon-server/conf/falcon-env.sh',
         owner = 'falcon',
         content = InlineTemplate(self.getConfig()['configurations']['falcon-env']['content']),
+        group = 'hadoop'
     )
     self.assertResourceCalled('File', '/usr/hdp/current/falcon-server/conf/client.properties',
         owner = 'falcon',
@@ -310,6 +315,7 @@ class TestFalconServer(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = UnknownConfigurationMock(),
         user = 'hdfs',
+        dfs_type = '',
         owner = 'falcon',
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
         type = 'directory',
@@ -327,6 +333,7 @@ class TestFalconServer(RMFTestCase):
         source = '/usr/hdp/current/falcon-server/data-mirroring',
         default_fs = 'hdfs://c6401.ambari.apache.org:8020',
         user = 'hdfs',
+        dfs_type = '',
         hdfs_site = self.getConfig()['configurations']['hdfs-site'],
         kinit_path_local = '/usr/bin/kinit',
         principal_name = UnknownConfigurationMock(),
@@ -348,6 +355,7 @@ class TestFalconServer(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = UnknownConfigurationMock(),
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'],
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
     )

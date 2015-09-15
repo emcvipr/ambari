@@ -30,7 +30,6 @@ from resource_management.libraries.functions.version import format_hdp_stack_ver
 from resource_management.libraries.functions.default import default
 from resource_management.libraries import functions
 
-
 import status_params
 
 # a map of the Ambari role to the component name
@@ -74,6 +73,7 @@ hadoop_mapred2_jar_location = "/usr/lib/hadoop-mapreduce"
 mapred_bin = "/usr/lib/hadoop-mapreduce/sbin"
 yarn_bin = "/usr/lib/hadoop-yarn/sbin"
 yarn_container_bin = "/usr/lib/hadoop-yarn/bin"
+hadoop_java_io_tmpdir = os.path.join(tmp_dir, "hadoop_java_io_tmpdir")
 
 # hadoop parameters for 2.2+
 if Script.is_hdp_stack_greater_or_equal("2.2"):
@@ -249,6 +249,9 @@ hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_nam
 hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
 
+dfs_type = default("/commandParams/dfs_type", "")
+
+
 import functools
 #create partial functions with common arguments for every HdfsResource call
 #to create/delete hdfs directory/file/copyfromlocal we need to call params.HdfsResource in code
@@ -262,7 +265,8 @@ HdfsResource = functools.partial(
   hadoop_conf_dir = hadoop_conf_dir,
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
-  default_fs = default_fs
+  default_fs = default_fs,
+  dfs_type = dfs_type
  )
 update_exclude_file_only = default("/commandParams/update_exclude_file_only",False)
 
