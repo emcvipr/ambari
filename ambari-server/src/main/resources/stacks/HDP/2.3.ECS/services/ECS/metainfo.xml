@@ -27,7 +27,7 @@
       <components>
         <component>
           <name>ECS_CLIENT</name>
-          <displayName>ECS CLIENT</displayName>
+          <displayName>ECS Client</displayName>
           <category>CLIENT</category>
           <commandScript>
             <script>scripts/ecs_client.py</script>

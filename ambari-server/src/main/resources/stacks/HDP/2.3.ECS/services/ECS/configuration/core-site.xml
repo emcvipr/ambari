@@ -61,7 +61,7 @@
 
   <property>
     <name>fs.viprfs.auth.anonymous_translation</name>
-    <value>CURRENT_USER</value>
+    <value>LOCAL_USER</value>
   </property>  
 
   <property>
