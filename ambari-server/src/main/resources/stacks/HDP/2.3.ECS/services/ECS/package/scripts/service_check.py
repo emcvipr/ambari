@@ -25,12 +25,11 @@ class ECSServiceCheck(Script):
     import params
     env.set_params(params)
 
-    #TODO implement logic to print ECS service status
-    Execute(format("env  VIPRFS_LOG_DIR=/var/log/viprfs "
-                   "hadoop version"),
-            logoutput=True,
-            tries = 3,
-            try_sleep = 20
+    # run list files to maker sure ECS client jar is picked and executing against ECS Head
+    Execute(format("hadoop fs -ls /"),
+              logoutput=True,
+              tries = 3,
+              try_sleep = 20
     )
 
 if __name__ == "__main__":

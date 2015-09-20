@@ -18,8 +18,6 @@
     limitations under the License.
  -->
  
-<!-- Put site-specific property overrides in this file. -->
-
 <configuration supports_final="true" xmlns:xi="http://www.w3.org/2001/XInclude">
 
 <!-- file system properties -->
@@ -74,8 +72,6 @@
     <value>viprfs://hdfs.s3.Site1</value>
   </property>  
 
-<!-- i/o properties -->
-
   <property>
     <name>io.file.buffer.size</name>
     <value>131072</value>
@@ -95,25 +91,34 @@
   <property>
     <name>io.compression.codecs</name>
     <value>org.apache.hadoop.io.compress.GzipCodec,org.apache.hadoop.io.compress.DefaultCodec,org.apache.hadoop.io.compress.SnappyCodec</value>
-    <description>A list of the compression codec classes that can be used
-                 for compression/decompression.</description>
+    <description>A list of the compression codec classes that can be used for compression/decompression.</description>
   </property>
 
- <property>
-   <name>hadoop.security.authentication</name>
-   <value>simple</value>
-   <description>
-   Set the authentication for the cluster. Valid values are: simple or
-   kerberos.
-   </description>
- </property>
-<property>
-  <name>hadoop.security.authorization</name>
-  <value>false</value>
-  <description>
-     Enable authorization for different protocols.
-  </description>
-</property>
+  <property>
+    <name>hadoop.security.authentication</name>
+    <value>simple</value>
+    <description>
+      Set the authentication for the cluster. Valid values are: simple or kerberos
+    </description>
+  </property>
+
+  <property>
+    <name>hadoop.security.authorization</name>
+    <value>false</value>
+    <description>
+        Enable authorization for different protocols.
+    </description>
+  </property>
+
+  <property>
+    <name>dfs.permissions.enabled</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>dfs.permissions.superusergroup</name>
+    <value>hdfs</value>
+  </property>
 
 
 </configuration>

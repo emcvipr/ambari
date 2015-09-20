@@ -61,7 +61,7 @@ def hive_service(name, action='start', rolling_restart=False):
   process_id_exists_command = format("ls {pid_file} >/dev/null 2>&1 && ps -p {pid_expression} >/dev/null 2>&1")
 
   if action == 'start':
-    if name == 'hiveserver2':
+    if name == 'hiveserver2' and params.dfs_type != 'HCFS':
       check_fs_root()
 
     daemon_cmd = cmd
