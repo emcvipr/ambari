@@ -25,6 +25,7 @@ module.exports = App.WizardRoute.extend({
     var reassignMasterController = router.get('reassignMasterController');
     App.router.get('updateController').set('isWorking', true);
     reassignMasterController.finish();
+    App.router.get('wizardWatcherController').resetUser();
     App.clusterStatus.setClusterStatus({
       clusterName: App.router.get('content.cluster.name'),
       clusterState: 'DEFAULT',
@@ -32,7 +33,9 @@ module.exports = App.WizardRoute.extend({
     }, {alwaysCallback: function () {
       context.hide();
       router.transitionTo('main.index');
-      location.reload();
+      Em.run.next(function() {
+        location.reload();
+      });
     }});
   },
 
@@ -102,6 +105,7 @@ module.exports = App.WizardRoute.extend({
                 break;
             }
           }
+          App.router.get('wizardWatcherController').setUser(reassignMasterController.get('name'));
           router.transitionTo('step' + currStep);
         });
       } else {
@@ -244,7 +248,9 @@ module.exports = App.WizardRoute.extend({
         }, {alwaysCallback: function () {
           controller.get('popup').hide();
           router.transitionTo('main.index');
-          location.reload();
+          Em.run.next(function() {
+            location.reload();
+          });
         }});
       }
     },
@@ -309,7 +315,9 @@ module.exports = App.WizardRoute.extend({
         }, {alwaysCallback: function () {
           controller.get('popup').hide();
           router.transitionTo('main.index');
-          location.reload();
+          Em.run.next(function() {
+            location.reload();
+          });
         }});
       }
     },
@@ -342,11 +350,15 @@ module.exports = App.WizardRoute.extend({
           clusterName: router.get('reassignMasterController.content.cluster.name'),
           clusterState: 'DEFAULT',
           localdb: App.db.data
-        }, {alwaysCallback: function () {
-          controller.get('popup').hide();
-          router.transitionTo('main.index');
-          location.reload();
-        }});
+        }, {
+          alwaysCallback: function () {
+            controller.get('popup').hide();
+            router.transitionTo('main.index');
+            Em.run.next(function() {
+              location.reload();
+            });
+          }
+        });
       }
     },
 
@@ -360,11 +372,15 @@ module.exports = App.WizardRoute.extend({
           clusterName: router.get('reassignMasterController.content.cluster.name'),
           clusterState: 'DEFAULT',
           localdb: App.db.data
-        }, {alwaysCallback: function () {
-          controller.get('popup').hide();
-          router.transitionTo('main.index');
-          location.reload();
-        }});
+        }, {
+          alwaysCallback: function () {
+            controller.get('popup').hide();
+            router.transitionTo('main.index');
+            Em.run.next(function() {
+              location.reload();
+            });
+          }
+        });
       }
     },
 
