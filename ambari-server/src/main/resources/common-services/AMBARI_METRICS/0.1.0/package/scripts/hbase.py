@@ -173,6 +173,17 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
     hbase_TemplateConfig( format("hbase_client_jaas.conf"), user=params.hbase_user)
     hbase_TemplateConfig( format("ams_zookeeper_jaas.conf"), user=params.hbase_user)
 
+  if name != "client":
+    Directory( params.hbase_pid_dir,
+               owner = params.hbase_user,
+               recursive = True
+    )
+
+    Directory (params.hbase_log_dir,
+               owner = params.hbase_user,
+               recursive = True
+    )
+
   if name == "master":
 
     if params.is_hbase_distributed:
@@ -197,6 +208,9 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
 
         params.HdfsResource(None, action="execute")
 
+        #Workaround for status commands not aware of operating mode
+        File(format("{params.hbase_pid_dir}/distributed_mode"), action="create", mode=0644, owner=params.hbase_user)
+
       pass
 
     else:
@@ -213,16 +227,7 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
                 recursive = True
       )
 
-  if name != "client":
-    Directory( params.hbase_pid_dir,
-      owner = params.hbase_user,
-      recursive = True
-    )
-
-    Directory (params.hbase_log_dir,
-      owner = params.hbase_user,
-      recursive = True
-    )
+      File(format("{params.hbase_pid_dir}/distributed_mode"), action="delete", owner=params.hbase_user)
 
   if params.hbase_log4j_props is not None:
     File(format("{params.hbase_conf_dir}/log4j.properties"),

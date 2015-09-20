@@ -1373,6 +1373,15 @@ class TestHDP22StackAdvisor(TestCase):
     self.assertEquals(configurations["hive-env"]["property_attributes"]["hive.metastore.heapsize"]["maximum"], "1877")
     self.assertEquals(configurations["hive-env"]["property_attributes"]["hive.client.heapsize"]["maximum"], "1877")
 
+    # test 'hive_security_authorization'=='ranger'
+    services["configurations"]["hive-env"]["properties"]["hive_security_authorization"] = "ranger"
+    expected["hiveserver2-site"]["properties"]["hive.security.authenticator.manager"] = "org.apache.hadoop.hive.ql.security.SessionStateUserAuthenticator"
+    expected["hiveserver2-site"]["properties"]["hive.security.authorization.manager"] = "com.xasecure.authorization.hive.authorizer.XaSecureHiveAuthorizerFactory"
+    expected["hiveserver2-site"]["properties"]["hive.security.authorization.enabled"] = "true"
+    self.stackAdvisor.recommendHIVEConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations['hiveserver2-site'], expected["hiveserver2-site"])
+
+
   def test_recommendMapredConfigurationAttributesWithPigService(self):
     configurations = {
       "mapred-site": {
@@ -1968,8 +1977,9 @@ class TestHDP22StackAdvisor(TestCase):
     expected = {
       "ams-hbase-env": {
         "properties": {
-          "hbase_master_heapsize": "540m"
-          }
+          "hbase_master_xmn_size": "128m",
+          "hbase_master_heapsize": "512m"
+        }
       },
       "ams-env": {
         "properties": {
@@ -1984,7 +1994,6 @@ class TestHDP22StackAdvisor(TestCase):
           "hfile.block.cache.size": "0.3",
           "hbase.rootdir": "file:///var/lib/ambari-metrics-collector/hbase",
           "hbase.tmp.dir": "/var/lib/ambari-metrics-collector/hbase-tmp",
-          "hbase_master_xmn_size" : "128m"
         }
       },
       "ams-site": {
@@ -1999,7 +2008,7 @@ class TestHDP22StackAdvisor(TestCase):
     self.assertEquals(configurations, expected)
 
     # 100-nodes cluster, but still only 1 sink (METRICS_COLLECTOR)
-    for i in range(2, 101):
+    for i in range(2, 201):
       hosts['items'].extend([{
         "Hosts": {
           "host_name": "host" + str(i)
@@ -2021,13 +2030,13 @@ class TestHDP22StackAdvisor(TestCase):
           {
             "StackServiceComponents": {
               "component_name": "METRICS_MONITOR",
-              "hostnames": ["host" + str(i) for i in range(1, 101)]
+              "hostnames": ["host" + str(i) for i in range(1, 201)]
             }
           }
         ]
       }
     ]
-    expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '1034m'
+    expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '1408m'
     expected["ams-env"]['properties']['metrics_collector_heapsize'] = '512m'
 
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
@@ -2049,7 +2058,7 @@ class TestHDP22StackAdvisor(TestCase):
           {
             "StackServiceComponents": {
               "component_name": "DATANODE",
-              "hostnames": ["host" + str(i) for i in range(1, 101)]
+              "hostnames": ["host" + str(i) for i in range(1, 201)]
             }
           }
         ]
@@ -2068,7 +2077,7 @@ class TestHDP22StackAdvisor(TestCase):
           {
             "StackServiceComponents": {
               "component_name": "NODEMANAGER",
-              "hostnames": ["host" + str(i) for i in range(1, 101)]
+              "hostnames": ["host" + str(i) for i in range(1, 201)]
             }
           }
         ]
@@ -2087,19 +2096,89 @@ class TestHDP22StackAdvisor(TestCase):
           {
             "StackServiceComponents": {
               "component_name": "METRICS_MONITOR",
-              "hostnames": ["host" + str(i) for i in range(1, 101)]
+              "hostnames": ["host" + str(i) for i in range(1, 201)]
             }
           }
         ]
       }
 
     ]
-    expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '1601m'
-    expected["ams-env"]['properties']['metrics_collector_heapsize'] = '512m'
-    # expected["ams-hbase-site"]['properties']['hbase_master_xmn_size'] = '256m'
+    expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '2432m'
+    expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '256m'
+    expected["ams-env"]['properties']['metrics_collector_heapsize'] = '640m'
 
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
+
+    # Test splitpoints, AMS embedded mode
+    services['changed-configurations'] = [
+      {
+        "type": "ams-hbase-env",
+        "name": "hbase_master_heapsize"
+      }
+    ]
+
+    services['configurations'] = {
+      'ams-hbase-site': {'properties': {}},
+      'ams-hbase-env': {'properties': {}}
+    }
+
+    # Embedded mode, 512m master heapsize, no splitpoints recommended
+    services["configurations"]['ams-hbase-env']['properties']['hbase_master_heapsize'] = '512m'
+    services["configurations"]['ams-hbase-site']['properties']['hbase.regionserver.global.memstore.lowerLimit'] = '0.3'
+    services["configurations"]['ams-hbase-site']['properties']['hbase.hregion.memstore.flush.size'] = '134217728'
+
+    expected['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'] = ' '
+    expected['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'] = ' '
+    expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '512m'
+
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
+    # Embedded mode, 4096m master heapsize, some splitpoints recommended
+    services["configurations"]['ams-hbase-env']['properties']['hbase_master_heapsize'] = '4096m'
+    expected['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'] = \
+      'jvm.JvmMetrics.MemHeapCommittedM,regionserver.Server.Increment_median'
+    expected['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'] = ' '
+    expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '4096m'
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
+    # Embedded mode, 8192m master heapsize, more splitpoints recommended
+    services["configurations"]['ams-hbase-env']['properties']['hbase_master_heapsize'] = '8192m'
+    expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '8192m'
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'].split(',')), 10)
+    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'].split(',')), 2)
+
+    # Test splitpoints, AMS distributed mode
+    services['changed-configurations'] = [
+      {
+        "type": "ams-hbase-env",
+        "name": "hbase_regionserver_heapsize"
+      }
+    ]
+    services["configurations"]['ams-hbase-site']['properties']['hbase.rootdir'] = 'hdfs://host1/amshbase'
+    expected['ams-hbase-site']['properties']['hbase.rootdir'] = 'hdfs://host1/amshbase'
+    expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '512m'
+    # services["configurations"]['ams-hbase-site']['properties']['dfs.client.read.shortcircuit'] = 'true'
+    expected['ams-hbase-site']['properties']['dfs.client.read.shortcircuit'] = 'true'
+
+    # Distributed mode, low memory, no splitpoints recommended
+    services["configurations"]['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '512m'
+    expected['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'] = ' '
+    expected['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'] = ' '
+    expected['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '512m'
+    expected['ams-hbase-env']['properties']['regionserver_xmn_size'] = '256m'
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
+    # Distributed mode, more memory, more splitpoints recommended
+    services["configurations"]['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '8192m'
+    expected['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '8192m'
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'].split(',')), 10)
+    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'].split(',')), 2)
 
   def test_recommendHbaseConfigurations(self):
     servicesList = ["HBASE"]
@@ -2858,6 +2937,38 @@ class TestHDP22StackAdvisor(TestCase):
     self.assertEquals(res, res_expected)
 
     pass
+
+  def test_validateHiveServer2Configurations(self):
+    properties = {"hive_security_authorization": "None",
+                  "hive.exec.orc.default.stripe.size": "8388608",
+                  'hive.tez.container.size': '2048',
+                  'hive.tez.java.opts': '-Xmx300m',
+                  'hive.auto.convert.join.noconditionaltask.size': '1100000000'}
+    recommendedDefaults = {'hive.tez.container.size': '1024',
+                           'hive.tez.java.opts': '-Xmx256m',
+                           'hive.auto.convert.join.noconditionaltask.size': '1000000000'}
+    configurations = {
+      "hive-site": {
+        "properties": {"hive.security.authorization.enabled": "true"}
+      },
+      "hive-env": {
+        "properties": {"hive_security_authorization": "ranger"}
+      }
+    }
+    services = {
+      "services": [
+        {
+          "StackServices": {
+            "service_name": "RANGER",
+          },
+        }
+      ],
+    }
+
+    # Test with ranger plugin enabled, validation fails
+    res_expected = [{'config-type': 'hiveserver2-site', 'message': 'If Ranger Hive Plugin is enabled. hive.security.authorization.manager needs to be set to com.xasecure.authorization.hive.authorizer.XaSecureHiveAuthorizerFactory', 'type': 'configuration', 'config-name': 'hive.security.authorization.manager', 'level': 'WARN'}, {'config-type': 'hiveserver2-site', 'message': 'If Ranger Hive Plugin is enabled. hive.security.authenticator.manager needs to be set to org.apache.hadoop.hive.ql.security.SessionStateUserAuthenticator', 'type': 'configuration', 'config-name': 'hive.security.authenticator.manager', 'level': 'WARN'}]
+    res = self.stackAdvisor.validateHiveServer2Configurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
 
   def test_recommendYarnCGroupConfigurations(self):
     servicesList = ["YARN"]

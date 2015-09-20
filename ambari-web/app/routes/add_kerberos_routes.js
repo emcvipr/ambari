@@ -76,8 +76,11 @@ module.exports = App.WizardRoute.extend({
           App.get('router.updateController').set('isWorking', true);
           if (App.get('testMode')) {
             App.get('router').transitionTo('adminKerberos.index');
-            location.reload();
+            Em.run.next(function() {
+              location.reload();
+            });
           }
+          App.router.get('wizardWatcherController').resetUser();
           App.clusterStatus.setClusterStatus({
             clusterName: App.router.getClusterName(),
             clusterState: 'DEFAULT',
@@ -86,7 +89,9 @@ module.exports = App.WizardRoute.extend({
             alwaysCallback: function () {
               self.hide();
               App.get('router').transitionTo(exitPath);
-              location.reload();
+              Em.run.next(function() {
+                location.reload();
+              });
             }
           });
         }
@@ -110,6 +115,7 @@ module.exports = App.WizardRoute.extend({
 
       }
       Em.run.next(function(){
+        App.router.get('wizardWatcherController').setUser(kerberosWizardController.get('name'));
         router.transitionTo('step' + kerberosWizardController.get('currentStep'));
       });
     });
@@ -381,7 +387,9 @@ module.exports = App.WizardRoute.extend({
         alwaysCallback: function () {
           controller.get('popup').hide();
           App.get('router').transitionTo('adminKerberos.index');
-          location.reload();
+          Em.run.next(function() {
+            location.reload();
+          });
         }
       });
 

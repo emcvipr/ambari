@@ -4668,6 +4668,7 @@ class TestAmbariServer(TestCase):
     pass
 
 
+  @patch("ambari_server.serverUpgrade.get_jdbc_driver_path")
   @patch("ambari_server.serverUpgrade.ensure_can_start_under_current_user")
   @patch("ambari_server.serverUpgrade.generate_env")
   @patch("ambari_server.serverUpgrade.read_ambari_user")
@@ -4680,12 +4681,13 @@ class TestAmbariServer(TestCase):
   def test_run_schema_upgrade(self, get_YN_input_mock, get_ambari_properties_mock, java_exe_path_mock, run_os_command_mock,
                               get_ambari_classpath_mock, get_conf_dir_mock,
                               read_ambari_user_mock, generate_env_mock,
-                              ensure_can_start_under_current_user_mock):
+                              ensure_can_start_under_current_user_mock, get_jdbc_mock):
     java_exe_path_mock.return_value = "/usr/lib/java/bin/java"
     run_os_command_mock.return_value = (0, None, None)
     get_ambari_classpath_mock.return_value = 'test' + os.pathsep + 'path12'
     get_conf_dir_mock.return_value = '/etc/conf'
-    command = '/usr/lib/java/bin/java -cp /etc/conf' + os.pathsep + 'test' + os.pathsep + 'path12 ' \
+    command = '/usr/lib/java/bin/java -cp /etc/conf' + os.pathsep + 'test' + os.pathsep + 'path12' + \
+              os.pathsep +'/path/to/jdbc.jar ' \
               'org.apache.ambari.server.upgrade.SchemaUpgradeHelper ' \
               '> ' + os.sep + 'var' + os.sep + 'log' + os.sep + 'ambari-server' + os.sep + 'ambari-server.out 2>&1'
     environ = {}
@@ -4696,8 +4698,9 @@ class TestAmbariServer(TestCase):
     properties.process_pair(PERSISTENCE_TYPE_PROPERTY, "local")
     get_ambari_properties_mock.return_value = properties
     get_YN_input_mock.return_value = True
+    get_jdbc_mock.return_value = '/path/to/jdbc.jar'
 
-    run_schema_upgrade()
+    run_schema_upgrade(None)
 
     self.assertTrue(java_exe_path_mock.called)
     self.assertTrue(ensure_can_start_under_current_user_mock.called)
@@ -6468,6 +6471,19 @@ class TestAmbariServer(TestCase):
     sys.stdout = sys.__stdout__
     pass
 
+
+  @not_for_platform(PLATFORM_WINDOWS)
+  def test_configure_database_password_silent(self):
+
+    out = StringIO.StringIO()
+    sys.stdout = out
+
+    set_silent(True)
+    result = LinuxDBMSConfig._configure_database_password(True, "CustomDefaultPasswd")
+    self.assertEquals("CustomDefaultPasswd", result)
+
+    sys.stdout = sys.__stdout__
+    pass
 
   @patch("os.path.exists")
   @patch("ambari_server.setupSecurity.get_is_secure")

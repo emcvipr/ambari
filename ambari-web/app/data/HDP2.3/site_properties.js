@@ -83,7 +83,7 @@ hdp23properties.push({
       },
       {
         displayName: 'SQLA',
-        hidden: App.get('currentStackName') !== 'SAPHD'
+        hidden: App.get('currentStackName') !== 'SAPHD' && App.get('currentStackName') !== 'HDP'
       }
     ],
     "displayType": "radio button",
@@ -170,7 +170,7 @@ hdp23properties.push({
     "filename": "ranger-kms-audit.xml",
     "category": "Advanced ranger-kms-audit",
     "serviceName": "RANGER_KMS"
-  },        
+  },
   {
     "name": "ranger-yarn-plugin-enabled",
     "displayType": "checkbox",
