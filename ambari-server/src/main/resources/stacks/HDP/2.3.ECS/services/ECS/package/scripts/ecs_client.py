@@ -24,16 +24,83 @@ class ECSClient(Script):
 
   def install(self, env):
     print 'Installing ECS Client...';
-    packages = ['viprfs-client']
+    packages = ['viprfs-client','hadoop-client']
     Package(packages)
     self.configure(env)
 
   def configure(self, env):
     print 'Configuring ECS Client...';
+    self.setup_config(env)
+    self.setup_hadoop_env(env)
+    self.create_dirs(env)
 
   def status(self, env):
     print 'Querying ECS Client Status...';
     raise ClientComponentHasNoStatus()
 
+  def setup_config(self, env):
+    import params
+    env.set_params(params)
+    stackversion = params.stack_version_unformatted
+    # create core-site only if the hadoop config diretory exists
+    XmlConfig("core-site.xml",
+              conf_dir=params.hadoop_conf_dir,
+              configurations=params.config['configurations']['core-site'],
+              configuration_attributes=params.config['configuration_attributes']['core-site'],
+              owner=params.hdfs_user,
+              group=params.user_group,
+              only_if=format("ls {hadoop_conf_dir}"))
+
+    File(format("{ambari_libs_dir}/fast-hdfs-resource.jar"),
+           mode=0644,
+           content=StaticFile("/var/lib/ambari-agent/cache/stacks/HDP/2.0.6/hooks/before-START/files/fast-hdfs-resource.jar")
+    )
+
+  def setup_hadoop_env(self, env):
+    import params
+    env.set_params(params)
+    stackversion = params.stack_version_unformatted
+    if params.security_enabled:
+      tc_owner = "root"
+    else:
+      tc_owner = params.hdfs_user
+
+    # create /etc/hadoop
+    Directory(params.hadoop_dir, mode=0755)
+
+    # write out hadoop-env.sh, but only if the directory exists
+    if os.path.exists(params.hadoop_conf_dir):
+      File(os.path.join(params.hadoop_conf_dir, 'hadoop-env.sh'), owner=tc_owner,
+        group=params.user_group,
+        content=InlineTemplate(params.hadoop_env_sh_template))
+
+    # Create tmp dir for java.io.tmpdir
+    # Handle a situation when /tmp is set to noexec
+    Directory(params.hadoop_java_io_tmpdir,
+              owner=params.hdfs_user,
+              group=params.user_group,
+              mode=0777
+    )
+
+  def create_dirs(self,env):
+    import params
+    env.set_params(params)
+    params.HdfsResource("/tmp",
+                       type="directory",
+                       action="create_on_execute",
+                       owner=params.hdfs_user,
+                       mode=0777
+    )
+    params.HdfsResource(params.smoke_hdfs_user_dir,
+                       type="directory",
+                       action="create_on_execute",
+                       owner=params.smoke_user,
+                       mode=params.smoke_hdfs_user_mode
+    )
+    params.HdfsResource(None,
+                      action="execute"
+    )
+
 if __name__ == "__main__":
   ECSClient().execute()
+

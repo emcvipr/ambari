@@ -25,6 +25,7 @@
       <requiredServices>
         <service>ECS</service>
         <service>MAPREDUCE2</service>
+        <service>ZOOKEEPER</service>
       </requiredServices>
     </service>
 
@@ -50,7 +51,6 @@
                 <enabled>true</enabled>
               </auto-deploy>
             </dependency>
-            <!--
             <dependency>
               <name>TEZ/TEZ_CLIENT</name>
               <scope>host</scope>
@@ -58,7 +58,6 @@
                 <enabled>true</enabled>
               </auto-deploy>
             </dependency>
-            -->
           </dependencies>
         </component>
 

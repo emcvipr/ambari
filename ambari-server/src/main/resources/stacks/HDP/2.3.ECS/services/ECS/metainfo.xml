@@ -22,7 +22,7 @@
       <name>ECS</name>
       <displayName>ECS</displayName>
       <serviceType>HCFS</serviceType>
-      <comment>An Hadoop Compatible File System</comment>
+      <comment>Hadoop Compatible File System Client for ECS</comment>
       <version>2.3.0.0</version>
       <components>
         <component>
@@ -46,6 +46,20 @@
             </configFile>          
         </component>
       </components>
+
+      <osSpecifics>
+        <osSpecific>
+          <osFamily>any</osFamily>
+          <packages>
+            <package>
+              <name>hadoop-client</name>
+            </package>
+            <package>
+              <name>viprfs-client</name>
+            </package>
+          </packages>
+        </osSpecific>
+      </osSpecifics>
 
       <commandScript>
         <script>scripts/service_check.py</script>

@@ -25,7 +25,7 @@ class ECSServiceCheck(Script):
     import params
     env.set_params(params)
 
-    # run list files to maker sure ECS client jar is picked and executing against ECS Head
+    # run fs list command to make sure ECS client can talk to ECS backend
     Execute(format("hadoop fs -ls /"),
               logoutput=True,
               tries = 3,
