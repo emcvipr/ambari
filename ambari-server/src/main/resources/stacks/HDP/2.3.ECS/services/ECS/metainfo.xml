@@ -40,6 +40,11 @@
               <dictionaryName>core-site</dictionaryName>
             </configFile>                       
             <configFile>
+              <type>xml</type>
+              <fileName>hdfs-site.xml</fileName>
+              <dictionaryName>hdfs-site</dictionaryName>
+            </configFile>                       
+            <configFile>
               <type>env</type>
               <fileName>hadoop-env.sh</fileName>
               <dictionaryName>hadoop-env</dictionaryName>
@@ -69,6 +74,7 @@
 
       <configuration-dependencies>
         <config-type>core-site</config-type>
+        <config-type>hdfs-site</config-type>
         <config-type>hadoop-env</config-type>
       </configuration-dependencies>
 

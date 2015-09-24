@@ -110,15 +110,5 @@
     </description>
   </property>
 
-  <property>
-    <name>dfs.permissions.enabled</name>
-    <value>true</value>
-  </property>
-
-  <property>
-    <name>dfs.permissions.superusergroup</name>
-    <value>hdfs</value>
-  </property>
-
 
 </configuration>
