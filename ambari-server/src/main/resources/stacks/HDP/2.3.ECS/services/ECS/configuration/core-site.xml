@@ -69,7 +69,7 @@
 
   <property>
     <name>fs.defaultFS</name>
-    <value>viprfs://hdfs.s3.Site1</value>
+    <value></value>
   </property>  
 
   <property>

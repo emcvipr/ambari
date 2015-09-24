@@ -57,9 +57,11 @@
           <osFamily>any</osFamily>
           <packages>
             <package>
+              <type>rpm</type>
               <name>hadoop-client</name>
             </package>
             <package>
+              <type>rpm</type>
               <name>viprfs-client</name>
             </package>
           </packages>
