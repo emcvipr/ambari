@@ -82,7 +82,7 @@ hdp23properties.push({
         displayName: 'MSSQL'
       },
       {
-        displayName: 'SQLA',
+        displayName: 'SQL Anywhere',
         hidden: App.get('currentStackName') !== 'SAPHD' && App.get('currentStackName') !== 'HDP'
       }
     ],
@@ -99,20 +99,6 @@ hdp23properties.push({
     "filename": "admin-properties.xml",
     "category": "DBSettings",
     "index": 2
-  },
-  {
-    "name": "rangerserver_host",
-    "displayName": "Ranger Server host",
-    "value": "",
-    "recommendedValue": "",
-    "description": "The host that has been assigned to run Ranger Server",
-    "displayType": "masterHost",
-    "isOverridable": false,
-    "isRequiredByAgent": false,
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 0
   },
   {
     "name": "create_db_dbuser",
@@ -294,7 +280,7 @@ hdp23properties.push({
   },
   {
     "name": "nimbus.seeds",
-    "displayType": "masterHosts",
+    "displayType": "componentHosts",
     "serviceName": "STORM",
     "filename": "storm-site.xml",
     "category": "NIMBUS"

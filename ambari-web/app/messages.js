@@ -726,7 +726,7 @@ Em.I18n.translations = {
   'installer.step4.ambariMetricsCheck.popup.header':'Limited Functionality Warning',
   'installer.step4.ambariMetricsCheck.popup.body':'Ambari Metrics collects metrics from the cluster and makes them available to Ambari.  If you do not install Ambari Metrics service, metrics will not be accessible from Ambari.  Are you sure you want to proceed without Ambari Metrics?',
   'installer.step4.rangerRequirements.popup.header': 'Ranger Requirements',
-  'installer.step4.rangerRequirements.popup.body.requirements': '<ol><li>You must have an <strong>MySQL/Oracle/Postgres/MSSQL/SQLA Server</strong> database instance running to be used by Ranger.</li>' +
+  'installer.step4.rangerRequirements.popup.body.requirements': '<ol><li>You must have an <strong>MySQL/Oracle/Postgres/MSSQL/SQL Anywhere Server</strong> database instance running to be used by Ranger.</li>' +
     '<li>In Assign Masters step of this wizard, you will be prompted to specify which host for the Ranger Admin. On that host, you <strong>must have DB Client installed</strong> for Ranger to access to the database. (Note: This is applicable for only Ranger 0.4.0)</li>' +
     '<li>Ensure that the access for the DB Admin user is enabled in DB server from any host.</li>' +
     '<li>Execute the following command on the Ambari Server host. Replace <code>database-type</code> with <strong>mysql|oracle|postgres|mssql|sqlanywhere</strong> and <code>/jdbc/driver/path</code> based on the location of corresponding JDBC driver:' +
@@ -1815,7 +1815,7 @@ Em.I18n.translations = {
     '<li>Once in Safe Mode, create a Checkpoint:' +
     '<div class="code-snippet">sudo su {1} -l -c \'hdfs dfsadmin -saveNamespace\'</div></li>' +
     '</ol>',
-  'services.service.stop.HDFS.warningMsg.checkPointTooOld': 'The last HDFS checkpoint is older than 12 hours. Make sure that you have taken a checkpoint before proceeding. Otherwise, the NameNode(s) can take a very long time to start up.',
+  'services.service.stop.HDFS.warningMsg.checkPointTooOld': 'The last HDFS checkpoint is older than {0} hours. Make sure that you have taken a checkpoint before proceeding. Otherwise, the NameNode(s) can take a very long time to start up.',
   'services.service.config_groups_popup.header':'Manage {0} Configuration Groups',
   'services.service.config_groups_popup.notice':'You can apply different sets of {{serviceName}} configurations to groups of hosts by managing {{serviceName}} Configuration Groups and their host membership.  Hosts belonging to a {{serviceName}} Configuration Group have the same set of configurations for {{serviceName}}. Each host belongs to one {{serviceName}} Configuration Group.',
   'services.service.config_groups_popup.rename':'Rename',

@@ -18,9 +18,8 @@
 
 var App = require('app');
 var batchUtils = require('utils/batch_scheduled_requests');
-var componentsUtils = require('utils/components');
 
-App.MainServiceItemController = Em.Controller.extend({
+App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDownload, {
   name: 'mainServiceItemController',
 
   /**
@@ -202,7 +201,7 @@ App.MainServiceItemController = Em.Controller.extend({
         // too old
         self.getHdfsUser().done(function() {
           var msg = Em.Object.create({
-            confirmMsg: Em.I18n.t('services.service.stop.HDFS.warningMsg.checkPointTooOld') +
+            confirmMsg: Em.I18n.t('services.service.stop.HDFS.warningMsg.checkPointTooOld').format(App.nnCheckpointAgeAlertThreshold) +
               Em.I18n.t('services.service.stop.HDFS.warningMsg.checkPointTooOld.instructions').format(isNNCheckpointTooOld, self.get('content.hdfsUser')),
             confirmButton: Em.I18n.t('common.next')
           });
@@ -808,7 +807,7 @@ App.MainServiceItemController = Em.Controller.extend({
             }
           );
         } else {
-          componentsUtils.installHostComponent(selectedHost, component);
+          self.installHostComponentCall(selectedHost, component);
         }
 
         // Remove host from 'without' collection to immediate recalculate add menu item state
@@ -888,7 +887,7 @@ App.MainServiceItemController = Em.Controller.extend({
 
   downloadClientConfigs: function (event) {
     var component = this.get('content.clientComponents').rejectProperty('totalCount', 0)[0];
-    componentsUtils.downloadClientConfigs.call(this, {
+    this.downloadClientConfigsCall({
       serviceName: this.get('content.serviceName'),
       componentName: (event && event.name) || component.get('componentName'),
       displayName: (event && event.label) || component.get('displayName')
