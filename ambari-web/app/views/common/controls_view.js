@@ -481,7 +481,7 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
    */
   getDbTypeFromRadioValue: function() {
     var currentValue = this.get('serviceConfig.value');
-    var databases = /MySQL|Postgres|Oracle|Derby|MSSQL|SQLA/gi;
+    var databases = /MySQL|Postgres|Oracle|Derby|MSSQL|Anywhere/gi;
     if (this.get('inMSSQLWithIA')) {
       return 'MSSQL2';
     } else {
@@ -505,13 +505,13 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
       } else {
         this.get('hostNameProperty').set('isEditable', true);
       }
-      this.setRequiredProperties(['driver', 'sql_jar_connector', 'db_type']);
+      this.setRequiredProperties(['driver', 'db_type']);
       if (this.getPropertyByType('connection_url')) {
-        this.setConnectionUrl(this.get('hostNameProperty.value'), this.get('databaseProperty.value'), this.get('userProperty.value'), this.get('passwordProperty.value'));
+        this.setConnectionUrl(this.get('hostNameProperty.value'), this.get('databaseProperty.value'));
       }
       this.handleSpecialUserPassProperties();
     }
-  }.observes('databaseProperty.value', 'hostNameProperty.value', 'serviceConfig.value', 'userProperty.value', 'passwordProperty.value'),
+  }.observes('databaseProperty.value', 'hostNameProperty.value', 'serviceConfig.value'),
 
   nameBinding: 'serviceConfig.radioName',
 
@@ -576,7 +576,7 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
     if (dbInfo.dpPropertiesByServiceMap[this.get('serviceConfig.serviceName')]) {
       //@TODO: dbInfo.dpPropertiesByServiceMap has corresponding property name but does not have filenames with it. this can cause issue when there are multiple db properties with same name belonging to different files
       /** check if selected service has db properties**/
-      return this.get('parentView.serviceConfigs').findProperty('name', dbInfo.dpPropertiesByServiceMap[this.get('serviceConfig.serviceName')][propertyType]);
+      return this.get('controller.selectedService.configs').findProperty('name', dbInfo.dpPropertiesByServiceMap[this.get('serviceConfig.serviceName')][propertyType]);
     }
     return null;
   },
@@ -586,15 +586,13 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
    * and sets hostName as dbName in appropriate position of <code>connection_url<code> string
    * @param {String} hostName
    * @param {String} dbName
-   * @param {String} user
-   * @param {String} password
    * @method setConnectionUrl
    */
-  setConnectionUrl: function(hostName, dbName, user, password) {
+  setConnectionUrl: function(hostName, dbName) {
     var connectionUrlProperty = this.getPropertyByType('connection_url');
     var connectionUrlTemplate = this.getDefaultPropertyValue('connection_url');
     try {
-      var connectionUrlValue = connectionUrlTemplate.format(hostName, dbName, user, password);
+      var connectionUrlValue = connectionUrlTemplate.format(hostName, dbName);
       connectionUrlProperty.set('value', connectionUrlValue);
       connectionUrlProperty.set('recommendedValue', connectionUrlValue);
     } catch(e) {
@@ -651,9 +649,9 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
     }
     var handledProperties = ['oozie_database', 'hive_database', 'DB_FLAVOR'];
     var currentValue = this.get('serviceConfig.value');
-    var databases = /MySQL|PostgreSQL|Postgres|Oracle|Derby|MSSQL|SQLA/gi;
+    var databases = /MySQL|PostgreSQL|Postgres|Oracle|Derby|MSSQL|Anywhere/gi;
     var currentDB = currentValue.match(databases)[0];
-    var databasesTypes = /MySQL|Postgres|Oracle|Derby|MSSQL|SQLA/gi;
+    var databasesTypes = /MySQL|Postgres|Oracle|Derby|MSSQL|Anywhere/gi;
     var currentDBType = currentValue.match(databasesTypes)[0];
     var checkDatabase = /existing/gi.test(currentValue);
     // db connection check button show up if existed db selected
@@ -860,36 +858,6 @@ App.ServiceConfigMultipleHostsDisplay = Ember.Mixin.create(App.ServiceConfigHost
 
 
 /**
- * Multiple master host component.
- * Show hostnames without ability to edit it
- * @type {*}
- */
-App.ServiceConfigMasterHostsView = Ember.View.extend(App.ServiceConfigMultipleHostsDisplay, App.ServiceConfigCalculateId, {
-
-  viewName: "serviceConfigMasterHostsView",
-  valueBinding: 'serviceConfig.value',
-
-  classNames: ['master-hosts', 'span6'],
-  templateName: require('templates/wizard/master_hosts'),
-
-  /**
-   * Onclick handler for link
-   */
-  showHosts: function () {
-    var serviceConfig = this.get('serviceConfig');
-    App.ModalPopup.show({
-      header: Em.I18n.t('installer.controls.serviceConfigMasterHosts.header').format(serviceConfig.category),
-      bodyClass: Ember.View.extend({
-        serviceConfig: serviceConfig,
-        templateName: require('templates/wizard/master_hosts_popup')
-      }),
-      secondary: null
-    });
-  }
-
-});
-
-/**
  * Show tabs list for slave hosts
  * @type {*}
  */
@@ -942,15 +910,15 @@ App.AddSlaveComponentGroupButton = Ember.View.extend(App.ServiceConfigCalculateI
  * Multiple Slave Hosts component
  * @type {*}
  */
-App.ServiceConfigSlaveHostsView = Ember.View.extend(App.ServiceConfigMultipleHostsDisplay, App.ServiceConfigCalculateId, {
+App.ServiceConfigComponentHostsView = Ember.View.extend(App.ServiceConfigMultipleHostsDisplay, App.ServiceConfigCalculateId, {
 
   viewName: 'serviceConfigSlaveHostsView',
 
-  classNames: ['slave-hosts', 'span6'],
+  classNames: ['component-hosts', 'span6'],
 
   valueBinding: 'serviceConfig.value',
 
-  templateName: require('templates/wizard/slave_hosts'),
+  templateName: require('templates/wizard/component_hosts'),
 
   /**
    * Onclick handler for link
@@ -961,7 +929,7 @@ App.ServiceConfigSlaveHostsView = Ember.View.extend(App.ServiceConfigMultipleHos
       header: Em.I18n.t('installer.controls.serviceConfigMasterHosts.header').format(serviceConfig.category),
       bodyClass: Ember.View.extend({
         serviceConfig: serviceConfig,
-        templateName: require('templates/wizard/master_hosts_popup')
+        templateName: require('templates/wizard/component_hosts_popup')
       }),
       secondary: null
     });
@@ -975,16 +943,13 @@ App.ServiceConfigSlaveHostsView = Ember.View.extend(App.ServiceConfigMultipleHos
  */
 App.SlaveGroupPropertiesView = Ember.View.extend(App.ServiceConfigCalculateId, {
 
-  viewName: 'serviceConfigSlaveHostsView',
+  viewName: 'serviceConfigComponentHostsView',
 
   group: function () {
     return this.get('controller.activeGroup');
   }.property('controller.activeGroup'),
 
   groupConfigs: function () {
-    console.log("************************************************************************");
-    console.log("The value of group is: " + this.get('group'));
-    console.log("************************************************************************");
     return this.get('group.properties');
   }.property('group.properties.@each').cacheable(),
 
@@ -1128,11 +1093,11 @@ App.CheckDBConnectionView = Ember.View.extend({
   /** @property {String} masterHostName - host name location of Master Component related to Service **/
   masterHostName: function() {
     var serviceMasterMap = {
-      'OOZIE': 'oozieserver_host',
+      'OOZIE': 'oozie_server_hosts',
       'HDFS': 'hadoop_host',
-      'HIVE': 'hivemetastore_host',
+      'HIVE': 'hive_metastore_hosts',
       'KERBEROS': 'kdc_host',
-      'RANGER': 'rangerserver_host'
+      'RANGER': 'ranger_server_hosts'
     };
     return this.get('parentView.categoryConfigsAll').findProperty('name', serviceMasterMap[this.get('parentView.service.serviceName')]).get('value');
   }.property('parentView.service.serviceName', 'parentView.categoryConfigsAll.@each.value'),
@@ -1145,7 +1110,7 @@ App.CheckDBConnectionView = Ember.View.extend({
 
     if (this.get('parentView.service.serviceName') === 'RANGER') {
       var dbFlavor = this.get('parentView.categoryConfigsAll').findProperty('name','DB_FLAVOR').get('value'),
-        databasesTypes = /MYSQL|POSTGRES|ORACLE|MSSQL|SQLA/gi,
+        databasesTypes = /MYSQL|POSTGRES|ORACLE|MSSQL|Anywhere/gi,
         dbType = dbFlavor.match(databasesTypes)?dbFlavor.match(databasesTypes)[0].toLowerCase():'';
 
       if (dbType==='oracle') {

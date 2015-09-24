@@ -28,6 +28,7 @@ from ambari_commons.os_check import OSCheck
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions.format import format
+from resource_management.libraries.functions.is_empty import is_empty
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.copy_tarball import STACK_VERSION_PATTERN
 from resource_management.libraries.functions import get_kinit_path
@@ -165,6 +166,7 @@ hive_metastore_user_name = config['configurations']['hive-site']['javax.jdo.opti
 hive_jdbc_connection_url = config['configurations']['hive-site']['javax.jdo.option.ConnectionURL']
 
 hive_metastore_user_passwd = config['configurations']['hive-site']['javax.jdo.option.ConnectionPassword']
+hive_metastore_user_passwd = unicode(hive_metastore_user_passwd) if not is_empty(hive_metastore_user_passwd) else hive_metastore_user_passwd
 hive_metastore_db_type = config['configurations']['hive-env']['hive_database_type']
 #HACK Temporarily use dbType=azuredb while invoking schematool
 if hive_metastore_db_type == "mssql":
@@ -203,11 +205,13 @@ prepackaged_ojdbc_symlink = format("{hive_lib}/ojdbc6.jar")
 templeton_port = config['configurations']['webhcat-site']['templeton.port']
 
 #constants for type2 jdbc
+jdbc_libs_dir = format("{hive_lib}/native/lib64")
+lib_dir_available = os.path.exists(jdbc_libs_dir)
+
 if sqla_db_used:
   jars_path_in_archive = format("{tmp_dir}/sqla-client-jdbc/java/*")
   libs_path_in_archive = format("{tmp_dir}/sqla-client-jdbc/native/lib64/*")
   downloaded_custom_connector = format("{tmp_dir}/sqla-client-jdbc.tar.gz")
-  jdbc_libs_dir = format("{hive_lib}/native/lib64")
   libs_in_hive_lib = format("{jdbc_libs_dir}/*")
 
 #common
@@ -349,7 +353,7 @@ process_name = status_params.process_name
 hive_env_sh_template = config['configurations']['hive-env']['content']
 
 hive_hdfs_user_dir = format("/user/{hive_user}")
-hive_hdfs_user_mode = 0700
+hive_hdfs_user_mode = 0755
 hive_apps_whs_dir = config['configurations']['hive-site']["hive.metastore.warehouse.dir"]
 hive_exec_scratchdir = config['configurations']['hive-site']["hive.exec.scratchdir"]
 #for create_hdfs_directory

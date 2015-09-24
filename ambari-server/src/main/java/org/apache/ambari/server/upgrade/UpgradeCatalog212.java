@@ -54,6 +54,7 @@ public class UpgradeCatalog212 extends AbstractUpgradeCatalog {
   private static final String HBASE_ENV = "hbase-env";
   private static final String HBASE_SITE = "hbase-site";
   private static final String CLUSTER_ENV = "cluster-env";
+  private static final String OOZIE_ENV = "oozie-env";
 
   private static final String TOPOLOGY_REQUEST_TABLE = "topology_request";
   private static final String CLUSTERS_TABLE = "clusters";
@@ -118,7 +119,7 @@ public class UpgradeCatalog212 extends AbstractUpgradeCatalog {
 
   private void executeTopologyDDLUpdates() throws AmbariException, SQLException {
     dbAccessor.addColumn(TOPOLOGY_REQUEST_TABLE, new DBColumnInfo(TOPOLOGY_REQUEST_CLUSTER_ID_COLUMN,
-        Long.class, null, null, true));
+      Long.class, null, null, true));
     // TOPOLOGY_REQUEST_CLUSTER_NAME_COLUMN will be deleted in PreDML. We need a cluster name to set cluster id.
     // dbAccessor.dropColumn(TOPOLOGY_REQUEST_TABLE, TOPOLOGY_REQUEST_CLUSTER_NAME_COLUMN);
     // dbAccessor.setColumnNullable(TOPOLOGY_REQUEST_TABLE, TOPOLOGY_REQUEST_CLUSTER_ID_COLUMN, false);
@@ -139,7 +140,7 @@ public class UpgradeCatalog212 extends AbstractUpgradeCatalog {
     dbAccessor.dropColumn(TOPOLOGY_REQUEST_TABLE, TOPOLOGY_REQUEST_CLUSTER_NAME_COLUMN);
     dbAccessor.setColumnNullable(TOPOLOGY_REQUEST_TABLE, TOPOLOGY_REQUEST_CLUSTER_ID_COLUMN, false);
     dbAccessor.addFKConstraint(TOPOLOGY_REQUEST_TABLE, TOPOLOGY_REQUEST_CLUSTER_ID_FK_CONSTRAINT_NAME,
-        TOPOLOGY_REQUEST_CLUSTER_ID_COLUMN, CLUSTERS_TABLE, CLUSTERS_TABLE_CLUSTER_ID_COLUMN, false);
+      TOPOLOGY_REQUEST_CLUSTER_ID_COLUMN, CLUSTERS_TABLE, CLUSTERS_TABLE_CLUSTER_ID_COLUMN, false);
   }
 
   /**
@@ -193,7 +194,23 @@ public class UpgradeCatalog212 extends AbstractUpgradeCatalog {
 
   protected void addMissingConfigs() throws AmbariException {
     updateHiveConfigs();
+    updateOozieConfigs();
     updateHbaseAndClusterConfigurations();
+    updateKafkaConfigurations();
+  }
+
+  protected void updateKafkaConfigurations() throws AmbariException {
+    Map<String, String> properties = new HashMap<>();
+    properties.put("external.kafka.metrics.exclude.prefix",
+      "kafka.network.RequestMetrics,kafka.server.DelayedOperationPurgatory," +
+        "kafka.server.BrokerTopicMetrics.BytesRejectedPerSec");
+    properties.put("external.kafka.metrics.include.prefix",
+      "kafka.network.RequestMetrics.ResponseQueueTimeMs.request.OffsetCommit.98percentile," +
+        "kafka.network.RequestMetrics.ResponseQueueTimeMs.request.Offsets.95percentile," +
+        "kafka.network.RequestMetrics.ResponseSendTimeMs.request.Fetch.95percentile," +
+        "kafka.network.RequestMetrics.RequestsPerSec.request");
+
+    updateConfigurationProperties("kafka-broker", properties, false, false);
   }
 
   protected void updateHbaseAndClusterConfigurations() throws AmbariException {
@@ -273,6 +290,50 @@ public class UpgradeCatalog212 extends AbstractUpgradeCatalog {
             hiveSiteRemoveProps.add("hive.auto.convert.sortmerge.join.noconditionaltask");
 
             updateConfigurationPropertiesForCluster(cluster, HIVE_SITE, new HashMap<String, String>(), hiveSiteRemoveProps, false, true);
+          }
+        }
+      }
+    }
+  }
+
+  protected void updateOozieConfigs() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    Clusters clusters = ambariManagementController.getClusters();
+
+    if (clusters != null) {
+      Map<String, Cluster> clusterMap = clusters.getClusters();
+
+      if (clusterMap != null && !clusterMap.isEmpty()) {
+        for (final Cluster cluster : clusterMap.values()) {
+          Config oozieEnv = cluster.getDesiredConfigByType(OOZIE_ENV);
+          if (oozieEnv != null) {
+            Map<String, String> oozieEnvProperties = oozieEnv.getProperties();
+
+            String hostname = oozieEnvProperties.get("oozie_hostname");
+            String db_type = oozieEnvProperties.get("oozie_ambari_database");
+            String final_db_host = null;
+            // fix for empty hostname after 1.7 -> 2.1.x+ upgrade
+            if (hostname != null && db_type != null && hostname.equals("")) {
+              switch (db_type.toUpperCase()) {
+                case "MYSQL":
+                  final_db_host = oozieEnvProperties.get("oozie_existing_mysql_host");
+                  break;
+                case "POSTGRESQL":
+                  final_db_host = oozieEnvProperties.get("oozie_existing_postgresql_host");
+                  break;
+                case "ORACLE":
+                  final_db_host = oozieEnvProperties.get("oozie_existing_oracle_host");
+                  break;
+                default:
+                  final_db_host = null;
+                  break;
+              }
+              if (final_db_host != null) {
+                Map<String, String> newProperties = new HashMap<>();
+                newProperties.put("oozie_hostname", final_db_host);
+                updateConfigurationPropertiesForCluster(cluster, OOZIE_ENV, newProperties, true, true);
+              }
+            }
           }
         }
       }

@@ -18,7 +18,6 @@
 
 var App = require('app');
 var stringUtils = require('utils/string_utils');
-var configPropertyHelper = require('utils/configs/config_property_helper');
 
 App.config = Em.Object.create({
 
@@ -207,7 +206,6 @@ App.config = Em.Object.create({
     });
   },
 
-
   /**
    * generates config objects
    * @param configCategories
@@ -297,12 +295,38 @@ App.config = Em.Object.create({
       unit: null,
       hasInitialValue: false,
       isOverridable: true,
-      index: null,
+      index: Infinity,
       dependentConfigPattern: null,
       options: null,
       radioName: null,
       belongsToService: []
     }, coreObject);
+  },
+
+  /**
+   * This method creates host name properties
+   * @param serviceName
+   * @param componentName
+   * @param value
+   * @param stackComponent
+   * @returns Object
+   */
+  createHostNameProperty: function(serviceName, componentName, value, stackComponent) {
+    var hostOrHosts = stackComponent.get('isMultipleAllowed') ? 'hosts' : 'host';
+    return {
+      "name": componentName.toLowerCase() + '_' + hostOrHosts,
+      "displayName":  stackComponent.get('displayName') + ' ' + (value.length > 1 ? 'hosts' : 'host'),
+      "value": value,
+      "recommendedValue": value,
+      "description": "The " + hostOrHosts + " that has been assigned to run " + stackComponent.get('displayName'),
+      "displayType": "component" + hostOrHosts.capitalize(),
+      "isOverridable": false,
+      "isRequiredByAgent": false,
+      "serviceName": serviceName,
+      "filename": serviceName.toLowerCase() + "-site.xml",
+      "category": componentName,
+      "index": 0
+    }
   },
 
   /**
@@ -312,14 +336,12 @@ App.config = Em.Object.create({
    * @param stackProperty
    * @param preDefined
    * @param [propertiesToSkip]
-   * @param [preDefinedOnly]
    */
-  mergeStaticProperties: function(coreObject, stackProperty, preDefined, propertiesToSkip, preDefinedOnly) {
+  mergeStaticProperties: function(coreObject, stackProperty, preDefined, propertiesToSkip) {
     propertiesToSkip = propertiesToSkip || ['name', 'filename', 'value', 'savedValue', 'isFinal', 'savedIsFinal'];
-    preDefinedOnly = preDefinedOnly || ['id'];
     for (var k in coreObject) {
       if (!propertiesToSkip.contains(k)) {
-        coreObject[k] = this.getPropertyIfExists(k, coreObject[k], !preDefinedOnly.contains(k) ? stackProperty : null, preDefined);
+        coreObject[k] = this.getPropertyIfExists(k, coreObject[k], stackProperty, preDefined);
       }
     }
     return coreObject;
@@ -427,7 +449,7 @@ App.config = Em.Object.create({
           return value.split(',').sort()[0];//TODO check if this code is used
         }
         break;
-      case 'masterHosts':
+      case 'componentHosts':
         if (typeof(value) == 'string') {
           return value.replace(/\[|]|'|&apos;/g, "").split(',');
         }
@@ -491,8 +513,7 @@ App.config = Em.Object.create({
     var mergedConfigs = [];
 
     var uiPersistentProperties = [
-      this.configId('oozie_hostname', 'oozie-env.xml'),
-      this.configId('oozie_ambari_database', 'oozie-env.xml')
+      this.configId('oozie_hostname', 'oozie-env.xml')
     ];
     var configTypes = App.StackService.find().filter(function(service) {
       return selectedServiceNames.contains(service.get('serviceName'));
@@ -531,7 +552,6 @@ App.config = Em.Object.create({
         if (configData.recommendedValue) {
           configData.value = configData.recommendedValue;
         }
-
         if (advanced.get('id')) {
           configData = this.mergeStaticProperties(configData, advanced, null, ['name', 'filename']);
           configData.value = configData.recommendedValue = this.formatPropertyValue(advanced, advanced.get('value'));
@@ -557,91 +577,6 @@ App.config = Em.Object.create({
       }
     });
     return configs;
-  },
-
-  /**
-   * render configs, distribute them by service
-   * and wrap each in ServiceConfigProperty object
-   * @param configs
-   * @param storedConfigs
-   * @param allSelectedServiceNames
-   * @param installedServiceNames
-   * @param localDB
-   * @return {App.ServiceConfig[]}
-   */
-  renderConfigs: function (configs, storedConfigs, allSelectedServiceNames, installedServiceNames, localDB) {
-    var renderedServiceConfigs = [];
-    var services = [];
-
-    this.get('preDefinedServiceConfigs').forEach(function (serviceConfig) {
-      var serviceName = serviceConfig.get('serviceName');
-      if (allSelectedServiceNames.contains(serviceName) || serviceName === 'MISC') {
-        if (!installedServiceNames.contains(serviceName) || serviceName === 'MISC') {
-          serviceConfig.set('showConfig', true);
-        }
-        services.push(serviceConfig);
-      }
-    });
-    services.forEach(function (service) {
-      var configsByService = [];
-      var serviceConfigs = configs.filterProperty('serviceName', service.get('serviceName'));
-      serviceConfigs.forEach(function (_config) {
-        var serviceConfigProperty = App.ServiceConfigProperty.create(_config);
-        this.updateHostOverrides(serviceConfigProperty, _config);
-        if (!storedConfigs && !serviceConfigProperty.get('hasInitialValue')) {
-          configPropertyHelper.initialValue(serviceConfigProperty, localDB, configs);
-        }
-        this.tweakDynamicDefaults(localDB, serviceConfigProperty, _config);
-        serviceConfigProperty.validate();
-        configsByService.pushObject(serviceConfigProperty);
-      }, this);
-      var serviceConfig = this.createServiceConfig(service.get('serviceName'));
-      serviceConfig.set('showConfig', service.get('showConfig'));
-      serviceConfig.set('configs', configsByService);
-      renderedServiceConfigs.push(serviceConfig);
-    }, this);
-    return renderedServiceConfigs;
-  },
-
-  /**
-   Takes care of the "dynamic defaults" for the GLUSTERFS configs.  Sets
-   some of the config defaults to previously user-entered data.
-   **/
-  tweakDynamicDefaults: function (localDB, serviceConfigProperty, config) {
-    var firstHost;
-    for (var host in localDB.hosts) {
-      firstHost = host;
-      break;
-    }
-    try {
-      if (typeof(config.recommendedValue) == "string" && config.recommendedValue.indexOf("{firstHost}") >= 0) {
-        serviceConfigProperty.set('value', serviceConfigProperty.value.replace(new RegExp("{firstHost}"), firstHost));
-        serviceConfigProperty.set('recommendedValue', serviceConfigProperty.recommendedValue.replace(new RegExp("{firstHost}"), firstHost));
-      }
-    } catch (err) {
-      // Nothing to worry about here, most likely trying indexOf on a non-string
-    }
-  },
-
-  /**
-   * create new child configs from overrides, attach them to parent config
-   * override - value of config, related to particular host(s)
-   * @param configProperty
-   * @param storedConfigProperty
-   */
-  updateHostOverrides: function (configProperty, storedConfigProperty) {
-    if (storedConfigProperty.overrides != null && storedConfigProperty.overrides.length > 0) {
-      var overrides = [];
-      storedConfigProperty.overrides.forEach(function (overrideEntry) {
-        // create new override with new value
-        var newSCP = App.ServiceConfigProperty.create(configProperty);
-        newSCP.set('value', overrideEntry.value);
-        newSCP.set('isOriginalSCP', false); // indicated this is overridden value,
-        newSCP.set('parentSCP', configProperty);
-        overrides.pushObject(newSCP);
-      });
-      configProperty.set('overrides', overrides);
-    }
   },
 
   /**
@@ -696,24 +631,12 @@ App.config = Em.Object.create({
   advancedConfigIdentityData: function (config) {
     var propertyData = {};
     var proxyUserGroupServices = ['HIVE', 'OOZIE', 'FALCON'];
-    var nameToDisplayNameMap = {
-      'smokeuser': 'Smoke Test User',
-      'user_group': 'Hadoop Group',
-      'mapred_user': 'MapReduce User',
-      'zk_user': 'ZooKeeper User',
-      'metadata_user': 'Atlas User',
-      'ignore_groupsusers_create': 'Skip group modifications during install',
-      'override_uid': 'Have Ambari manage UIDs'
-    };
     var checkboxProperties = ['ignore_groupsusers_create', 'override_uid'];
     if (Em.isArray(config.property_type)) {
       if (config.property_type.contains('USER') || config.property_type.contains('ADDITIONAL_USER_PROPERTY') || config.property_type.contains('GROUP')) {
         propertyData.category = 'Users and Groups';
         propertyData.isVisible = !App.get('isHadoopWindowsStack');
         propertyData.serviceName = 'MISC';
-        propertyData.isOverridable = false;
-        propertyData.isReconfigurable = false;
-        propertyData.displayName = nameToDisplayNameMap[config.property_name] || App.format.normalizeName(config.property_name);
         propertyData.displayType = checkboxProperties.contains(config.property_name) ? 'checkbox' : 'user';
         if (config.property_type.contains('ADDITIONAL_USER_PROPERTY')) {
           propertyData.index = 999;

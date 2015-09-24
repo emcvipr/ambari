@@ -18,11 +18,10 @@
 
 var App = require('app');
 var batchUtils = require('utils/batch_scheduled_requests');
-var componentsUtils = require('utils/components');
 var hostsManagement = require('utils/hosts');
 var stringUtils = require('utils/string_utils');
 
-App.MainHostDetailsController = Em.Controller.extend({
+App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDownload, App.InstallComponent, App.InstallNewVersion, {
 
   name: 'mainHostDetailsController',
 
@@ -178,19 +177,6 @@ App.MainHostDetailsController = Em.Controller.extend({
   },
 
   /**
-   * Default error-callback for ajax-requests in current page
-   * @param {object} request
-   * @param {object} ajaxOptions
-   * @param {string} error
-   * @param {object} opt
-   * @param {object} params
-   * @method ajaxErrorCallback
-   */
-  ajaxErrorCallback: function (request, ajaxOptions, error, opt, params) {
-    return componentsUtils.ajaxErrorCallback(request, ajaxOptions, error, opt, params);
-  },
-
-  /**
    * Return true if hdfs user data is loaded via App.MainServiceInfoConfigsController
    */
   getHdfsUser: function () {
@@ -222,7 +208,7 @@ App.MainHostDetailsController = Em.Controller.extend({
         // too old
         self.getHdfsUser().done(function() {
           var msg = Em.Object.create({
-            confirmMsg: Em.I18n.t('services.service.stop.HDFS.warningMsg.checkPointTooOld') +
+            confirmMsg: Em.I18n.t('services.service.stop.HDFS.warningMsg.checkPointTooOld').format(App.nnCheckpointAgeAlertThreshold) +
               Em.I18n.t('services.service.stop.HDFS.warningMsg.checkPointTooOld.instructions').format(isNNCheckpointTooOld, self.get('content.hdfsUser')),
             confirmButton: Em.I18n.t('common.next')
           });
@@ -260,7 +246,7 @@ App.MainHostDetailsController = Em.Controller.extend({
       if (!lastCheckpointTime) {
         this.set("isNNCheckpointTooOld", null);
       } else {
-        var time_criteria = 12; // time in hours to define how many hours ago is too old
+        var time_criteria = App.nnCheckpointAgeAlertThreshold; // time in hours to define how many hours ago is too old
         var time_ago = (Math.round(App.dateTime() / 1000) - (time_criteria * 3600)) *1000;
         if (lastCheckpointTime <= time_ago) {
           // too old, set the effected hostName
@@ -581,7 +567,7 @@ App.MainHostDetailsController = Em.Controller.extend({
       component = event.context,
       hostName = event.selectedHost || this.get('content.hostName'),
       componentName = component.get('componentName'),
-      missedComponents = event.selectedHost ? [] : componentsUtils.checkComponentDependencies(componentName, {
+      missedComponents = event.selectedHost ? [] : this.checkComponentDependencies(componentName, {
         scope: 'host',
         installedComponents: this.get('content.hostComponents').mapProperty('componentName')
       }),
@@ -599,7 +585,7 @@ App.MainHostDetailsController = Em.Controller.extend({
     switch (componentName) {
       case 'ZOOKEEPER_SERVER':
         returnFunc = App.showConfirmationPopup(function () {
-          self.primary(component);
+          self.installHostComponentCall(self.get('content.hostName'), component)
         }, Em.I18n.t('hosts.host.addComponent.' + componentName) + manualKerberosWarning);
         break;
       case 'HIVE_METASTORE':
@@ -634,7 +620,7 @@ App.MainHostDetailsController = Em.Controller.extend({
     var message = this.formatClientsMessage(component);
 
     return this.showAddComponentPopup(message, isManualKerberos, function () {
-      self.primary(component);
+      self.installHostComponentCall(self.get('content.hostName'), component);
     });
   },
 
@@ -679,16 +665,6 @@ App.MainHostDetailsController = Em.Controller.extend({
       displayName += " (" + dns.join(", ") + ")";
     }
     return displayName;
-  },
-
-  /**
-   * Send request to add host component
-   * @param {App.HostComponent} component
-   * @method primary
-   */
-  primary: function (component) {
-    var self = this;
-    componentsUtils.installHostComponent(self.get('content.hostName'), component);
   },
 
   /**
@@ -967,8 +943,11 @@ App.MainHostDetailsController = Em.Controller.extend({
    * @param params
    */
   installHostComponent: function (data, opt, params) {
+    if (App.router.get('location.location.hash').contains('configs')) {
+      App.router.get('mainServiceInfoConfigsController').loadStep();
+    }
     if (params.host) {
-      componentsUtils.installHostComponent(params.host, App.StackServiceComponent.find(params.componentName));
+      this.installHostComponentCall(params.host, App.StackServiceComponent.find(params.componentName));
     }
   },
   /**
@@ -2292,7 +2271,7 @@ App.MainHostDetailsController = Em.Controller.extend({
   },
 
   downloadClientConfigs: function (event) {
-    componentsUtils.downloadClientConfigs.call(this, {
+    this.downloadClientConfigsCall({
       hostName: event.context.get('hostName'),
       componentName: event.context.get('componentName'),
       displayName: event.context.get('displayName')
@@ -2313,7 +2292,7 @@ App.MainHostDetailsController = Em.Controller.extend({
       }
     });
     clientsToAdd.forEach(function (component, index, array) {
-      var dependencies = componentsUtils.checkComponentDependencies(component.get('componentName'), {
+      var dependencies = this.checkComponentDependencies(component.get('componentName'), {
         scope: 'host',
         installedComponents: this.get('content.hostComponents').mapProperty('componentName')
       }).reject(function (componentName) {
@@ -2345,8 +2324,8 @@ App.MainHostDetailsController = Em.Controller.extend({
             self.showAddComponentPopup(message, isManualKerberos, function () {
               sendInstallCommand();
               clientsToAdd.forEach(function (component) {
-                this.primary(component);
-              }, self);
+                self.installHostComponentCall(self.get('content.hostName'), component);
+              });
             });
           } else {
             sendInstallCommand();
@@ -2354,6 +2333,42 @@ App.MainHostDetailsController = Em.Controller.extend({
         });
       }.bind(this));
     }
+  },
+
+  /**
+   * Check if all required components are installed on host.
+   * Available options:
+   *  scope: 'host' - dependency level `host`,`cluster` or `*`.
+   *  hostName: 'example.com' - host name to search installed components
+   *  installedComponents: ['A', 'B'] - names of installed components
+   *
+   * By default scope level is `*`
+   * For host level dependency you should specify at least `hostName` or `installedComponents` attribute.
+   *
+   * @param {String} componentName
+   * @param {Object} opt - options. Allowed options are `hostName`, `installedComponents`, `scope`.
+   * @return {Array} - names of missed components
+   */
+  checkComponentDependencies: function (componentName, opt) {
+    opt = opt || {};
+    opt.scope = opt.scope || '*';
+    var installedComponents;
+    var dependencies = App.StackServiceComponent.find(componentName).get('dependencies');
+    dependencies = opt.scope === '*' ? dependencies : dependencies.filterProperty('scope', opt.scope);
+    if (dependencies.length == 0) return [];
+    switch (opt.scope) {
+      case 'host':
+        Em.assert("You should pass at least `hostName` or `installedComponents` to options.", opt.hostName || opt.installedComponents);
+        installedComponents = opt.installedComponents || App.HostComponent.find().filterProperty('hostName', opt.hostName).mapProperty('componentName').uniq();
+        break;
+      default:
+        // @todo: use more appropriate value regarding installed components
+        installedComponents = opt.installedComponents || App.HostComponent.find().mapProperty('componentName').uniq();
+        break;
+    }
+    return dependencies.filter(function (dependency) {
+      return !installedComponents.contains(dependency.componentName);
+    }).mapProperty('componentName');
   },
 
   /**
@@ -2397,52 +2412,6 @@ App.MainHostDetailsController = Em.Controller.extend({
     }
     App.showAlertPopup(Em.I18n.t('services.service.actions.run.executeCustomCommand.error'), error);
     console.warn('Error during executing custom command');
-  },
-
-  /**
-   * show popup confirmation of version installation
-   * @param event
-   */
-  installVersionConfirmation: function (event) {
-    var self = this;
-
-    return App.showConfirmationPopup(function () {
-        self.installVersion(event);
-      },
-      Em.I18n.t('hosts.host.stackVersions.install.confirmation').format(event.context.get('displayName'))
-    );
-  },
-
-  /**
-   * install HostStackVersion on host
-   * @param {object} event
-   */
-  installVersion: function (event) {
-    App.ajax.send({
-      name: 'host.stack_versions.install',
-      sender: this,
-      data: {
-        hostName: this.get('content.hostName'),
-        version: event.context
-      },
-      success: 'installVersionSuccessCallback'
-    });
-  },
-
-  /**
-   * success callback of <code>installVersion</code>
-   * on success set version status to INSTALLING
-   * @param {object} data
-   * @param {object} opt
-   * @param {object} params
-   */
-  installVersionSuccessCallback: function (data, opt, params) {
-    App.HostStackVersion.find(params.version.get('id')).set('status', 'INSTALLING');
-    App.db.set('repoVersionInstall', 'id', [data.Requests.id]);
-    App.clusterStatus.setClusterStatus({
-      wizardControllerName: this.get('name'),
-      localdb: App.db.data
-    });
   },
 
   /**
