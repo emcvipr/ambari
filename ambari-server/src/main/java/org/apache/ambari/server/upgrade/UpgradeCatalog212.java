@@ -19,6 +19,7 @@
 package org.apache.ambari.server.upgrade;
 
 import java.sql.SQLException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -197,6 +198,26 @@ public class UpgradeCatalog212 extends AbstractUpgradeCatalog {
     updateOozieConfigs();
     updateHbaseAndClusterConfigurations();
     updateKafkaConfigurations();
+    updateStormConfigs();
+  }
+
+  protected void updateStormConfigs() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    Clusters clusters = ambariManagementController.getClusters();
+
+    if (clusters != null) {
+      Map<String, Cluster> clusterMap = clusters.getClusters();
+
+      if ((clusterMap != null) && !clusterMap.isEmpty()) {
+        // Iterate through the clusters and perform any configuration updates
+        for (final Cluster cluster : clusterMap.values()) {
+          Set<String> removes = new HashSet<String>();
+          removes.add("topology.metrics.consumer.register");
+          updateConfigurationPropertiesForCluster(cluster, "storm-site",
+            new HashMap<String, String>(), removes, false, false);
+        }
+      }
+    }
   }
 
   protected void updateKafkaConfigurations() throws AmbariException {
@@ -310,18 +331,18 @@ public class UpgradeCatalog212 extends AbstractUpgradeCatalog {
             Map<String, String> oozieEnvProperties = oozieEnv.getProperties();
 
             String hostname = oozieEnvProperties.get("oozie_hostname");
-            String db_type = oozieEnvProperties.get("oozie_ambari_database");
+            String db_type = oozieEnvProperties.get("oozie_database");
             String final_db_host = null;
             // fix for empty hostname after 1.7 -> 2.1.x+ upgrade
             if (hostname != null && db_type != null && hostname.equals("")) {
               switch (db_type.toUpperCase()) {
-                case "MYSQL":
+                case "EXISTING MYSQL DATABASE":
                   final_db_host = oozieEnvProperties.get("oozie_existing_mysql_host");
                   break;
-                case "POSTGRESQL":
+                case "EXISTING POSTGRESQL DATABASE":
                   final_db_host = oozieEnvProperties.get("oozie_existing_postgresql_host");
                   break;
-                case "ORACLE":
+                case "EXISTING ORACLE DATABASE":
                   final_db_host = oozieEnvProperties.get("oozie_existing_oracle_host");
                   break;
                 default:
