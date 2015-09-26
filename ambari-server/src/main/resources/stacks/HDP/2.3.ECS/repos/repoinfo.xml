@@ -89,11 +89,11 @@
       <reponame>HDP-UTILS</reponame>
     </repo>
   </os>
-  <!-- ECS REPO -->
+  <!-- ECS CLIENT REPO -->
   <os family="any">
     <repo>
-      <baseurl>http://10.10.192.212:9000/mrepo/ambari-x86_64/RPMS.ambari-repo/</baseurl>
-      <repoid>ECS-2.3.0.0</repoid>
+      <baseurl>http://ECS_CLIENT_REPO/</baseurl>
+      <repoid>ECS-2.2.0.0</repoid>
       <reponame>ECS</reponame>
     </repo>
   </os>  
