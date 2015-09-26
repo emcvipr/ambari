@@ -23,19 +23,15 @@ from resource_management import *
 class ECSClient(Script):
 
   def install(self, env):
-    print 'Installing ECS Client...';
-    packages = ['viprfs-client','hadoop-client']
-    Package(packages)
+    self.install_packages(env)
     self.configure(env)
 
   def configure(self, env):
-    print 'Configuring ECS Client...';
     self.setup_config(env)
     self.setup_hadoop_env(env)
     self.create_dirs(env)
 
   def status(self, env):
-    print 'Querying ECS Client Status...';
     raise ClientComponentHasNoStatus()
 
   def setup_config(self, env):
