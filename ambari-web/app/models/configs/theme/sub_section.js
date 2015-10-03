@@ -68,9 +68,33 @@ App.SubSection = DS.Model.extend({
   configProperties: DS.hasMany('App.StackConfigProperty'),
 
   /**
+   * @type {App.SubSectionTab[]}
+   */
+  subSectionTabs: DS.hasMany('App.SubSectionTab'),
+
+
+  dependsOn: DS.attr('array', {defaultValue: []}),
+
+  /**
+   * @type {boolean}
+   */
+  leftVerticalSplitter: DS.attr('boolean', {defaultValue: true}),
+
+  /**
    * @type {App.ServiceConfigProperty[]}
    */
   configs: [],
+
+  /**
+   * @type {boolean}
+   */
+  hasTabs: function() {
+    return this.get('subSectionTabs.length');
+  }.property('subSectionTabs.length'),
+
+  showTabs: function() {
+    return this.get('hasTabs')  && this.get('subSectionTabs').someProperty('isVisible');
+  }.property('hasTabs','subSectionTabs.@each.isVisible'),
 
   /**
    * Number of the errors in all configs
@@ -79,15 +103,15 @@ App.SubSection = DS.Model.extend({
   errorsCount: function () {
     return this.get('configs').filter(function(config) {
       return !config.get('isValid') || (config.get('overrides') || []).someProperty('isValid', false);
-    }).length;
-  }.property('configs.@each.isValid', 'configs.@each.overrideErrorTrigger'),
+    }).filterProperty('isVisible').length;
+  }.property('configs.@each.isValid', 'configs.@each.isVisible', 'configs.@each.overrideErrorTrigger'),
 
   /**
    * @type {boolean}
    */
   addLeftVerticalSplitter: function() {
-    return !this.get('isFirstColumn');
-  }.property('isFirstColumn'),
+    return !this.get('isFirstColumn') && this.get('leftVerticalSplitter');
+  }.property('isFirstColumn', 'leftVerticalSplitter'),
 
   /**
    * @type {boolean}
@@ -153,7 +177,15 @@ App.SubSection = DS.Model.extend({
   isHiddenByFilter: function () {
     var configs = this.get('configs');
     return configs.length ? configs.everyProperty('isHiddenByFilter', true) : false;
-  }.property('configs.@each.isHiddenByFilter')
+  }.property('configs.@each.isHiddenByFilter'),
+
+  /**
+   * Determines if subsection is visible
+   * @type {boolean}
+   */
+  isSectionVisible: function () {
+    return !this.get('isHiddenByFilter') && this.get('configs').someProperty('isVisible', true);
+  }.property('isHiddenByFilter', 'configs.@each.isVisible')
 });
 
 
