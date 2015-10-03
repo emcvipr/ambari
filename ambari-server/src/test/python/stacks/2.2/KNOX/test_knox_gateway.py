@@ -248,7 +248,7 @@ class TestKnoxGateway(RMFTestCase):
      '/var/lib/knox/data'),
         sudo = True,
     )
-    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'knox-server', '2.2.1.0-3242'),
+    self.assertResourceCalled('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'knox-server', '2.2.1.0-3242'),
         sudo = True,
     )
     self.assertNoMoreResources()
@@ -292,7 +292,7 @@ class TestKnoxGateway(RMFTestCase):
      '/var/lib/knox/data'),
         sudo = True,
     )
-    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'knox-server', version),
+    self.assertResourceCalled('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'knox-server', version),
         sudo = True,
     )
     self.assertResourceCalled('Execute', ('cp',
@@ -315,10 +315,10 @@ class TestKnoxGateway(RMFTestCase):
     self.assertEquals(1, mocks_dict['call'].call_count)
     self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      ('conf-select', 'set-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
        mocks_dict['checked_call'].call_args_list[0][0][0])
     self.assertEquals(
-      ('conf-select', 'create-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
 
   @patch("os.remove")
@@ -364,7 +364,7 @@ class TestKnoxGateway(RMFTestCase):
      '/var/lib/knox/data'),
         sudo = True,
     )
-    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'knox-server', version),
+    self.assertResourceCalled('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'knox-server', version),
         sudo = True,
     )
     self.assertResourceCalled('Execute', ('cp',
@@ -387,10 +387,10 @@ class TestKnoxGateway(RMFTestCase):
     self.assertEquals(1, mocks_dict['call'].call_count)
     self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      ('conf-select', 'set-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
        mocks_dict['checked_call'].call_args_list[0][0][0])
     self.assertEquals(
-      ('conf-select', 'create-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
 
   @patch("os.remove")
@@ -438,7 +438,7 @@ class TestKnoxGateway(RMFTestCase):
     )
 
     '''
-    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'knox-server', version),
+    self.assertResourceCalled('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'knox-server', version),
         sudo = True,
     )
     self.assertResourceCalled('Execute', ('cp',
@@ -461,10 +461,10 @@ class TestKnoxGateway(RMFTestCase):
     self.assertEquals(1, mocks_dict['call'].call_count)
     self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      ('conf-select', 'set-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
        mocks_dict['checked_call'].call_args_list[0][0][0])
     self.assertEquals(
-      ('conf-select', 'create-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
     '''
 

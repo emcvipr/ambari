@@ -39,6 +39,7 @@ Em.I18n.translations = {
   'app.settings':'Settings',
   'app.manageAmbari': 'Manage Ambari',
   'app.aboutAmbari':'About',
+  'app.settings.selectTimezone': 'Select your timezone',
   'app.settings.notshowBgOperationsPopup': 'Do not show the Background Operations dialog when starting an operation',
   'app.settings.notShowBgOperations': 'Do not show this dialog again when starting a background operation',
 
@@ -273,6 +274,8 @@ Em.I18n.translations = {
   'common.testing': 'Testing',
   'common.noData': 'No Data',
   'common.loading.eclipses': 'Loading...',
+  'common.running': 'Running',
+  'common.stopped': 'Stopped',
 
   'models.alert_instance.tiggered.verbose': "Occurred on {0} <br> Checked on {1}",
   'models.alert_definition.triggered.verbose': "Occurred on {0}",
@@ -481,8 +484,6 @@ Em.I18n.translations = {
   'installer.controls.serviceConfigMultipleHosts.other':'1 other',
   'installer.controls.serviceConfigMultipleHosts.others':'{0} others',
   'installer.controls.serviceConfigMasterHosts.header':'{0} Hosts',
-  'installer.controls.addSlaveComponentGroupButton.title':'Add a {0} Group',
-  'installer.controls.addSlaveComponentGroupButton.content':'If you need different settings on certain {0}s, you can add a {1} group.<br>All {2}s within the same group will have the same set of settings.  You can create multiple groups.',
   'installer.controls.slaveComponentChangeGroupName.error':'group with this name already exist',
 
   'installer.step0.header':'Get Started',
@@ -813,6 +814,7 @@ Em.I18n.translations = {
   'installer.step9.header':'Install, Start and Test',
   'installer.step9.body':'Please wait while the selected services are installed and started.',
   'installer.step9.status.success':'Successfully installed and started the services.',
+  'installer.step9.status.skipStartSuccess':'Successfully installed the services.',
   'installer.step9.status.warning':'Installed and started the services with some warnings.',
   'installer.step9.status.failed':'Failed to install/start the services.',
   'installer.step9.status.start.services.failed':'Start all services API call failed.',
@@ -878,7 +880,8 @@ Em.I18n.translations = {
     'services to function properly (for example, HDFS and YARN/MapReduce need to be restarted after adding Oozie). After closing this ' +
     'wizard, please restart all services that have the restart indicator <i class="icon-refresh"></i> next to the service name.',
   'installer.step10.hostsSummary':'The cluster consists of {0} hosts',
-  'installer.step10.servicesSummary':'Installed and started services successfully on {0} new ',
+  'installer.step10.installedAndStarted':'Installed and started services successfully on {0} new ',
+  'installer.step10.installed':'Installed services successfully on {0} new ',
   'installer.step10.warnings':' warnings',
   'installer.step10.clusterState.installing':'Installing ',
   'installer.step10.clusterState.starting':'Starting ',

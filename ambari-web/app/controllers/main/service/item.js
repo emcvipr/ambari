@@ -19,7 +19,7 @@
 var App = require('app');
 var batchUtils = require('utils/batch_scheduled_requests');
 
-App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDownload, {
+App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDownload, App.InstallComponent, {
   name: 'mainServiceItemController',
 
   /**
@@ -133,7 +133,7 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
         }, App.get('testModeDelayForActions'));
       }
       // load data (if we need to show this background operations popup) from persist
-      App.router.get('applicationController').dataLoading().done(function (initValue) {
+      App.router.get('userSettingsController').dataLoading('show_bg').done(function (initValue) {
         if (initValue) {
           App.router.get('backgroundOperationsController').showPopup();
         }
@@ -401,7 +401,7 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
     return App.showConfirmationPopup(function() {
       self.set("content.runRebalancer", true);
       // load data (if we need to show this background operations popup) from persist
-      App.router.get('applicationController').dataLoading().done(function (initValue) {
+      App.router.get('userSettingsController').dataLoading('show_bg').done(function (initValue) {
         if (initValue) {
           App.router.get('backgroundOperationsController').showPopup();
         }
@@ -576,7 +576,7 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
     return App.showConfirmationPopup(function() {
       self.set("content.runCompaction", true);
       // load data (if we need to show this background operations popup) from persist
-      App.router.get('applicationController').dataLoading().done(function (initValue) {
+      App.router.get('userSettingsController').dataLoading('show_bg').done(function (initValue) {
         if (initValue) {
           App.router.get('backgroundOperationsController').showPopup();
         }
@@ -613,12 +613,12 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
       this.get('content.hostComponents').filterProperty('componentName', 'NAMENODE').someProperty('workStatus', App.HostComponentStatus.started)) {
       this.checkNnLastCheckpointTime(function () {
         return App.showConfirmationFeedBackPopup(function(query, runMmOperation) {
-          batchUtils.restartAllServiceHostComponents(serviceName, false, query, runMmOperation);
+          batchUtils.restartAllServiceHostComponents(serviceDisplayName, serviceName, false, query, runMmOperation);
         }, bodyMessage);
       });
     } else {
       return App.showConfirmationFeedBackPopup(function(query, runMmOperation) {
-        batchUtils.restartAllServiceHostComponents(serviceName, false, query, runMmOperation);
+        batchUtils.restartAllServiceHostComponents(serviceDisplayName, serviceName, false, query, runMmOperation);
       }, bodyMessage);
     }
   },
@@ -666,7 +666,7 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
   runSmokeTestSuccessCallBack: function (data, ajaxOptions, params) {
     if (data.Requests.id) {
       // load data (if we need to show this background operations popup) from persist
-      App.router.get('applicationController').dataLoading().done(function (initValue) {
+      App.router.get('userSettingsController').dataLoading('show_bg').done(function (initValue) {
         params.query.set('status', 'SUCCESS');
         if (initValue) {
           App.router.get('backgroundOperationsController').showPopup();

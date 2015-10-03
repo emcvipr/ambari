@@ -18,9 +18,9 @@
 
 var App = require('app');
 require('mappers/configs/themes_mapper');
-require('models/configs/tab');
-require('models/configs/section');
-require('models/configs/sub_section');
+require('models/configs/theme/tab');
+require('models/configs/theme/section');
+require('models/configs/theme/sub_section');
 require('models/configs/stack_config_property');
 
 describe('App.themeMapper', function () {
@@ -188,6 +188,8 @@ describe('App.themeMapper', function () {
         "row_index": "0",
         "row_span": "1",
         "column_index": "0",
+        "depends_on": [],
+        "left_vertical_splitter": true,
         "column_span": "1",
         "section_id": "Section-1"
       });
