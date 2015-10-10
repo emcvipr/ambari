@@ -34,7 +34,17 @@
             <scriptType>PYTHON</scriptType>
             <timeout>600</timeout>
           </commandScript>
-            <configFile>
+          <customCommands>
+            <customCommand>
+              <name>CREATEDIRS</name>
+              <commandScript>
+                <script>scripts/ecs_client.py</script>
+                <scriptType>PYTHON</scriptType>
+                <timeout>600</timeout>
+              </commandScript>
+            </customCommand>
+          </customCommands>
+          <configFile>
               <type>xml</type>
               <fileName>core-site.xml</fileName>
               <dictionaryName>core-site</dictionaryName>
@@ -48,7 +58,7 @@
               <type>env</type>
               <fileName>hadoop-env.sh</fileName>
               <dictionaryName>hadoop-env</dictionaryName>
-            </configFile>          
+          </configFile>          
         </component>
       </components>
 
