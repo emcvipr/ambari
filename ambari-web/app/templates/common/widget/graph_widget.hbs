@@ -29,6 +29,10 @@
       <a class="corner-icon pull-right" href="#" {{action editWidget target="view"}}>
         <i class="icon-edit"></i>
       </a>
+      <a class="corner-icon pull-right" href="#" {{action toggleFormatsList target="view"}}>
+        <i class="icon-save"></i>
+      </a>
+      {{view view.exportMetricsMenuView}}
     {{/isAccessible}}
     <div class="content"> {{view view.graphView}}</div>
 

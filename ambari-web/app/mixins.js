@@ -20,6 +20,7 @@
 // load all mixins here
 
 require('mixins/common/blueprint');
+require('mixins/common/kdc_credentials_controller_mixin');
 require('mixins/common/localStorage');
 require('mixins/common/userPref');
 require('mixins/common/reload_popup');
@@ -49,6 +50,8 @@ require('mixins/common/configs/configs_saver');
 require('mixins/common/configs/configs_loader');
 require('mixins/common/configs/configs_comparator');
 require('mixins/common/configs/toggle_isrequired');
+require('mixins/common/widgets/export_metrics_mixin');
+require('mixins/common/widgets/time_range_mixin');
 require('mixins/common/widgets/widget_mixin');
 require('mixins/common/widgets/widget_section');
 require('mixins/unit_convert/base_unit_convert_mixin');

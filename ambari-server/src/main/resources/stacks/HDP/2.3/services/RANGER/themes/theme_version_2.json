@@ -18,10 +18,10 @@
                   "display-name": "Ranger Admin",
                   "row-index": "0",
                   "column-index": "0",
-                  "row-span": "4",
+                  "row-span": "3",
                   "column-span": "2",
                   "section-columns": "2",
-                  "section-rows": "4",
+                  "section-rows": "3",
                   "subsections": [
                     {
                       "name": "subsection-ranger-db-row1-col1",
@@ -38,30 +38,15 @@
                       "column-span": "1"
                     },
                     {
-                      "name": "subsection-ranger-db-row2-col1",
+                      "name": "subsection-ranger-db-row2",
                       "row-index": "1",
-                      "column-index": "0",
-                      "row-span": "1",
-                      "column-span": "1"
-                    },
-                    {
-                      "name": "subsection-ranger-db-row2-col2",
-                      "row-index": "1",
-                      "column-index": "1",
-                      "row-span": "1",
-                      "column-span": "1",
-                      "left-vertical-splitter": false
-                    },
-                    {
-                      "name": "subsection-ranger-db-row3",
-                      "row-index": "2",
                       "column-index": "0",
                       "row-span": "1",
                       "column-span": "2"
                     },
                     {
-                      "name": "subsection-ranger-db-row4-col1",
-                      "row-index": "3",
+                      "name": "subsection-ranger-db-row3-col1",
+                      "row-index": "2",
                       "column-index": "0",
                       "row-span": "1",
                       "column-span": "1",
@@ -85,8 +70,8 @@
                       ]
                     },
                     {
-                      "name": "subsection-ranger-db-row4-col2",
-                      "row-index": "3",
+                      "name": "subsection-ranger-db-row3-col2",
+                      "row-index": "2",
                       "column-index": "1",
                       "row-span": "1",
                       "column-span": "1",
@@ -107,8 +92,7 @@
                             }
                           }
                         }
-                      ],
-                      "left-vertical-splitter": false
+                      ]
                     }
                   ]
                 }
@@ -236,6 +220,49 @@
                 }
               ]
             }
+          },
+          {
+            "name": "ranger_plugin",
+            "display-name": "Ranger Plugin",
+            "layout": {
+              "tab-columns": "1",
+              "tab-rows": "1",
+              "sections": [
+                {
+                  "name": "section-ranger-plugin",
+                  "display-name": "Ranger Plugin",
+                  "row-index": "0",
+                  "column-index": "0",
+                  "row-span": "1",
+                  "column-span": "3",
+                  "section-columns": "3",
+                  "section-rows": "1",
+                  "subsections": [
+                    {
+                      "name": "section-ranger-plugin-row1-col1",
+                      "row-index": "0",
+                      "column-index": "0",
+                      "row-span": "1",
+                      "column-span": "1"
+                    },
+                    {
+                      "name": "section-ranger-plugin-row1-col2",
+                      "row-index": "0",
+                      "column-index": "1",
+                      "row-span": "1",
+                      "column-span": "1"
+                    },
+                    {
+                      "name": "section-ranger-plugin-row1-col3",
+                      "row-index": "0",
+                      "column-index": "2",
+                      "row-span": "1",
+                      "column-span": "1"
+                    }
+                  ]
+                }
+              ]
+            }
           }
         ]
       }
@@ -252,6 +279,10 @@
           "subsection-name": "subsection-ranger-db-row1-col1"
         },
         {
+          "config": "admin-properties/db_user",
+          "subsection-name": "subsection-ranger-db-row1-col1"
+        },
+        {
           "config": "ranger-admin-site/ranger.jpa.jdbc.url",
           "subsection-name": "subsection-ranger-db-row1-col1"
         },
@@ -264,16 +295,12 @@
           "subsection-name": "subsection-ranger-db-row1-col2"
         },
         {
-          "config": "admin-properties/db_user",
-          "subsection-name": "subsection-ranger-db-row2-col1"
-        },
-        {
           "config": "admin-properties/db_password",
-          "subsection-name": "subsection-ranger-db-row2-col2"
+          "subsection-name": "subsection-ranger-db-row1-col2"
         },
         {
           "config": "ranger-env/test_db_connection",
-          "subsection-name": "subsection-ranger-db-row2-col2",
+          "subsection-name": "subsection-ranger-db-row2",
           "property_value_attributes": {
             "ui_only_property": true
           },
@@ -298,19 +325,23 @@
         },
         {
           "config": "ranger-env/create_db_dbuser",
-          "subsection-name": "subsection-ranger-db-row3"
+          "subsection-name": "subsection-ranger-db-row2"
         },
         {
           "config": "admin-properties/db_root_user",
-          "subsection-name": "subsection-ranger-db-row4-col1"
+          "subsection-name": "subsection-ranger-db-row3-col1"
+        },
+        {
+          "config": "ranger-env/ranger_privelege_user_jdbc_url",
+          "subsection-name": "subsection-ranger-db-row3-col1"
         },
         {
           "config": "admin-properties/db_root_password",
-          "subsection-name": "subsection-ranger-db-row4-col2"
+          "subsection-name": "subsection-ranger-db-row3-col2"
         },
         {
           "config": "ranger-env/test_root_db_connection",
-          "subsection-name": "subsection-ranger-db-row4-col2",
+          "subsection-name": "subsection-ranger-db-row3-col1",
           "property_value_attributes": {
             "ui_only_property": true
           }
@@ -758,6 +789,146 @@
               }
             }
           ]
+        },
+        {
+          "config": "ranger-env/ranger-hdfs-plugin-enabled",
+          "subsection-name": "section-ranger-plugin-row1-col1",
+          "depends-on": [
+            {
+              "resource": "service",
+              "if": "HDFS",
+              "then": {
+                "property_value_attributes": {
+                  "visible": true
+                }
+              },
+              "else": {
+                "property_value_attributes": {
+                  "visible": false
+                }
+              }
+            }
+          ]
+        },
+        {
+          "config": "ranger-env/ranger-yarn-plugin-enabled",
+          "subsection-name": "section-ranger-plugin-row1-col1",
+          "depends-on": [
+            {
+              "resource": "service",
+              "if": "YARN",
+              "then": {
+                "property_value_attributes": {
+                  "visible": true
+                }
+              },
+              "else": {
+                "property_value_attributes": {
+                  "visible": false
+                }
+              }
+            }
+          ]
+        },
+        {
+          "config": "ranger-env/ranger-hive-plugin-enabled",
+          "subsection-name": "section-ranger-plugin-row1-col1",
+          "depends-on": [
+            {
+              "resource": "service",
+              "if": "HIVE",
+              "then": {
+                "property_value_attributes": {
+                  "visible": true
+                }
+              },
+              "else": {
+                "property_value_attributes": {
+                  "visible": false
+                }
+              }
+            }
+          ]
+        },
+        {
+          "config": "ranger-env/ranger-hbase-plugin-enabled",
+          "subsection-name": "section-ranger-plugin-row1-col2",
+          "depends-on": [
+            {
+              "resource": "service",
+              "if": "HBASE",
+              "then": {
+                "property_value_attributes": {
+                  "visible": true
+                }
+              },
+              "else": {
+                "property_value_attributes": {
+                  "visible": false
+                }
+              }
+            }
+          ]
+        },
+        {
+          "config": "ranger-env/ranger-storm-plugin-enabled",
+          "subsection-name": "section-ranger-plugin-row1-col2",
+          "depends-on": [
+            {
+              "resource": "service",
+              "if": "STORM",
+              "then": {
+                "property_value_attributes": {
+                  "visible": true
+                }
+              },
+              "else": {
+                "property_value_attributes": {
+                  "visible": false
+                }
+              }
+            }
+          ]
+        },
+        {
+          "config": "ranger-env/ranger-knox-plugin-enabled",
+          "subsection-name": "section-ranger-plugin-row1-col3",
+          "depends-on": [
+            {
+              "resource": "service",
+              "if": "KNOX",
+              "then": {
+                "property_value_attributes": {
+                  "visible": true
+                }
+              },
+              "else": {
+                "property_value_attributes": {
+                  "visible": false
+                }
+              }
+            }
+          ]
+        },
+        {
+          "config": "ranger-env/ranger-kafka-plugin-enabled",
+          "subsection-name": "section-ranger-plugin-row1-col3",
+          "depends-on": [
+            {
+              "resource": "service",
+              "if": "KAFKA",
+              "then": {
+                "property_value_attributes": {
+                  "visible": true
+                }
+              },
+              "else": {
+                "property_value_attributes": {
+                  "visible": false
+                }
+              }
+            }
+          ]
         }
       ]
     },
@@ -827,6 +998,12 @@
         }
       },
       {
+        "config": "ranger-env/ranger_privelege_user_jdbc_url",
+        "widget": {
+          "type": "text-field"
+        }
+      },
+      {
         "config": "admin-properties/db_root_user",
         "widget": {
           "type": "text-field"
@@ -845,7 +1022,7 @@
           "display-name": "Test Connection",
           "required-properties": {
             "jdbc.driver.class": "ranger-admin-site/ranger.jpa.jdbc.driver",
-            "jdbc.driver.url": "ranger-admin-site/ranger.jpa.jdbc.url",
+            "jdbc.driver.url": "ranger-env/ranger_privelege_user_jdbc_url",
             "db.connection.source.host": "ranger-site/ranger_admin_hosts",
             "db.type": "admin-properties/DB_FLAVOR",
             "db.connection.destination.host": "admin-properties/db_host",
@@ -1006,6 +1183,48 @@
         "config": "ranger-ugsync-site/ranger.usersync.filesource.text.delimiter",
         "widget": {
           "type": "text-field"
+        }
+      },
+      {
+        "config": "ranger-env/ranger-hdfs-plugin-enabled",
+        "widget": {
+          "type": "toggle"
+        }
+      },
+      {
+        "config": "ranger-env/ranger-hive-plugin-enabled",
+        "widget": {
+          "type": "toggle"
+        }
+      },
+      {
+        "config": "ranger-env/ranger-hbase-plugin-enabled",
+        "widget": {
+          "type": "toggle"
+        }
+      },
+      {
+        "config": "ranger-env/ranger-kafka-plugin-enabled",
+        "widget": {
+          "type": "toggle"
+        }
+      },
+      {
+        "config": "ranger-env/ranger-knox-plugin-enabled",
+        "widget": {
+          "type": "toggle"
+        }
+      },
+      {
+        "config": "ranger-env/ranger-storm-plugin-enabled",
+        "widget": {
+          "type": "toggle"
+        }
+      },
+      {
+        "config": "ranger-env/ranger-yarn-plugin-enabled",
+        "widget": {
+          "type": "toggle"
         }
       }
     ]

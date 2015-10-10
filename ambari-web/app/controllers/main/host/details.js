@@ -436,6 +436,9 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
     } else if (data.componentName == 'HIVE_METASTORE') {
       this.set('deleteHiveMetaStore', true);
       this.loadConfigs('loadHiveConfigs');
+    } else if (data.componentName == 'HIVE_SERVER') {
+      this.set('deleteHiveServer', true);
+      this.loadConfigs('loadHiveConfigs');
     } else if (data.componentName == 'NIMBUS') {
       this.set('deleteNimbusHost', true);
       this.loadConfigs('loadStormConfigs');
@@ -671,7 +674,7 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
    * @param {object} data
    * @param {object} opt
    * @param {object} params
-   * @method installNewComponentSuccessCallbƒack
+   * @method installNewComponentSuccessCallback
    */
   installNewComponentSuccessCallback: function (data, opt, params) {
     if (!data || !data.Requests || !data.Requests.id) {
@@ -824,13 +827,16 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
    * @method loadHiveConfigs
    */
   loadHiveConfigs: function (data) {
-    App.ajax.send({
+    return App.ajax.send({
       name: 'admin.get.all_configurations',
       sender: this,
       data: {
-        urlParams: '(type=hive-site&tag=' + data.Clusters.desired_configs['hive-site'].tag + ')|(type=webhcat-site&tag=' +
-        data.Clusters.desired_configs['webhcat-site'].tag + ')|(type=hive-env&tag=' + data.Clusters.desired_configs['hive-env'].tag +
-        ')|(type=core-site&tag=' + data.Clusters.desired_configs['core-site'].tag + ')'
+        urlParams: [
+          '(type=hive-site&tag=' + data.Clusters.desired_configs['hive-site'].tag + ')',
+          '(type=webhcat-site&tag=' + data.Clusters.desired_configs['webhcat-site'].tag + ')',
+          '(type=hive-env&tag=' + data.Clusters.desired_configs['hive-env'].tag + ')',
+          '(type=core-site&tag=' + data.Clusters.desired_configs['core-site'].tag + ')'
+        ].join('|')
       },
       success: 'onLoadHiveConfigs'
     });
@@ -965,8 +971,9 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
       this.set('hiveMetastoreHost', '');
     }
 
-    if (this.get('fromDeleteHost') || this.get('deleteHiveMetaStore')) {
+    if (this.get('fromDeleteHost') || this.get('deleteHiveMetaStore') || this.get('deleteHiveServer')) {
       this.set('deleteHiveMetaStore', false);
+      this.set('deleteHiveServer', false);
       this.set('fromDeleteHost', false);
       return hiveHosts.without(this.get('content.hostName'));
     }
@@ -1265,7 +1272,7 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
    */
   setZKConfigs: function (configs, zksWithPort, zks) {
     if (typeof configs !== 'object' || !Array.isArray(zks)) return false;
-    if (App.get('isHaEnabled')) {
+    if (App.get('isHaEnabled') && configs['core-site']) {
       App.config.updateHostsListValue(configs['core-site'], 'ha.zookeeper.quorum', zksWithPort);
     }
     if (configs['hbase-site']) {
@@ -1283,7 +1290,7 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
     if (configs['storm-site']) {
       configs['storm-site']['storm.zookeeper.servers'] = JSON.stringify(zks).replace(/"/g, "'");
     }
-    if (App.get('isRMHaEnabled')) {
+    if (App.get('isRMHaEnabled') && configs['yarn-site']) {
       App.config.updateHostsListValue(configs['yarn-site'], 'yarn.resourcemanager.zk-address', zksWithPort);
     }
     if (App.get('isHadoop22Stack')) {
@@ -2221,10 +2228,20 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
    */
   restartAllStaleConfigComponents: function () {
     var self = this;
-    return App.showConfirmationPopup(function () {
-      var staleComponents = self.get('content.componentsWithStaleConfigs');
-      batchUtils.restartHostComponents(staleComponents, Em.I18n.t('rollingrestart.context.allWithStaleConfigsOnSelectedHost').format(self.get('content.hostName')), "HOST");
-    });
+    var staleComponents = self.get('content.componentsWithStaleConfigs');
+    if (staleComponents.someProperty('componentName', 'NAMENODE') &&
+      this.get('content.hostComponents').filterProperty('componentName', 'NAMENODE').someProperty('workStatus', App.HostComponentStatus.started)) {
+      this.checkNnLastCheckpointTime(function () {
+        App.showConfirmationPopup(function () {
+          batchUtils.restartHostComponents(staleComponents, Em.I18n.t('rollingrestart.context.allWithStaleConfigsOnSelectedHost').format(self.get('content.hostName')), "HOST");
+        });
+      });
+    } else {
+      return App.showConfirmationPopup(function () {
+        batchUtils.restartHostComponents(staleComponents, Em.I18n.t('rollingrestart.context.allWithStaleConfigsOnSelectedHost').format(self.get('content.hostName')), "HOST");
+      });
+    }
+
   },
 
   /**

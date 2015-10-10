@@ -46,7 +46,7 @@ var dateUtils = require('utils/date');
  * @extends Ember.Object
  * @extends Ember.View
  */
-App.ChartLinearTimeView = Ember.View.extend({
+App.ChartLinearTimeView = Ember.View.extend(App.ExportMetricsMixin, {
   templateName: require('templates/main/charts/linear_time'),
 
   /**
@@ -161,13 +161,30 @@ App.ChartLinearTimeView = Ember.View.extend({
   }.property('_containerSelector', 'popupSuffix'),
 
   didInsertElement: function () {
+    var self = this;
     this.loadData();
     this.registerGraph();
+    this.$().parent().on('mouseleave', function () {
+      self.set('isMenuHidden', true);
+    });
     App.tooltip(this.$("[rel='ZoomInTooltip']"), {
       placement: 'left',
       template: '<div class="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner graph-tooltip"></div></div>'
     });
   },
+
+  setExportTooltip: function () {
+    if (this.get('isReady')) {
+      Em.run.next(this, function () {
+        this.$('.corner-icon').on('mouseover', function () {
+          $(this).closest("[rel='ZoomInTooltip']").trigger('mouseleave');
+        });
+        App.tooltip(this.$('.corner-icon > .icon-save'), {
+          title: Em.I18n.t('common.export')
+        });
+      });
+    }
+  }.observes('isReady'),
 
   willDestroyElement: function () {
     this.$("[rel='ZoomInTooltip']").tooltip('destroy');
@@ -391,7 +408,9 @@ App.ChartLinearTimeView = Ember.View.extend({
     }
     else {
       graph_container.children().each(function () {
-        $(this).children().remove();
+        if (!($(this).is('.export-graph-list-container, .corner-icon'))) {
+          $(this).children().remove();
+        }
       });
     }
     if (this.checkSeries(seriesData)) {
@@ -713,7 +732,7 @@ App.ChartLinearTimeView = Ember.View.extend({
     var self = this;
 
     App.ModalPopup.show({
-      bodyClass: Em.View.extend({
+      bodyClass: Em.View.extend(App.ExportMetricsMixin, {
 
         containerId: null,
         containerClass: null,
@@ -733,6 +752,15 @@ App.ChartLinearTimeView = Ember.View.extend({
         }.property('parentView.graph.isPopupReady'),
 
         didInsertElement: function () {
+          var popupBody = this;
+          App.tooltip(this.$('.corner-icon > .icon-save'), {
+            title: Em.I18n.t('common.export')
+          });
+          this.$().closest('.modal').on('click', function (event) {
+            if (!($(event.target).is('.corner-icon, .icon-save, .export-graph-list-container, .export-graph-list-container *'))) {
+              popupBody.set('isMenuHidden', true);
+            }
+          });
           $('#modal').addClass('modal-graph-line');
           var popupSuffix = this.get('parentView.graph.popupSuffix');
           var id = this.get('parentView.graph.id');
@@ -766,8 +794,17 @@ App.ChartLinearTimeView = Ember.View.extend({
 
         leftArrowVisible: function () {
           return (this.get('isReady') && (this.get('parentView.currentTimeIndex') != 7));
-        }.property('isReady', 'parentView.currentTimeIndex')
+        }.property('isReady', 'parentView.currentTimeIndex'),
 
+        exportGraphData: function (event) {
+          this._super();
+          var ajaxIndex = this.get('parentView.graph.ajaxIndex'),
+            isCSV = !!event.context,
+            targetView = ajaxIndex ? this.get('parentView.graph') : self.get('parentView');
+            targetView.exportGraphData({
+              context: event.context
+            });
+        }
       }),
       header: this.get('title'),
       /**
@@ -779,7 +816,8 @@ App.ChartLinearTimeView = Ember.View.extend({
 
       onPrimary: function () {
         self.setProperties({
-          currentTimeIndex: 0,
+          currentTimeIndex: self.get('controller.isServiceWithEnhancedWidgets') === false ?
+            self.get('parentView.currentTimeRangeIndex') : self.get('parentView.parentView.currentTimeRangeIndex'),
           isPopup: false
         });
         this._super();
@@ -845,9 +883,28 @@ App.ChartLinearTimeView = Ember.View.extend({
   ],
   // should be set by time range control dropdown list when create current graph
   currentTimeIndex: 0,
+  setCurrentTimeIndexFromParent: function () {
+    var index = this.get('controller.isServiceWithEnhancedWidgets') === false ?
+      this.get('parentView.currentTimeRangeIndex') : this.get('parentView.parentView.currentTimeRangeIndex');
+    this.set('currentTimeIndex', index);
+  }.observes('parentView.parentView.currentTimeRangeIndex', 'parentView.currentTimeRangeIndex'),
   timeUnitSeconds: function () {
     return this.get('timeStates').objectAt(this.get('currentTimeIndex')).seconds;
-  }.property('currentTimeIndex')
+  }.property('currentTimeIndex'),
+
+  exportGraphData: function (event) {
+    this._super();
+    var ajaxIndex = this.get('ajaxIndex');
+    App.ajax.send({
+      name: ajaxIndex,
+      data: $.extend(this.getDataForAjaxRequest(), {
+        isCSV: !!event.context
+      }),
+      sender: this,
+      success: 'exportGraphDataSuccessCallback',
+      error: 'exportGraphDataErrorCallback'
+    });
+  }
 });
 
 /**

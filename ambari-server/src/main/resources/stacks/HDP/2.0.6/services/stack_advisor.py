@@ -266,6 +266,41 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       rangerSqlConnectorProperty = ranger_sql_connector_dict.get(rangerDbFlavor, ranger_sql_connector_dict['MYSQL'])
       putRangerAdminProperty('SQL_CONNECTOR_JAR', rangerSqlConnectorProperty)
 
+    # Build policymgr_external_url
+    protocol = 'http'
+    ranger_admin_host = 'localhost'
+    port = '6080'
+
+    if 'ranger-site' in services['configurations'] and 'http.enabled' in services['configurations']['ranger-site']['properties'] \
+      and services['configurations']['ranger-site']['properties']['http.enabled'].lower() == 'false':
+      # HTTPS protocol is used
+      protocol = 'https'
+      # In HDP-2.3 port stored in ranger-admin-site ranger.service.https.port
+      if 'ranger-admin-site' in services['configurations'] and \
+          'ranger.service.https.port' in services['configurations']['ranger-admin-site']['properties']:
+        port = services['configurations']['ranger-admin-site']['properties']['ranger.service.https.port']
+      # In HDP-2.2 port stored in ranger-site https.service.port
+      elif 'ranger-site' in services['configurations'] and \
+          'https.service.port' in services['configurations']['ranger-site']['properties']:
+        port = services['configurations']['ranger-site']['properties']['https.service.port']
+    else:
+      # HTTP protocol is used
+      # In HDP-2.3 port stored in ranger-admin-site ranger.service.http.port
+      if 'ranger-admin-site' in services['configurations'] and \
+          'ranger.service.http.port' in services['configurations']['ranger-admin-site']['properties']:
+        port = services['configurations']['ranger-admin-site']['properties']['ranger.service.http.port']
+      # In HDP-2.2 port stored in ranger-site http.service.port
+      elif 'ranger-site' in services['configurations'] and \
+          'http.service.port' in services['configurations']['ranger-site']['properties']:
+        port = services['configurations']['ranger-site']['properties']['http.service.port']
+
+    ranger_admin_hosts = self.getComponentHostNames(services, "RANGER", "RANGER_ADMIN")
+    if ranger_admin_hosts:
+      ranger_admin_host = ranger_admin_hosts[0]
+
+    policymgr_external_url = "%s://%s:%s" % (protocol, ranger_admin_host, port)
+    putRangerAdminProperty('policymgr_external_url', policymgr_external_url)
+
 
   def getAmsMemoryRecommendation(self, services, hosts):
     # MB per sink in hbase heapsize
@@ -351,7 +386,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
     collector_heapsize, hbase_heapsize, total_sinks_count = self.getAmsMemoryRecommendation(services, hosts)
 
-    putAmsEnvProperty("metrics_collector_heapsize", str(collector_heapsize) + "m")
+    putAmsEnvProperty("metrics_collector_heapsize", collector_heapsize)
 
     # blockCache = 0.3, memstore = 0.35, phoenix-server = 0.15, phoenix-client = 0.25
     putAmsHbaseSiteProperty("hfile.block.cache.size", 0.3)
@@ -373,26 +408,26 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
         putAmsHbaseSiteProperty("hbase.regionserver.global.memstore.lowerLimit", 0.25)
         putAmsHbaseSiteProperty("phoenix.query.maxGlobalMemoryPercentage", 20)
         putTimelineServiceProperty("phoenix.query.maxGlobalMemoryPercentage", 30)
-        hbase_xmn_size = '512m'
+        hbase_xmn_size = '512'
       elif total_sinks_count >= 500:
         putAmsHbaseSiteProperty("hbase.regionserver.handler.count", 60)
         putAmsHbaseSiteProperty("hbase.regionserver.hlog.blocksize", 134217728)
         putAmsHbaseSiteProperty("hbase.regionserver.maxlogs", 64)
         putAmsHbaseSiteProperty("hbase.hregion.memstore.flush.size", 268435456)
-        hbase_xmn_size = '512m'
+        hbase_xmn_size = '512'
       elif total_sinks_count >= 250:
-        hbase_xmn_size = '256m'
+        hbase_xmn_size = '256'
       else:
-        hbase_xmn_size = '128m'
+        hbase_xmn_size = '128'
       pass
 
     # Embedded mode heap size : master + regionserver
     if rootDir.startswith("hdfs://"):
-      putHbaseEnvProperty("hbase_master_heapsize", "512m")
-      putHbaseEnvProperty("hbase_regionserver_heapsize", str(hbase_heapsize) + "m")
+      putHbaseEnvProperty("hbase_master_heapsize", "512")
+      putHbaseEnvProperty("hbase_regionserver_heapsize", hbase_heapsize)
       putHbaseEnvProperty("regionserver_xmn_size", hbase_xmn_size)
     else:
-      putHbaseEnvProperty("hbase_master_heapsize", str(hbase_heapsize) + "m")
+      putHbaseEnvProperty("hbase_master_heapsize", hbase_heapsize)
       putHbaseEnvProperty("hbase_master_xmn_size", hbase_xmn_size)
 
     # If no local DN in distributed mode
@@ -1217,10 +1252,10 @@ def getHeapsizeProperties():
                                  "default": "1024m"}],
            "METRICS_COLLECTOR": [{"config-name": "ams-hbase-env",
                                    "property": "hbase_master_heapsize",
-                                   "default": "1024m"},
+                                   "default": "1024"},
                                  {"config-name": "ams-env",
                                    "property": "metrics_collector_heapsize",
-                                   "default": "512m"}],
+                                   "default": "512"}],
            }
 
 def getMemorySizeRequired(components, configurations):
