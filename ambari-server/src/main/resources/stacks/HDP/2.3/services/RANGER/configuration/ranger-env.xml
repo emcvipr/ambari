@@ -28,7 +28,7 @@
 
   <property>
     <name>create_db_dbuser</name>
-    <value>false</value>
+    <value>true</value>
     <display-name>Setup Database and Databse User</display-name>
     <description>If set to Yes, Ranger will Setup Database and Databse User. This will require to specify Database root user and password</description>
     <value-attributes>
@@ -73,6 +73,26 @@
       <selection-cardinality>1</selection-cardinality>
       <empty-value-valid>true</empty-value-valid>
     </value-attributes>
+  </property>
+
+  <property>
+    <name>ranger_privelege_user_jdbc_url</name>
+    <display-name>JDBC connect string for root user</display-name>
+    <description>JDBC connect string - auto populated based on other values. This is to be used by root user</description>
+    <value>jdbc:mysql://localhost</value>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
+    <depends-on>
+      <property>
+        <type>admin-properties</type>
+        <name>DB_FLAVOR</name>
+      </property>
+      <property>
+        <type>admin-properties</type>
+        <name>db_host</name>
+      </property>
+    </depends-on>
   </property>
 
 

@@ -270,7 +270,7 @@
   <property>
     <name>ranger.ldap.ad.domain</name>
     <display-name>Domain Name (AD specific)</display-name>
-    <value>localhost</value>
+    <value></value>
     <description>AD domain, only used if Authentication method is AD</description>
     <value-attributes>
       <overridable>false</overridable>
@@ -388,7 +388,7 @@
 
   <property>
     <name>ranger.unixauth.service.hostname</name>
-    <value>localhost</value>
+    <value>{{ugsync_host}}</value>
     <description>Host where unix authentication service is running - only used if Authentication method is UNIX</description>
     <value-attributes>
       <overridable>false</overridable>

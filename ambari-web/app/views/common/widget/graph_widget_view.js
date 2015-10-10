@@ -18,7 +18,9 @@
 
 var App = require('app');
 
-App.GraphWidgetView = Em.View.extend(App.WidgetMixin, {
+var fileUtils = require('utils/file_utils');
+
+App.GraphWidgetView = Em.View.extend(App.WidgetMixin, App.ExportMetricsMixin, {
   templateName: require('templates/common/widget/graph_widget'),
 
   /**
@@ -286,6 +288,10 @@ App.GraphWidgetView = Em.View.extend(App.WidgetMixin, {
     },
 
     didInsertElement: function () {
+      var self = this;
+      this.$().closest('.graph-widget').on('mouseleave', function () {
+        self.set('parentView.isMenuHidden', true);
+      });
       this.setYAxisFormatter();
       this.loadData();
       var self = this;
@@ -300,5 +306,16 @@ App.GraphWidgetView = Em.View.extend(App.WidgetMixin, {
         }
       });
     }.observes('parentView.data')
-  })
+  }),
+
+  exportGraphData: function (event) {
+    this._super();
+    var data,
+      isCSV = !!event.context,
+      fileType = isCSV ? 'csv' : 'json',
+      fileName = 'data.' + fileType,
+      metrics = this.get('content.metrics'),
+      data = isCSV ? this.prepareCSV(metrics) : this.prepareJSON(metrics);
+    fileUtils.downloadTextFile(data, fileType, fileName);
+  }
 });

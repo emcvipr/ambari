@@ -791,6 +791,53 @@ var urls = {
     'mock': '/data/configuration/cluster_env_site.json'
   },
 
+  'credentials.store.info': {
+    'real': '/clusters/{clusterName}?fields=Clusters/credential_store_properties',
+    'mock': ''
+  },
+
+  'credentials.list': {
+    'real': '/clusters/{clusterName}/credentials',
+    'mock': ''
+  },
+
+  'credentials.get': {
+    'real': '/clusters/{clusterName}/credentials/{alias}',
+    'mock': ''
+  },
+
+  'credentials.create': {
+    'real': '/clusters/{clusterName}/credentials/{alias}',
+    'mock': '',
+    type: 'POST',
+    'format': function(data) {
+      return {
+        data: JSON.stringify({
+          Credential: data.resource
+        })
+      };
+    }
+  },
+
+  'credentials.update': {
+    'real': '/clusters/{clusterName}/credentials/{alias}',
+    'mock': '',
+    'type': 'PUT',
+    'format': function(data) {
+      return {
+        data: JSON.stringify({
+          Credential: data.resource
+        })
+      };
+    }
+  },
+
+  'credentials.delete': {
+    'real': '/clusters/{clusterName}/credentials/{alias}',
+    'mock': '',
+    'type':'DELETE'
+  },
+
   'host.host_component.add_new_component': {
     'real': '/clusters/{clusterName}/hosts?Hosts/host_name={hostName}',
     'mock': '/data/wizard/deploy/poll_1.json',
@@ -2749,6 +2796,13 @@ var ajax = Em.Object.extend({
 
   // A single instance of App.ModalPopup view
   modalPopup: null,
+
+  /**
+   * Upon error with one of these statuses modal should be displayed
+   * @type {Array}
+   */
+  statuses: ['500', '401', '407', '413'],
+
   /**
    * defaultErrorHandler function is referred from App.ajax.send function and App.HttpClient.defaultErrorHandler function
    * @jqXHR {jqXHR Object}
@@ -2759,15 +2813,14 @@ var ajax = Em.Object.extend({
   defaultErrorHandler: function (jqXHR, url, method, showStatus) {
     method = method || 'GET';
     var self = this;
+    showStatus = (Em.isNone(showStatus)) ? this.get('statuses') : [showStatus];
     try {
       var json = $.parseJSON(jqXHR.responseText);
       var message = json.message;
     } catch (err) {
     }
-    if (!showStatus) {
-      showStatus = 500;
-    }
-    if (jqXHR.status === showStatus && !this.get('modalPopup')) {
+
+    if (showStatus.contains(jqXHR.status) && !this.get('modalPopup')) {
       this.set('modalPopup', App.ModalPopup.show({
         header: Em.I18n.t('common.error'),
         secondary: false,
