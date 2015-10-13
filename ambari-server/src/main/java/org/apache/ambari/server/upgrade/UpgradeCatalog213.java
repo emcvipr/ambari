@@ -18,20 +18,30 @@
 
 package org.apache.ambari.server.upgrade;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.AmbariManagementController;
+import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
 import org.apache.ambari.server.orm.dao.DaoUtils;
+import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
+import org.apache.ambari.server.state.StackId;
+import org.apache.ambari.server.state.alert.SourceType;
+import org.apache.ambari.server.utils.VersionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.SQLException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Upgrade catalog for version 2.1.3.
@@ -39,14 +49,17 @@ import java.util.Map;
 public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
 
   private static final String STORM_SITE = "storm-site";
+  private static final String KAFKA_BROKER = "kafka-broker";
   private static final String AMS_ENV = "ams-env";
   private static final String AMS_HBASE_ENV = "ams-hbase-env";
+  private static final String HBASE_ENV_CONFIG = "hbase-env";
+  private static final String CONTENT_PROPERTY = "content";
 
 
   /**
    * Logger.
    */
-  private static final Logger LOG = LoggerFactory.getLogger(UpgradeCatalog212.class);
+  private static final Logger LOG = LoggerFactory.getLogger(UpgradeCatalog213.class);
 
   @Inject
   DaoUtils daoUtils;
@@ -102,12 +115,81 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
 
   @Override
   protected void executeDMLUpdates() throws AmbariException, SQLException {
-    addMissingConfigs();
+    addNewConfigurationsFromXml();
+    updateAlertDefinitions();
+    updateStormConfigs();
     updateAMSConfigs();
+    updateHbaseEnvConfig();
+    updateKafkaConfigs();
   }
 
-  protected void addMissingConfigs() throws AmbariException {
-    updateStormConfigs();
+  /**
+   * Modifies the JSON of some of the alert definitions which have changed
+   * between Ambari versions.
+   */
+  protected void updateAlertDefinitions() {
+    LOG.info("Updating alert definitions.");
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    AlertDefinitionDAO alertDefinitionDAO = injector.getInstance(AlertDefinitionDAO.class);
+    Clusters clusters = ambariManagementController.getClusters();
+
+    Map<String, Cluster> clusterMap = getCheckedClusterMap(clusters);
+    for (final Cluster cluster : clusterMap.values()) {
+      final AlertDefinitionEntity alertDefinitionEntity = alertDefinitionDAO.findByName(
+          cluster.getClusterId(), "journalnode_process");
+
+      if (alertDefinitionEntity != null) {
+        String source = alertDefinitionEntity.getSource();
+
+        alertDefinitionEntity.setSource(modifyJournalnodeProcessAlertSource(source));
+        alertDefinitionEntity.setSourceType(SourceType.WEB);
+        alertDefinitionEntity.setHash(UUID.randomUUID().toString());
+
+        alertDefinitionDAO.merge(alertDefinitionEntity);
+        LOG.info("journalnode_process alert definition was updated.");
+      }
+    }
+  }
+
+  /**
+   * Modifies type of the journalnode_process alert to WEB.
+   * Changes reporting text and uri according to the WEB type.
+   * Removes default_port property.
+   */
+  String modifyJournalnodeProcessAlertSource(String source) {
+    JsonObject rootJson = new JsonParser().parse(source).getAsJsonObject();
+
+    rootJson.remove("type");
+    rootJson.addProperty("type", "WEB");
+
+    rootJson.remove("default_port");
+
+    rootJson.remove("uri");
+    JsonObject uriJson = new JsonObject();
+    uriJson.addProperty("http", "{{hdfs-site/dfs.journalnode.http-address}}");
+    uriJson.addProperty("https", "{{hdfs-site/dfs.journalnode.https-address}}");
+    uriJson.addProperty("kerberos_keytab", "{{hdfs-site/dfs.web.authentication.kerberos.keytab}}");
+    uriJson.addProperty("kerberos_principal", "{{hdfs-site/dfs.web.authentication.kerberos.principal}}");
+    uriJson.addProperty("https_property", "{{hdfs-site/dfs.http.policy}}");
+    uriJson.addProperty("https_property_value", "HTTPS_ONLY");
+    uriJson.addProperty("connection_timeout", 5.0);
+    rootJson.add("uri", uriJson);
+
+    rootJson.getAsJsonObject("reporting").getAsJsonObject("ok").remove("text");
+    rootJson.getAsJsonObject("reporting").getAsJsonObject("ok").addProperty(
+            "text", "HTTP {0} response in {2:.3f}s");
+
+    rootJson.getAsJsonObject("reporting").getAsJsonObject("warning").remove("text");
+    rootJson.getAsJsonObject("reporting").getAsJsonObject("warning").addProperty(
+            "text", "HTTP {0} response from {1} in {2:.3f}s ({3})");
+    rootJson.getAsJsonObject("reporting").getAsJsonObject("warning").remove("value");
+
+    rootJson.getAsJsonObject("reporting").getAsJsonObject("critical").remove("text");
+    rootJson.getAsJsonObject("reporting").getAsJsonObject("critical").addProperty("text",
+            "Connection failed to {1} ({3})");
+    rootJson.getAsJsonObject("reporting").getAsJsonObject("critical").remove("value");
+
+    return rootJson.toString();
   }
 
   protected void updateStormConfigs() throws AmbariException {
@@ -129,6 +211,27 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
               updates.put("nimbus.monitor.freq.secs", "120");
               updateConfigurationPropertiesForCluster(cluster, STORM_SITE, updates, true, false);
             }
+          }
+        }
+      }
+    }
+  }
+
+  protected void updateHbaseEnvConfig() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+
+    for (final Cluster cluster : getCheckedClusterMap(ambariManagementController.getClusters()).values()) {
+      StackId stackId = cluster.getCurrentStackVersion();
+      if (stackId != null && stackId.getStackName().equals("HDP") &&
+               VersionUtils.compareVersions(stackId.getStackVersion(), "2.2") >= 0) {
+        Config hbaseEnvConfig = cluster.getDesiredConfigByType(HBASE_ENV_CONFIG);
+        if (hbaseEnvConfig != null) {
+          String content = hbaseEnvConfig.getProperties().get(CONTENT_PROPERTY);
+          if (content != null && content.indexOf("MaxDirectMemorySize={{hbase_max_direct_memory_size}}m") < 0) {
+            String newPartOfContent = "\n\nexport HBASE_REGIONSERVER_OPTS=\"$HBASE_REGIONSERVER_OPTS {% if hbase_max_direct_memory_size %} -XX:MaxDirectMemorySize={{hbase_max_direct_memory_size}}m {% endif %}\"\n\n";
+            content += newPartOfContent;
+            Map<String, String> updates = Collections.singletonMap(CONTENT_PROPERTY, content);
+            updateConfigurationPropertiesForCluster(cluster, HBASE_ENV_CONFIG, updates, true, false);
           }
         }
       }
@@ -178,6 +281,41 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
       }
     }
 
+  }
+
+  protected void updateKafkaConfigs() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    Clusters clusters = ambariManagementController.getClusters();
+
+    if (clusters != null) {
+      Map<String, Cluster> clusterMap = clusters.getClusters();
+      if (clusterMap != null && !clusterMap.isEmpty()) {
+        for (final Cluster cluster : clusterMap.values()) {
+          Set<String> installedServices =cluster.getServices().keySet();
+          Config kafkaBroker = cluster.getDesiredConfigByType(KAFKA_BROKER);
+          if (kafkaBroker != null) {
+            Map<String, String> newProperties = new HashMap<>();
+            Map<String, String> kafkaBrokerProperties = kafkaBroker.getProperties();
+            String kafkaMetricsReporters = kafkaBrokerProperties.get("kafka.metrics.reporters");
+            if (kafkaMetricsReporters == null ||
+              "{{kafka_metrics_reporters}}".equals(kafkaMetricsReporters)) {
+
+              if (installedServices.contains("AMBARI_METRICS")) {
+                newProperties.put("kafka.metrics.reporters", "org.apache.hadoop.metrics2.sink.kafka.KafkaTimelineMetricsReporter");
+              } else if (installedServices.contains("GANGLIA")) {
+                newProperties.put("kafka.metrics.reporters", "kafka.ganglia.KafkaGangliaMetricsReporter");
+              } else {
+                newProperties.put("kafka.metrics.reporters", " ");
+              }
+
+            }
+            if (!newProperties.isEmpty()) {
+              updateConfigurationPropertiesForCluster(cluster, KAFKA_BROKER, newProperties, true, true);
+            }
+          }
+        }
+      }
+    }
   }
 
   protected String updateAmsEnvContent(String oldContent) {
