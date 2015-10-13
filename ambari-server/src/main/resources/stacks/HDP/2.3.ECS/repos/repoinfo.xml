@@ -52,6 +52,11 @@
       <repoid>HDP-UTILS-1.1.0.20</repoid>
       <reponame>HDP-UTILS</reponame>
     </repo>
+    <repo>
+      <baseurl>http://ECS_CLIENT_REPO/</baseurl>
+      <repoid>ECS-2.2.0.0</repoid>
+      <reponame>ECS</reponame>
+    </repo>
   </os>
   <os family="ubuntu12">
     <repo>
@@ -89,12 +94,4 @@
       <reponame>HDP-UTILS</reponame>
     </repo>
   </os>
-  <!-- ECS CLIENT REPO -->
-  <os family="any">
-    <repo>
-      <baseurl>http://ECS_CLIENT_REPO/</baseurl>
-      <repoid>ECS-2.2.0.0</repoid>
-      <reponame>ECS</reponame>
-    </repo>
-  </os>  
 </reposinfo>
