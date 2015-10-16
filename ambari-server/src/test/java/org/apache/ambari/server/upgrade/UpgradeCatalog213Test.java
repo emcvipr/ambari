@@ -27,10 +27,12 @@ import com.google.inject.Provider;
 import com.google.inject.persist.PersistService;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
+import org.apache.ambari.server.orm.dao.DaoUtils;
 import org.apache.ambari.server.orm.dao.StackDAO;
 import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.state.Cluster;
@@ -40,7 +42,10 @@ import org.apache.ambari.server.state.ConfigHelper;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.stack.OsFamily;
+import org.easymock.Capture;
+import org.easymock.EasyMock;
 import org.easymock.EasyMockSupport;
+import org.easymock.IMocksControl;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -50,8 +55,11 @@ import javax.persistence.EntityManager;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.capture;
 import static org.easymock.EasyMock.createMockBuilder;
 import static org.easymock.EasyMock.createNiceMock;
 import static org.easymock.EasyMock.createStrictMock;
@@ -70,6 +78,8 @@ public class UpgradeCatalog213Test {
   private EntityManager entityManager = createNiceMock(EntityManager.class);
   private UpgradeCatalogHelper upgradeCatalogHelper;
   private StackEntity desiredStackEntity;
+
+  private IMocksControl mocksControl = EasyMock.createControl();
 
   @Before
   public void init() {
@@ -95,19 +105,23 @@ public class UpgradeCatalog213Test {
   @Test
   public void testExecuteDMLUpdates() throws Exception {
     Method updateAMSConfigs = UpgradeCatalog213.class.getDeclaredMethod("updateAMSConfigs");
+    Method updateHDFSConfigs = UpgradeCatalog213.class.getDeclaredMethod("updateHDFSConfigs");
     Method updateKafkaConfigs = UpgradeCatalog213.class.getDeclaredMethod("updateKafkaConfigs");
     Method updateStormConfigs = UpgradeCatalog213.class.getDeclaredMethod("updateStormConfigs");
     Method addNewConfigurationsFromXml = AbstractUpgradeCatalog.class.getDeclaredMethod("addNewConfigurationsFromXml");
     Method updateHbaseEnvConfig = UpgradeCatalog213.class.getDeclaredMethod("updateHbaseEnvConfig");
+    Method updateHadoopEnvConfig = UpgradeCatalog213.class.getDeclaredMethod("updateHadoopEnv");
     Method updateAlertDefinitions = UpgradeCatalog213.class.getDeclaredMethod("updateAlertDefinitions");
 
     UpgradeCatalog213 upgradeCatalog213 = createMockBuilder(UpgradeCatalog213.class)
         .addMockedMethod(updateAMSConfigs)
+        .addMockedMethod(updateHDFSConfigs)
         .addMockedMethod(updateStormConfigs)
         .addMockedMethod(addNewConfigurationsFromXml)
         .addMockedMethod(updateHbaseEnvConfig)
         .addMockedMethod(updateAlertDefinitions)
         .addMockedMethod(updateKafkaConfigs)
+        .addMockedMethod(updateHadoopEnvConfig)
         .createMock();
 
     upgradeCatalog213.updateHbaseEnvConfig();
@@ -116,11 +130,15 @@ public class UpgradeCatalog213Test {
     expectLastCall().once();
     upgradeCatalog213.updateStormConfigs();
     expectLastCall().once();
+    upgradeCatalog213.updateHadoopEnv();
+    expectLastCall().once();
     upgradeCatalog213.updateAMSConfigs();
     expectLastCall().once();
     upgradeCatalog213.updateAlertDefinitions();
     expectLastCall().once();
     upgradeCatalog213.updateKafkaConfigs();
+    expectLastCall().once();
+    upgradeCatalog213.updateHDFSConfigs();
     expectLastCall().once();
 
     replay(upgradeCatalog213);
@@ -206,7 +224,7 @@ public class UpgradeCatalog213Test {
     expect(mockClusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
       put("normal", mockClusterExpected);
     }}).atLeastOnce();
-    expect(mockClusterExpected.getCurrentStackVersion()).andReturn(new StackId("HDP","2.2"));
+    expect(mockClusterExpected.getCurrentStackVersion()).andReturn(new StackId("HDP", "2.2"));
 
     expect(mockClusterExpected.getDesiredConfigByType("hbase-env")).andReturn(mockHbaseEnv).atLeastOnce();
     expect(mockHbaseEnv.getProperties()).andReturn(propertiesHbaseEnv).atLeastOnce();
@@ -218,33 +236,75 @@ public class UpgradeCatalog213Test {
   }
 
   @Test
+  public void testUpdateHDFSConfiguration() throws Exception {
+    EasyMockSupport easyMockSupport = new EasyMockSupport();
+    final AmbariManagementController mockAmbariManagementController = easyMockSupport.createNiceMock(AmbariManagementController.class);
+    final ConfigHelper mockConfigHelper = easyMockSupport.createMock(ConfigHelper.class);
+
+    final Clusters mockClusters = easyMockSupport.createStrictMock(Clusters.class);
+    final Cluster mockClusterExpected = easyMockSupport.createNiceMock(Cluster.class);
+
+    final Config mockHdfsSite = easyMockSupport.createNiceMock(Config.class);
+
+    final Map<String, String> propertiesExpectedHdfs = new HashMap<String, String>();
+    propertiesExpectedHdfs.put("dfs.namenode.rpc-address", "nn.rpc.address");
+    propertiesExpectedHdfs.put("dfs.nameservices", "nn1");
+    propertiesExpectedHdfs.put("dfs.ha.namenodes.nn1", "value");
+
+    final Injector mockInjector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(AmbariManagementController.class).toInstance(mockAmbariManagementController);
+        bind(ConfigHelper.class).toInstance(mockConfigHelper);
+        bind(Clusters.class).toInstance(mockClusters);
+
+        bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
+        bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
+      }
+    });
+
+    expect(mockAmbariManagementController.getClusters()).andReturn(mockClusters).once();
+    expect(mockClusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
+      put("normal", mockClusterExpected);
+    }}).once();
+
+    // Expected operation
+    expect(mockClusterExpected.getDesiredConfigByType("hdfs-site")).andReturn(mockHdfsSite).atLeastOnce();
+    expect(mockHdfsSite.getProperties()).andReturn(propertiesExpectedHdfs).anyTimes();
+
+    easyMockSupport.replayAll();
+    mockInjector.getInstance(UpgradeCatalog213.class).updateHDFSConfigs();
+    easyMockSupport.verifyAll();
+  }
+
+  @Test
   public void testUpdateAmsHbaseEnvContent() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
     Method updateAmsHbaseEnvContent = UpgradeCatalog213.class.getDeclaredMethod("updateAmsHbaseEnvContent", String.class);
     UpgradeCatalog213 upgradeCatalog213 = new UpgradeCatalog213(injector);
     String oldContent = "export HBASE_CLASSPATH=${HBASE_CLASSPATH}\n" +
-            "\n" +
-            "# The maximum amount of heap to use, in MB. Default is 1000.\n" +
-            "export HBASE_HEAPSIZE={{hbase_heapsize}}\n" +
-            "\n" +
-            "{% if java_version &lt; 8 %}\n" +
-            "export HBASE_MASTER_OPTS=\" -XX:PermSize=64m -XX:MaxPermSize={{hbase_master_maxperm_size}} -Xms{{hbase_heapsize}} -Xmx{{hbase_heapsize}} -Xmn{{hbase_master_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
-            "export HBASE_REGIONSERVER_OPTS=\"-XX:MaxPermSize=128m -Xmn{{regionserver_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}} -Xmx{{regionserver_heapsize}}\"\n" +
-            "{% else %}\n" +
-            "export HBASE_MASTER_OPTS=\" -Xms{{hbase_heapsize}} -Xmx{{hbase_heapsize}} -Xmn{{hbase_master_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
-            "export HBASE_REGIONSERVER_OPTS=\" -Xmn{{regionserver_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}} -Xmx{{regionserver_heapsize}}\"\n" +
-            "{% endif %}\n";
+        "\n" +
+        "# The maximum amount of heap to use, in MB. Default is 1000.\n" +
+        "export HBASE_HEAPSIZE={{hbase_heapsize}}\n" +
+        "\n" +
+        "{% if java_version &lt; 8 %}\n" +
+        "export HBASE_MASTER_OPTS=\" -XX:PermSize=64m -XX:MaxPermSize={{hbase_master_maxperm_size}} -Xms{{hbase_heapsize}} -Xmx{{hbase_heapsize}} -Xmn{{hbase_master_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
+        "export HBASE_REGIONSERVER_OPTS=\"-XX:MaxPermSize=128m -Xmn{{regionserver_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}} -Xmx{{regionserver_heapsize}}\"\n" +
+        "{% else %}\n" +
+        "export HBASE_MASTER_OPTS=\" -Xms{{hbase_heapsize}} -Xmx{{hbase_heapsize}} -Xmn{{hbase_master_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
+        "export HBASE_REGIONSERVER_OPTS=\" -Xmn{{regionserver_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}} -Xmx{{regionserver_heapsize}}\"\n" +
+        "{% endif %}\n";
     String expectedContent = "export HBASE_CLASSPATH=${HBASE_CLASSPATH}\n" +
-            "\n" +
-            "# The maximum amount of heap to use, in MB. Default is 1000.\n" +
-            "export HBASE_HEAPSIZE={{hbase_heapsize}}m\n" +
-            "\n" +
-            "{% if java_version &lt; 8 %}\n" +
-            "export HBASE_MASTER_OPTS=\" -XX:PermSize=64m -XX:MaxPermSize={{hbase_master_maxperm_size}}m -Xms{{hbase_heapsize}}m -Xmx{{hbase_heapsize}}m -Xmn{{hbase_master_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
-            "export HBASE_REGIONSERVER_OPTS=\"-XX:MaxPermSize=128m -Xmn{{regionserver_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}}m -Xmx{{regionserver_heapsize}}m\"\n" +
-            "{% else %}\n" +
-            "export HBASE_MASTER_OPTS=\" -Xms{{hbase_heapsize}}m -Xmx{{hbase_heapsize}}m -Xmn{{hbase_master_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
-            "export HBASE_REGIONSERVER_OPTS=\" -Xmn{{regionserver_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}}m -Xmx{{regionserver_heapsize}}m\"\n" +
-            "{% endif %}\n";
+        "\n" +
+        "# The maximum amount of heap to use, in MB. Default is 1000.\n" +
+        "export HBASE_HEAPSIZE={{hbase_heapsize}}m\n" +
+        "\n" +
+        "{% if java_version &lt; 8 %}\n" +
+        "export HBASE_MASTER_OPTS=\" -XX:PermSize=64m -XX:MaxPermSize={{hbase_master_maxperm_size}}m -Xms{{hbase_heapsize}}m -Xmx{{hbase_heapsize}}m -Xmn{{hbase_master_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
+        "export HBASE_REGIONSERVER_OPTS=\"-XX:MaxPermSize=128m -Xmn{{regionserver_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}}m -Xmx{{regionserver_heapsize}}m\"\n" +
+        "{% else %}\n" +
+        "export HBASE_MASTER_OPTS=\" -Xms{{hbase_heapsize}}m -Xmx{{hbase_heapsize}}m -Xmn{{hbase_master_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
+        "export HBASE_REGIONSERVER_OPTS=\" -Xmn{{regionserver_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}}m -Xmx{{regionserver_heapsize}}m\"\n" +
+        "{% endif %}\n";
     String result = (String) updateAmsHbaseEnvContent.invoke(upgradeCatalog213, oldContent);
     Assert.assertEquals(expectedContent, result);
   }
@@ -254,9 +314,9 @@ public class UpgradeCatalog213Test {
     Method updateAmsEnvContent = UpgradeCatalog213.class.getDeclaredMethod("updateAmsEnvContent", String.class);
     UpgradeCatalog213 upgradeCatalog213 = new UpgradeCatalog213(injector);
     String oldContent = "# AMS Collector heapsize\n" +
-            "export AMS_COLLECTOR_HEAPSIZE={{metrics_collector_heapsize}}\n";
+        "export AMS_COLLECTOR_HEAPSIZE={{metrics_collector_heapsize}}\n";
     String expectedContent = "# AMS Collector heapsize\n" +
-            "export AMS_COLLECTOR_HEAPSIZE={{metrics_collector_heapsize}}m\n";
+        "export AMS_COLLECTOR_HEAPSIZE={{metrics_collector_heapsize}}m\n";
     String result = (String) updateAmsEnvContent.invoke(upgradeCatalog213, oldContent);
     Assert.assertEquals(expectedContent, result);
   }
@@ -318,18 +378,18 @@ public class UpgradeCatalog213Test {
   public void testModifyJournalnodeProcessAlertSource() throws Exception {
     UpgradeCatalog213 upgradeCatalog213 = new UpgradeCatalog213(injector);
     String alertSource = "{\"uri\":\"{{hdfs-site/dfs.journalnode.http-address}}\",\"default_port\":8480," +
-            "\"type\":\"PORT\",\"reporting\":{\"ok\":{\"text\":\"TCP OK - {0:.3f}s response on port {1}\"}," +
-            "\"warning\":{\"text\":\"TCP OK - {0:.3f}s response on port {1}\",\"value\":1.5}," +
-            "\"critical\":{\"text\":\"Connection failed: {0} to {1}:{2}\",\"value\":5.0}}}";
+        "\"type\":\"PORT\",\"reporting\":{\"ok\":{\"text\":\"TCP OK - {0:.3f}s response on port {1}\"}," +
+        "\"warning\":{\"text\":\"TCP OK - {0:.3f}s response on port {1}\",\"value\":1.5}," +
+        "\"critical\":{\"text\":\"Connection failed: {0} to {1}:{2}\",\"value\":5.0}}}";
     String expected = "{\"reporting\":{\"ok\":{\"text\":\"HTTP {0} response in {2:.3f}s\"}," +
-            "\"warning\":{\"text\":\"HTTP {0} response from {1} in {2:.3f}s ({3})\"}," +
-            "\"critical\":{\"text\":\"Connection failed to {1} ({3})\"}},\"type\":\"WEB\"," +
-            "\"uri\":{\"http\":\"{{hdfs-site/dfs.journalnode.http-address}}\"," +
-            "\"https\":\"{{hdfs-site/dfs.journalnode.https-address}}\"," +
-            "\"kerberos_keytab\":\"{{hdfs-site/dfs.web.authentication.kerberos.keytab}}\"," +
-            "\"kerberos_principal\":\"{{hdfs-site/dfs.web.authentication.kerberos.principal}}\"," +
-            "\"https_property\":\"{{hdfs-site/dfs.http.policy}}\"," +
-            "\"https_property_value\":\"HTTPS_ONLY\",\"connection_timeout\":5.0}}";
+        "\"warning\":{\"text\":\"HTTP {0} response from {1} in {2:.3f}s ({3})\"}," +
+        "\"critical\":{\"text\":\"Connection failed to {1} ({3})\"}},\"type\":\"WEB\"," +
+        "\"uri\":{\"http\":\"{{hdfs-site/dfs.journalnode.http-address}}\"," +
+        "\"https\":\"{{hdfs-site/dfs.journalnode.https-address}}\"," +
+        "\"kerberos_keytab\":\"{{hdfs-site/dfs.web.authentication.kerberos.keytab}}\"," +
+        "\"kerberos_principal\":\"{{hdfs-site/dfs.web.authentication.kerberos.principal}}\"," +
+        "\"https_property\":\"{{hdfs-site/dfs.http.policy}}\"," +
+        "\"https_property_value\":\"HTTPS_ONLY\",\"connection_timeout\":5.0}}";
     Assert.assertEquals(expected, upgradeCatalog213.modifyJournalnodeProcessAlertSource(alertSource));
   }
 
@@ -413,4 +473,48 @@ public class UpgradeCatalog213Test {
 
     Assert.assertEquals("2.1.3", upgradeCatalog.getTargetVersion());
   }
+
+  @Test
+  public void testShouldDDLsBeExecutedOnUpgrade() throws Exception {
+    // GIVEN
+    Injector mockedInjector = mocksControl.createMock(Injector.class);
+    DBAccessor mockedDbAccessor = mocksControl.createMock(DBAccessor.class);
+    DaoUtils mockedDaoUtils = mocksControl.createMock(DaoUtils.class);
+    Configuration mockedConfiguration = mocksControl.createMock(Configuration.class);
+    StackUpgradeUtil mockedStackUpgradeUtil = mocksControl.createMock(StackUpgradeUtil.class);
+
+    Capture<String> capturedTableName = EasyMock.newCapture();
+    Capture<String> capturedPKColumn = EasyMock.newCapture();
+    Capture<List<DBAccessor.DBColumnInfo>> capturedColumns = EasyMock.newCapture();
+
+    EasyMock.expect(mockedInjector.getInstance(DaoUtils.class)).andReturn(mockedDaoUtils);
+    mockedInjector.injectMembers(anyObject(UpgradeCatalog.class));
+    EasyMock.expect(mockedConfiguration.getDatabaseType()).andReturn(Configuration.DatabaseType.POSTGRES).times(2);
+    EasyMock.expect(mockedConfiguration.getDatabaseUser()).andReturn("ambari");
+    EasyMock.expect(mockedConfiguration.getServerJDBCPostgresSchemaName()).andReturn("fo");
+
+    mockedDbAccessor.executeQuery("ALTER SCHEMA fo OWNER TO \"ambari\";");
+    mockedDbAccessor.executeQuery("ALTER ROLE \"ambari\" SET search_path to 'fo';");
+    mockedDbAccessor.createTable(capture(capturedTableName), capture(capturedColumns), capture(capturedPKColumn));
+
+    mocksControl.replay();
+
+    UpgradeCatalog213 testSubject = new UpgradeCatalog213(mockedInjector);
+    EasyMockSupport.injectMocks(testSubject);
+
+    //todo refactor the DI approach, don't directly access these members!!!
+    testSubject.stackUpgradeUtil = mockedStackUpgradeUtil;
+    testSubject.dbAccessor = mockedDbAccessor;
+    testSubject.configuration = mockedConfiguration;
+
+    // WHEN
+    testSubject.upgradeSchema();
+
+    // THEN
+    Assert.assertEquals("The table name is wrong!", "kerberos_descriptor", capturedTableName.getValue());
+    Assert.assertEquals("The primary key is wrong!", "kerberos_descriptor_name", capturedPKColumn.getValue());
+    Assert.assertTrue("Ther number of columns is wrong!", capturedColumns.getValue().size() == 2);
+
+  }
+
 }
