@@ -241,7 +241,13 @@ App.KerberosWizardController = App.WizardController.extend(App.InstallComponent,
       {
         type: 'sync',
         callback: function () {
+          var self = this;
           this.loadKerberosOption();
+          if (App.get('supports.storeKDCCredentials')) {
+            credentialsUtils.isStorePersisted(App.get('clusterName')).then(function(isPersisted) {
+              self.set('content.secureStoragePersisted', isPersisted);
+            });
+          }
         }
       }
     ],
@@ -256,18 +262,6 @@ App.KerberosWizardController = App.WizardController.extend(App.InstallComponent,
               self.set('stackConfigsLoaded', true);
             }, this);
           }
-        }
-      },
-      {
-        type: 'async',
-        callback: function() {
-          var self = this;
-          var dfd = $.Deferred();
-          credentialsUtils.isStorePersisted(App.get('clusterName')).then(function(isPersisted) {
-            self.set('content.secureStoragePersisted', isPersisted);
-            dfd.resolve();
-          });
-          return dfd.promise();
         }
       }
     ],

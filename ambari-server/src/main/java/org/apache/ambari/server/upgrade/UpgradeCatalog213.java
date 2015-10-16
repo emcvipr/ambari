@@ -24,6 +24,7 @@ import com.google.inject.Inject;
 import com.google.inject.Injector;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.AmbariManagementController;
+import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
 import org.apache.ambari.server.orm.dao.DaoUtils;
 import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
@@ -37,8 +38,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -49,17 +53,30 @@ import java.util.UUID;
 public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
 
   private static final String STORM_SITE = "storm-site";
+  private static final String HDFS_SITE_CONFIG = "hdfs-site";
   private static final String KAFKA_BROKER = "kafka-broker";
   private static final String AMS_ENV = "ams-env";
   private static final String AMS_HBASE_ENV = "ams-hbase-env";
   private static final String HBASE_ENV_CONFIG = "hbase-env";
+  private static final String HADOOP_ENV_CONFIG = "hadoop-env";
   private static final String CONTENT_PROPERTY = "content";
+  private static final String HADOOP_ENV_CONTENT_TO_APPEND = "\n{% if is_datanode_max_locked_memory_set %}\n" +
+                                    "# Fix temporary bug, when ulimit from conf files is not picked up, without full relogin. \n" +
+                                    "# Makes sense to fix only when runing DN as root \n" +
+                                    "if [ \"$command\" == \"datanode\" ] && [ \"$EUID\" -eq 0 ] && [ -n \"$HADOOP_SECURE_DN_USER\" ]; then\n" +
+                                    "  ulimit -l {{datanode_max_locked_memory}}\n" +
+                                    "fi\n" +
+                                    "{% endif %};\n";
 
+  private static final String KERBEROS_DESCRIPTOR_TABLE = "kerberos_descriptor";
+  private static final String KERBEROS_DESCRIPTOR_NAME_COLUMN = "kerberos_descriptor_name";
+  private static final String KERBEROS_DESCRIPTOR_COLUMN = "kerberos_descriptor";
 
   /**
    * Logger.
    */
   private static final Logger LOG = LoggerFactory.getLogger(UpgradeCatalog213.class);
+
 
   @Inject
   DaoUtils daoUtils;
@@ -104,6 +121,17 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
    */
   @Override
   protected void executeDDLUpdates() throws AmbariException, SQLException {
+    addKerberosDescriptorTable();
+  }
+
+  private void addKerberosDescriptorTable() throws SQLException {
+
+    List<DBAccessor.DBColumnInfo> columns = new ArrayList<DBAccessor.DBColumnInfo>();
+    columns.add(new DBAccessor.DBColumnInfo(KERBEROS_DESCRIPTOR_NAME_COLUMN, String.class, 255, null, false));
+    columns.add(new DBAccessor.DBColumnInfo(KERBEROS_DESCRIPTOR_COLUMN, char[].class, null, null, false));
+
+    LOG.debug("Creating table [ {} ] with columns [ {} ] and primary key: [ {} ]", KERBEROS_DESCRIPTOR_TABLE, columns, KERBEROS_DESCRIPTOR_NAME_COLUMN);
+    dbAccessor.createTable(KERBEROS_DESCRIPTOR_TABLE, columns, KERBEROS_DESCRIPTOR_NAME_COLUMN);
   }
 
   /**
@@ -119,7 +147,9 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
     updateAlertDefinitions();
     updateStormConfigs();
     updateAMSConfigs();
+    updateHDFSConfigs();
     updateHbaseEnvConfig();
+    updateHadoopEnv();
     updateKafkaConfigs();
   }
 
@@ -190,6 +220,37 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
     rootJson.getAsJsonObject("reporting").getAsJsonObject("critical").remove("value");
 
     return rootJson.toString();
+  }
+  
+  protected void updateHadoopEnv() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+
+    for (final Cluster cluster : getCheckedClusterMap(ambariManagementController.getClusters()).values()) {
+      Config hadoopEnvConfig = cluster.getDesiredConfigByType(HADOOP_ENV_CONFIG);
+      if (hadoopEnvConfig != null) {
+        String content = hadoopEnvConfig.getProperties().get(CONTENT_PROPERTY);
+        if (content != null) {
+          content += HADOOP_ENV_CONTENT_TO_APPEND;
+          Map<String, String> updates = Collections.singletonMap(CONTENT_PROPERTY, content);
+          updateConfigurationPropertiesForCluster(cluster, HADOOP_ENV_CONFIG, updates, true, false);
+        }
+      }
+    }
+  }
+
+  protected void updateHDFSConfigs() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(
+            AmbariManagementController.class);
+    Map<String, Cluster> clusterMap = getCheckedClusterMap(ambariManagementController.getClusters());
+
+    for (final Cluster cluster : clusterMap.values()) {
+      // Remove dfs.namenode.rpc-address property when NN HA is enabled
+      if (cluster.getDesiredConfigByType(HDFS_SITE_CONFIG) != null && isNNHAEnabled(cluster)) {
+        Set<String> removePropertiesSet = new HashSet<>();
+        removePropertiesSet.add("dfs.namenode.rpc-address");
+        removeConfigurationPropertiesFromCluster(cluster, HDFS_SITE_CONFIG, removePropertiesSet);
+      }
+    }
   }
 
   protected void updateStormConfigs() throws AmbariException {

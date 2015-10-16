@@ -162,8 +162,8 @@
 
   <property>
     <name>ranger.audit.solr.urls</name>
-    <value>http://solr_host:6083/solr/ranger_audits</value>
-    <description>Solr url for audit</description>
+    <value></value>
+    <description>Solr url for audit. Example: http://solr_host:6083/solr/ranger_audits</description>
   </property>
 
   <property>
@@ -418,8 +418,14 @@
 
   <property>
     <name>ranger.audit.solr.zookeepers</name>
-    <value>NONE</value>
+    <value>localhost:2181</value>
     <description>Solr Zookeeper string</description>
+    <depends-on>
+      <property>
+        <type>zoo.cfg</type>
+        <name>clientPort</name>
+      </property>
+    </depends-on>
   </property> 
 
   <property>
