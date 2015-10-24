@@ -36,7 +36,8 @@
           "core-site": {
             "hadoop.security.authentication": "kerberos",
             "hadoop.security.authorization": "true",
-            "fs.viprfs.auth.identity_translation": "CURRENT_USER_REALM"
+            "fs.viprfs.auth.identity_translation": "CURRENT_USER_REALM",
+            "viprfs.security.principal": ""
           }
         }
       ],

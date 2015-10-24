@@ -87,11 +87,13 @@
 	  <description>Supported values are NONE(default), FIXED_REALM, and CURRENT_USER_REALM</description>
     </property>
 
+    <!--  Moving the configuration to kerberos.json as this is applicable to only secure cluster
     <property>
       <name>viprfs.security.principal</name>
       <value>NONE</value>
 	  <description>Modify the value for secure cluster setup. Provide object engine security principal name using the format: vipr/_HOST@ECS_REALM</description>
     </property>
+    -->
     
     <property>
       <name>fs.viprfs.impl</name>
