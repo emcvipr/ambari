@@ -36,7 +36,9 @@ App.ManageCredentialsFormView = Em.View.extend({
    * Status of persistent storage. Returns <code>true</code> if persistent storage is available.
    * @type {boolean}
    */
-  storePersisted: false,
+  storePersisted: function() {
+    return App.get('isCredentialStorePersistent');
+  }.property('App.isCredentialStorePersistent'),
 
   /**
    * Disable checkbox if persistent storage not available
@@ -83,8 +85,14 @@ App.ManageCredentialsFormView = Em.View.extend({
    * @type {string}
    */
   storageType: function() {
-    return this.get('storeCredentials') ? credentialsUtils.STORE_TYPES.PERSISTENT : credentialsUtils.STORE_TYPES.TEMPORARY;
+    return credentialsUtils.STORE_TYPES.PERSISTENT;
   }.property('storeCredentials'),
+
+  formHeader: function() {
+    return this.get('isRemovable') ?
+      Em.I18n.t('admin.kerberos.credentials.form.header.stored') :
+      Em.I18n.t('admin.kerberos.credentials.form.header.not.stored');
+  }.property('isRemovable'),
 
   /**
    * Message to display in tooltip regarding persistent storage state.
@@ -120,11 +128,6 @@ App.ManageCredentialsFormView = Em.View.extend({
 
   prepareContent: function() {
     var self = this;
-    credentialsUtils.isStorePersisted(App.get('clusterName')).then(function(isPersisted) {
-      Em.run.next(function() {
-        self.set('storePersisted', isPersisted);
-      });
-    });
     credentialsUtils.credentials(App.get('clusterName'), function(credentials) {
       Em.run.next(function() {
         self.set('isRemovable', credentialsUtils.isKDCCredentialsPersisted(credentials));
@@ -160,11 +163,12 @@ App.ManageCredentialsFormView = Em.View.extend({
   /**
    * Remove KDC credentials action.
    *
-   * @returns {App.ModalPopup}
+   * @returns {object} for better testing purpose returns object { deferred: $.Deferred, popup: App.ModalPopup }
    */
   removeKDCCredentials: function() {
     var t = Em.I18n.t;
     var self = this;
+    var dfd = $.Deferred();
     this.set('actionStatus', false);
     var popup = App.showConfirmationPopup(
       function() {
@@ -175,6 +179,7 @@ App.ManageCredentialsFormView = Em.View.extend({
             self.prepareContent();
             self.set('actionStatus', Em.I18n.t('common.success'));
             self.get('parentView').set('isCredentialsRemoved', true);
+            dfd.resolve();
           });
       }, t('admin.kerberos.credentials.remove.confirmation.body'),
       function () {},
@@ -182,7 +187,10 @@ App.ManageCredentialsFormView = Em.View.extend({
       t('yes'),
       false);
     popup.set('secondary', t('no'));
-    return popup;
+    return {
+      deferred: dfd,
+      popup: popup
+    };
   },
 
   /**

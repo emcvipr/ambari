@@ -800,12 +800,25 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
     });
     services.forEach(function (service) {
       var configsByService = [];
-      var serviceConfigs = configs.filterProperty('serviceName', service.get('serviceName'));
+      var dependencies = {};
+      var serviceConfigs = [];
+
+      configs.forEach(function (config) {
+        if (config.serviceName === service.get('serviceName')) {
+          serviceConfigs.push(config);
+        }
+        if (config.filename === 'hive-site.xml' && config.name === 'hive.metastore.uris') {
+          dependencies['hive.metastore.uris'] = config.recommendedValue;
+        }
+        if (config.filename === 'zoo.cfg.xml' && config.name === 'clientPort') {
+          dependencies['clientPort'] = config.recommendedValue;
+        }
+      }, this);
       serviceConfigs.forEach(function (_config) {
         var serviceConfigProperty = App.ServiceConfigProperty.create(_config);
         this.updateHostOverrides(serviceConfigProperty, _config);
         if (!storedConfigs && !serviceConfigProperty.get('hasInitialValue')) {
-          configPropertyHelper.initialValue(serviceConfigProperty, localDB, configs);
+          configPropertyHelper.initialValue(serviceConfigProperty, localDB, dependencies);
         }
         serviceConfigProperty.validate();
         configsByService.pushObject(serviceConfigProperty);
@@ -1242,9 +1255,9 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
   getAmbariDatabaseSuccess: function (data) {
     var hiveDBHostname = this.get('stepConfigs').findProperty('serviceName', 'HIVE').configs.findProperty('name', 'hive_hostname').value;
     var ambariServiceHostComponents = data.hostComponents;
-    if (!!ambariServiceHostComponents.length) {
+    if (ambariServiceHostComponents.length) {
       var ambariDBInfo = JSON.stringify(ambariServiceHostComponents[0].RootServiceHostComponents.properties);
-      this.set('mySQLServerConflict', ambariDBInfo.indexOf('mysql') > 0 && ambariDBInfo.indexOf(hiveDBHostname) > 0);
+      this.set('mySQLServerConflict', ambariDBInfo.contains('mysql') && ambariDBInfo.indexOf(hiveDBHostname) > 0);
     } else {
       this.set('mySQLServerConflict', false);
     }
@@ -1266,34 +1279,63 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
     var hiveDBType = this.get('stepConfigs').findProperty('serviceName', 'HIVE').configs.findProperty('name', 'hive_database').value;
     if (hiveDBType == 'New MySQL Database') {
       var self = this;
-      this.checkMySQLHost().done(function () {
-        if (self.get('mySQLServerConflict')) {
-          // error popup before you can proceed
+      return this.checkMySQLHost().done(function () {
+        self.mySQLWarningHandler();
+      });
+    }
+    else {
+      this.moveNext();
+    }
+  },
+
+  /**
+   * Show warning popup about MySQL-DB issues (on post-submit)
+   *
+   * @returns {*}
+   * @method mySQLWarningHandler
+   */
+  mySQLWarningHandler: function () {
+    var self = this;
+    if (this.get('mySQLServerConflict')) {
+      // error popup before you can proceed
+      return App.ModalPopup.show({
+        header: Em.I18n.t('installer.step7.popup.mySQLWarning.header'),
+        body:Em.I18n.t('installer.step7.popup.mySQLWarning.body'),
+        secondary: Em.I18n.t('installer.step7.popup.mySQLWarning.button.gotostep5'),
+        primary: Em.I18n.t('installer.step7.popup.mySQLWarning.button.dismiss'),
+        encodeBody: false,
+        onPrimary: function () {
+          this._super();
+          self.set('submitButtonClicked', false);
+        },
+        onSecondary: function () {
+          var parent = this;
           return App.ModalPopup.show({
-            header: Em.I18n.t('installer.step7.popup.mySQLWarning.header'),
-            body:Em.I18n.t('installer.step7.popup.mySQLWarning.body'),
-            secondary: Em.I18n.t('installer.step7.popup.mySQLWarning.button.gotostep5'),
-            primary: Em.I18n.t('installer.step7.popup.mySQLWarning.button.dismiss'),
-            onSecondary: function () {
-              var parent = this;
-              return App.ModalPopup.show({
-                header: Em.I18n.t('installer.step7.popup.mySQLWarning.confirmation.header'),
-                body: Em.I18n.t('installer.step7.popup.mySQLWarning.confirmation.body'),
-                onPrimary: function () {
-                  this.hide();
-                  parent.hide();
-                  // go back to step 5: assign masters and disable default navigation warning
-                  App.router.get('installerController').gotoStep(5, true);
+            header: Em.I18n.t('installer.step7.popup.mySQLWarning.confirmation.header'),
+            body: Em.I18n.t('installer.step7.popup.mySQLWarning.confirmation.body'),
+            onPrimary: function () {
+              this.hide();
+              parent.hide();
+              // go back to step 5: assign masters and disable default navigation warning
+              if ('installerController' === self.get('content.controllerName')) {
+                App.router.get('installerController').gotoStep(5, true);
+              }
+              else {
+                if ('addServiceController' === self.get('content.controllerName')) {
+                  App.router.get('addServiceController').gotoStep(2, true);
                 }
-              });
+              }
+            },
+            onSecondary: function () {
+              this._super();
+              self.set('submitButtonClicked', false);
             }
           });
-        } else {
-          self.moveNext();
         }
       });
-    } else {
-      this.moveNext();
+    }
+    else {
+      return this.moveNext();
     }
   },
 
@@ -1416,6 +1458,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
    **/
   moveNext: function () {
     App.router.send('next');
+    this.set('submitButtonClicked', false);
   },
 
   /**
@@ -1462,7 +1505,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
     this.showOozieDerbyWarningPopup(function() {
       self.checkDatabaseConnectionTest().done(function () {
         self.resolveHiveMysqlDatabase();
-        self.set('submitButtonClicked', false);
       });
     });
   },

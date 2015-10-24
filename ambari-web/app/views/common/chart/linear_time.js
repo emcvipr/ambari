@@ -511,8 +511,12 @@ App.ChartLinearTimeView = Ember.View.extend(App.ExportMetricsMixin, {
         var avg = 0;
         var min = Number.MAX_VALUE;
         var max = Number.MIN_VALUE;
+        var numberOfNotNullValues = 0;
         for (var i = 0; i < series.data.length; i++) {
           avg += series.data[i]['y'];
+          if (series.data[i]['y'] !== null) {
+            numberOfNotNullValues++;
+          }
           if (!Em.isNone(series.data[i]['y'])) {
             if (series.data[i]['y'] < min) {
               min = series.data[i]['y'];
@@ -522,13 +526,11 @@ App.ChartLinearTimeView = Ember.View.extend(App.ExportMetricsMixin, {
             max = series.data[i]['y'];
           }
         }
-
-
         series.name = string_utils.pad(series.name.length > 36 ? series.name.substr(0, 36) + '...' : series.name, 40, '&nbsp;', 2) + '|&nbsp;' +
           string_utils.pad('min', 5, '&nbsp;', 3) +
           string_utils.pad(self.get('yAxisFormatter')(min), 12, '&nbsp;', 3) +
           string_utils.pad('avg', 5, '&nbsp;', 3) +
-          string_utils.pad(self.get('yAxisFormatter')(avg / series.data.compact().length), 12, '&nbsp;', 3) +
+          string_utils.pad(self.get('yAxisFormatter')(avg / numberOfNotNullValues), 12, '&nbsp;', 3) +
           string_utils.pad('max', 12, '&nbsp;', 3) +
           string_utils.pad(self.get('yAxisFormatter')(max), 5, '&nbsp;', 3);
       }
@@ -828,8 +830,7 @@ App.ChartLinearTimeView = Ember.View.extend(App.ExportMetricsMixin, {
 
       onPrimary: function () {
         self.setProperties({
-          currentTimeIndex: self.get('controller.isServiceWithEnhancedWidgets') === false ?
-            self.get('parentView.currentTimeRangeIndex') : self.get('parentView.parentView.currentTimeRangeIndex'),
+          currentTimeIndex: !Em.isNone(self.get('parentView.currentTimeRangeIndex')) ? self.get('parentView.currentTimeRangeIndex') : self.get('parentView.parentView.currentTimeRangeIndex'),
           isPopup: false
         });
         this._super();
@@ -896,8 +897,7 @@ App.ChartLinearTimeView = Ember.View.extend(App.ExportMetricsMixin, {
   // should be set by time range control dropdown list when create current graph
   currentTimeIndex: 0,
   setCurrentTimeIndexFromParent: function () {
-    var index = this.get('controller.isServiceWithEnhancedWidgets') === false ?
-      this.get('parentView.currentTimeRangeIndex') : this.get('parentView.parentView.currentTimeRangeIndex');
+    var index = !Em.isNone(this.get('parentView.currentTimeRangeIndex')) ? this.get('parentView.currentTimeRangeIndex') : this.get('parentView.parentView.currentTimeRangeIndex');
     this.set('currentTimeIndex', index);
   }.observes('parentView.parentView.currentTimeRangeIndex', 'parentView.currentTimeRangeIndex'),
   timeUnitSeconds: function () {

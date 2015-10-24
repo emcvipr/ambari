@@ -69,16 +69,14 @@ describe('#App.ManageCredentialsFormView', function() {
         sinon.stub(credentialUtils, 'credentials', function(clusterName, callback) {
           callback(test.credentials);
         });
-        sinon.stub(credentialUtils, 'isStorePersisted', function() {
-          return $.Deferred().resolve(test.isStorePersistent).promise();
-        });
+        sinon.stub(App, 'get').withArgs('isCredentialStorePersistent').returns(test.e.storePersisted);
         view.prepareContent();
         Em.run.next(function() {
           assert.equal(view.get('isRemovable'), test.e.isRemovable, '#isRemovable property validation');
           assert.equal(view.get('isRemoveDisabled'), test.e.isRemoveDisabled, '#isRemoveDisabled property validation');
           assert.equal(view.get('storePersisted'), test.e.storePersisted, '#storePersisted property validation');
           credentialUtils.credentials.restore();
-          credentialUtils.isStorePersisted.restore();
+          App.get.restore();
           done();
         });
       });
@@ -106,13 +104,13 @@ describe('#App.ManageCredentialsFormView', function() {
 
   describe('#removeKDCCredentials', function() {
     it('should show confirmation popup', function() {
-      var popup = view.removeKDCCredentials();
+      var popup = view.removeKDCCredentials().popup;
       expect(popup).be.instanceof(App.ModalPopup);
       popup.destroy();
     });
     it('should call credentialUtils#removeCredentials', function() {
       this.clock = sinon.useFakeTimers();
-      var popup = view.removeKDCCredentials();
+      var popup = view.removeKDCCredentials().popup;
       assert.isFalse(view.get('actionStatus'), '#actionStatus before remove');
       sinon.stub(credentialUtils, 'removeCredentials', function() {
         var dfd = $.Deferred();

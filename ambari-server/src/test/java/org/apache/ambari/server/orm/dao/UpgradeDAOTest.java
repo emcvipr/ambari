@@ -78,6 +78,7 @@ public class UpgradeDAOTest {
     entity.setToVersion("");
     entity.setUpgradeType(UpgradeType.ROLLING);
     entity.setUpgradePackage("test-upgrade");
+    entity.setDowngradeAllowed(true);
 
     UpgradeGroupEntity group = new UpgradeGroupEntity();
     group.setName("group_name");
@@ -148,6 +149,7 @@ public class UpgradeDAOTest {
     entity1.setToVersion("2.3.0.0-4567");
     entity1.setUpgradeType(UpgradeType.ROLLING);
     entity1.setUpgradePackage("test-upgrade");
+    entity1.setDowngradeAllowed(true);
     dao.create(entity1);
     UpgradeEntity entity2 = new UpgradeEntity();
     entity2.setId(22L);
@@ -158,6 +160,7 @@ public class UpgradeDAOTest {
     entity2.setToVersion("2.2.0.0-1234");
     entity2.setUpgradeType(UpgradeType.ROLLING);
     entity2.setUpgradePackage("test-upgrade");
+    entity2.setDowngradeAllowed(true);
     dao.create(entity2);
     UpgradeEntity entity3 = new UpgradeEntity();
     entity3.setId(33L);
@@ -168,9 +171,41 @@ public class UpgradeDAOTest {
     entity3.setToVersion("2.3.1.1-4567");
     entity3.setUpgradeType(UpgradeType.ROLLING);
     entity3.setUpgradePackage("test-upgrade");
+    entity3.setDowngradeAllowed(true);
     dao.create(entity3);
     UpgradeEntity lastUpgradeForCluster = dao.findLastUpgradeForCluster(1);
     assertNotNull(lastUpgradeForCluster);
     assertEquals(33L, (long)lastUpgradeForCluster.getId());
+  }
+
+  /**
+   * Tests that certain columns in an {@link UpgradeEntity} are updatable.
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testUpdatableColumns() throws Exception {
+    UpgradeEntity upgradeEntity = new UpgradeEntity();
+    upgradeEntity.setId(11L);
+    upgradeEntity.setClusterId(Long.valueOf(1));
+    upgradeEntity.setDirection(Direction.UPGRADE);
+    upgradeEntity.setRequestId(Long.valueOf(1));
+    upgradeEntity.setFromVersion("2.2.0.0-1234");
+    upgradeEntity.setToVersion("2.3.0.0-4567");
+    upgradeEntity.setUpgradeType(UpgradeType.ROLLING);
+    upgradeEntity.setUpgradePackage("test-upgrade");
+    dao.create(upgradeEntity);
+
+    UpgradeEntity lastUpgradeForCluster = dao.findLastUpgradeForCluster(1);
+    Assert.assertFalse(lastUpgradeForCluster.isComponentFailureAutoSkipped());
+    Assert.assertFalse(lastUpgradeForCluster.isServiceCheckFailureAutoSkipped());
+
+    lastUpgradeForCluster.setAutoSkipComponentFailures(true);
+    lastUpgradeForCluster.setAutoSkipServiceCheckFailures(true);
+    dao.merge(lastUpgradeForCluster);
+
+    lastUpgradeForCluster = dao.findLastUpgradeForCluster(1);
+    Assert.assertTrue(lastUpgradeForCluster.isComponentFailureAutoSkipped());
+    Assert.assertTrue(lastUpgradeForCluster.isServiceCheckFailureAutoSkipped());
   }
 }

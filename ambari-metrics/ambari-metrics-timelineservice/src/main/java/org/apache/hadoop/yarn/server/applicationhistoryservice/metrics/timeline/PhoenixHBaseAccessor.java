@@ -23,6 +23,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.util.RetryCounter;
 import org.apache.hadoop.hbase.util.RetryCounterFactory;
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 import org.apache.hadoop.metrics2.sink.timeline.SingleValuedTimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
@@ -52,6 +53,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -101,14 +103,14 @@ public class PhoenixHBaseAccessor {
   // cluster and host levels.
   static final long DEFAULT_OUT_OF_BAND_TIME_ALLOWANCE = 300000;
   /**
-   * 4 metrics/min * 60 * 24: Retrieve data for 1 day.
+   * 8 metrics * 60minutes * 24hours => Reasonable upper bound on the limit such that our Precision calculation for a given time range makes sense.
    */
-  private static final int METRICS_PER_MINUTE = 4;
-  public static int RESULTSET_LIMIT = (int)TimeUnit.DAYS.toMinutes(1) * METRICS_PER_MINUTE;
+  private static final int METRICS_PER_MINUTE = 8;
+  public static int RESULTSET_LIMIT = (int)TimeUnit.HOURS.toMinutes(24) * METRICS_PER_MINUTE;
 
   private static final TimelineMetricReadHelper TIMELINE_METRIC_READ_HELPER = new TimelineMetricReadHelper();
   private static ObjectMapper mapper = new ObjectMapper();
-  private static TypeReference<Map<Long, Double>> metricValuesTypeRef = new TypeReference<Map<Long, Double>>() {};
+  private static TypeReference<TreeMap<Long, Double>> metricValuesTypeRef = new TypeReference<TreeMap<Long, Double>>() {};
 
   private final Configuration hbaseConf;
   private final Configuration metricsConf;
@@ -126,7 +128,7 @@ public class PhoenixHBaseAccessor {
                               ConnectionProvider dataSource) {
     this.hbaseConf = hbaseConf;
     this.metricsConf = metricsConf;
-    RESULTSET_LIMIT = metricsConf.getInt(GLOBAL_RESULT_LIMIT, 5760);
+    RESULTSET_LIMIT = metricsConf.getInt(GLOBAL_RESULT_LIMIT, RESULTSET_LIMIT);
     try {
       Class.forName("org.apache.phoenix.jdbc.PhoenixDriver");
     } catch (ClassNotFoundException e) {
@@ -187,19 +189,19 @@ public class PhoenixHBaseAccessor {
     return metric;
   }
 
-  private static Map<Long, Double> readLastMetricValueFromJSON(String json)
-    throws IOException {
-    Map<Long, Double> values = readMetricFromJSON(json);
-    Long lastTimeStamp = Collections.max(values.keySet());
+  private static TreeMap<Long, Double> readLastMetricValueFromJSON(String json)
+      throws IOException {
+    TreeMap<Long, Double> values = readMetricFromJSON(json);
+    Long lastTimeStamp = values.lastKey();
 
-    HashMap<Long, Double> valueMap = new HashMap<Long, Double>(1);
+    TreeMap<Long, Double> valueMap = new TreeMap<Long, Double>();
     valueMap.put(lastTimeStamp, values.get(lastTimeStamp));
     return valueMap;
   }
 
   @SuppressWarnings("unchecked")
-  public static Map<Long, Double>  readMetricFromJSON(String json) throws IOException {
-    return (Map<Long, Double>) mapper.readValue(json, metricValuesTypeRef);
+  public static TreeMap<Long, Double>  readMetricFromJSON(String json) throws IOException {
+    return (TreeMap<Long, Double>) mapper.readValue(json, metricValuesTypeRef);
   }
 
   private Connection getConnectionRetryingOnException()
@@ -467,8 +469,10 @@ public class PhoenixHBaseAccessor {
       // which is thrown in hbase TimeRange.java
       Throwable io = ex.getCause();
       String className = null;
-      for (StackTraceElement ste : io.getStackTrace()) {
-        className = ste.getClassName();
+      if (io != null) {
+        for (StackTraceElement ste : io.getStackTrace()) {
+          className = ste.getClassName();
+        }
       }
       if (className != null && className.equals("TimeRange")) {
         // This is "maxStamp is smaller than minStamp" exception
@@ -512,7 +516,8 @@ public class PhoenixHBaseAccessor {
       List<Function>> metricFunctions, ResultSet rs)
       throws SQLException, IOException {
     if (condition.getPrecision() == Precision.HOURS
-      || condition.getPrecision() == Precision.MINUTES) {
+      || condition.getPrecision() == Precision.MINUTES
+      || condition.getPrecision() == Precision.DAYS) {
 
       String metricName = rs.getString("METRIC_NAME");
       List<Function> functions = metricFunctions.get(metricName);
