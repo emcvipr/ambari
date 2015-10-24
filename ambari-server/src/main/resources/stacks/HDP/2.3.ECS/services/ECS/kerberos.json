@@ -37,7 +37,8 @@
             "hadoop.security.authentication": "kerberos",
             "hadoop.security.authorization": "true",
             "fs.viprfs.auth.identity_translation": "CURRENT_USER_REALM",
-            "viprfs.security.principal": ""
+            "viprfs.security.principal": "",
+            "hadoop.proxyuser.HTTP.groups": "${hadoop-env/proxyuser_group}"
           }
         }
       ],
