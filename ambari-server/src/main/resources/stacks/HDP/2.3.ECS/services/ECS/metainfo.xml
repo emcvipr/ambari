@@ -34,16 +34,6 @@
             <scriptType>PYTHON</scriptType>
             <timeout>600</timeout>
           </commandScript>
-          <customCommands>
-            <customCommand>
-              <name>CREATEDIRS</name>
-              <commandScript>
-                <script>scripts/ecs_client.py</script>
-                <scriptType>PYTHON</scriptType>
-                <timeout>600</timeout>
-              </commandScript>
-            </customCommand>
-          </customCommands>
           <configFile>
               <type>xml</type>
               <fileName>core-site.xml</fileName>
