@@ -386,6 +386,8 @@ CREATE TABLE requestschedulebatchrequest (
 CREATE TABLE blueprint (
   blueprint_name VARCHAR(255) NOT NULL,
   stack_id NUMERIC(19) NOT NULL,
+  security_type VARCHAR(32) NOT NULL DEFAULT 'NONE',
+  security_descriptor_reference VARCHAR(255),
   PRIMARY KEY(blueprint_name)
 );
 
@@ -879,6 +881,9 @@ CREATE TABLE upgrade (
   from_version VARCHAR(255) DEFAULT '' NOT NULL,
   to_version VARCHAR(255) DEFAULT '' NOT NULL,
   direction VARCHAR(255) DEFAULT 'UPGRADE' NOT NULL,
+  skip_failures BIT NOT NULL DEFAULT 0,
+  skip_sc_failures BIT NOT NULL DEFAULT 0,  
+  downgrade_allowed BIT NOT NULL DEFAULT 1,
   PRIMARY KEY (upgrade_id),
   FOREIGN KEY (cluster_id) REFERENCES clusters(cluster_id),
   FOREIGN KEY (request_id) REFERENCES request(request_id)

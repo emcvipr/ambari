@@ -272,28 +272,28 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     port = '6080'
 
     # Check if http is disabled. For HDP-2.3 this can be checked in ranger-admin-site/ranger.service.http.enabled
-    # For HDP-2.2 this can be checked in ranger-site/http.enabled
+    # For Ranger-0.4.0 this can be checked in ranger-site/http.enabled
     if ('ranger-site' in services['configurations'] and 'http.enabled' in services['configurations']['ranger-site']['properties'] \
       and services['configurations']['ranger-site']['properties']['http.enabled'].lower() == 'false') or \
       ('ranger-admin-site' in services['configurations'] and 'ranger.service.http.enabled' in services['configurations']['ranger-admin-site']['properties'] \
       and services['configurations']['ranger-admin-site']['properties']['ranger.service.http.enabled'].lower() == 'false'):
       # HTTPS protocol is used
       protocol = 'https'
-      # In HDP-2.3 port stored in ranger-admin-site ranger.service.https.port
+      # Starting Ranger-0.5.0.2.3 port stored in ranger-admin-site ranger.service.https.port
       if 'ranger-admin-site' in services['configurations'] and \
           'ranger.service.https.port' in services['configurations']['ranger-admin-site']['properties']:
         port = services['configurations']['ranger-admin-site']['properties']['ranger.service.https.port']
-      # In HDP-2.2 port stored in ranger-site https.service.port
+      # In Ranger-0.4.0 port stored in ranger-site https.service.port
       elif 'ranger-site' in services['configurations'] and \
           'https.service.port' in services['configurations']['ranger-site']['properties']:
         port = services['configurations']['ranger-site']['properties']['https.service.port']
     else:
       # HTTP protocol is used
-      # In HDP-2.3 port stored in ranger-admin-site ranger.service.http.port
+      # Starting Ranger-0.5.0.2.3 port stored in ranger-admin-site ranger.service.http.port
       if 'ranger-admin-site' in services['configurations'] and \
           'ranger.service.http.port' in services['configurations']['ranger-admin-site']['properties']:
         port = services['configurations']['ranger-admin-site']['properties']['ranger.service.http.port']
-      # In HDP-2.2 port stored in ranger-site http.service.port
+      # In Ranger-0.4.0 port stored in ranger-site http.service.port
       elif 'ranger-site' in services['configurations'] and \
           'http.service.port' in services['configurations']['ranger-site']['properties']:
         port = services['configurations']['ranger-site']['properties']['http.service.port']
@@ -304,6 +304,74 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
     policymgr_external_url = "%s://%s:%s" % (protocol, ranger_admin_host, port)
     putRangerAdminProperty('policymgr_external_url', policymgr_external_url)
+
+    rangerServiceVersion = [service['StackServices']['service_version'] for service in services["services"] if service['StackServices']['service_name'] == 'RANGER'][0]
+    if rangerServiceVersion == '0.4.0':
+      # Recommend ldap settings based on ambari.properties configuration
+      # If 'ambari.ldap.isConfigured' == true
+      # For Ranger version 0.4.0
+      if 'ambari-server-properties' in services and \
+      'ambari.ldap.isConfigured' in services['ambari-server-properties'] and \
+        services['ambari-server-properties']['ambari.ldap.isConfigured'].lower() == "true":
+        putUserSyncProperty = self.putProperty(configurations, "usersync-properties", services)
+        serverProperties = services['ambari-server-properties']
+        if 'authentication.ldap.managerDn' in serverProperties:
+          putUserSyncProperty('SYNC_LDAP_BIND_DN', serverProperties['authentication.ldap.managerDn'])
+        if 'authentication.ldap.primaryUrl' in serverProperties:
+          putUserSyncProperty('SYNC_LDAP_URL', serverProperties['authentication.ldap.primaryUrl'])
+        if 'authentication.ldap.userObjectClass' in serverProperties:
+          putUserSyncProperty('SYNC_LDAP_USER_OBJECT_CLASS', serverProperties['authentication.ldap.userObjectClass'])
+        if 'authentication.ldap.usernameAttribute' in serverProperties:
+          putUserSyncProperty('SYNC_LDAP_USER_NAME_ATTRIBUTE', serverProperties['authentication.ldap.usernameAttribute'])
+
+
+      # Set Ranger Admin Authentication method
+      if 'admin-properties' in services['configurations'] and 'usersync-properties' in services['configurations'] and \
+          'SYNC_SOURCE' in services['configurations']['usersync-properties']['properties']:
+        rangerUserSyncSource = services['configurations']['usersync-properties']['properties']['SYNC_SOURCE']
+        authenticationMethod = rangerUserSyncSource.upper()
+        if authenticationMethod != 'FILE':
+          putRangerAdminProperty('authentication_method', authenticationMethod)
+
+      # Recommend xasecure.audit.destination.hdfs.dir
+      # For Ranger version 0.4.0
+      servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+      putRangerEnvProperty = self.putProperty(configurations, "ranger-env", services)
+      include_hdfs = "HDFS" in servicesList
+      if include_hdfs:
+        if 'core-site' in services['configurations'] and ('fs.defaultFS' in services['configurations']['core-site']['properties']):
+          default_fs = services['configurations']['core-site']['properties']['fs.defaultFS']
+          default_fs += '/ranger/audit/%app-type%/%time:yyyyMMdd%'
+          putRangerEnvProperty('xasecure.audit.destination.hdfs.dir', default_fs)
+
+      # Recommend Ranger Audit properties for ranger supported services
+      # For Ranger version 0.4.0
+      ranger_services = [
+        {'service_name': 'HDFS', 'audit_file': 'ranger-hdfs-plugin-properties'},
+        {'service_name': 'HBASE', 'audit_file': 'ranger-hbase-plugin-properties'},
+        {'service_name': 'HIVE', 'audit_file': 'ranger-hive-plugin-properties'},
+        {'service_name': 'KNOX', 'audit_file': 'ranger-knox-plugin-properties'},
+        {'service_name': 'STORM', 'audit_file': 'ranger-storm-plugin-properties'}
+      ]
+
+      for item in range(len(ranger_services)):
+        if ranger_services[item]['service_name'] in servicesList:
+          component_audit_file =  ranger_services[item]['audit_file']
+          if component_audit_file in services["configurations"]:
+            ranger_audit_dict = [
+              {'filename': 'ranger-env', 'configname': 'xasecure.audit.destination.db', 'target_configname': 'XAAUDIT.DB.IS_ENABLED'},
+              {'filename': 'ranger-env', 'configname': 'xasecure.audit.destination.hdfs', 'target_configname': 'XAAUDIT.HDFS.IS_ENABLED'},
+              {'filename': 'ranger-env', 'configname': 'xasecure.audit.destination.hdfs.dir', 'target_configname': 'XAAUDIT.HDFS.DESTINATION_DIRECTORY'}
+            ]
+            putRangerAuditProperty = self.putProperty(configurations, component_audit_file, services)
+
+            for item in ranger_audit_dict:
+              if item['filename'] in services["configurations"] and item['configname'] in  services["configurations"][item['filename']]["properties"]:
+                if item['filename'] in configurations and item['configname'] in  configurations[item['filename']]["properties"]:
+                  rangerAuditProperty = configurations[item['filename']]["properties"][item['configname']]
+                else:
+                  rangerAuditProperty = services["configurations"][item['filename']]["properties"][item['configname']]
+                putRangerAuditProperty(item['target_configname'], rangerAuditProperty)
 
 
   def getAmsMemoryRecommendation(self, services, hosts):
@@ -531,7 +599,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
     if include_zookeeper:
       zookeeper_hosts = self.getHostNamesWithComponent("ZOOKEEPER", "ZOOKEEPER_SERVER", services)
-      zookeeper_port = 2181     #default port
+      zookeeper_port = '2181'     #default port
       if 'zoo.cfg' in services['configurations'] and ('clientPort' in services['configurations']['zoo.cfg']['properties']):
         zookeeper_port = services['configurations']['zoo.cfg']['properties']['clientPort']
 
@@ -1167,6 +1235,15 @@ def getOldValue(self, services, configType, propertyName):
 
 # Validation helper methods
 def getSiteProperties(configurations, siteName):
+  siteConfig = configurations.get(siteName)
+  if siteConfig is None:
+    return None
+  return siteConfig.get("properties")
+
+def getServicesSiteProperties(services, siteName):
+  configurations = services.get("configurations")
+  if not configurations:
+    return None
   siteConfig = configurations.get(siteName)
   if siteConfig is None:
     return None

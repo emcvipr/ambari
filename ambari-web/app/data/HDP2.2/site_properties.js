@@ -44,21 +44,8 @@ var hdp22properties = hdp2properties.filter(function (item) {
 
 hdp22properties.push(
   {
-    "name": "hive.zookeeper.quorum",
-    "displayType": "multiLine",
-    "serviceName": "HIVE",
-    "filename": "hive-site.xml"
-  },
-  {
-    "name": "hadoop.registry.rm.enabled",
-    "displayType": "checkbox",
-    "serviceName": "YARN",
-    "filename": "yarn-site.xml"
-  },
-  {
     "name": "yarn.timeline-service.leveldb-state-store.path",
     "category": "APP_TIMELINE_SERVER",
-    "displayType": "directory",
     "serviceName": "YARN",
     "filename": "yarn-site.xml"
   },
@@ -83,20 +70,12 @@ hdp22properties.push(
   /*********RANGER FOR HDFS************/
   {
     "name": "XAAUDIT.HDFS.IS_ENABLED",
-    "displayType": "checkbox",
     "dependentConfigPattern": "^XAAUDIT.HDFS",
     "filename": "ranger-hdfs-plugin-properties.xml",
     "serviceName": "HDFS"
   },
   {
-    "name": "XAAUDIT.DB.IS_ENABLED",
-    "displayType": "checkbox",
-    "filename": "ranger-hdfs-plugin-properties.xml",
-    "serviceName": "HDFS"
-  },
-  {
     "name": "ranger-hdfs-plugin-enabled",
-    "displayType": "checkbox",
     "filename": "ranger-hdfs-plugin-properties.xml",
     "serviceName": "HDFS",
     "index": 1
@@ -104,67 +83,32 @@ hdp22properties.push(
   /*********RANGER FOR HIVE************/
   {
     "name": "XAAUDIT.HDFS.IS_ENABLED",
-    "displayType": "checkbox",
     "dependentConfigPattern": "^XAAUDIT.HDFS",
-    "filename": "ranger-hive-plugin-properties.xml",
-    "serviceName": "HIVE"
-  },
-  {
-    "name": "XAAUDIT.DB.IS_ENABLED",
-    "displayType": "checkbox",
-    "filename": "ranger-hive-plugin-properties.xml",
-    "serviceName": "HIVE"
-  },
-  {
-    "name": "UPDATE_XAPOLICIES_ON_GRANT_REVOKE",
-    "displayType": "checkbox",
     "filename": "ranger-hive-plugin-properties.xml",
     "serviceName": "HIVE"
   },
   /*********RANGER FOR HBASE************/
   {
     "name": "XAAUDIT.HDFS.IS_ENABLED",
-    "displayType": "checkbox",
     "dependentConfigPattern": "^XAAUDIT.HDFS",
-    "filename": "ranger-hbase-plugin-properties.xml",
-    "serviceName": "HBASE"
-  },
-  {
-    "name": "XAAUDIT.DB.IS_ENABLED",
-    "displayType": "checkbox",
     "filename": "ranger-hbase-plugin-properties.xml",
     "serviceName": "HBASE"
   },
   {
     "name": "ranger-hbase-plugin-enabled",
-    "displayType": "checkbox",
     "filename": "ranger-hbase-plugin-properties.xml",
     "serviceName": "HBASE",
     "index": 1
   },
-  {
-    "name": "UPDATE_XAPOLICIES_ON_GRANT_REVOKE",
-    "displayType": "checkbox",
-    "filename": "ranger-hbase-plugin-properties.xml",
-    "serviceName": "HBASE"
-  },
   /*********RANGER FOR STORM************/
   {
     "name": "XAAUDIT.HDFS.IS_ENABLED",
-    "displayType": "checkbox",
     "dependentConfigPattern": "^XAAUDIT.HDFS",
     "filename": "ranger-storm-plugin-properties.xml",
     "serviceName": "STORM"
   },
   {
-    "name": "XAAUDIT.DB.IS_ENABLED",
-    "displayType": "checkbox",
-    "filename": "ranger-storm-plugin-properties.xml",
-    "serviceName": "STORM"
-  },
-  {
     "name": "ranger-storm-plugin-enabled",
-    "displayType": "checkbox",
     "filename": "ranger-storm-plugin-properties.xml",
     "serviceName": "STORM",
     "index": 1
@@ -172,20 +116,12 @@ hdp22properties.push(
   /*********RANGER FOR KNOX************/
   {
     "name": "XAAUDIT.HDFS.IS_ENABLED",
-    "displayType": "checkbox",
     "dependentConfigPattern": "^XAAUDIT.HDFS",
     "filename": "ranger-knox-plugin-properties.xml",
     "serviceName": "KNOX"
   },
   {
-    "name": "XAAUDIT.DB.IS_ENABLED",
-    "displayType": "checkbox",
-    "filename": "ranger-knox-plugin-properties.xml",
-    "serviceName": "KNOX"
-  },
-  {
     "name": "ranger-knox-plugin-enabled",
-    "displayType": "checkbox",
     "filename": "ranger-knox-plugin-properties.xml",
     "serviceName": "KNOX",
     "index": 1
@@ -220,91 +156,10 @@ hdp22properties.push(
     "index": 2
   },
   {
-    "name": "DB_FLAVOR",
-    "options": [
-      {
-        displayName: 'MYSQL'
-      },
-      {
-        displayName: 'ORACLE'
-      }
-    ],
-    "displayType": "radio button",
-    "radioName": "RANGER DB_FLAVOR",
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 1
-  },
-  {
     "name": "SQL_COMMAND_INVOKER",
     "serviceName": "RANGER",
     "filename": "admin-properties.xml",
     "category": "DBSettings"
-  },
-  {
-    "name": "db_host",
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 2
-  },
-  {
-    "name": "db_root_user",
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 5
-  },
-  {
-    "name": "db_root_password",
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 6
-  },
-  {
-    "name": "db_name",
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 7
-  },
-
-  {
-    "name": "db_user",
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 3
-  },
-  {
-    "name": "db_password",
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 4
-  },
-  {
-    "name": "audit_db_name",
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 11
-  },
-  {
-    "name": "audit_db_user",
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 12
-  },
-  {
-    "name": "audit_db_password",
-    "serviceName": "RANGER",
-    "filename": "admin-properties.xml",
-    "category": "DBSettings",
-    "index": 13
   },
   {
     "name": "policymgr_external_url",
@@ -314,7 +169,6 @@ hdp22properties.push(
   },
   {
     "name": "policymgr_http_enabled",
-    "displayType": "checkbox",
     "serviceName": "RANGER",
     "filename": "admin-properties.xml",
     "category": "RangerSettings"
@@ -358,7 +212,6 @@ hdp22properties.push(
   },
   {
     "name": "remoteLoginEnabled",
-    "displayType": "checkbox",
     "serviceName": "RANGER",
     "filename": "admin-properties.xml",
     "category": "UnixAuthenticationSettings"
@@ -371,7 +224,6 @@ hdp22properties.push(
   },
   {
     "name": "authServicePort",
-    "displayType": "int",
     "serviceName": "RANGER",
     "filename": "admin-properties.xml",
     "category": "UnixAuthenticationSettings"

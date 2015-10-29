@@ -22,6 +22,76 @@ import socket
 
 class HDP23StackAdvisor(HDP22StackAdvisor):
 
+  def createComponentLayoutRecommendations(self, services, hosts):
+    parentComponentLayoutRecommendations = super(HDP23StackAdvisor, self).createComponentLayoutRecommendations(services, hosts)
+
+    # remove HAWQSTANDBY on a single node
+    hostsList = [host["Hosts"]["host_name"] for host in hosts["items"]]
+    if len(hostsList) == 1:
+      servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+      if "HAWQ" in servicesList:
+        components = parentComponentLayoutRecommendations["blueprint"]["host_groups"][0]["components"]
+        components = [ component for component in components if component["name"] != 'HAWQSTANDBY' ]
+        parentComponentLayoutRecommendations["blueprint"]["host_groups"][0]["components"] = components
+
+    return parentComponentLayoutRecommendations
+
+  def getComponentLayoutValidations(self, services, hosts):
+    parentItems = super(HDP23StackAdvisor, self).getComponentLayoutValidations(services, hosts)
+
+    if not "HAWQ" in [service["StackServices"]["service_name"] for service in services["services"]]:
+      return parentItems
+
+    childItems = []
+    hostsList = [host["Hosts"]["host_name"] for host in hosts["items"]]
+    hostsCount = len(hostsList)
+
+    componentsListList = [service["components"] for service in services["services"]]
+    componentsList = [item for sublist in componentsListList for item in sublist]
+    hawqMasterHosts = [component["StackServiceComponents"]["hostnames"] for component in componentsList if component["StackServiceComponents"]["component_name"] == "HAWQMASTER"]
+    hawqStandbyHosts = [component["StackServiceComponents"]["hostnames"] for component in componentsList if component["StackServiceComponents"]["component_name"] == "HAWQSTANDBY"]
+
+    # single node case is not analyzed because HAWQ Standby Master will not be present in single node topology due to logic in createComponentLayoutRecommendations()
+    if len(hawqMasterHosts) > 0 and len(hawqStandbyHosts) > 0:
+      commonHosts = [host for host in hawqMasterHosts[0] if host in hawqStandbyHosts[0]]
+      for host in commonHosts:
+        message = "HAWQ Standby Master and HAWQ Master should not be deployed on the same host."
+        childItems.append( { "type": 'host-component', "level": 'ERROR', "message": message, "component-name": 'HAWQSTANDBY', "host": host } )
+
+    if len(hawqMasterHosts) > 0 and hostsCount > 1:
+      ambariServerHosts = [host for host in hawqMasterHosts[0] if self.isLocalHost(host)]
+      for host in ambariServerHosts:
+        message = "HAWQ Master and Ambari Server should not be deployed on the same host. " \
+                  "If you leave them collocated, make sure to set HAWQ Master Port property " \
+                  "to a value different from the port number used by Ambari Server database."
+        childItems.append( { "type": 'host-component', "level": 'WARN', "message": message, "component-name": 'HAWQMASTER', "host": host } )
+
+    if len(hawqStandbyHosts) > 0 and hostsCount > 1:
+      ambariServerHosts = [host for host in hawqStandbyHosts[0] if self.isLocalHost(host)]
+      for host in ambariServerHosts:
+        message = "HAWQ Standby Master and Ambari Server should not be deployed on the same host. " \
+                  "If you leave them collocated, make sure to set HAWQ Master Port property " \
+                  "to a value different from the port number used by Ambari Server database."
+        childItems.append( { "type": 'host-component', "level": 'WARN', "message": message, "component-name": 'HAWQSTANDBY', "host": host } )
+    
+    parentItems.extend(childItems)
+    return parentItems
+
+  def getNotPreferableOnServerComponents(self):
+    parentComponents = super(HDP23StackAdvisor, self).getNotPreferableOnServerComponents()
+    parentComponents.extend(['HAWQMASTER', 'HAWQSTANDBY'])
+    return parentComponents
+
+  def getComponentLayoutSchemes(self):
+    parentSchemes = super(HDP23StackAdvisor, self).getComponentLayoutSchemes()
+    # key is max number of cluster hosts + 1, value is index in host list where to put the component
+    childSchemes = {
+        'HAWQMASTER' : {6: 2, 31: 1, "else": 5},
+        'HAWQSTANDBY': {6: 1, 31: 2, "else": 3}
+    }
+    parentSchemes.update(childSchemes)
+    return parentSchemes
+
   def getServiceConfigurationRecommenderDict(self):
     parentRecommendConfDict = super(HDP23StackAdvisor, self).getServiceConfigurationRecommenderDict()
     childRecommendConfDict = {
@@ -238,14 +308,27 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
     super(HDP23StackAdvisor, self).recommendHDFSConfigurations(configurations, clusterData, services, hosts)
 
     putHdfsSiteProperty = self.putProperty(configurations, "hdfs-site", services)
-    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    putHdfsSitePropertyAttribute = self.putPropertyAttribute(configurations, "hdfs-site")
+
     if ('ranger-hdfs-plugin-properties' in services['configurations']) and ('ranger-hdfs-plugin-enabled' in services['configurations']['ranger-hdfs-plugin-properties']['properties']):
-      rangerPluginEnabled = services['configurations']['ranger-hdfs-plugin-properties']['properties']['ranger-hdfs-plugin-enabled']
-      if ("RANGER" in servicesList) and (rangerPluginEnabled.lower() == 'Yes'.lower()):
+      rangerPluginEnabled = ''
+      if 'ranger-hdfs-plugin-properties' in configurations and 'ranger-hdfs-plugin-enabled' in  configurations['ranger-hdfs-plugin-properties']['properties']:
+        rangerPluginEnabled = configurations['ranger-hdfs-plugin-properties']['properties']['ranger-hdfs-plugin-enabled']
+      elif 'ranger-hdfs-plugin-properties' in services['configurations'] and 'ranger-hdfs-plugin-enabled' in services['configurations']['ranger-hdfs-plugin-properties']['properties']:
+        rangerPluginEnabled = services['configurations']['ranger-hdfs-plugin-properties']['properties']['ranger-hdfs-plugin-enabled']
+
+      if rangerPluginEnabled and (rangerPluginEnabled.lower() == 'Yes'.lower()):
         putHdfsSiteProperty("dfs.namenode.inode.attributes.provider.class",'org.apache.ranger.authorization.hadoop.RangerHdfsAuthorizer')
+      else:
+        putHdfsSitePropertyAttribute('dfs.namenode.inode.attributes.provider.class', 'delete', 'true')
+    else:
+      putHdfsSitePropertyAttribute('dfs.namenode.inode.attributes.provider.class', 'delete', 'true')
 
   def recommendKAFKAConfigurations(self, configurations, clusterData, services, hosts):
+    core_site = services["configurations"]["core-site"]["properties"]
     putKafkaBrokerProperty = self.putProperty(configurations, "kafka-broker", services)
+    putKafkaLog4jProperty = self.putProperty(configurations, "kafka-log4j", services)
+    putKafkaBrokerAttributes = self.putPropertyAttribute(configurations, "kafka-broker")
 
     if "ranger-env" in services["configurations"] and "ranger-kafka-plugin-properties" in services["configurations"] and \
         "ranger-kafka-plugin-enabled" in services["configurations"]["ranger-env"]["properties"]:
@@ -253,17 +336,75 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
       rangerEnvKafkaPluginProperty = services["configurations"]["ranger-env"]["properties"]["ranger-kafka-plugin-enabled"]
       putKafkaRangerPluginProperty("ranger-kafka-plugin-enabled", rangerEnvKafkaPluginProperty)
 
-    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
     if 'ranger-kafka-plugin-properties' in services['configurations'] and ('ranger-kafka-plugin-enabled' in services['configurations']['ranger-kafka-plugin-properties']['properties']):
-      rangerPluginEnabled = services['configurations']['ranger-kafka-plugin-properties']['properties']['ranger-kafka-plugin-enabled']
-      if ("RANGER" in servicesList) and (rangerPluginEnabled.lower() == "Yes".lower()):
+      kafkaLog4jRangerLines = [{
+        "name": "log4j.appender.rangerAppender",
+        "value": "org.apache.log4j.DailyRollingFileAppender"
+        },
+        {
+          "name": "log4j.appender.rangerAppender.DatePattern",
+          "value": "'.'yyyy-MM-dd-HH"
+        },
+        {
+          "name": "log4j.appender.rangerAppender.File",
+          "value": "${kafka.logs.dir}/ranger_kafka.log"
+        },
+        {
+          "name": "log4j.appender.rangerAppender.layout",
+          "value": "org.apache.log4j.PatternLayout"
+        },
+        {
+          "name": "log4j.appender.rangerAppender.layout.ConversionPattern",
+          "value": "%d{ISO8601} %p [%t] %C{6} (%F:%L) - %m%n"
+        },
+        {
+          "name": "log4j.logger.org.apache.ranger",
+          "value": "INFO, rangerAppender"
+        }]
+
+      rangerPluginEnabled=''
+      if 'ranger-kafka-plugin-properties' in configurations and 'ranger-kafka-plugin-enabled' in  configurations['ranger-kafka-plugin-properties']['properties']:
+        rangerPluginEnabled = configurations['ranger-kafka-plugin-properties']['properties']['ranger-kafka-plugin-enabled']
+      elif 'ranger-kafka-plugin-properties' in services['configurations'] and 'ranger-kafka-plugin-enabled' in services['configurations']['ranger-kafka-plugin-properties']['properties']:
+        rangerPluginEnabled = services['configurations']['ranger-kafka-plugin-properties']['properties']['ranger-kafka-plugin-enabled']
+
+      if  rangerPluginEnabled and rangerPluginEnabled.lower() == "Yes".lower():
+        # recommend authorizer.class.name
         putKafkaBrokerProperty("authorizer.class.name", 'org.apache.ranger.authorization.kafka.authorizer.RangerKafkaAuthorizer')
+        # change kafka-log4j when ranger plugin is installed
+
+        if 'kafka-log4j' in services['configurations'] and 'content' in services['configurations']['kafka-log4j']['properties']:
+          kafkaLog4jContent = services['configurations']['kafka-log4j']['properties']['content']
+          for item in range(len(kafkaLog4jRangerLines)):
+            if kafkaLog4jRangerLines[item]["name"] not in kafkaLog4jContent:
+              kafkaLog4jContent+= '\n' + kafkaLog4jRangerLines[item]["name"] + '=' + kafkaLog4jRangerLines[item]["value"]
+          putKafkaLog4jProperty("content",kafkaLog4jContent)
+
+
+      else:
+      # Cluster is kerberized
+        if 'hadoop.security.authentication' in core_site and core_site['hadoop.security.authentication'] == 'kerberos' and \
+          services['configurations']['kafka-broker']['properties']['authorizer.class.name'] == 'org.apache.ranger.authorization.kafka.authorizer.RangerKafkaAuthorizer':
+          putKafkaBrokerProperty("authorizer.class.name", 'kafka.security.auth.SimpleAclAuthorizer')
+        else:
+          putKafkaBrokerAttributes('authorizer.class.name', 'delete', 'true')
+      # Cluster with Ranger is not kerberized
+    elif ('hadoop.security.authentication' not in core_site or core_site['hadoop.security.authentication'] != 'kerberos'):
+      putKafkaBrokerAttributes('authorizer.class.name', 'delete', 'true')
+
+
+
+    # Cluster without Ranger is not kerberized
+    elif ('hadoop.security.authentication' not in core_site or core_site['hadoop.security.authentication'] != 'kerberos'):
+      putKafkaBrokerAttributes('authorizer.class.name', 'delete', 'true')
+
 
   def recommendRangerConfigurations(self, configurations, clusterData, services, hosts):
     super(HDP23StackAdvisor, self).recommendRangerConfigurations(configurations, clusterData, services, hosts)
     servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
     putRangerAdminProperty = self.putProperty(configurations, "ranger-admin-site", services)
     putRangerEnvProperty = self.putProperty(configurations, "ranger-env", services)
+    putRangerUgsyncSite = self.putProperty(configurations, "ranger-ugsync-site", services)
 
     if 'admin-properties' in services['configurations'] and ('DB_FLAVOR' in services['configurations']['admin-properties']['properties'])\
       and ('db_host' in services['configurations']['admin-properties']['properties']) and ('db_name' in services['configurations']['admin-properties']['properties']):
@@ -273,7 +414,7 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
       rangerDbName =   services['configurations']["admin-properties"]["properties"]["db_name"]
       ranger_db_url_dict = {
         'MYSQL': {'ranger.jpa.jdbc.driver': 'com.mysql.jdbc.Driver', 'ranger.jpa.jdbc.url': 'jdbc:mysql://' + rangerDbHost + '/' + rangerDbName},
-        'ORACLE': {'ranger.jpa.jdbc.driver': 'oracle.jdbc.driver.OracleDriver', 'ranger.jpa.jdbc.url': 'jdbc:oracle:thin:@/' + rangerDbHost + ':1521/' + rangerDbName},
+        'ORACLE': {'ranger.jpa.jdbc.driver': 'oracle.jdbc.driver.OracleDriver', 'ranger.jpa.jdbc.url': 'jdbc:oracle:thin:@//' + rangerDbHost + ':1521/' + rangerDbName},
         'POSTGRES': {'ranger.jpa.jdbc.driver': 'org.postgresql.Driver', 'ranger.jpa.jdbc.url': 'jdbc:postgresql://' + rangerDbHost + ':5432/' + rangerDbName},
         'MSSQL': {'ranger.jpa.jdbc.driver': 'com.microsoft.sqlserver.jdbc.SQLServerDriver', 'ranger.jpa.jdbc.url': 'jdbc:sqlserver://' + rangerDbHost + ';databaseName=' + rangerDbName},
         'SQLA': {'ranger.jpa.jdbc.driver': 'sap.jdbc4.sqlanywhere.IDriver', 'ranger.jpa.jdbc.url': 'jdbc:sqlanywhere:host=' + rangerDbHost + ';database=' + rangerDbName}
@@ -289,7 +430,7 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
         rangerDbHost =   services['configurations']["admin-properties"]["properties"]["db_host"]
         ranger_db_privelege_url_dict = {
           'MYSQL': {'ranger_privelege_user_jdbc_url': 'jdbc:mysql://' + rangerDbHost},
-          'ORACLE': {'ranger_privelege_user_jdbc_url': 'jdbc:oracle:thin:@/' + rangerDbHost + ':1521'},
+          'ORACLE': {'ranger_privelege_user_jdbc_url': 'jdbc:oracle:thin:@//' + rangerDbHost + ':1521'},
           'POSTGRES': {'ranger_privelege_user_jdbc_url': 'jdbc:postgresql://' + rangerDbHost + ':5432'},
           'MSSQL': {'ranger_privelege_user_jdbc_url': 'jdbc:sqlserver://' + rangerDbHost + ';'},
           'SQLA': {'ranger_privelege_user_jdbc_url': 'jdbc:sqlanywhere:host=' + rangerDbHost + ';'}
@@ -297,6 +438,41 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
         rangerPrivelegeDbProperties = ranger_db_privelege_url_dict.get(rangerDbFlavor, ranger_db_privelege_url_dict['MYSQL'])
         for key in rangerPrivelegeDbProperties:
           putRangerEnvProperty(key, rangerPrivelegeDbProperties.get(key))
+
+    # Recommend ldap settings based on ambari.properties configuration
+    if 'ambari-server-properties' in services and \
+        'ambari.ldap.isConfigured' in services['ambari-server-properties'] and \
+        services['ambari-server-properties']['ambari.ldap.isConfigured'].lower() == "true":
+      serverProperties = services['ambari-server-properties']
+      if 'authentication.ldap.baseDn' in serverProperties:
+        putRangerUgsyncSite('ranger.usersync.ldap.searchBase', serverProperties['authentication.ldap.baseDn'])
+      if 'authentication.ldap.groupMembershipAttr' in serverProperties:
+        putRangerUgsyncSite('ranger.usersync.group.memberattributename', serverProperties['authentication.ldap.groupMembershipAttr'])
+      if 'authentication.ldap.groupNamingAttr' in serverProperties:
+        putRangerUgsyncSite('ranger.usersync.group.nameattribute', serverProperties['authentication.ldap.groupNamingAttr'])
+      if 'authentication.ldap.groupObjectClass' in serverProperties:
+        putRangerUgsyncSite('ranger.usersync.group.objectclass', serverProperties['authentication.ldap.groupObjectClass'])
+      if 'authentication.ldap.managerDn' in serverProperties:
+        putRangerUgsyncSite('ranger.usersync.ldap.binddn', serverProperties['authentication.ldap.managerDn'])
+      if 'authentication.ldap.primaryUrl' in serverProperties:
+        putRangerUgsyncSite('ranger.usersync.ldap.url', serverProperties['authentication.ldap.primaryUrl'])
+      if 'authentication.ldap.userObjectClass' in serverProperties:
+        putRangerUgsyncSite('ranger.usersync.ldap.user.objectclass', serverProperties['authentication.ldap.userObjectClass'])
+      if 'authentication.ldap.usernameAttribute' in serverProperties:
+        putRangerUgsyncSite('ranger.usersync.ldap.user.nameattribute', serverProperties['authentication.ldap.usernameAttribute'])
+
+
+    # Recommend Ranger Authentication method
+    authMap = {
+      'org.apache.ranger.unixusersync.process.UnixUserGroupBuilder': 'UNIX',
+      'org.apache.ranger.ldapusersync.process.LdapUserGroupBuilder': 'LDAP'
+    }
+
+    if 'ranger-ugsync-site' in services['configurations'] and 'ranger.usersync.source.impl.class' in services['configurations']["ranger-ugsync-site"]["properties"]:
+      rangerUserSyncClass = services['configurations']["ranger-ugsync-site"]["properties"]["ranger.usersync.source.impl.class"]
+      if rangerUserSyncClass in authMap:
+        rangerSqlConnectorProperty = authMap.get(rangerUserSyncClass)
+        putRangerAdminProperty('ranger.authentication.method', rangerSqlConnectorProperty)
 
     # Recommend ranger.audit.solr.zookeepers and xasecure.audit.destination.hdfs.dir
     include_hdfs = "HDFS" in servicesList
@@ -346,11 +522,24 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
 
   def recommendYARNConfigurations(self, configurations, clusterData, services, hosts):
     super(HDP23StackAdvisor, self).recommendYARNConfigurations(configurations, clusterData, services, hosts)
+    putYarnSiteProperty = self.putProperty(configurations, "yarn-site", services)
+    putYarnSitePropertyAttributes = self.putPropertyAttribute(configurations, "yarn-site")
     if "ranger-env" in services["configurations"] and "ranger-yarn-plugin-properties" in services["configurations"] and \
         "ranger-yarn-plugin-enabled" in services["configurations"]["ranger-env"]["properties"]:
       putYarnRangerPluginProperty = self.putProperty(configurations, "ranger-yarn-plugin-properties", services)
       rangerEnvYarnPluginProperty = services["configurations"]["ranger-env"]["properties"]["ranger-yarn-plugin-enabled"]
       putYarnRangerPluginProperty("ranger-yarn-plugin-enabled", rangerEnvYarnPluginProperty)
+    rangerPluginEnabled = ''
+    if 'ranger-yarn-plugin-properties' in configurations and 'ranger-yarn-plugin-enabled' in  configurations['ranger-yarn-plugin-properties']['properties']:
+      rangerPluginEnabled = configurations['ranger-yarn-plugin-properties']['properties']['ranger-yarn-plugin-enabled']
+    elif 'ranger-yarn-plugin-properties' in services['configurations'] and 'ranger-yarn-plugin-enabled' in services['configurations']['ranger-yarn-plugin-properties']['properties']:
+      rangerPluginEnabled = services['configurations']['ranger-yarn-plugin-properties']['properties']['ranger-yarn-plugin-enabled']
+
+    if rangerPluginEnabled and (rangerPluginEnabled.lower() == 'Yes'.lower()):
+      putYarnSiteProperty('yarn.acl.enable','true')
+      putYarnSiteProperty('yarn.authorization-provider','org.apache.ranger.authorization.yarn.authorizer.RangerYarnAuthorizer')
+    else:
+      putYarnSitePropertyAttributes('yarn.authorization-provider', 'delete', 'true')
 
   def getServiceConfigurationValidators(self):
       parentValidators = super(HDP23StackAdvisor, self).getServiceConfigurationValidators()
@@ -439,6 +628,22 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
                                   "item": self.getWarnItem(
                                   "If Ranger Hive Plugin is enabled."\
                                   " {0} under hiveserver2-site needs to be set to {1}".format(prop_name, prop_val))})
+        prop_name = 'hive.conf.restricted.list'
+        prop_vals = 'hive.security.authorization.enabled,hive.security.authorization.manager,hive.security.authenticator.manager'.split(',')
+        current_vals = []
+        missing_vals = []
+        if hive_server2 and prop_name in hive_server2:
+          current_vals = hive_server2[prop_name].split(',')
+          current_vals = [x.strip() for x in current_vals]
+
+        for val in prop_vals:
+          if not val in current_vals:
+            missing_vals.append(val)
+
+        if missing_vals:
+          validationItems.append({"config-name": prop_name,
+            "item": self.getWarnItem("If Ranger Hive Plugin is enabled."\
+            " {0} under hiveserver2-site needs to contain missing value {1}".format(prop_name, ','.join(missing_vals)))})
       ##Add stack validations for  Ranger plugin disabled.
       elif not ranger_plugin_enabled:
         prop_name = 'hive.security.authorization.manager'

@@ -103,7 +103,7 @@ public class ServiceCheckGrouping extends Grouping {
      */
     @Override
     public void add(UpgradeContext ctx, HostsType hostsType, String service,
-        boolean clientOnly, ProcessingComponent pc) {
+        boolean clientOnly, ProcessingComponent pc, Map<String, String> params, boolean scheduleInParallel) {
       // !!! nothing to do here
     }
 
@@ -142,17 +142,6 @@ public class ServiceCheckGrouping extends Grouping {
       if (upgradeContext.getType() == UpgradeType.ROLLING) {
         // During Rolling Upgrade, create stages for everything else, as long it is valid
         for (String service : clusterServices) {
-          if (ServiceCheckGrouping.this.excludeServices.contains(service)) {
-            continue;
-          }
-          if (checkServiceValidity(upgradeContext, service, serviceMap)) {
-            StageWrapper wrapper = new StageWrapper(
-              StageWrapper.Type.SERVICE_CHECK,
-              "Service Check " + upgradeContext.getServiceDisplay(service),
-              new TaskWrapper(service, "", Collections.<String>emptySet(),
-                new ServiceCheckTask()));
-            result.add(wrapper);
-          }
           if (excludeServices.contains(service)) {
             continue;
           }

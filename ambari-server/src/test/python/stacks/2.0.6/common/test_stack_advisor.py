@@ -681,10 +681,14 @@ class TestHDP206StackAdvisor(TestCase):
     clusterData = {}
     # Recommend for not existing DB_FLAVOR and http enabled, HDP-2.3
     services = {
+      "Versions" : {
+        "stack_version" : "2.3",
+      },
       "services":  [
         {
           "StackServices": {
-            "service_name": "RANGER"
+            "service_name": "RANGER",
+            "service_version": "0.5.0"
           },
           "components": [
             {
@@ -695,6 +699,19 @@ class TestHDP206StackAdvisor(TestCase):
             }
           ]
         },
+        {
+          "StackServices": {
+            "service_name": "HDFS"
+          },
+          "components": [
+            {
+              "StackServiceComponents": {
+                "component_name": "NAMENODE",
+                "hostnames": ["host1"]
+              }
+            }
+          ]
+        }
       ],
       "configurations": {
         "admin-properties": {
@@ -716,11 +733,11 @@ class TestHDP206StackAdvisor(TestCase):
           "SQL_CONNECTOR_JAR": "/usr/share/java/mysql-connector-java.jar",
           "policymgr_external_url": "http://host1:7777",
         }
-      },
+      }
     }
     recommendedConfigurations = {}
     self.stackAdvisor.recommendRangerConfigurations(recommendedConfigurations, clusterData, services, None)
-    self.assertEquals(recommendedConfigurations, expected)
+    self.assertEquals(recommendedConfigurations, expected, "Test for not existing DB_FLAVOR and http enabled, HDP-2.3")
 
     # Recommend for DB_FLAVOR POSTGRES and https enabled, HDP-2.3
     configurations = {
@@ -744,11 +761,11 @@ class TestHDP206StackAdvisor(TestCase):
           "SQL_CONNECTOR_JAR": "/usr/share/java/postgresql.jar",
           "policymgr_external_url": "https://host1:7777",
           }
-      },
       }
+    }
     recommendedConfigurations = {}
     self.stackAdvisor.recommendRangerConfigurations(recommendedConfigurations, clusterData, services, None)
-    self.assertEquals(recommendedConfigurations, expected)
+    self.assertEquals(recommendedConfigurations, expected, "Test for DB_FLAVOR POSTGRES and https enabled, HDP-2.3")
 
     # Recommend for DB_FLAVOR ORACLE and https enabled, HDP-2.2
     configurations = {
@@ -772,11 +789,94 @@ class TestHDP206StackAdvisor(TestCase):
           "policymgr_external_url": "https://host1:8888",
           }
       },
+      "ranger-env": {"properties": {}}
+    }
+
+    recommendedConfigurations = {}
+    services['services'][0]['StackServices']['service_version'] = "0.4.0"
+    self.stackAdvisor.recommendRangerConfigurations(recommendedConfigurations, clusterData, services, None)
+    self.assertEquals(recommendedConfigurations, expected, "Test for DB_FLAVOR ORACLE and https enabled, HDP-2.2")
+
+    # Test Recommend LDAP values
+    services["ambari-server-properties"] = {
+      "ambari.ldap.isConfigured" : "true",
+      "authentication.ldap.bindAnonymously" : "false",
+      "authentication.ldap.baseDn" : "dc=apache,dc=org",
+      "authentication.ldap.groupNamingAttr" : "cn",
+      "authentication.ldap.primaryUrl" : "c6403.ambari.apache.org:389",
+      "authentication.ldap.userObjectClass" : "posixAccount",
+      "authentication.ldap.secondaryUrl" : "c6403.ambari.apache.org:389",
+      "authentication.ldap.usernameAttribute" : "uid",
+      "authentication.ldap.dnAttribute" : "dn",
+      "authentication.ldap.useSSL" : "false",
+      "authentication.ldap.managerPassword" : "/etc/ambari-server/conf/ldap-password.dat",
+      "authentication.ldap.groupMembershipAttr" : "memberUid",
+      "authentication.ldap.groupObjectClass" : "posixGroup",
+      "authentication.ldap.managerDn" : "uid=hdfs,ou=people,ou=dev,dc=apache,dc=org"
+    }
+    services["configurations"] = {}
+    expected = {
+      'admin-properties': {
+        'properties': {
+          'policymgr_external_url': 'http://host1:6080',
+        }
+      },
+      'ranger-env': {'properties': {}},
+      'usersync-properties': {
+        'properties': {
+          'SYNC_LDAP_URL': 'c6403.ambari.apache.org:389',
+          'SYNC_LDAP_BIND_DN': 'uid=hdfs,ou=people,ou=dev,dc=apache,dc=org',
+          'SYNC_LDAP_USER_OBJECT_CLASS': 'posixAccount',
+          'SYNC_LDAP_USER_NAME_ATTRIBUTE': 'uid'
+        }
+      }
+    }
+    recommendedConfigurations = {}
+    self.stackAdvisor.recommendRangerConfigurations(recommendedConfigurations, clusterData, services, None)
+    self.assertEquals(recommendedConfigurations, expected, "Test Recommend LDAP values")
+
+    # Test Ranger Audit properties
+    del services["ambari-server-properties"]
+    services["configurations"] = {
+      "core-site": {
+        "properties": {
+          "fs.defaultFS": "hdfs://host1:8080",
+        }
+      },
+      "ranger-env": {
+        "properties": {
+          "xasecure.audit.destination.db": "true",
+          "xasecure.audit.destination.hdfs":"false",
+          "xasecure.audit.destination.hdfs.dir":"hdfs://localhost:8020/ranger/audit/%app-type%/%time:yyyyMMdd%"
+        }
+      },
+      "ranger-hdfs-plugin-properties": {
+        "properties": {}
+      }
+    }
+    expected = {
+      'admin-properties': {
+        'properties': {
+          'policymgr_external_url': 'http://host1:6080'
+        }
+      },
+      'ranger-hdfs-plugin-properties': {
+        'properties': {
+          'XAAUDIT.HDFS.IS_ENABLED': 'false',
+          'XAAUDIT.HDFS.DESTINATION_DIRECTORY': 'hdfs://host1:8080/ranger/audit/%app-type%/%time:yyyyMMdd%',
+          'XAAUDIT.DB.IS_ENABLED': 'true'
+        }
+      },
+      'ranger-env': {
+        'properties': {
+          'xasecure.audit.destination.hdfs.dir': 'hdfs://host1:8080/ranger/audit/%app-type%/%time:yyyyMMdd%'
+        }
+      }
     }
 
     recommendedConfigurations = {}
     self.stackAdvisor.recommendRangerConfigurations(recommendedConfigurations, clusterData, services, None)
-    self.assertEquals(recommendedConfigurations, expected)
+    self.assertEquals(recommendedConfigurations, expected, "Test Ranger Audit properties")
 
 
 
@@ -1580,3 +1680,46 @@ class TestHDP206StackAdvisor(TestCase):
     recommendedDefaults = {}
     expected = {'level': 'ERROR', 'message': 'Value should be recommended for property1'}
     self.assertEquals(self.stackAdvisor.validatorEqualsToRecommendedItem(properties, recommendedDefaults, "property1"), expected)
+
+  def test_getServicesSiteProperties(self):
+    import imp, os
+    testDirectory = os.path.dirname(os.path.abspath(__file__))
+    hdp206StackAdvisorPath = os.path.join(testDirectory, '../../../../../main/resources/stacks/HDP/2.0.6/services/stack_advisor.py')
+    stack_advisor = imp.load_source('stack_advisor', hdp206StackAdvisorPath)
+    services = {
+      "services":  [
+        {
+          "StackServices": {
+            "service_name": "RANGER"
+          },
+          "components": [
+            {
+              "StackServiceComponents": {
+                "component_name": "RANGER_ADMIN",
+                "hostnames": ["host1"]
+              }
+            }
+          ]
+        },
+        ],
+      "configurations": {
+        "admin-properties": {
+          "properties": {
+            "DB_FLAVOR": "NOT_EXISTING",
+            }
+        },
+        "ranger-admin-site": {
+          "properties": {
+            "ranger.service.http.port": "7777",
+            "ranger.service.http.enabled": "true",
+            }
+        }
+      }
+    }
+    expected = {
+      "ranger.service.http.port": "7777",
+      "ranger.service.http.enabled": "true",
+    }
+    siteProperties = stack_advisor.getServicesSiteProperties(services, "ranger-admin-site")
+    self.assertEquals(siteProperties, expected)
+

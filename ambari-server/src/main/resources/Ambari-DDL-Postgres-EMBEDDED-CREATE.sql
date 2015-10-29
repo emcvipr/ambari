@@ -437,6 +437,8 @@ GRANT ALL PRIVILEGES ON TABLE ambari.requestschedulebatchrequest TO :username;
 CREATE TABLE ambari.blueprint (
   blueprint_name VARCHAR(255) NOT NULL,
   stack_id BIGINT NOT NULL,
+  security_type VARCHAR(32) NOT NULL DEFAULT 'NONE',
+  security_descriptor_reference VARCHAR(255),
   PRIMARY KEY(blueprint_name)
 );
 
@@ -974,6 +976,9 @@ CREATE TABLE ambari.upgrade (
   direction VARCHAR(255) DEFAULT 'UPGRADE' NOT NULL,
   upgrade_package VARCHAR(255) NOT NULL,
   upgrade_type VARCHAR(32) NOT NULL,
+  skip_failures SMALLINT DEFAULT 0 NOT NULL,
+  skip_sc_failures SMALLINT DEFAULT 0 NOT NULL,
+  downgrade_allowed SMALLINT DEFAULT 1 NOT NULL,
   PRIMARY KEY (upgrade_id),
   FOREIGN KEY (cluster_id) REFERENCES ambari.clusters(cluster_id),
   FOREIGN KEY (request_id) REFERENCES ambari.request(request_id)

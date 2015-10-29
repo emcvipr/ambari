@@ -119,8 +119,7 @@ App.ServiceConfigLayoutTabView = Em.View.extend(App.ConfigOverridable, {
         stackConfigProperty: config
       };
 
-
-      var configConditions = App.ConfigCondition.find().filter(function (_configCondition) {
+      var configConditions = App.ThemeCondition.find().filter(function (_configCondition) {
         // Filter config condition depending on the value of another config
         var conditionalConfigs = (_configCondition.get('configs')||[]).filterProperty('fileName', config.get('filename')).filterProperty('configName', config.get('name'));
         // Filter config condition depending on the service existence or service state
@@ -172,11 +171,13 @@ App.ServiceConfigLayoutTabView = Em.View.extend(App.ConfigOverridable, {
 
   didInsertElement: function () {
     this.set('dataIsReady', false);
+    this.set('content.isConfigsPrepared', false);
     this._super();
     this.prepareConfigProperties();
     if (this.get('controller.isCompareMode')) {
       this.get('parentView').filterEnhancedConfigs();
     }
+    this.set('content.isConfigsPrepared', true);
     this.set('dataIsReady', true);
   }
 

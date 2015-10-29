@@ -69,8 +69,8 @@ App.upgradeWizardView = Em.View.extend({
    * @type {boolean}
    */
   isDowngradeAvailable: function () {
-    return !this.get('controller.isDowngrade');
-  }.property('controller.isDowngrade'),
+    return !this.get('controller.isDowngrade') && this.get('controller.downgradeAllowed');
+  }.property('controller.isDowngrade', 'controller.downgradeAllowed'),
 
   /**
    * progress value is rounded to floor
@@ -183,7 +183,7 @@ App.upgradeWizardView = Em.View.extend({
    */
   upgradeStatusLabel: function() {
     var labelKey = null;
-    switch (App.get('upgradeState')) {
+    switch (this.get('controller.upgradeData.Upgrade.request_status')) {
       case 'QUEUED':
       case 'PENDING':
       case 'IN_PROGRESS':
@@ -213,7 +213,7 @@ App.upgradeWizardView = Em.View.extend({
     } else {
       return "";
     }
-  }.property('App.upgradeState', 'controller.isDowngrade', 'controller.isSuspended'),
+  }.property('controller.upgradeData.Upgrade.request_status', 'controller.isDowngrade', 'controller.isSuspended'),
 
   /**
    * toggle details box

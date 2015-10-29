@@ -48,6 +48,7 @@ limitations under the License.
       org.apache.hadoop.hive.ql.lockmgr.zookeeper.ZooKeeperHiveLockManager,
       2. When HiveServer2 supports service discovery via Zookeeper.</description>
     <value-attributes>
+      <type>multiLine</type>
       <empty-value-valid>true</empty-value-valid>
     </value-attributes>
   </property>
@@ -124,6 +125,9 @@ limitations under the License.
       when it is brought up. JDBC/ODBC clients should use the ZooKeeper ensemble: hive.zookeeper.quorum
       in their connection string.
     </description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
   </property>
   
   <property>
@@ -1090,6 +1094,7 @@ limitations under the License.
     </description>
     <value-attributes>
       <overridable>false</overridable>
+      <type>int</type>
     </value-attributes>
   </property>
   <property>
@@ -1388,6 +1393,9 @@ limitations under the License.
     <value>1024</value>
     <deleted>true</deleted>
     <description>Hive Java heap size</description>
+    <value-attributes>
+      <type>int</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -1726,6 +1734,7 @@ limitations under the License.
   <property>
     <name>hive.server2.authentication.ldap.url</name>
     <value> </value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1736,6 +1745,7 @@ limitations under the License.
   <property>
     <name>hive.server2.authentication.ldap.baseDN</name>
     <value></value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1746,6 +1756,7 @@ limitations under the License.
   <property>
     <name>hive.server2.authentication.kerberos.keytab</name>
     <value>/etc/security/keytabs/hive.service.keytab</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1756,6 +1767,7 @@ limitations under the License.
   <property>
     <name>hive.server2.authentication.kerberos.principal</name>
     <value>hive/_HOST@EXAMPLE.COM</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1766,6 +1778,7 @@ limitations under the License.
   <property>
     <name>hive.server2.authentication.pam.services</name>
     <value></value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1776,6 +1789,7 @@ limitations under the License.
   <property>
     <name>hive.server2.custom.authentication.class</name>
     <value></value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>

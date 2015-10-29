@@ -82,6 +82,13 @@ public class UpgradePack {
   private boolean skipFailures = false;
 
   /**
+   * {@code true} to allow downgrade, {@code false} to disable downgrade.
+   * Tag is optional and can be {@code null}, use {@code isDowngradeAllowed} getter instead.
+   */
+  @XmlElement(name = "downgrade-allowed", required = false)
+  private boolean downgradeAllowed = true;
+
+  /**
    * {@code true} to automatically skip service check failures. The default is
    * {@code false}.
    */
@@ -196,6 +203,13 @@ public class UpgradePack {
     return checked;
   }
 
+  /**
+   * @return {@code true} if upgrade pack supports downgrade or {@code false} if not.
+   */
+  public boolean isDowngradeAllowed(){
+    return downgradeAllowed;
+  }
+
   public boolean canBeApplied(String targetVersion){
     // check that upgrade pack can be applied to selected stack
     // converting 2.2.*.* -> 2\.2(\.\d+)?(\.\d+)?(-\d+)?
@@ -269,14 +283,11 @@ public class UpgradePack {
   }
 
   private List<Grouping> getDowngradeGroupsForNonrolling() {
-    throw new UnsupportedOperationException("TODO AMBARI-12698");
-    /*
     List<Grouping> list = new ArrayList<Grouping>();
     for (Grouping g : groups) {
       list.add(g);
     }
     return list;
-    */
   }
 
   /**

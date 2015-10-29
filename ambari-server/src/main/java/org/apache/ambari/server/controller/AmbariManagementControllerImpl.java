@@ -18,49 +18,16 @@
 
 package org.apache.ambari.server.controller;
 
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_DRIVER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_PASSWORD;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_URL;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_USERNAME;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.CLIENTS_TO_UPDATE_CONFIGS;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_RETRY_ENABLED;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_TIMEOUT;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.DB_DRIVER_FILENAME;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.GROUP_LIST;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.MAX_DURATION_OF_RETRIES;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.PACKAGE_LIST;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.REPO_INFO;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT_TYPE;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_PACKAGE_FOLDER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_REPO_INFO;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.USER_LIST;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.VERSION;
-
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-import java.lang.reflect.Type;
-import java.net.InetAddress;
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.EnumMap;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Multimap;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
+import com.google.inject.Singleton;
+import com.google.inject.persist.Transactional;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ClusterNotFoundException;
 import org.apache.ambari.server.DuplicateResourceException;
@@ -161,6 +128,7 @@ import org.apache.ambari.server.state.svccomphost.ServiceComponentHostInstallEve
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostStartEvent;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostStopEvent;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostUpgradeEvent;
+import org.apache.ambari.server.utils.SecretReference;
 import org.apache.ambari.server.utils.StageUtils;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.IOUtils;
@@ -171,16 +139,48 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.GrantedAuthority;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.Multimap;
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.lang.reflect.Type;
+import java.net.InetAddress;
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_DRIVER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_PASSWORD;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_URL;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_USERNAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.CLIENTS_TO_UPDATE_CONFIGS;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_RETRY_ENABLED;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_TIMEOUT;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.DB_DRIVER_FILENAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.GROUP_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.MAX_DURATION_OF_RETRIES;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.PACKAGE_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.REPO_INFO;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT_TYPE;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_PACKAGE_FOLDER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_REPO_INFO;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.USER_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.VERSION;
 
 @Singleton
 public class AmbariManagementControllerImpl implements AmbariManagementController {
@@ -418,7 +418,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       throw new HostNotFoundException(invalidHostsStr.toString());
     }
 
-    clusters.addCluster(request.getClusterName(), stackId);
+    clusters.addCluster(request.getClusterName(), stackId, request.getSecurityType());
     Cluster c = clusters.getCluster(request.getClusterName());
 
     if (request.getHostNames() != null) {
@@ -719,6 +719,27 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
 
     Cluster cluster = clusters.getCluster(request.getClusterName());
 
+    Map<String, String> requestProperties = request.getProperties();
+
+    Map<PropertyInfo.PropertyType, Set<String>> propertiesTypes = cluster.getConfigPropertiesTypes(request.getType());
+    if(propertiesTypes.containsKey(PropertyType.PASSWORD)) {
+      for(String passwordProperty : propertiesTypes.get(PropertyType.PASSWORD)) {
+        if(requestProperties.containsKey(passwordProperty)) {
+          String passwordPropertyValue = requestProperties.get(passwordProperty);
+          if (!SecretReference.isSecret(passwordPropertyValue))
+            continue;
+          SecretReference ref = new SecretReference(passwordPropertyValue, passwordProperty, cluster);
+          if (!ref.getClusterName().equals(request.getClusterName()))
+            throw new AmbariException("Can not reference to different cluster in SECRET");
+          String refValue = ref.getValue();
+          requestProperties.put(passwordProperty, refValue);
+        }
+      }
+    }
+
+
+
+
     Map<String, Config> configs = cluster.getConfigsByType(
         request.getType());
     if (null == configs) {
@@ -739,7 +760,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
 
     handleGlobalsBackwardsCompability(request, propertiesAttributes);
 
-    Config config = createConfig(cluster, request.getType(), request.getProperties(),
+    Config config = createConfig(cluster, request.getType(), requestProperties,
       request.getVersionTag(), propertiesAttributes);
 
     return new ConfigurationResponse(cluster.getClusterName(), config);
@@ -1215,7 +1236,8 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
                 request.getType(),
                 config.getTag(), entry.getValue().getVersion(),
                 includeProps ? config.getProperties() : new HashMap<String, String>(),
-                includeProps ? config.getPropertiesAttributes() : new HashMap<String, Map<String,String>>());
+                includeProps ? config.getPropertiesAttributes() : new HashMap<String, Map<String,String>>(),
+                config.getPropertiesTypes());
             responses.add(response);
           }
         }
@@ -1228,7 +1250,8 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
               cluster.getClusterName(), config.getStackId(), config.getType(),
               config.getTag(), config.getVersion(),
               includeProps ? config.getProperties() : new HashMap<String, String>(),
-              includeProps ? config.getPropertiesAttributes() : new HashMap<String, Map<String,String>>());
+              includeProps ? config.getPropertiesAttributes() : new HashMap<String, Map<String,String>>(),
+              config.getPropertiesTypes());
 
           responses.add(response);
         }
@@ -1365,6 +1388,24 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     if (request.getDesiredConfig() != null) {
       for (ConfigurationRequest desiredConfig : request.getDesiredConfig()) {
         Map<String, String> requestConfigProperties = desiredConfig.getProperties();
+
+        // processing password properties
+        if(requestConfigProperties != null && !requestConfigProperties.isEmpty()) {
+          Map<PropertyInfo.PropertyType, Set<String>> propertiesTypes = cluster.getConfigPropertiesTypes(
+              desiredConfig.getType()
+          );
+          for (Entry<String, String> property : requestConfigProperties.entrySet()) {
+            String propertyName = property.getKey();
+            String propertyValue = property.getValue();
+            if (propertiesTypes.containsKey(PropertyType.PASSWORD) &&
+                propertiesTypes.get(PropertyType.PASSWORD).contains(propertyName)) {
+              if (SecretReference.isSecret(propertyValue)) {
+                SecretReference ref = new SecretReference(propertyValue, propertyName, cluster);
+                requestConfigProperties.put(propertyName, ref.getValue());
+              }
+            }
+          }
+        }
         Map<String,Map<String,String>> requestConfigAttributes = desiredConfig.getPropertiesAttributes();
         Config clusterConfig = cluster.getDesiredConfigByType(desiredConfig.getType());
         Map<String, String> clusterConfigProperties = null;
@@ -2455,6 +2496,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
 
       if (!componentsToEnableKerberos.isEmpty()) {
         Map<String, Collection<String>> serviceFilter = new HashMap<String, Collection<String>>();
+        Set<String> hostFilter = new HashSet<String>();
 
         for (ServiceComponentHost scHost : componentsToEnableKerberos) {
           String serviceName = scHost.getServiceName();
@@ -2466,10 +2508,11 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
           }
 
           componentFilter.add(scHost.getServiceComponentName());
+          hostFilter.add(scHost.getHostName());
         }
 
         try {
-          kerberosHelper.ensureIdentities(cluster, serviceFilter, null, hostsToForceKerberosOperations, requestStages,
+          kerberosHelper.ensureIdentities(cluster, serviceFilter, hostFilter, null, hostsToForceKerberosOperations, requestStages,
               kerberosHelper.getManageIdentitiesDirective(requestProperties));
         } catch (KerberosOperationException e) {
           throw new IllegalArgumentException(e.getMessage(), e);

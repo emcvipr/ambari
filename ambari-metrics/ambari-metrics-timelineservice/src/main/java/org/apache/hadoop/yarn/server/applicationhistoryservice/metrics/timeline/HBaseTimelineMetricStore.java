@@ -21,6 +21,7 @@ package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 import org.apache.hadoop.service.AbstractService;
@@ -39,6 +40,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.USE_GROUPBY_AGGREGATOR_QUERIES;
 
@@ -190,7 +192,7 @@ public class HBaseTimelineMetricStore extends AbstractService implements Timelin
 
       if (prevTime != null) {
         step = currTime - prevTime;
-        Double rate = currVal / step;
+        Double rate = currVal / TimeUnit.MILLISECONDS.toSeconds(step);
         timeValueEntry.setValue(rate);
       } else {
         timeValueEntry.setValue(0.0);
@@ -275,7 +277,7 @@ public class HBaseTimelineMetricStore extends AbstractService implements Timelin
       metric.setHostName(metricList.get(0).getHostName());
       // Assumption that metrics are ordered by start time
       metric.setStartTime(metricList.get(0).getStartTime());
-      Map<Long, Double> metricRecords = new TreeMap<Long, Double>();
+      TreeMap<Long, Double> metricRecords = new TreeMap<Long, Double>();
       for (TimelineMetric timelineMetric : metricList) {
         metricRecords.putAll(timelineMetric.getMetricValues());
       }

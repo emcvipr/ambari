@@ -69,16 +69,14 @@ describe('#App.ManageCredentialsFormView', function() {
         sinon.stub(credentialUtils, 'credentials', function(clusterName, callback) {
           callback(test.credentials);
         });
-        sinon.stub(credentialUtils, 'isStorePersisted', function() {
-          return $.Deferred().resolve(test.isStorePersistent).promise();
-        });
+        sinon.stub(App, 'get').withArgs('isCredentialStorePersistent').returns(test.e.storePersisted);
         view.prepareContent();
         Em.run.next(function() {
           assert.equal(view.get('isRemovable'), test.e.isRemovable, '#isRemovable property validation');
           assert.equal(view.get('isRemoveDisabled'), test.e.isRemoveDisabled, '#isRemoveDisabled property validation');
           assert.equal(view.get('storePersisted'), test.e.storePersisted, '#storePersisted property validation');
           credentialUtils.credentials.restore();
-          credentialUtils.isStorePersisted.restore();
+          App.get.restore();
           done();
         });
       });
@@ -104,15 +102,39 @@ describe('#App.ManageCredentialsFormView', function() {
     });
   });
 
+  describe('fields validation', function() {
+    it('should flow validation', function() {
+      var t = Em.I18n.t;
+      assert.isTrue(view.get('isSubmitDisabled'), 'submit disabled on initial state');
+      view.set('principal', ' a');
+      assert.equal(view.get('principalError'), t('host.spacesValidation'), 'principal contains spaces, appropriate message shown');
+      assert.isTrue(view.get('isPrincipalDirty'), 'principal name modified');
+      assert.isTrue(view.get('isSubmitDisabled'), 'submit disabled because principal not valid');
+      view.set('principal', '');
+      assert.equal(view.get('principalError'), t('admin.users.editError.requiredField'), 'principal is empty, appropriate message shown');
+      view.set('principal', 'some_name');
+      assert.isFalse(view.get('principalError'), 'principal name valid no message shown');
+      assert.isTrue(view.get('isSubmitDisabled'), 'submit disabled because password field not modified');
+      view.set('password', '1');
+      view.set('password', '');
+      assert.equal(view.get('passwordError'), t('admin.users.editError.requiredField'), 'password is empty, appropriate message shown');
+      assert.isTrue(view.get('isPasswordDirty'), 'password modified');
+      assert.isTrue(view.get('isSubmitDisabled'), 'submit disabled because password field is empty');
+      view.set('password', 'some_pass');
+      assert.isFalse(view.get('passwordError'), 'password valid no message shown');
+      assert.isFalse(view.get('isSubmitDisabled'), 'submit enabled all fields are valid');
+    });
+  });
+
   describe('#removeKDCCredentials', function() {
     it('should show confirmation popup', function() {
-      var popup = view.removeKDCCredentials();
+      var popup = view.removeKDCCredentials().popup;
       expect(popup).be.instanceof(App.ModalPopup);
       popup.destroy();
     });
     it('should call credentialUtils#removeCredentials', function() {
       this.clock = sinon.useFakeTimers();
-      var popup = view.removeKDCCredentials();
+      var popup = view.removeKDCCredentials().popup;
       assert.isFalse(view.get('actionStatus'), '#actionStatus before remove');
       sinon.stub(credentialUtils, 'removeCredentials', function() {
         var dfd = $.Deferred();

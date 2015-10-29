@@ -79,17 +79,11 @@ class TestJournalnode(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-    self.assertResourceCalled('File', '/var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid',
-        action = ['delete'],
-        not_if = "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid",
-    )
     self.assertResourceCalled('Execute', "ambari-sudo.sh su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited ;  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf stop journalnode'",
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec'},
-        not_if = None,
-    )
-    self.assertResourceCalled('File', '/var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid',
-                              action = ['delete'],
-                              )
+        only_if = "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid")
+
+    self.assertResourceCalled('File', '/var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid', action = ['delete'])
     self.assertNoMoreResources()
 
   def test_configure_secured(self):
@@ -143,17 +137,11 @@ class TestJournalnode(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-    self.assertResourceCalled('File', '/var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid',
-        action = ['delete'],
-        not_if = "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid",
-    )
     self.assertResourceCalled('Execute', "ambari-sudo.sh su hdfs -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ulimit -c unlimited ;  /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf stop journalnode'",
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec'},
-        not_if = None,
-    )
-    self.assertResourceCalled('File', '/var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid',
-                              action = ['delete'],
-                              )
+        only_if = "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid")
+
+    self.assertResourceCalled('File', '/var/run/hadoop/hdfs/hadoop-hdfs-journalnode.pid', action = ['delete'])
     self.assertNoMoreResources()
 
   def assert_configure_default(self):
@@ -260,7 +248,7 @@ class TestJournalnode(RMFTestCase):
 
 
   @patch('time.sleep')
-  def test_post_rolling_restart(self, time_mock):
+  def test_post_upgrade_restart(self, time_mock):
     # load the NN and JN JMX files so that the urllib2.urlopen mock has data
     # to return
     num_journalnodes = 3
@@ -295,7 +283,7 @@ class TestJournalnode(RMFTestCase):
       with patch.object(urllib2, "urlopen", urlopen_mock):
        with patch.object(NamenodeHAState, "get_address", get_address_mock):
          self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/journalnode.py",
-           classname = "JournalNode", command = "post_rolling_restart",
+           classname = "JournalNode", command = "post_upgrade_restart",
            config_file = "journalnode-upgrade.json",
            checked_call_mocks = [(0, str(namenode_status_active)), (0, str(namenode_status_standby))],
            hdp_stack_version = self.UPGRADE_STACK_VERSION,
@@ -314,7 +302,7 @@ class TestJournalnode(RMFTestCase):
       with patch.object(urllib2, "urlopen", urlopen_mock):
         with patch.object(NamenodeHAState, "get_address", get_address_mock):
          self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/journalnode.py",
-           classname = "JournalNode", command = "post_rolling_restart",
+           classname = "JournalNode", command = "post_upgrade_restart",
            config_file = "journalnode-upgrade-hdfs-secure.json",
            checked_call_mocks = [(0, str(namenode_status_active)), (0, str(namenode_status_standby))],
            hdp_stack_version = self.UPGRADE_STACK_VERSION,
@@ -328,7 +316,7 @@ class TestJournalnode(RMFTestCase):
 
   @patch('time.sleep')
   @patch("urllib2.urlopen")
-  def test_post_rolling_restart_bad_jmx(self, urlopen_mock, time_mock):
+  def test_post_upgrade_restart_bad_jmx(self, urlopen_mock, time_mock):
     urlopen_mock_response = '{ "bad_data" : "gonna_mess_you_up" }'
 
     url_stream_mock = MagicMock()
@@ -337,7 +325,7 @@ class TestJournalnode(RMFTestCase):
 
     try:
       self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/journalnode.py",
-        classname = "JournalNode", command = "post_rolling_restart",
+        classname = "JournalNode", command = "post_upgrade_restart",
         config_file = "journalnode-upgrade.json",
         hdp_stack_version = self.UPGRADE_STACK_VERSION,
         target = RMFTestCase.TARGET_COMMON_SERVICES )
@@ -460,7 +448,7 @@ class TestJournalnode(RMFTestCase):
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
 
 
-  def test_pre_rolling_restart(self):
+  def test_pre_upgrade_restart(self):
     config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
     with open(config_file, "r") as f:
       json_content = json.load(f)
@@ -468,7 +456,7 @@ class TestJournalnode(RMFTestCase):
     json_content['commandParams']['version'] = version
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/journalnode.py",
                        classname = "JournalNode",
-                       command = "pre_rolling_restart",
+                       command = "pre_upgrade_restart",
                        config_dict = json_content,
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
@@ -476,7 +464,7 @@ class TestJournalnode(RMFTestCase):
     self.assertNoMoreResources()
 
   @patch("resource_management.core.shell.call")
-  def test_pre_rolling_restart_23(self, call_mock):
+  def test_pre_upgrade_restart_23(self, call_mock):
     config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
     with open(config_file, "r") as f:
       json_content = json.load(f)
@@ -486,7 +474,7 @@ class TestJournalnode(RMFTestCase):
     mocks_dict = {}
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/journalnode.py",
                        classname = "JournalNode",
-                       command = "pre_rolling_restart",
+                       command = "pre_upgrade_restart",
                        config_dict = json_content,
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES,

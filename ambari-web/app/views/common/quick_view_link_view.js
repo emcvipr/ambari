@@ -143,10 +143,15 @@ App.QuickViewLinks = Em.View.extend({
 
       quickLinks = this.get('content.quickLinks').map(function (item) {
         var protocol = self.setProtocol(item.get('service_id'), self.get('configProperties'), self.ambariProperties(), item);
+        var siteConfigs = {};
+
         if (item.get('template')) {
           var port = item.get('http_config') && self.setPort(item, protocol);
           if (['FALCON', 'OOZIE', 'ATLAS'].contains(item.get('service_id'))) {
             item.set('url', item.get('template').fmt(protocol, hosts[0], port, App.router.get('loginName')));
+          } else if (item.get('service_id') === 'MAPREDUCE2') {
+            siteConfigs = self.get('configProperties').findProperty('type', item.get('site')).properties;
+            item.set('url', item.get('template').fmt(protocol, siteConfigs[item.get(protocol + '_config')]));
           } else {
             item.set('url', item.get('template').fmt(protocol, hosts[0], port));
           }
@@ -222,6 +227,7 @@ App.QuickViewLinks = Em.View.extend({
       return [App.get('singleNodeAlias')];
     }
     var hosts = [];
+    var host;
     switch (serviceName) {
       case 'OOZIE':
         // active OOZIE components
@@ -234,13 +240,19 @@ App.QuickViewLinks = Em.View.extend({
             });
           });
         } else if (components && components.length === 1) {
-          hosts[0] = this.findComponentHost(response.items, 'OOZIE_SERVER');
+          host = this.findComponentHost(response.items, 'OOZIE_SERVER');
+          if (host) {
+            hosts[0] = host;
+          }
         }
         break;
       case "HDFS":
         if (this.get('content.snameNode')) {
           // not HA
-          hosts[0] = this.findComponentHost(response.items, 'NAMENODE');
+          host = this.findComponentHost(response.items, 'NAMENODE');
+          if (host) {
+            hosts[0] = host;
+          }
         } else {
           // HA enabled, need both two namenodes hosts
           this.get('content.hostComponents').filterProperty('componentName', 'NAMENODE').forEach(function (component) {
@@ -289,8 +301,14 @@ App.QuickViewLinks = Em.View.extend({
               hosts.push({'publicHostName': item.Hosts.public_host_name});
             });
           }
-        } else {
-          hosts[0] = masterComponents[0].Hosts.public_host_name;
+        }
+        else {
+          if (masterComponents[0]) {
+            host = masterComponents[0].Hosts.public_host_name;
+            if (host) {
+              hosts[0] = host;
+            }
+          }
         }
         break;
       case "YARN":
@@ -312,21 +330,33 @@ App.QuickViewLinks = Em.View.extend({
             hosts.push(newHost);
           }, this);
         } else {
-          hosts[0] = this.findComponentHost(response.items, 'RESOURCEMANAGER');
+          host = this.findComponentHost(response.items, "RESOURCEMANAGER");
+          if (host) {
+            hosts[0] = host;
+          }
         }
         break;
       case "STORM":
-        hosts[0] = this.findComponentHost(response.items, "STORM_UI_SERVER");
+        host = this.findComponentHost(response.items, "STORM_UI_SERVER");
+        if (host) {
+          hosts[0] = host;
+        }
         break;
       case "ACCUMULO":
-        hosts[0] = this.findComponentHost(response.items, "ACCUMULO_MONITOR");
+        host = this.findComponentHost(response.items, "ACCUMULO_MONITOR");
+        if (host) {
+          hosts[0] = host;
+        }
         break;
       case "ATLAS":
-        hosts[0] = this.findComponentHost(response.items, "ATLAS_SERVER");
+        host = this.findComponentHost(response.items, "ATLAS_SERVER");
+        if (host) {
+          hosts[0] = host;
+        }
         break;
       default:
         var service = App.StackService.find().findProperty('serviceName', serviceName);
-        if (service && service.get('hasMaster')) {
+        if (service && service.get('hasMaster') && App.Service.find(serviceName).get('hostComponents').someProperty('isMaster')) {
           hosts[0] = this.findComponentHost(response.items, this.get('content.hostComponents') && this.get('content.hostComponents').findProperty('isMaster', true).get('componentName'));
         }
         break;

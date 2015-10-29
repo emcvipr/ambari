@@ -57,7 +57,7 @@ stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version_major = format_hdp_stack_version(stack_version_unformatted)
 hdp_stack_version = functions.get_hdp_version('hadoop-yarn-resourcemanager')
 
-# New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade.
+# New Cluster Stack Version that is defined during the RESTART of a Stack Upgrade.
 # It cannot be used during the initial Cluser Install because the version is not yet known.
 version = default("/commandParams/version", None)
 
@@ -145,6 +145,7 @@ resourcemanager_heapsize = config['configurations']['yarn-env']['resourcemanager
 nodemanager_heapsize = config['configurations']['yarn-env']['nodemanager_heapsize']
 apptimelineserver_heapsize = default("/configurations/yarn-env/apptimelineserver_heapsize", 1024)
 ats_leveldb_dir = config['configurations']['yarn-site']['yarn.timeline-service.leveldb-timeline-store.path']
+ats_leveldb_lock_file = os.path.join(ats_leveldb_dir, "leveldb-timeline-store.ldb", "LOCK")
 yarn_log_dir_prefix = config['configurations']['yarn-env']['yarn_log_dir_prefix']
 yarn_pid_dir_prefix = status_params.yarn_pid_dir_prefix
 mapred_pid_dir_prefix = status_params.mapred_pid_dir_prefix

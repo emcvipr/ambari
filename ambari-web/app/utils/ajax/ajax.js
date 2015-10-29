@@ -970,6 +970,12 @@ var urls = {
   'service.metrics.flume.channel_size_for_all': {
     'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/ChannelSize/rate[{fromSeconds},{toSeconds},{stepSeconds}]'
   },
+  'service.metrics.flume.channel_size_for_all.mma': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/ChannelSize/rate/avg[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/ChannelSize/rate/max[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/ChannelSize/rate/min[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },
+  'service.metrics.flume.channel_size_for_all.sum': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/ChannelSize/rate/sum[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },
   'service.metrics.flume.gc': {
     'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/jvm/gcTimeMillis[{fromSeconds},{toSeconds},{stepSeconds}]',
     'mock': '/data/services/metrics/flume/jvmGcTime.json',
@@ -992,9 +998,19 @@ var urls = {
   },
   'service.metrics.flume.incoming_event_put_successCount': {
     'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventPutSuccessCount/rate[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },'service.metrics.flume.incoming_event_put_successCount.mma': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventPutSuccessCount/rate/avg[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/EventPutSuccessCount/rate/max[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/EventPutSuccessCount/rate/min[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },'service.metrics.flume.incoming_event_put_successCount.sum': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventPutSuccessCount/rate/sum[{fromSeconds},{toSeconds},{stepSeconds}]'
   },
   'service.metrics.flume.outgoing_event_take_success_count': {
     'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventTakeSuccessCount/rate[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },
+  'service.metrics.flume.outgoing_event_take_success_count.mma': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventTakeSuccessCount/rate/avg[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/EventTakeSuccessCount/rate/max[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/EventTakeSuccessCount/rate/min[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },
+  'service.metrics.flume.outgoing_event_take_success_count.sum': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventTakeSuccessCount/rate/sum[{fromSeconds},{toSeconds},{stepSeconds}]'
   },
   'service.metrics.hbase.cluster_requests': {
     'real': '/clusters/{clusterName}/services/HBASE/components/HBASE_MASTER?fields=metrics/hbase/master/cluster_requests[{fromSeconds},{toSeconds},{stepSeconds}]',
@@ -1275,7 +1291,7 @@ var urls = {
     'mock': '/data/clusters/info.json'
   },
   'cluster.load_last_upgrade': {
-    'real': '/clusters/{clusterName}/upgrades?fields=Upgrade/request_status,Upgrade/request_id,Upgrade/to_version,Upgrade/direction',
+    'real': '/clusters/{clusterName}/upgrades?fields=Upgrade/request_status,Upgrade/request_id,Upgrade/to_version,Upgrade/direction,Upgrade/upgrade_type,Upgrade/downgrade_allowed,Upgrade/skip_failures,Upgrade/skip_service_check_failures',
     'mock': '/data/stack_versions/upgrades.json'
   },
   'cluster.update_upgrade_version': {
@@ -1597,7 +1613,7 @@ var urls = {
         data: JSON.stringify({
           "Upgrade": {
             "repository_version": data.value,
-            "type": data.type,
+            "upgrade_type": data.type,
             "skip_failures": data.skipComponentFailures,
             "skip_service_check_failures": data.skipSCFailures
           }
@@ -1617,7 +1633,8 @@ var urls = {
           },
           "Upgrade": {
             "from_version": data.from,
-            "repository_version": data.value
+            "repository_version": data.value,
+            "upgrade_type": data.upgradeType
           }
         })
       }
@@ -1710,6 +1727,11 @@ var urls = {
   'admin.upgrade.pre_upgrade_check': {
     'real': '/clusters/{clusterName}/rolling_upgrades_check?fields=*&UpgradeChecks/repository_version={value}&UpgradeChecks/upgrade_type={type}',
     'mock': '/data/stack_versions/pre_upgrade_check.json'
+  },
+
+  'admin.upgrade.get_supported_upgradeTypes': {
+    'real': '/stacks/{stackName}/versions/{stackVersion}/compatible_repository_versions?CompatibleRepositoryVersions/repository_version={toVersion}',
+    'mock': '/data/stack_versions/supported_upgrade_types.json'
   },
 
   'admin.kerberos_security.checks': {
@@ -2872,6 +2894,7 @@ var ajax = Em.Object.extend({
 
     if (showStatus.contains(jqXHR.status) && !this.get('modalPopup')) {
       this.set('modalPopup', App.ModalPopup.show({
+        elementId: 'default-error-modal',
         header: Em.I18n.t('common.error'),
         secondary: false,
         onPrimary: function () {
