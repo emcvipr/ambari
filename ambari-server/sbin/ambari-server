@@ -21,8 +21,8 @@
 
 # /etc/init.d/ambari-server
 
-VERSION="2.0.0.0"
-HASH="8fca6a786b3cd6af2733f40792409255da065884"
+VERSION="${ambariVersion}"
+HASH="${buildNumber}"
 
 case "$1" in
   --version)
@@ -144,17 +144,20 @@ case "$1" in
         echo -e "Restoring Ambari File System state"
         $PYTHON /usr/sbin/ambari-server.py $@
         ;;
+  update-host-names)
+        echo -e "Updating host names"
+        $PYTHON /usr/sbin/ambari-server.py $@
+        ;;
   enable-stack)
         echo -e "Enabling stack(s)..."
         $PYTHON /usr/sbin/ambari-server.py $@
         ;;
   *)
         echo "Usage: /usr/sbin/ambari-server
-        {start|stop|restart|setup|setup-jce|upgrade|status|upgradestack|setup-ldap|sync-ldap|set-current|setup-security|refresh-stack-hash|backup|restore|enable-stack} [options]
+        {start|stop|restart|setup|setup-jce|upgrade|status|upgradestack|setup-ldap|sync-ldap|set-current|setup-security|refresh-stack-hash|backup|restore|update-host-names|enable-stack} [options]
         Use usr/sbin/ambari-server <action> --help to get details on options available.
         Or, simply invoke ambari-server.py --help to print the options."
         exit 1
 esac
 
 exit $?
-
