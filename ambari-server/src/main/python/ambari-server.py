@@ -36,16 +36,15 @@ from ambari_server.serverUtils import is_server_runing, refresh_stack_hash
 from ambari_server.serverSetup import reset, setup, setup_jce_policy
 from ambari_server.serverUpgrade import upgrade, upgrade_stack, set_current
 from ambari_server.setupHttps import setup_https, setup_truststore
-from ambari_server.hostUpdate import update_host_names
+from ambari_server.enableStack import enable_stack_version
 
 from ambari_server.setupActions import BACKUP_ACTION, LDAP_SETUP_ACTION, LDAP_SYNC_ACTION, PSTART_ACTION, \
-  REFRESH_STACK_HASH_ACTION, RESET_ACTION, RESTORE_ACTION, UPDATE_HOST_NAMES_ACTION, SETUP_ACTION, SETUP_SECURITY_ACTION, \
-  START_ACTION, STATUS_ACTION, STOP_ACTION, UPGRADE_ACTION, UPGRADE_STACK_ACTION, SETUP_JCE_ACTION, SET_CURRENT_ACTION
+  REFRESH_STACK_HASH_ACTION, RESET_ACTION, RESTORE_ACTION, SETUP_ACTION, SETUP_SECURITY_ACTION, START_ACTION, \
+  STATUS_ACTION, STOP_ACTION, UPGRADE_ACTION, UPGRADE_STACK_ACTION, SETUP_JCE_ACTION, SET_CURRENT_ACTION, ENABLE_STACK_ACTION
 from ambari_server.setupSecurity import setup_ldap, sync_ldap, setup_master_key, setup_ambari_krb5_jaas
 from ambari_server.userInput import get_validated_string_input
 
 from ambari_server_main import server_process_main
-
 
 class UserActionPossibleArgs(object):
   def __init__(self, i_fn, i_possible_args_numbers, *args, **kwargs):
@@ -68,7 +67,6 @@ class UserActionRestart(UserAction):
 
   def execute(self):
     self.need_restart = self.fn(*self.args, **self.kwargs)
-
 
 #
 # Starts the Ambari Server as a standalone process.
@@ -108,7 +106,6 @@ def start(args):
 
   server_process_main(args)
 
-
 #
 # Starts the Ambari Server as a service.
 # Start the server as a Windows service. If the Ambari server is
@@ -120,7 +117,6 @@ def svcstart():
 
   AmbariServerService.Start()
   pass
-
 
 #
 # Stops the Ambari Server service.
@@ -153,7 +149,6 @@ def stop(args):
   else:
     print "Ambari Server is not running"
 
-
 #
 # The Ambari Server status.
 #
@@ -180,11 +175,9 @@ def status(args):
   else:
     print "Ambari Server not running. Stale PID File at: " + pid_file_path
 
-
 def refresh_stack_hash_action():
   properties = get_ambari_properties()
   refresh_stack_hash(properties)
-
 
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def create_setup_security_actions(args):
@@ -236,7 +229,6 @@ def setup_security(args):
 
   return action.need_restart
 
-
 #
 # Backup / Restore
 #
@@ -264,7 +256,6 @@ def restore(args):
     restore_command.append(path)
 
   BackupRestore_main(restore_command)
-
 
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def init_parser_options(parser):
@@ -308,6 +299,7 @@ def init_parser_options(parser):
                     help="Database user password")
   parser.add_option('--jdbc-driver', default=None, dest="jdbc_driver",
                     help="Specifies the path to the JDBC driver JAR file")
+
   # -b and -i the remaining available short options
   # -h reserved for help
 
@@ -372,7 +364,10 @@ def init_parser_options(parser):
                     dest="jdbc_db")
   parser.add_option('--cluster-name', default=None, help="Cluster name", dest="cluster_name")
   parser.add_option('--version-display-name', default=None, help="Display name of desired repo version", dest="desired_repo_version")
-  parser.add_option('--force-version', action="store_true", default=False, help="Force version to current", dest="force_repo_version")
+  parser.add_option('--version', dest="stack_versions", default=None, action="append", type="string",
+                    help="Specify stack version that needs to be enabled. All other stacks versions will be disabled")
+  parser.add_option('--stack', dest="stack_name", default=None, type="string",
+                    help="Specify stack name for the stack versions that needs to be enabled")
 
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def are_cmd_line_db_args_blank(options):
@@ -394,7 +389,6 @@ def are_cmd_line_db_args_blank(options):
       and options.database_password is None:
     return True
   return False
-
 
 def are_db_auth_options_ok(db_windows_auth, db_username, db_password):
   if db_windows_auth is True:
@@ -425,7 +419,6 @@ def are_cmd_line_db_args_valid(options):
     return True
   return False
 
-
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def init_debug(options):
   if options.debug:
@@ -434,7 +427,6 @@ def init_debug(options):
 @OsFamilyFuncImpl(OsFamilyImpl.DEFAULT)
 def init_debug(options):
   pass
-
 
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def fix_database_options(options, parser):
@@ -473,7 +465,6 @@ def fix_database_options(options, parser):
   else:
     options.sid_or_sname = options.sid_or_sname.lower()
 
-
 def _validate_database_port(options, parser):
   # correct port
   if options.database_port is not None:
@@ -488,7 +479,6 @@ def _validate_database_port(options, parser):
       parser.print_help()
       parser.error("Incorrect database port " + options.database_port)
 
-
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def create_user_action_map(args, options):
   action_map = {
@@ -501,7 +491,7 @@ def create_user_action_map(args, options):
     UPGRADE_ACTION: UserAction(upgrade, options),
     LDAP_SETUP_ACTION: UserAction(setup_ldap),
     SETUP_SECURITY_ACTION: UserActionRestart(setup_security, options),
-    REFRESH_STACK_HASH_ACTION: UserAction(refresh_stack_hash_action),
+    REFRESH_STACK_HASH_ACTION: UserAction(refresh_stack_hash_action)
   }
   return action_map
 
@@ -523,10 +513,9 @@ def create_user_action_map(args, options):
         REFRESH_STACK_HASH_ACTION: UserAction(refresh_stack_hash_action),
         BACKUP_ACTION: UserActionPossibleArgs(backup, [1, 2], args),
         RESTORE_ACTION: UserActionPossibleArgs(restore, [1, 2], args),
-        UPDATE_HOST_NAMES_ACTION: UserActionPossibleArgs(update_host_names, [2], args, options)
+        ENABLE_STACK_ACTION: UserAction(enable_stack, options, args),
       }
   return action_map
-
 
 #
 # Main.
@@ -629,8 +618,22 @@ def mainBody():
     except Exception as e:
       print_error_msg("Unexpected {0}: {1}".format((e).__class__.__name__, str(e)) +\
       "\nFor more info run ambari-server with -v or --verbose option")
-      sys.exit(1)     
-      
+      sys.exit(1)
+
+
+@OsFamilyFuncImpl(OsFamilyImpl.DEFAULT)
+def enable_stack(options, args):
+  if options.stack_name == None:
+     print_error_msg ("Please provide stack name for the versions that needs to be disabled using --stack option")
+     return -1
+  print_info_msg ("Going to enable Stack Versions: " +  str(options.stack_versions) + " for the stack: " + str(options.stack_name))
+  retcode = enable_stack_version(options.stack_name,options.stack_versions)
+  if retcode == 0:
+     status, pid = is_server_runing()
+     if status:
+        print "restarting ambari server"
+        stop(options)
+        start(options)
 
 if __name__ == "__main__":
   try:
@@ -638,3 +641,4 @@ if __name__ == "__main__":
   except (KeyboardInterrupt, EOFError):
     print("\nAborting ... Keyboard Interrupt.")
     sys.exit(1)
+
