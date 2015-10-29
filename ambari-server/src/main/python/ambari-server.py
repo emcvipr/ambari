@@ -640,10 +640,10 @@ def mainBody():
 @OsFamilyFuncImpl(OsFamilyImpl.DEFAULT)
 def enable_stack(options, args):
   if options.stack_name == None:
-     print_error_msg ("Please provide stack version details using --stack option")
+     print_error_msg ("Please provide stack name using --stack option")
      return -1
   if options.stack_versions == None:
-     print_error_msg ("Please provide stack version details using --version option")
+     print_error_msg ("Please provide stack version using --version option")
      return -1
   print_info_msg ("Going to enable Stack Versions: " +  str(options.stack_versions) + " for the stack: " + str(options.stack_name))
   retcode = enable_stack_version(options.stack_name,options.stack_versions)
