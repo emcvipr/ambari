@@ -1471,8 +1471,11 @@ Em.I18n.translations = {
   'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.rerun':'Rerun Checks',
   'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.msg.title':'Checks:',
   'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.allPassed':'Passed',
+  'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.allPassed.msg':'All checks passed',
   'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.failed.tooltip':'Option not available',
   'admin.stackVersions.version.upgrade.upgradeOptions.notAllowed':'Not allowed by the current version',
+  'admin.stackVersions.version.upgrade.upgradeOptions.EU.confirm.msg': 'You are about to perform an <b>Express Upgrade</b> from <b>{0}</b> to <b>{1}</b>. This will incur cluster downtime. Are you sure you want to proceed?',
+  'admin.stackVersions.version.upgrade.upgradeOptions.RU.confirm.msg': 'You are about to perform a <b>Rolling Upgrade</b> from <b>{0}</b> to <b>{1}</b>. Are you sure you want to proceed?',
 
   'admin.stackVersions.hosts.popup.header.current': "Current",
   'admin.stackVersions.hosts.popup.header.installed': "Installed",
@@ -1772,8 +1775,8 @@ Em.I18n.translations = {
   'services.service.info.metrics.kafka.server.brokerTopic.displayNames.AllTopicsBytesInPerSec': 'Bytes In',
   'services.service.info.metrics.kafka.server.brokerTopic.displayNames.AllTopicsMessagesInPerSec': 'Messages In',
   'services.service.info.metrics.kafka.server.ReplicaManager.title': 'Replica Manager',
-  'services.service.info.metrics.kafka.server.ReplicaManager.displayNames.PartitionCount': 'Partiotions count',
-  'services.service.info.metrics.kafka.server.ReplicaManager.displayNames.UnderReplicatedPartitions': 'Under Replicated Partiotions',
+  'services.service.info.metrics.kafka.server.ReplicaManager.displayNames.PartitionCount': 'Partitions count',
+  'services.service.info.metrics.kafka.server.ReplicaManager.displayNames.UnderReplicatedPartitions': 'Under Replicated Partitions',
   'services.service.info.metrics.kafka.server.ReplicaManager.displayNames.LeaderCount': 'Leader Count',
   'services.service.info.metrics.kafka.controller.ControllerStats.title': 'Controller Status',
   'services.service.info.metrics.kafka.controller.ControllerStats.displayNames.LeaderElectionRateAndTimeMs': 'Leader Election Rate And Time',
@@ -1928,6 +1931,7 @@ Em.I18n.translations = {
   'services.reassign.step4.tasks.configureMySqlServer.title':'Configure MYSQL Server',
   'services.reassign.step4.tasks.startMySqlServer.title':'Start MYSQL Server',
   'services.reassign.step4.tasks.restartMySqlServer.title':'Restart MYSQL Server',
+  'services.reassign.step4.tasks.startServices.title':'Start Services',
   'services.reassign.step4.tasks.testDBConnection.title':'Test DB Connection',
   'services.reassign.step4.tasks.testDBConnection.tooltip':'Database Host: {0}\n' +
   'Database Type: {1}\n' +
@@ -2733,6 +2737,7 @@ Em.I18n.translations = {
   'common.combobox.dropdown.warnings': 'Show property warnings',
 
   'quick.links.error.label': 'Hostname is undefined',
+  'quick.links.error.label2': 'Quick Links are not available',
   'quick.links.publicHostName': '{0} ({1})',
   'quick.links.label.active': 'Active',
   'quick.links.label.standby': 'Standby',

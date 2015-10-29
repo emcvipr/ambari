@@ -87,6 +87,7 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
   private static final String AMS_ENV = "ams-env";
   private static final String AMS_HBASE_ENV = "ams-hbase-env";
   private static final String HBASE_ENV_CONFIG = "hbase-env";
+  private static final String RANGER_ENV_CONFIG = "ranger-env";
   private static final String ZOOKEEPER_LOG4J_CONFIG = "zookeeper-log4j";
   private static final String NIMBS_MONITOR_FREQ_SECS_PROPERTY = "nimbus.monitor.freq.secs";
   private static final String HADOOP_ENV_CONFIG = "hadoop-env";
@@ -112,6 +113,17 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
   private static final String KERBEROS_DESCRIPTOR_TABLE = "kerberos_descriptor";
   private static final String KERBEROS_DESCRIPTOR_NAME_COLUMN = "kerberos_descriptor_name";
   private static final String KERBEROS_DESCRIPTOR_COLUMN = "kerberos_descriptor";
+  private static final String RANGER_HDFS_PLUGIN_ENABLED_PROPERTY = "ranger-hdfs-plugin-enabled";
+  private static final String RANGER_HIVE_PLUGIN_ENABLED_PROPERTY = "ranger-hive-plugin-enabled";
+  private static final String RANGER_HBASE_PLUGIN_ENABLED_PROPERTY = "ranger-hbase-plugin-enabled";
+  private static final String RANGER_STORM_PLUGIN_ENABLED_PROPERTY = "ranger-storm-plugin-enabled";
+  private static final String RANGER_KNOX_PLUGIN_ENABLED_PROPERTY = "ranger-knox-plugin-enabled";
+  private static final String RANGER_YARN_PLUGIN_ENABLED_PROPERTY = "ranger-yarn-plugin-enabled";
+  private static final String RANGER_KAFKA_PLUGIN_ENABLED_PROPERTY = "ranger-kafka-plugin-enabled";
+
+  private static final String BLUEPRINT_TABLE = "blueprint";
+  private static final String SECURITY_TYPE_COLUMN = "security_type";
+  private static final String SECURITY_DESCRIPTOR_REF_COLUMN = "security_descriptor_reference";
 
   /**
    * Logger.
@@ -171,6 +183,7 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
     dbAccessor.alterColumn(HOST_ROLE_COMMAND_TABLE, new DBColumnInfo(HOST_ID_COL, Long.class, null, null, true));
 
     addKerberosDescriptorTable();
+    executeBlueprintDDLUpdates();
   }
 
   protected void executeUpgradeDDLUpdates() throws AmbariException, SQLException {
@@ -186,9 +199,16 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
     dbAccessor.createTable(KERBEROS_DESCRIPTOR_TABLE, columns, KERBEROS_DESCRIPTOR_NAME_COLUMN);
   }
 
-  /**
-   * {@inheritDoc}
-   */
+  private void executeBlueprintDDLUpdates() throws AmbariException, SQLException {
+    dbAccessor.addColumn(BLUEPRINT_TABLE, new DBAccessor.DBColumnInfo(SECURITY_TYPE_COLUMN,
+      String.class, 32, "NONE", false));
+    dbAccessor.addColumn(BLUEPRINT_TABLE, new DBAccessor.DBColumnInfo(SECURITY_DESCRIPTOR_REF_COLUMN,
+      String.class, null, null, true));
+  }
+
+    /**
+     * {@inheritDoc}
+     */
   @Override
   protected void executePreDMLUpdates() throws AmbariException, SQLException {
     // execute DDL updates
@@ -249,6 +269,7 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
     updateHbaseEnvConfig();
     updateHadoopEnv();
     updateKafkaConfigs();
+    updateRangerEnvConfig();
     updateZookeeperLog4j();
   }
 
@@ -820,6 +841,47 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
             }
           }
         }
+      }
+    }
+  }
+
+  protected void updateRangerEnvConfig() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+
+    for (final Cluster cluster : getCheckedClusterMap(ambariManagementController.getClusters()).values()) {
+      Map<String, String> newRangerEnvProps = new HashMap<>();
+      Config rangerHdfsPluginProperties = cluster.getDesiredConfigByType("ranger-hdfs-plugin-properties");
+      if (rangerHdfsPluginProperties != null && rangerHdfsPluginProperties.getProperties().containsKey(RANGER_HDFS_PLUGIN_ENABLED_PROPERTY)) {
+        newRangerEnvProps.put(RANGER_HDFS_PLUGIN_ENABLED_PROPERTY, rangerHdfsPluginProperties.getProperties().get(RANGER_HDFS_PLUGIN_ENABLED_PROPERTY));
+      }
+      Config hiveEnvProperties = cluster.getDesiredConfigByType("hive-env");
+      if (hiveEnvProperties != null && hiveEnvProperties.getProperties().containsKey("hive_security_authorization")
+              && hiveEnvProperties.getProperties().get("hive_security_authorization").toLowerCase().equals("ranger")) {
+        newRangerEnvProps.put(RANGER_HIVE_PLUGIN_ENABLED_PROPERTY, "Yes");
+      }
+      Config rangerHbasePluginProperties = cluster.getDesiredConfigByType("ranger-hbase-plugin-properties");
+      if (rangerHbasePluginProperties != null && rangerHbasePluginProperties.getProperties().containsKey(RANGER_HBASE_PLUGIN_ENABLED_PROPERTY)) {
+        newRangerEnvProps.put(RANGER_HBASE_PLUGIN_ENABLED_PROPERTY, rangerHbasePluginProperties.getProperties().get(RANGER_HBASE_PLUGIN_ENABLED_PROPERTY));
+      }
+
+      Config rangerStormPluginProperties = cluster.getDesiredConfigByType("ranger-storm-plugin-properties");
+      if (rangerStormPluginProperties != null && rangerStormPluginProperties.getProperties().containsKey(RANGER_STORM_PLUGIN_ENABLED_PROPERTY)) {
+        newRangerEnvProps.put(RANGER_STORM_PLUGIN_ENABLED_PROPERTY, rangerStormPluginProperties.getProperties().get(RANGER_STORM_PLUGIN_ENABLED_PROPERTY));
+      }
+      Config rangerKnoxPluginProperties = cluster.getDesiredConfigByType("ranger-knox-plugin-properties");
+      if (rangerKnoxPluginProperties != null && rangerKnoxPluginProperties.getProperties().containsKey(RANGER_KNOX_PLUGIN_ENABLED_PROPERTY)) {
+        newRangerEnvProps.put(RANGER_KNOX_PLUGIN_ENABLED_PROPERTY, rangerKnoxPluginProperties.getProperties().get(RANGER_KNOX_PLUGIN_ENABLED_PROPERTY));
+      }
+      Config rangerYarnPluginProperties = cluster.getDesiredConfigByType("ranger-yarn-plugin-properties");
+      if (rangerYarnPluginProperties != null && rangerYarnPluginProperties.getProperties().containsKey(RANGER_YARN_PLUGIN_ENABLED_PROPERTY)) {
+        newRangerEnvProps.put(RANGER_YARN_PLUGIN_ENABLED_PROPERTY, rangerYarnPluginProperties.getProperties().get(RANGER_YARN_PLUGIN_ENABLED_PROPERTY));
+      }
+      Config rangerKafkaPluginProperties = cluster.getDesiredConfigByType("ranger-kafka-plugin-properties");
+      if (rangerKafkaPluginProperties != null && rangerKafkaPluginProperties.getProperties().containsKey(RANGER_KAFKA_PLUGIN_ENABLED_PROPERTY)) {
+        newRangerEnvProps.put(RANGER_KAFKA_PLUGIN_ENABLED_PROPERTY, rangerKafkaPluginProperties.getProperties().get(RANGER_KAFKA_PLUGIN_ENABLED_PROPERTY));
+      }
+      if (!newRangerEnvProps.isEmpty()) {
+        updateConfigurationPropertiesForCluster(cluster, RANGER_ENV_CONFIG, newRangerEnvProps, true, true);
       }
     }
   }

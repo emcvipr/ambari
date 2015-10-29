@@ -1291,7 +1291,7 @@ var urls = {
     'mock': '/data/clusters/info.json'
   },
   'cluster.load_last_upgrade': {
-    'real': '/clusters/{clusterName}/upgrades?fields=Upgrade/request_status,Upgrade/request_id,Upgrade/to_version,Upgrade/direction',
+    'real': '/clusters/{clusterName}/upgrades?fields=Upgrade/request_status,Upgrade/request_id,Upgrade/to_version,Upgrade/direction,Upgrade/upgrade_type,Upgrade/downgrade_allowed,Upgrade/skip_failures,Upgrade/skip_service_check_failures',
     'mock': '/data/stack_versions/upgrades.json'
   },
   'cluster.update_upgrade_version': {
@@ -1613,7 +1613,7 @@ var urls = {
         data: JSON.stringify({
           "Upgrade": {
             "repository_version": data.value,
-            "type": data.type,
+            "upgrade_type": data.type,
             "skip_failures": data.skipComponentFailures,
             "skip_service_check_failures": data.skipSCFailures
           }
@@ -1633,7 +1633,8 @@ var urls = {
           },
           "Upgrade": {
             "from_version": data.from,
-            "repository_version": data.value
+            "repository_version": data.value,
+            "upgrade_type": data.upgradeType
           }
         })
       }
@@ -1726,6 +1727,11 @@ var urls = {
   'admin.upgrade.pre_upgrade_check': {
     'real': '/clusters/{clusterName}/rolling_upgrades_check?fields=*&UpgradeChecks/repository_version={value}&UpgradeChecks/upgrade_type={type}',
     'mock': '/data/stack_versions/pre_upgrade_check.json'
+  },
+
+  'admin.upgrade.get_supported_upgradeTypes': {
+    'real': '/stacks/{stackName}/versions/{stackVersion}/compatible_repository_versions?CompatibleRepositoryVersions/repository_version={toVersion}',
+    'mock': '/data/stack_versions/supported_upgrade_types.json'
   },
 
   'admin.kerberos_security.checks': {

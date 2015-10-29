@@ -29,6 +29,7 @@ import platform
 import inspect
 import tarfile
 from ambari_commons import OSCheck, OSConst
+from ambari_commons.constants import UPGRADE_TYPE_NON_ROLLING, UPGRADE_TYPE_ROLLING
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from resource_management.libraries.resources import XmlConfig
 from resource_management.libraries.resources import PropertiesFile
@@ -468,9 +469,9 @@ class Script(object):
 
     upgrade_type = None
     if restart_type.lower() == "rolling_upgrade":
-      upgrade_type = "rolling"
+      upgrade_type = UPGRADE_TYPE_ROLLING
     elif restart_type.lower() == "nonrolling_upgrade":
-      upgrade_type = "nonrolling"
+      upgrade_type = UPGRADE_TYPE_NON_ROLLING
 
     is_stack_upgrade = upgrade_type is not None
 
@@ -487,10 +488,13 @@ class Script(object):
     else:
       # To remain backward compatible with older stacks, only pass upgrade_type if available.
       # TODO, remove checking the argspec for "upgrade_type" once all of the services support that optional param.
-      if is_stack_upgrade and "upgrade_type" in inspect.getargspec(self.stop).args:
+      if "upgrade_type" in inspect.getargspec(self.stop).args:
         self.stop(env, upgrade_type=upgrade_type)
       else:
-        self.stop(env, rolling_restart=(restart_type == "rolling_upgrade"))
+        if is_stack_upgrade:
+          self.stop(env, rolling_restart=(restart_type == "rolling_upgrade"))
+        else:
+          self.stop(env)
 
       if is_stack_upgrade:
         # Remain backward compatible with the rest of the services that haven't switched to using
@@ -502,10 +506,13 @@ class Script(object):
 
       # To remain backward compatible with older stacks, only pass upgrade_type if available.
       # TODO, remove checking the argspec for "upgrade_type" once all of the services support that optional param.
-      if is_stack_upgrade and "upgrade_type" in inspect.getargspec(self.start).args:
+      if "upgrade_type" in inspect.getargspec(self.start).args:
         self.start(env, upgrade_type=upgrade_type)
       else:
-        self.start(env, rolling_restart=(restart_type == "rolling_upgrade"))
+        if is_stack_upgrade:
+          self.start(env, rolling_restart=(restart_type == "rolling_upgrade"))
+        else:
+          self.start(env)
 
       if is_stack_upgrade:
         # Remain backward compatible with the rest of the services that haven't switched to using
