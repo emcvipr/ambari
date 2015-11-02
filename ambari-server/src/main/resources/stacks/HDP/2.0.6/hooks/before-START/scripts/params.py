@@ -27,7 +27,7 @@ from resource_management.libraries.functions import format
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
 from ambari_commons.os_check import OSCheck
 from resource_management.libraries.script.script import Script
-from resource_management import *
+from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
 
 config = Script.get_config()
@@ -213,7 +213,7 @@ net_topology_mapping_data_file_path = os.path.join(net_topology_script_dir, net_
 #Added logic to create /tmp and /user directory for HCFS stack.  
 has_core_site = 'core-site' in config['configurations']
 hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
-kinit_path_local = functions.get_kinit_path()
+kinit_path_local = get_kinit_path()
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
