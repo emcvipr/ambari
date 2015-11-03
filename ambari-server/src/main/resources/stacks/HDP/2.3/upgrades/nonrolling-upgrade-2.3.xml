@@ -44,12 +44,23 @@
           <message>Before continuing, please deactivate and kill any currently running topologies.</message>
         </task>
       </execute-stage>
+
+      <execute-stage service="TEZ" component="TEZ_CLIENT" title="Check Tez Tarball">
+        <task xsi:type="execute" hosts="any">
+          <script>scripts/pre_upgrade.py</script>
+          <function>prepare</function>
+        </task>
+      </execute-stage>
     </group>
 
     <group xsi:type="stop" name="STOP_HIGH_LEVEL_SERVICE_COMPONENTS" title="Stop Components for High-Level Services">
       <direction>UPGRADE</direction>
       <skippable>true</skippable>
       <service-check>false</service-check>
+
+      <service name="ATLAS">
+        <component>ATLAS_SERVER</component>
+      </service>
 
       <service name="FLUME">
         <component>FLUME_HANDLER</component>
@@ -67,7 +78,6 @@
         <component>DRPC_SERVER</component>
         <component>STORM_UI_SERVER</component>
         <component>SUPERVISOR</component>
-        <component>STORM_REST_API</component>
         <component>NIMBUS</component>
       </service>
 
@@ -119,7 +129,7 @@
 
       <execute-stage service="HIVE" component="HIVE_METASTORE" title="Backup Hive Metastore">
         <task xsi:type="manual">
-          <message>Before continuing, please backup the Hive Metastore database located on the following host(s): {{hosts.all}}.</message>
+          <message>Before continuing, please backup the Hive Metastore database referenced by the Hive Metastore service(s) located on the following host(s): {{hosts.all}}.</message>
         </task>
       </execute-stage>
 
@@ -252,22 +262,7 @@
       </execute-stage>
     </group>
 
-    <!-- Invoke hdp-select set all after all components have been stopped but
-    before starting new ones. This step must be done here in order to
-    ensure that components which rely on other components (like ZKFC on hadoop)
-    will start on the correct versions -->
-    <group xsi:type="cluster" name="ALL_HOST_OPS" title="Set Version On All Hosts">
-      <skippable>true</skippable>
-      <execute-stage title="Update stack to {{version}}">
-        <task xsi:type="execute">
-          <script>scripts/ru_set_all.py</script>
-          <function>actionexecute</function>
-        </task>
-      </execute-stage>
-    </group>
-
     <!-- Now, restart all of the services. -->
-
     <group xsi:type="restart" name="ZOOKEEPER" title="ZooKeeper">
       <service-check>false</service-check>
       <skippable>true</skippable>
@@ -401,6 +396,14 @@
       </service>
     </group>
 
+    <group xsi:type="restart" name="ATLAS" title="Atlas">
+      <service-check>false</service-check>
+      <skippable>true</skippable>
+      <service name="ATLAS">
+        <component>ATLAS_SERVER</component>
+      </service>
+    </group>
+
     <!-- Upgrade Oozie DB only on Upgrade direction, and always create a new ShareLib. -->
     <group name="Upgrade Oozie" title="Upgrade Oozie Database">
       <direction>UPGRADE</direction>
@@ -464,7 +467,6 @@
       <skippable>true</skippable>
       <service name="STORM">
         <component>NIMBUS</component>
-        <component>STORM_REST_API</component>
         <component>SUPERVISOR</component>
         <component>STORM_UI_SERVER</component>
         <component>DRPC_SERVER</component>
@@ -505,6 +507,20 @@
         <component>ACCUMULO_TRACER</component>
         <component>ACCUMULO_CLIENT</component>
       </service>
+    </group>
+
+    <!--
+    Invoke "hdp-select set all" to change any components we may have missed
+    that are installed on the hosts but not known by Ambari.
+    -->
+    <group xsi:type="cluster" name="ALL_HOST_OPS" title="Set Version On All Hosts">
+      <skippable>true</skippable>
+      <execute-stage title="Update stack to {{version}}">
+        <task xsi:type="execute">
+          <script>scripts/ru_set_all.py</script>
+          <function>actionexecute</function>
+        </task>
+      </execute-stage>
     </group>
 
     <group xsi:type="cluster" name="POST_CLUSTER" title="Finalize {{direction.text.proper}}">
@@ -812,12 +828,6 @@
         </upgrade>
       </component>
 
-      <component name="STORM_REST_API">
-        <upgrade>
-          <task xsi:type="restart-task"/>
-        </upgrade>
-      </component>
-
       <component name="SUPERVISOR">
         <upgrade>
           <task xsi:type="restart-task"/>
@@ -889,6 +899,15 @@
           <task xsi:type="restart-task"/>
         </upgrade>
       </component>
+    </service>
+
+    <service name="ATLAS">
+      <component name="ATLAS_SERVER">
+        <upgrade>
+          <task xsi:type="restart-task"/>
+        </upgrade>
+      </component>
+
     </service>
   </processing>
 </upgrade>

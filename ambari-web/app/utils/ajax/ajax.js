@@ -1556,7 +1556,7 @@ var urls = {
   },
   'admin.upgrade.data': {
     'real': '/clusters/{clusterName}/upgrades/{id}?upgrade_groups/UpgradeGroup/status!=PENDING&fields=' +
-    'Upgrade/progress_percent,Upgrade/request_context,Upgrade/request_status,Upgrade/direction,' +
+    'Upgrade/progress_percent,Upgrade/request_context,Upgrade/request_status,Upgrade/direction,Upgrade/downgrade_allowed,' +
     'upgrade_groups/UpgradeGroup,' +
     'upgrade_groups/upgrade_items/UpgradeItem/status,' +
     'upgrade_groups/upgrade_items/UpgradeItem/context,' +
@@ -2363,6 +2363,29 @@ var urls = {
       }
     }
   },
+
+  'cluster.custom_action.create': {
+    'real': '/clusters/{clusterName}/requests',
+    'mock': '',
+    'format': function (data) {
+      var requestInfo = {
+        context: 'Check host',
+        action: 'check_host',
+        parameters: {}
+      };
+      $.extend(true, requestInfo, data.requestInfo);
+      return {
+        type: 'POST',
+        data: JSON.stringify({
+          'RequestInfo': requestInfo,
+          'Requests/resource_filters': [{
+            hosts: data.filteredHosts.join(',')
+          }]
+        })
+      }
+    }
+  },
+
   'custom_action.request': {
     'real': '/requests/{requestId}/tasks/{taskId}',
     'mock': '/data/requests/1.json',
@@ -2832,7 +2855,6 @@ var ajax = Em.Object.extend({
       }
     };
     opt.success = function (data, textStatus, request) {
-      console.log("TRACE: The url is: " + opt.url);
       if (config.success) {
         config.sender[config.success](data, opt, params, request);
       }
