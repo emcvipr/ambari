@@ -216,10 +216,7 @@ hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
 kinit_path_local = get_kinit_path()
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2') >= 0:
-   hadoop_bin_dir = "/usr/hdp/current/hadoop-client/bin"
-else:
-   hadoop_bin_dir = "/usr/bin"
+hadoop_bin_dir = hdp_select.get_hadoop_dir("bin")
 hdfs_principal_name = default('/configurations/hadoop-env/hdfs_principal_name', None)
 hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
