@@ -1999,6 +1999,7 @@ class TestHDP22StackAdvisor(TestCase):
       },
       "ams-hbase-site": {
         "properties": {
+          "phoenix.coprocessor.maxMetaDataCacheSize": "20480000",
           "hbase.regionserver.global.memstore.lowerLimit": "0.3",
           "hbase.regionserver.global.memstore.upperLimit": "0.35",
           "hbase.hregion.memstore.flush.size": "134217728",
@@ -2048,6 +2049,7 @@ class TestHDP22StackAdvisor(TestCase):
       }
     ]
     expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '1408'
+    expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '320'
     expected["ams-env"]['properties']['metrics_collector_heapsize'] = '512'
 
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
@@ -2115,7 +2117,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     ]
     expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '2432'
-    expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '256'
+    expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '448'
     expected["ams-env"]['properties']['metrics_collector_heapsize'] = '640'
 
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
@@ -2182,7 +2184,8 @@ class TestHDP22StackAdvisor(TestCase):
     expected['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'] = ' '
     expected['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'] = ' '
     expected['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '512'
-    expected['ams-hbase-env']['properties']['regionserver_xmn_size'] = '256'
+    expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '102'
+    expected['ams-hbase-env']['properties']['regionserver_xmn_size'] = '384'
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
 
@@ -3582,4 +3585,3 @@ class TestHDP22StackAdvisor(TestCase):
     res_expected = [{'config-type': 'ranger-env', 'message': 'Ranger Storm plugin should not be enabled in non-kerberos environment.', 'type': 'configuration', 'config-name': 'ranger-storm-plugin-enabled', 'level': 'WARN'}]
     res = self.stackAdvisor.validateRangerConfigurationsEnv(properties, recommendedDefaults, configurations, services, {})
     self.assertEquals(res, res_expected)
-

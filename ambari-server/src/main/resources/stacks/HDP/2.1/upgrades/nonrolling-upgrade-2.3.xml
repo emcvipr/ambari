@@ -23,6 +23,7 @@
   <type>NON_ROLLING</type>
   <downgrade-allowed>false</downgrade-allowed>
   <prerequisite-checks>
+    <check>org.apache.ambari.server.checks.StormRestAPIDeletedCheck</check>
   </prerequisite-checks>
   <upgrade-path>
     <intermediate-stack version="2.2"/>
@@ -42,6 +43,13 @@
       <execute-stage service="STORM" component="NIMBUS" title="Stop Storm Topologies">
         <task xsi:type="manual">
           <message>Before continuing, please deactivate and kill any currently running topologies.</message>
+        </task>
+      </execute-stage>
+
+      <execute-stage service="TEZ" component="TEZ_CLIENT" title="Check Tez Tarball">
+        <task xsi:type="execute" hosts="any">
+          <script>scripts/pre_upgrade.py</script>
+          <function>prepare</function>
         </task>
       </execute-stage>
     </group>
@@ -99,7 +107,7 @@
 
       <execute-stage service="HIVE" component="HIVE_METASTORE" title="Backup Hive Metastore">
         <task xsi:type="manual">
-          <message>Before continuing, please backup the Hive Metastore database located on the following host(s): {{hosts.all}}.</message>
+          <message>Before continuing, please backup the Hive Metastore database referenced by the Hive Metastore service(s) located on the following host(s): {{hosts.all}}.</message>
         </task>
       </execute-stage>
 
@@ -176,52 +184,60 @@
       </execute-stage>
     </group>
 
+    <!-- After processing this group, will change the effective Stack of the UpgradeContext object. -->
+    <group xsi:type="update-stack" name="UPDATE_DESIRED_STACK_ID" title="Update Target Stack">
+      <execute-stage title="Update Target Stack" service="" component="">
+        <task xsi:type="server_action" class="org.apache.ambari.server.serveraction.upgrades.UpdateDesiredStackAction">
+        </task>
+      </execute-stage>
+    </group>
+
     <group xsi:type="cluster" name="Upgrade service configs" title="Upgrade service configs">
       <direction>UPGRADE</direction>   <!--  prevent config changes on downgrade -->
-      <skippable>false</skippable>
+      <skippable>true</skippable>  <!-- May fix configuration problems manually -->
 
       <!--Changes for stack 2.2-->
       <!--YARN-->
-      <execute-stage service="MAPREDUCE2" component="HISTORYSERVER">
+      <execute-stage service="MAPREDUCE2" component="HISTORYSERVER" title="Apply config changes for HistoryServer">
         <task xsi:type="configure" id="hdp_2_2_0_0_historyserver_classpath"/>
       </execute-stage>
 
 
       <!--Changes for stack 2.3-->
       <!--HDFS-->
-      <execute-stage service="HDFS" component="NAMENODE">
+      <execute-stage service="HDFS" component="NAMENODE" title="Apply config changes for NameNode">
         <task xsi:type="configure" id="hdp_2_3_0_0_modify_hadoop_env"/>
       </execute-stage>
 
 
       <!--YARN-->
-      <execute-stage service="MAPREDUCE2" component="HISTORYSERVER">
+      <execute-stage service="MAPREDUCE2" component="HISTORYSERVER" title="Apply config changes for HistoryServer">
         <task xsi:type="configure" id="hdp_2_3_0_0_mapreduce2_adjust_history_server"/>
       </execute-stage>
 
-      <execute-stage service="YARN" component="APP_TIMELINE_SERVER">
+      <execute-stage service="YARN" component="APP_TIMELINE_SERVER" title="Apply config changes for AppTimelineServer">
         <task xsi:type="configure" id="hdp_2_3_0_0_yarn_ats_enable_recovery"/>
       </execute-stage>
 
-      <execute-stage service="YARN" component="RESOURCEMANAGER">
+      <execute-stage service="YARN" component="RESOURCEMANAGER" title="Apply config changes for ResourceManager">
         <task xsi:type="configure" id="hdp_2_3_0_0_yarn_rm_disable_node_labels"/>
       </execute-stage>
 
-      <execute-stage service="YARN" component="RESOURCEMANAGER">
+      <execute-stage service="YARN" component="RESOURCEMANAGER" title="Apply config changes for ResourceManager">
         <task xsi:type="configure" id="hdp_2_3_0_0_yarn_rm_clear_default_node_label_expression"/>
       </execute-stage>
 
-      <execute-stage service="YARN" component="RESOURCEMANAGER">
+      <execute-stage service="YARN" component="RESOURCEMANAGER" title="Apply config changes for ResourceManager">
         <task xsi:type="configure" id="hdp_2_3_0_0_yarn_rm_check_cs_root_def_capacity"/>
       </execute-stage>
 
-      <execute-stage service="YARN" component="RESOURCEMANAGER">
+      <execute-stage service="YARN" component="RESOURCEMANAGER" title="Apply config changes for ResourceManager">
         <task xsi:type="configure" id="hdp_2_3_0_0_yarn_rm_check_cs_root_max_capacity"/>
       </execute-stage>
 
 
       <!--HBASE-->
-      <execute-stage service="HBASE" component="HBASE_MASTER">
+      <execute-stage service="HBASE" component="HBASE_MASTER" title="Apply config changes for HBase Master">
         <task xsi:type="configure" id="hdp_2_3_0_0_hbase_master_set_global_memstore_size"/>
       </execute-stage>
 
@@ -229,27 +245,27 @@
         <task xsi:type="server_action" summary="Calculating HBase Properties" class="org.apache.ambari.server.serveraction.upgrades.HBaseConfigCalculation" />
       </execute-stage>
 
-      <execute-stage service="HBASE" component="HBASE_MASTER">
+      <execute-stage service="HBASE" component="HBASE_MASTER" title="Apply config changes for HBase Master">
         <task xsi:type="configure" id="hdp_2_3_0_0_hbase_master_adjust_authorization_coprocessors"/>
       </execute-stage>
 
 
       <!--TEZ-->
-      <execute-stage service="TEZ" component="TEZ_CLIENT">
+      <execute-stage service="TEZ" component="TEZ_CLIENT" title="Apply config changes for Tez">
         <task xsi:type="configure" id="hdp_2_3_0_0_tez_client_adjust_properties"/>
       </execute-stage>
 
 
       <!--HIVE-->
-      <execute-stage service="HIVE" component="HIVE_SERVER">
+      <execute-stage service="HIVE" component="HIVE_SERVER" title="Apply config changes for Hive Server">
         <task xsi:type="configure" id="hdp_2_3_0_0_hive_server_replace_auth_manager"/>
       </execute-stage>
 
-      <execute-stage service="HIVE" component="HIVE_SERVER">
+      <execute-stage service="HIVE" component="HIVE_SERVER" title="Apply config changes for Hive Server">
         <task xsi:type="configure" id="hdp_2_3_0_0_hive_server_configure_authentication"/>
       </execute-stage>
 
-      <execute-stage service="HIVE" component="WEBHCAT_SERVER">
+      <execute-stage service="HIVE" component="WEBHCAT_SERVER" title="Apply config changes for WebHCat Server">
         <task xsi:type="configure" id="hdp_2_3_0_0_webhcat_server_update_env"/>
       </execute-stage>
 
@@ -259,59 +275,35 @@
 
 
       <!--OOZIE-->
-      <execute-stage service="OOZIE" component="OOZIE_SERVER">
+      <execute-stage service="OOZIE" component="OOZIE_SERVER" title="Apply config changes for Oozie Server">
         <task xsi:type="configure" id="hdp_2_3_0_0_oozie_remove_redundant_configurations"/>
       </execute-stage>
 
 
       <!--STORM-->
-      <execute-stage service="STORM" component="NIMBUS">
+      <execute-stage service="STORM" component="NIMBUS" title="Apply config changes for Nimbus">
         <task xsi:type="configure" id="hdp_2_3_0_0_nimbus_convert_nimbus_host_to_seeds"/>
       </execute-stage>
 
-      <execute-stage service="STORM" component="NIMBUS">
+      <execute-stage service="STORM" component="NIMBUS" title="Apply config changes for Nimbus">
         <task xsi:type="configure" id="hdp_2_3_0_0_update_storm_env"/>
       </execute-stage>
 
-      <execute-stage service="STORM" component="NIMBUS">
+      <execute-stage service="STORM" component="NIMBUS" title="Apply config changes for Nimbus">
         <task xsi:type="configure" id="hdp_2_3_0_0_add_storm_cluster_logs_content"/>
       </execute-stage>
 
-      <execute-stage service="STORM" component="NIMBUS">
+      <execute-stage service="STORM" component="NIMBUS" title="Apply config changes for Nimbus">
         <task xsi:type="configure" id="hdp_2_3_0_0_add_storm_worker_logs_content"/>
       </execute-stage>
 
 
-      <execute-stage service="STORM" component="NIMBUS">
+      <execute-stage service="STORM" component="NIMBUS" title="Apply config changes for Nimbus">
         <task xsi:type="configure" id="hdp_2_3_0_0_nimbus_update_env_vars"/>
       </execute-stage>
 
     </group>
-
-    <!-- After processing this group, will change the effective Stack of the UpgradeContext object. -->
-    <group xsi:type="update-stack" name="UPDATE_DESIRED_STACK_ID" title="Update Target Stack">
-      <execute-stage title="Update Target Stack" service="" component="">
-        <task xsi:type="server_action" class="org.apache.ambari.server.serveraction.upgrades.UpdateDesiredStackAction">
-        </task>
-      </execute-stage>
-    </group>
-
-    <!-- Invoke hdp-select set all after all components have been stopped by 
-    before starting new ones. This step must be done here in order to
-    ensure that components which rely on other components (like ZKFC on hadoop)
-    will start on the correct versions -->
-    <group xsi:type="cluster" name="ALL_HOST_OPS" title="Set Version On All Hosts">
-      <skippable>true</skippable>
-      <execute-stage title="Update stack to {{version}}">
-        <task xsi:type="execute">
-          <script>scripts/ru_set_all.py</script>
-          <function>actionexecute</function>
-        </task>
-      </execute-stage>
-    </group>
-
     <!-- Now, restart all of the services. -->
-
     <group xsi:type="restart" name="ZOOKEEPER" title="ZooKeeper">
       <service-check>false</service-check>
       <skippable>true</skippable>
@@ -454,6 +446,20 @@
       <service name="FLUME">
         <component>FLUME_HANDLER</component>
       </service>
+    </group>
+
+    <!--
+    Invoke "hdp-select set all" to change any components we may have missed
+    that are installed on the hosts but not known by Ambari.
+    -->
+    <group xsi:type="cluster" name="ALL_HOST_OPS" title="Set Version On All Hosts">
+      <skippable>true</skippable>
+      <execute-stage title="Update stack to {{version}}">
+        <task xsi:type="execute">
+          <script>scripts/ru_set_all.py</script>
+          <function>actionexecute</function>
+        </task>
+      </execute-stage>
     </group>
 
     <group xsi:type="cluster" name="POST_CLUSTER" title="Finalize {{direction.text.proper}}">

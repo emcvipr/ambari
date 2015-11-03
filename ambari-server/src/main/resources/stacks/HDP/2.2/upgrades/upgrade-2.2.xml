@@ -58,7 +58,7 @@
 
       <execute-stage service="HIVE" component="HIVE_METASTORE" title="Pre Upgrade Hive Backup">
         <task xsi:type="manual">
-          <message>Before continuing, please backup the Hive Metastore database located on the following host(s): {{hosts.all}}.</message>
+          <message>Before continuing, please backup the Hive Metastore database referenced by the Hive Metastore service(s) located on the following host(s): {{hosts.all}}.</message>
         </task>
       </execute-stage>
 
@@ -267,7 +267,6 @@
       <skippable>true</skippable>
       <service name="STORM">
         <component>NIMBUS</component>
-        <component>STORM_REST_API</component>
         <component>SUPERVISOR</component>
         <component>STORM_UI_SERVER</component>
         <component>DRPC_SERVER</component>
@@ -615,11 +614,6 @@
             <message>Before continuing, please deactivate and kill any currently running topologies.</message>
           </task>
         </pre-upgrade>
-        <upgrade>
-          <task xsi:type="restart-task"/>
-        </upgrade>
-      </component>
-      <component name="STORM_REST_API">
         <upgrade>
           <task xsi:type="restart-task"/>
         </upgrade>

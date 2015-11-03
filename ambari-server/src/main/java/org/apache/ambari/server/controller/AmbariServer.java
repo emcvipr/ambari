@@ -45,6 +45,7 @@ import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.api.services.KeyService;
 import org.apache.ambari.server.api.services.PersistKeyValueImpl;
 import org.apache.ambari.server.api.services.PersistKeyValueService;
+import org.apache.ambari.server.api.services.stackadvisor.StackAdvisorBlueprintProcessor;
 import org.apache.ambari.server.api.services.stackadvisor.StackAdvisorHelper;
 import org.apache.ambari.server.bootstrap.BootStrapImpl;
 import org.apache.ambari.server.configuration.ComponentSSLConfiguration;
@@ -684,7 +685,8 @@ public class AmbariServer {
     StackDefinedPropertyProvider.init(injector);
     AbstractControllerResourceProvider.init(injector.getInstance(ResourceProviderFactory.class));
     BlueprintResourceProvider.init(injector.getInstance(BlueprintFactory.class),
-        injector.getInstance(BlueprintDAO.class), injector.getInstance(SecurityConfigurationFactory.class), injector.getInstance(Gson.class));
+        injector.getInstance(BlueprintDAO.class), injector.getInstance(SecurityConfigurationFactory.class),
+        injector.getInstance(Gson.class), ambariMetaInfo);
     StackDependencyResourceProvider.init(ambariMetaInfo);
     ClusterResourceProvider.init(injector.getInstance(TopologyManager.class),
         injector.getInstance(TopologyRequestFactoryImpl.class), injector.getInstance(SecurityConfigurationFactory
@@ -704,6 +706,8 @@ public class AmbariServer {
     ClusterPrivilegeResourceProvider.init(injector.getInstance(ClusterDAO.class));
     AmbariPrivilegeResourceProvider.init(injector.getInstance(ClusterDAO.class));
     ActionManager.setTopologyManager(injector.getInstance(TopologyManager.class));
+    TopologyManager.init(injector.getInstance(StackAdvisorBlueprintProcessor.class));
+    StackAdvisorBlueprintProcessor.init(injector.getInstance(StackAdvisorHelper.class));
   }
 
   /**
