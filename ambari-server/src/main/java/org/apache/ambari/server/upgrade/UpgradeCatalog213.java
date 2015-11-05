@@ -85,6 +85,7 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
   private static final String KAFKA_BROKER = "kafka-broker";
   private static final String AMS_ENV = "ams-env";
   private static final String AMS_HBASE_ENV = "ams-hbase-env";
+  private static final String AMS_SITE = "ams-site";
   private static final String HBASE_ENV_CONFIG = "hbase-env";
   private static final String HIVE_SITE_CONFIG = "hive-site";
   private static final String RANGER_ENV_CONFIG = "ranger-env";
@@ -99,7 +100,7 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
     "if [ \"$command\" == \"datanode\" ] && [ \"$EUID\" -eq 0 ] && [ -n \"$HADOOP_SECURE_DN_USER\" ]; then\n" +
     "  ulimit -l {{datanode_max_locked_memory}}\n" +
     "fi\n" +
-    "{% endif %};\n";
+    "{% endif %}\n";
 
   private static final String DOWNGRADE_ALLOWED_COLUMN = "downgrade_allowed";
   private static final String UPGRADE_SKIP_FAILURE_COLUMN = "skip_failures";
@@ -833,6 +834,27 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
             newProperties.put("hbase_master_heapsize", memoryToIntMb(hbase_master_heapsize));
             newProperties.put("content", updateAmsHbaseEnvContent(content));
             updateConfigurationPropertiesForCluster(cluster, AMS_HBASE_ENV, newProperties, true, true);
+          }
+          Config amsSite = cluster.getDesiredConfigByType(AMS_SITE);
+          if (amsSite != null) {
+            Map<String, String> newProperties = new HashMap<>();
+
+            //Interval
+            newProperties.put("timeline.metrics.cluster.aggregator.second.interval",String.valueOf(120));
+            newProperties.put("timeline.metrics.cluster.aggregator.minute.interval",String.valueOf(300));
+            newProperties.put("timeline.metrics.host.aggregator.minute.interval",String.valueOf(300));
+
+            //ttl
+            newProperties.put("timeline.metrics.cluster.aggregator.second.ttl", String.valueOf(2592000));
+            newProperties.put("timeline.metrics.cluster.aggregator.minute.ttl", String.valueOf(7776000));
+
+            //checkpoint
+            newProperties.put("timeline.metrics.cluster.aggregator.second.checkpointCutOffMultiplier", String.valueOf(2));
+
+            //disabled
+            newProperties.put("timeline.metrics.cluster.aggregator.second.disabled", String.valueOf(false));
+
+            updateConfigurationPropertiesForCluster(cluster, AMS_SITE, newProperties, true, true);
           }
         }
       }

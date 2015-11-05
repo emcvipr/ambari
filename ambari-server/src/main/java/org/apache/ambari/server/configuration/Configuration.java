@@ -202,6 +202,10 @@ public class Configuration {
   public static final String SERVER_JDBC_CONNECTION_POOL_ACQUISITION_RETRY_ATTEMPTS = "server.jdbc.connection-pool.acquisition-retry-attempts";
   public static final String SERVER_JDBC_CONNECTION_POOL_ACQUISITION_RETRY_DELAY = "server.jdbc.connection-pool.acquisition-retry-delay";
 
+  public static final String OPERATIONS_RETRY_ATTEMPTS_KEY = "server.operations.retry-attempts";
+  public static final String OPERATIONS_RETRY_ATTEMPTS_DEFAULT = "0";
+  public static final int RETRY_ATTEMPTS_LIMIT = 10;
+
   public static final String SERVER_JDBC_RCA_USER_NAME_KEY = "server.jdbc.rca.user.name";
   public static final String SERVER_JDBC_RCA_USER_PASSWD_KEY = "server.jdbc.rca.user.passwd";
   public static final String SERVER_JDBC_RCA_DRIVER_KEY = "server.jdbc.rca.driver";
@@ -2350,5 +2354,26 @@ public class Configuration {
   @Experimental(feature = ExperimentalFeature.ALERT_CACHING)
   public int getAlertCacheSize() {
     return Integer.parseInt(properties.getProperty(ALERTS_CACHE_SIZE, ALERTS_CACHE_SIZE_DEFAULT));
+  }
+
+  /**
+   * @return number of retry attempts for api and blueprint operations
+   */
+  public int getOperationsRetryAttempts() {
+    String property = properties.getProperty(OPERATIONS_RETRY_ATTEMPTS_KEY, OPERATIONS_RETRY_ATTEMPTS_DEFAULT);
+    Integer attempts = Integer.valueOf(property);
+    if (attempts < 0) {
+      LOG.warn("Invalid operations retry attempts number ({}), should be [0,{}]. Value reset to default {}",
+          attempts, RETRY_ATTEMPTS_LIMIT, OPERATIONS_RETRY_ATTEMPTS_DEFAULT);
+      attempts = Integer.valueOf(OPERATIONS_RETRY_ATTEMPTS_DEFAULT);
+    } else if (attempts > RETRY_ATTEMPTS_LIMIT) {
+      LOG.warn("Invalid operations retry attempts number ({}), should be [0,{}]. Value set to {}",
+          attempts, RETRY_ATTEMPTS_LIMIT, RETRY_ATTEMPTS_LIMIT);
+      attempts = RETRY_ATTEMPTS_LIMIT;
+    }
+    if (attempts > 0) {
+      LOG.info("Operations retry enabled. Number of retry attempts: {}", attempts);
+    }
+    return attempts;
   }
 }
