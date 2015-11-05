@@ -145,12 +145,14 @@ public class ClusterImpl implements Cluster {
 
   private StackId desiredStackVersion;
 
+  private volatile boolean desiredStackVersionSet = true;
+
   private volatile Map<String, Service> services = null;
 
   /**
    * [ Config Type -> [ Config Version Tag -> Config ] ]
    */
-  private Map<String, Map<String, Config>> allConfigs;
+  private volatile Map<String, Map<String, Config>> allConfigs;
 
   /**
    * [ ServiceName -> [ ServiceComponentName -> [ HostName -> [ ... ] ] ] ]
@@ -918,6 +920,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public StackId getDesiredStackVersion() {
+    loadStackVersion();
     clusterGlobalLock.readLock().lock();
     try {
       return desiredStackVersion;
@@ -1332,8 +1335,14 @@ public class ClusterImpl implements Cluster {
               hostVersionDAO.findByClusterStackAndVersion(getClusterName(), stackId, version);
 
       Set<String> hostsWithState = new HashSet<String>();
+      Set<String> hostsInMaintenanceState = new HashSet<>();
       for (HostVersionEntity hostVersionEntity : hostVersionEntities) {
         String hostname = hostVersionEntity.getHostEntity().getHostName();
+        Host host = hosts.get(hostname);
+        if(host != null && host.getMaintenanceState(getClusterId()) == MaintenanceState.ON) {
+          hostsInMaintenanceState.add(hostname);
+          continue;
+        }
         hostsWithState.add(hostname);
         RepositoryVersionState hostState = hostVersionEntity.getState();
 
@@ -1348,6 +1357,7 @@ public class ClusterImpl implements Cluster {
 
       hostsWithoutHostVersion.addAll(hosts.keySet());
       hostsWithoutHostVersion.removeAll(hostsWithState);
+      hostsWithoutHostVersion.removeAll(hostsInMaintenanceState);
 
       // Ensure that all of the hosts without a Host Version only have
       // Components that do not advertise a version.
@@ -1756,6 +1766,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public Map<String, Config> getConfigsByType(String configType) {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
       if (!allConfigs.containsKey(configType)) {
@@ -1770,6 +1781,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public Config getConfig(String configType, String versionTag) {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
       if (!allConfigs.containsKey(configType)
@@ -1801,6 +1813,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public void addConfig(Config config) {
+    loadConfigurations();
     clusterGlobalLock.writeLock().lock();
     try {
       if (config.getType() == null || config.getType().isEmpty()) {
@@ -1818,6 +1831,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public Collection<Config> getAllConfigs() {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
       List<Config> list = new ArrayList<Config>();
@@ -1835,6 +1849,7 @@ public class ClusterImpl implements Cluster {
   @Override
   public ClusterResponse convertToResponse()
     throws AmbariException {
+    loadStackVersion();
     String clusterName = getClusterName();
     Map<String, Host> hosts = clusters.getHostsForCluster(clusterName);
     clusterGlobalLock.readLock().lock();
@@ -1851,6 +1866,7 @@ public class ClusterImpl implements Cluster {
   @Override
   public void debugDump(StringBuilder sb) {
     loadServices();
+    loadStackVersion();
     clusterGlobalLock.readLock().lock();
     try {
       sb.append("Cluster={ clusterName=").append(getClusterName()).append(
@@ -2022,6 +2038,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public Map<String, DesiredConfig> getDesiredConfigs() {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
       Map<String, DesiredConfig> map = new HashMap<String, DesiredConfig>();
@@ -2205,8 +2222,8 @@ public class ClusterImpl implements Cluster {
   }
 
   @Override
-  @RequiresSession
   public List<ServiceConfigVersionResponse> getServiceConfigVersions() {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
       List<ServiceConfigVersionResponse> serviceConfigVersionResponses = new ArrayList<ServiceConfigVersionResponse>();
@@ -2468,6 +2485,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public Config getDesiredConfigByType(String configType) {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
       for (ClusterConfigMappingEntity e : clusterEntity.getConfigMappingEntities()) {
@@ -2873,7 +2891,6 @@ public class ClusterImpl implements Cluster {
    * {@inheritDoc}
    */
   @Override
-  @Transactional
   public void applyLatestConfigurations(StackId stackId) {
     clusterGlobalLock.writeLock().lock();
     try {
@@ -3036,4 +3053,80 @@ public class ClusterImpl implements Cluster {
       }
     }
   }
+
+  private void loadConfigurations() {
+    if (allConfigs != null) {
+      return;
+    }
+    clusterGlobalLock.writeLock().lock();
+    try {
+      if (allConfigs != null) {
+        return;
+      }
+      cacheConfigurations();
+
+    } finally {
+      clusterGlobalLock.writeLock().unlock();
+    }
+  }
+
+  private void loadStackVersion() {
+    if (desiredStackVersionSet) {
+      return;
+    }
+    clusterGlobalLock.writeLock().lock();
+    try {
+
+      if (desiredStackVersionSet) {
+        return;
+      }
+
+      desiredStackVersion = new StackId(clusterEntity.getDesiredStack());
+
+      if (!StringUtils.isEmpty(desiredStackVersion.getStackName()) && !
+          StringUtils.isEmpty(desiredStackVersion.getStackVersion())) {
+        try {
+          loadServiceConfigTypes();
+        } catch (AmbariException e) {
+          //TODO recheck wrapping exception here, required for lazy loading after invalidation
+          throw new RuntimeException(e);
+        }
+      }
+
+      desiredStackVersionSet = true;
+
+    } finally {
+      clusterGlobalLock.writeLock().unlock();
+    }
+
+  }
+
+  /**
+   * Purpose of this method is to clear all cached data to re-read it from database.
+   * To be used in case of desync.
+   */
+  @Override
+  public void invalidateData() {
+    clusterGlobalLock.writeLock().lock();
+    try {
+      allConfigs = null;
+      services = null;
+      desiredStackVersionSet = false;
+
+      serviceComponentHosts.clear();
+      serviceComponentHostsByHost.clear();
+      svcHostsLoaded = false;
+
+      clusterConfigGroups = null;
+
+      //TODO investigate reset request executions, it has separate api which is not too heavy
+
+      refresh();
+
+    } finally {
+      clusterGlobalLock.writeLock().unlock();
+    }
+  }
 }
+
+

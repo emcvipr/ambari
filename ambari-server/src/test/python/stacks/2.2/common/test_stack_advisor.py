@@ -2152,7 +2152,7 @@ class TestHDP22StackAdvisor(TestCase):
     # Embedded mode, 4096m master heapsize, some splitpoints recommended
     services["configurations"]['ams-hbase-env']['properties']['hbase_master_heapsize'] = '4096'
     expected['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'] = \
-      'jvm.JvmMetrics.MemHeapCommittedM,regionserver.Server.Increment_median'
+      'master.Server.numDeadRegionServers'
     expected['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'] = ' '
     expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '4096'
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
@@ -2162,7 +2162,7 @@ class TestHDP22StackAdvisor(TestCase):
     services["configurations"]['ams-hbase-env']['properties']['hbase_master_heapsize'] = '8192'
     expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '8192'
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
-    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'].split(',')), 10)
+    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'].split(',')), 9)
     self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'].split(',')), 2)
 
     # Test splitpoints, AMS distributed mode
@@ -2193,7 +2193,7 @@ class TestHDP22StackAdvisor(TestCase):
     services["configurations"]['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '8192'
     expected['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '8192'
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
-    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'].split(',')), 10)
+    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'].split(',')), 9)
     self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'].split(',')), 2)
 
   def test_recommendHbaseConfigurations(self):
@@ -2518,9 +2518,6 @@ class TestHDP22StackAdvisor(TestCase):
         "stack_version": "2.2"
       },
       "configurations": {
-        "core-site": {
-          "properties": { },
-        },
         "storm-site": {
           "properties": {
             "nimbus.authorizer" : "backtype.storm.security.auth.authorizer.SimpleACLAuthorizer"
@@ -2551,7 +2548,7 @@ class TestHDP22StackAdvisor(TestCase):
     configurations['storm-site']['property_attributes'] = {}
     services['configurations']['storm-site']['properties']['nimbus.authorizer'] = ''
     services['configurations']['ranger-storm-plugin-properties']['properties']['ranger-storm-plugin-enabled'] = 'Yes'
-    services['configurations']['core-site']['properties']['hadoop.security.authentication'] = 'kerberos'
+    services['configurations']['storm-site']['properties']['storm.zookeeper.superACL'] = 'sasl:{{storm_bare_jaas_principal}}'
     self.stackAdvisor.recommendStormConfigurations(configurations, clusterData, services, None)
     self.assertEquals(configurations['storm-site']['properties']['nimbus.authorizer'], 'com.xasecure.authorization.storm.authorizer.XaSecureStormAuthorizer', "Test nimbus.authorizer with Ranger Storm plugin enabled in kerberos environment")
 
@@ -2559,7 +2556,7 @@ class TestHDP22StackAdvisor(TestCase):
     configurations['storm-site']['properties'] = {}
     configurations['storm-site']['property_attributes'] = {}
     services['configurations']['ranger-storm-plugin-properties']['properties']['ranger-storm-plugin-enabled'] = 'No'
-    services['configurations']['core-site']['properties']['hadoop.security.authentication'] = 'kerberos'
+    services['configurations']['storm-site']['properties']['storm.zookeeper.superACL'] = 'sasl:{{storm_bare_jaas_principal}}'
     services['configurations']['storm-site']['properties']['nimbus.authorizer'] = 'com.xasecure.authorization.storm.authorizer.XaSecureStormAuthorizer'
     self.stackAdvisor.recommendStormConfigurations(configurations, clusterData, services, None)
     self.assertEquals(configurations['storm-site']['properties']['nimbus.authorizer'], 'backtype.storm.security.auth.authorizer.SimpleACLAuthorizer', "Test nimbus.authorizer with Ranger Storm plugin being disabled in kerberos environment")
