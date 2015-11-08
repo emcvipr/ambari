@@ -131,7 +131,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
    */
   errorsCount: function () {
     return this.get('selectedService.configs').filter(function (config) {
-      return Em.isNone(config.get('widget'));
+      return Em.isNone(config.get('widgetType'));
     }).filter(function(config) {
       return !config.get('isValid') || (config.get('overrides') || []).someProperty('isValid', false);
     }).filterProperty('isVisible').length;
@@ -224,6 +224,19 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
     }, this);
     return filterColumns;
   }.property('propertyFilters', 'isCompareMode'),
+
+  /**
+   * Detects of some of the `password`-configs has not default value
+   *
+   * @type {boolean}
+   */
+  passwordConfigsAreChanged: function () {
+    return this.get('stepConfigs')
+      .findProperty('serviceName', this.get('selectedService.serviceName'))
+      .get('configs')
+      .filterProperty('displayType', 'password')
+      .someProperty('isNotDefaultValue');
+  }.property('stepConfigs.[].configs', 'selectedService.serviceName'),
 
   /**
    * indicate whether service config version belongs to default config group
@@ -434,7 +447,8 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
           serviceName: advanced.get('serviceName'),
           supportsFinal: advanced.get('supportsFinal'),
           category: 'Advanced ' + App.config.getConfigTagFromFileName(advanced.get('fileName')),
-          widget: advanced.get('widget')
+          widget: advanced.get('widget'),
+          widgetType: advanced.get('widgetType')
         }));
       }
     });

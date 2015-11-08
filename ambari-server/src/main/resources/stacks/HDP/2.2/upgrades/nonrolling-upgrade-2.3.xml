@@ -79,6 +79,7 @@
       <direction>UPGRADE</direction>
       <skippable>true</skippable>
       <service-check>false</service-check>
+      <parallel-scheduler></parallel-scheduler>
 
       <service name="FLUME">
         <component>FLUME_HANDLER</component>
@@ -165,10 +166,10 @@
         </task>
       </execute-stage>
 
-      <execute-stage service="HDFS" component="NAMENODE" title="Snapshot HDFS">
+      <execute-stage service="HDFS" component="NAMENODE" title="Prepare HDFS">
         <task xsi:type="execute" hosts="master">
           <script>scripts/namenode.py</script>
-          <function>prepare_non_rolling_upgrade</function>
+          <function>prepare_express_upgrade</function>
         </task>
       </execute-stage>
 
@@ -183,6 +184,7 @@
       <direction>UPGRADE</direction>
       <skippable>true</skippable>
       <service-check>false</service-check>
+      <parallel-scheduler></parallel-scheduler>
 
       <service name="HBASE">
         <component>HBASE_REGIONSERVER</component>
@@ -230,20 +232,6 @@
       <execute-stage service="KNOX" component="KNOX_GATEWAY" title="Restore Knox Data">
         <task xsi:type="manual">
           <message>Before continuing, please restore the Knox data. E.g., "cp -RL ~/knox_backup/* /etc/knox/data/security/" on the following host(s): {{hosts.all}}.</message>
-        </task>
-      </execute-stage>
-
-      <execute-stage service="HBASE" component="HBASE_MASTER" title="Restore HBASE Snapshot">
-        <task xsi:type="execute" hosts="master">
-          <script>scripts/hbase_upgrade.py</script>
-          <function>restore_snapshot</function>
-        </task>
-      </execute-stage>
-
-      <execute-stage service="HDFS" component="NAMENODE" title="Restore HDFS Snapshot">
-        <task xsi:type="execute" hosts="master">
-          <script>scripts/namenode.py</script>
-          <function>restore_snapshot</function>
         </task>
       </execute-stage>
 
@@ -495,6 +483,7 @@
     <group xsi:type="restart" name="ZOOKEEPER" title="ZooKeeper">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="ZOOKEEPER">
         <service-check>false</service-check>
         <component>ZOOKEEPER_SERVER</component>
@@ -505,6 +494,7 @@
     <group xsi:type="restart" name="RANGER" title="Ranger">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="RANGER">
         <component>RANGER_ADMIN</component>
         <component>RANGER_USERSYNC</component>
@@ -514,6 +504,7 @@
     <group xsi:type="restart" name="HDFS" title="HDFS">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="HDFS">
         <component>JOURNALNODE</component>
         <component>ZKFC</component>
@@ -540,6 +531,7 @@
     <group xsi:type="restart" name="YARN and MapReduce2" title="YARN and MapReduce2">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="MAPREDUCE2">
         <component>HISTORYSERVER</component>
         <component>MAPREDUCE2_CLIENT</component>
@@ -555,6 +547,7 @@
     <group xsi:type="restart" name="HBASE" title="HBASE">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="HBASE">
         <component>HBASE_MASTER</component>
         <component>HBASE_REGIONSERVER</component>
@@ -565,7 +558,7 @@
     <group xsi:type="restart" name="CLIENTS" title="Tez, Pig, Sqoop Clients">
       <service-check>false</service-check>
       <skippable>true</skippable>
-
+      <parallel-scheduler></parallel-scheduler>
       <service name="TEZ">
         <component>TEZ_CLIENT</component>
       </service>
@@ -593,6 +586,7 @@
     <group xsi:type="restart" name="HIVE" title="Hive">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="HIVE">
         <component>HIVE_METASTORE</component>
         <component>HIVE_SERVER</component>
@@ -605,9 +599,10 @@
     <group xsi:type="restart" name="SPARK" title="Spark">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="SPARK">
         <component>SPARK_JOBHISTORYSERVER</component>
-        <component>SPARK_CLIENT</component>         <!-- TODO, parallelize -->
+        <component>SPARK_CLIENT</component>
       </service>
     </group>
 
@@ -638,6 +633,7 @@
     <group xsi:type="restart" name="OOZIE" title="Oozie">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="OOZIE">
         <component>OOZIE_SERVER</component>
         <component>OOZIE_CLIENT</component>
@@ -647,6 +643,7 @@
     <group xsi:type="restart" name="FALCON" title="Falcon">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="FALCON">
         <component>FALCON_SERVER</component>
         <component>FALCON_CLIENT</component>
@@ -656,6 +653,7 @@
     <group xsi:type="restart" name="KAFKA" title="Kafka">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="KAFKA">
         <component>KAFKA_BROKER</component>
       </service>
@@ -664,6 +662,7 @@
     <group xsi:type="restart" name="KNOX" title="Knox">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="KNOX">
         <component>KNOX_GATEWAY</component>
       </service>
@@ -672,6 +671,7 @@
     <group xsi:type="restart" name="STORM" title="Storm">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="STORM">
         <component>NIMBUS</component>
         <component>SUPERVISOR</component>
@@ -689,6 +689,7 @@
     <group xsi:type="restart" name="SLIDER" title="Slider">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="SLIDER">
         <component>SLIDER</component>
       </service>
@@ -697,6 +698,7 @@
     <group xsi:type="restart" name="FLUME" title="Flume">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="FLUME">
         <component>FLUME_HANDLER</component>
       </service>
@@ -705,6 +707,7 @@
     <group xsi:type="restart" name="ACCUMULO" title="Accumulo">
       <service-check>false</service-check>
       <skippable>true</skippable>
+      <parallel-scheduler></parallel-scheduler>
       <service name="ACCUMULO">
         <component>ACCUMULO_MASTER</component>
         <component>ACCUMULO_TSERVER</component>
