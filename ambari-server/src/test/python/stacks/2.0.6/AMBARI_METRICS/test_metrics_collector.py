@@ -258,7 +258,6 @@ class TestOozieClient(RMFTestCase):
                                 keytab = UnknownConfigurationMock(),
                                 kinit_path_local = '/usr/bin/kinit',
                                 user = 'hdfs',
-                                dfs_type = '',
                                 hadoop_conf_dir = '/etc/hadoop/conf',
                                 action = ['execute'],
                                 hdfs_site=self.getConfig()['configurations']['hdfs-site'],
