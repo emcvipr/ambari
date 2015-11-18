@@ -94,7 +94,7 @@ class TestHBaseMaster(RMFTestCase):
     
     self.assertResourceCalled('Execute', '/usr/lib/hbase/bin/hbase-daemon.sh --config /etc/hbase/conf stop master',
         only_if = 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hbase/hbase-hbase-master.pid && ps -p `ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1',
-        on_timeout = '! ( ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hbase/hbase-hbase-master.pid && ps -p `ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1 ) || ambari-sudo.sh -H -E kill -9 `cat /var/run/hbase/hbase-hbase-master.pid`',
+        on_timeout = '! ( ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hbase/hbase-hbase-master.pid && ps -p `ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1 ) || ambari-sudo.sh -H -E kill -9 `ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E cat /var/run/hbase/hbase-hbase-master.pid`',
         timeout = 30,
         user = 'hbase',
     )
@@ -193,7 +193,7 @@ class TestHBaseMaster(RMFTestCase):
 
     self.assertResourceCalled('Execute', '/usr/lib/hbase/bin/hbase-daemon.sh --config /etc/hbase/conf stop master',
         only_if = 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hbase/hbase-hbase-master.pid && ps -p `ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1',
-        on_timeout = '! ( ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hbase/hbase-hbase-master.pid && ps -p `ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1 ) || ambari-sudo.sh -H -E kill -9 `cat /var/run/hbase/hbase-hbase-master.pid`',
+        on_timeout = '! ( ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hbase/hbase-hbase-master.pid && ps -p `ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E cat /var/run/hbase/hbase-hbase-master.pid` >/dev/null 2>&1 ) || ambari-sudo.sh -H -E kill -9 `ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E cat /var/run/hbase/hbase-hbase-master.pid`',
         timeout = 30,
         user = 'hbase',
     )
@@ -234,6 +234,12 @@ class TestHBaseMaster(RMFTestCase):
       owner = 'hbase',
       group = 'hadoop',
       recursive = True,
+    )
+    self.assertResourceCalled('Directory', '/tmp',
+      owner = 'hbase',
+      group = 'hadoop',
+      recursive = True,
+      mode = 0777
     )
     self.assertResourceCalled('Directory', '/hadoop',
                               recursive = True,
@@ -301,10 +307,14 @@ class TestHBaseMaster(RMFTestCase):
     self.assertResourceCalled('Directory', '/var/run/hbase',
       owner = 'hbase',
       recursive = True,
+      mode = 0755,
+      cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/log/hbase',
       owner = 'hbase',
       recursive = True,
+      mode = 0755,
+      cd_access = 'a',
     )
     self.assertResourceCalled('File',
                               '/etc/hbase/conf/log4j.properties',
@@ -361,6 +371,12 @@ class TestHBaseMaster(RMFTestCase):
       owner = 'hbase',
       group = 'hadoop',
       recursive = True,
+    )
+    self.assertResourceCalled('Directory', '/tmp',
+      owner = 'hbase',
+      group = 'hadoop',
+      recursive = True,
+      mode = 0777
     )
     self.assertResourceCalled('Directory', '/hadoop',
                               recursive = True,
@@ -432,10 +448,14 @@ class TestHBaseMaster(RMFTestCase):
     self.assertResourceCalled('Directory', '/var/run/hbase',
       owner = 'hbase',
       recursive = True,
+      mode = 0755,
+      cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/log/hbase',
       owner = 'hbase',
       recursive = True,
+      mode = 0755,
+      cd_access = 'a',
     )
     self.assertResourceCalled('File',
                               '/etc/hbase/conf/log4j.properties',
@@ -498,7 +518,12 @@ class TestHBaseMaster(RMFTestCase):
       owner = 'hbase',
       group = 'hadoop',
       recursive = True)
-
+    self.assertResourceCalled('Directory', '/tmp',
+      owner = 'hbase',
+      group = 'hadoop',
+      recursive = True,
+      mode = 0777
+    )
     self.assertResourceCalled('Directory', '/hadoop',
                               recursive = True,
                               cd_access = 'a',
@@ -569,11 +594,17 @@ class TestHBaseMaster(RMFTestCase):
 
     self.assertResourceCalled('Directory', '/var/run/hbase',
       owner = 'hbase',
-      recursive = True)
+      recursive = True,
+      mode = 0755,
+      cd_access = 'a',
+    )
 
     self.assertResourceCalled('Directory', '/var/log/hbase',
       owner = 'hbase',
-      recursive = True)
+      recursive = True,
+      mode = 0755,
+      cd_access = 'a',
+    )
 
     self.assertResourceCalled('File',
                               '/usr/hdp/current/hbase-master/conf/log4j.properties',

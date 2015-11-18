@@ -33,20 +33,19 @@ import java.util.Set;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
+import org.apache.ambari.server.state.stack.UpgradePack.PrerequisiteCheckConfig;
 import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
 import org.apache.ambari.server.state.stack.upgrade.ClusterGrouping;
 import org.apache.ambari.server.state.stack.upgrade.ClusterGrouping.ExecuteStage;
 import org.apache.ambari.server.state.stack.upgrade.ConfigureTask;
-import org.apache.ambari.server.state.stack.upgrade.ConfigUpgradeChangeDefinition.Transfer;
 import org.apache.ambari.server.state.stack.upgrade.Direction;
 import org.apache.ambari.server.state.stack.upgrade.Grouping;
 import org.apache.ambari.server.state.stack.upgrade.ParallelScheduler;
 import org.apache.ambari.server.state.stack.upgrade.RestartGrouping;
 import org.apache.ambari.server.state.stack.upgrade.RestartTask;
-import org.apache.ambari.server.state.stack.upgrade.StopGrouping;
 import org.apache.ambari.server.state.stack.upgrade.ServiceCheckGrouping;
+import org.apache.ambari.server.state.stack.upgrade.StopGrouping;
 import org.apache.ambari.server.state.stack.upgrade.Task;
-import org.apache.ambari.server.state.stack.upgrade.TransferOperation;
 import org.apache.ambari.server.state.stack.upgrade.UpdateStackGrouping;
 import org.apache.ambari.server.state.stack.upgrade.UpgradeType;
 import org.junit.After;
@@ -168,6 +167,27 @@ public class UpgradePackTest {
     assertTrue(upgrades.size() > 0);
     assertTrue(upgrades.containsKey("upgrade_test_checks"));
     UpgradePack upgrade = upgrades.get("upgrade_test_checks");
+
+    PrerequisiteCheckConfig prerequisiteCheckConfig = upgrade.getPrerequisiteCheckConfig();
+    assertNotNull(prerequisiteCheckConfig);
+    assertNotNull(prerequisiteCheckConfig.globalProperties);
+    assertTrue(prerequisiteCheckConfig.getGlobalProperties().containsKey("global-property-1"));
+    assertEquals("global-value-1", prerequisiteCheckConfig.getGlobalProperties().get("global-property-1"));
+    assertNotNull(prerequisiteCheckConfig.prerequisiteCheckProperties);
+    assertEquals(2, prerequisiteCheckConfig.prerequisiteCheckProperties.size());
+    assertNotNull(prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesMapReduceDistributedCacheCheck"));
+    assertTrue(prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesMapReduceDistributedCacheCheck").containsKey("dfs-protocols-regex"));
+    assertEquals("^([^:]*dfs|wasb|ecs):.*", prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesMapReduceDistributedCacheCheck").get("dfs-protocols-regex"));
+    assertNotNull(prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesTezDistributedCacheCheck"));
+    assertTrue(prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesTezDistributedCacheCheck").containsKey("dfs-protocols-regex"));
+    assertEquals("^([^:]*dfs|wasb|ecs):.*", prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesTezDistributedCacheCheck").get("dfs-protocols-regex"));
+
 
     List<String> expected_up = Arrays.asList(
         "PRE_CLUSTER",
@@ -317,6 +337,26 @@ public class UpgradePackTest {
     UpgradePack upgradePack = upgrades.get("upgrade_test_skip_failures");
     Assert.assertTrue(upgradePack.isComponentFailureAutoSkipped());
     Assert.assertTrue(upgradePack.isServiceCheckFailureAutoSkipped());
+  }
+
+  /**
+   * Tests that the XML for not auto skipping skippable failures works.
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testNoAutoSkipFailure() throws Exception {
+    Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.2.0");
+    UpgradePack upgradePack = upgrades.get("upgrade_test_skip_failures");
+
+    List<Grouping> groups = upgradePack.getGroups(Direction.UPGRADE);
+    for (Grouping grouping : groups) {
+      if (grouping.name.equals("SKIPPABLE_BUT_NOT_AUTO_SKIPPABLE")) {
+        Assert.assertFalse(grouping.supportsAutoSkipOnFailure);
+      } else {
+        Assert.assertTrue(grouping.supportsAutoSkipOnFailure);
+      }
+    }
   }
 
   @Test
