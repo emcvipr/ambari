@@ -199,7 +199,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
     var properties = [];
     App.Tab.find(this.get('content.serviceName') + '_settings').get('sections').forEach(function(s) {
       s.get('subSections').forEach(function(ss) {
-        properties = properties.concat(ss.get('configProperties').filterProperty('id'));
+        properties = properties.concat(ss.get('configProperties'));
       });
     });
     return properties;
@@ -413,7 +413,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
    */
   addDBProperties: function(configs) {
     if (this.get('content.serviceName') === 'HIVE') {
-      var propertyToAdd = App.config.get('preDefinedSitePropertiesMap')[App.config.configId('hive_hostname','hive-env')],
+      var propertyToAdd = App.configsCollection.getConfigByName('hive_hostname','hive-env'),
         cfg = App.config.createDefaultConfig(propertyToAdd.name, propertyToAdd.serviceName, propertyToAdd.filename, true, propertyToAdd),
         connectionUrl = configs.findProperty('name', 'javax.jdo.option.ConnectionURL');
       if (cfg && connectionUrl) {
@@ -431,25 +431,14 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
    * @method mergeWithStackProperties
    */
   mergeWithStackProperties: function (configs) {
-    this.get('settingsTabProperties').forEach(function (advanced) {
-      if (!configs.someProperty('name', advanced.get('name'))) {
-        configs.pushObject(App.ServiceConfigProperty.create({
-          name: advanced.get('name'),
-          displayName: advanced.get('displayName'),
-          value: advanced.get('value'),
-          savedValue: null,
-          filename: advanced.get('fileName'),
-          isUserProperty: false,
-          isNotSaved: true,
-          recommendedValue: advanced.get('value'),
-          isFinal: advanced.get('isFinal'),
-          recommendedIsFinal: advanced.get('recommendedIsFinal'),
-          serviceName: advanced.get('serviceName'),
-          supportsFinal: advanced.get('supportsFinal'),
-          category: 'Advanced ' + App.config.getConfigTagFromFileName(advanced.get('fileName')),
-          widget: advanced.get('widget'),
-          widgetType: advanced.get('widgetType')
-        }));
+    this.get('settingsTabProperties').forEach(function (advanced_id) {
+      if (!configs.someProperty('id', advanced_id)) {
+        var advanced = App.configsCollection.getConfig(advanced_id);
+        if (advanced) {
+          advanced.savedValue = null;
+          advanced.isNotSaved = true;
+          configs.pushObject(App.ServiceConfigProperty.create(advanced));
+        }
       }
     });
     return configs;

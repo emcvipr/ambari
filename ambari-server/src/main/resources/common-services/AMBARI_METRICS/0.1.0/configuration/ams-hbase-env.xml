@@ -61,6 +61,12 @@
       <type>int</type>
       <unit>MB</unit>
     </value-attributes>
+    <depends-on>
+      <property>
+        <type>ams-hbase-site</type>
+        <name>hbase.cluster.distributed</name>
+      </property>
+    </depends-on>
   </property>
   <property>
     <name>hbase_master_xmn_size</name>
@@ -72,6 +78,12 @@
       <type>int</type>
       <unit>MB</unit>
     </value-attributes>
+    <depends-on>
+      <property>
+        <type>ams-hbase-site</type>
+        <name>hbase.cluster.distributed</name>
+      </property>
+    </depends-on>
   </property>
   <property>
     <name>hbase_master_maxperm_size</name>
@@ -124,7 +136,7 @@
     <value>
 # Set environment variables here.
 
-# The java implementation to use. Java 1.6 required.
+# The java implementation to use. Java 1.6+ required.
 export JAVA_HOME={{java64_home}}
 
 # HBase Configuration directory
