@@ -187,6 +187,8 @@ public class ClusterImpl implements Cluster {
 
   private ClusterEntity clusterEntity;
 
+  private long clusterId;
+
   @Inject
   private ClusterDAO clusterDAO;
 
@@ -1219,6 +1221,7 @@ public class ClusterImpl implements Cluster {
    * UPGRADE_FAILED: at least one host in UPGRADE_FAILED
    * UPGRADED: all hosts are UPGRADED
    * UPGRADING: at least one host is UPGRADING, and the rest in UPGRADING|INSTALLED
+   * UPGRADING: at least one host is UPGRADED, and the rest in UPGRADING|INSTALLED
    * INSTALLED: all hosts in INSTALLED
    * INSTALL_FAILED: at least one host in INSTALL_FAILED
    * INSTALLING: all hosts in INSTALLING. Notice that if one host is CURRENT and another is INSTALLING, then the
@@ -1247,6 +1250,13 @@ public class ClusterImpl implements Cluster {
       return RepositoryVersionState.UPGRADED;
     }
     if (stateToHosts.containsKey(RepositoryVersionState.UPGRADING) && !stateToHosts.get(RepositoryVersionState.UPGRADING).isEmpty()) {
+      return RepositoryVersionState.UPGRADING;
+    }
+    if (stateToHosts.containsKey(RepositoryVersionState.UPGRADED)
+        && !stateToHosts.get(RepositoryVersionState.UPGRADED).isEmpty()
+        && stateToHosts.get(RepositoryVersionState.UPGRADED).size() != totalHosts) {
+      // It is possible that a host has transitioned to UPGRADED state even before any other host has transitioned to UPGRADING state.
+      // Example: Host with single component ZOOKEEPER Server on it which is the first component to be upgraded.
       return RepositoryVersionState.UPGRADING;
     }
     if (stateToHosts.containsKey(RepositoryVersionState.INSTALLED) && stateToHosts.get(RepositoryVersionState.INSTALLED).size() == totalHosts) {
@@ -2078,7 +2088,7 @@ public class ClusterImpl implements Cluster {
       Map<String, DesiredConfig> map = new HashMap<String, DesiredConfig>();
       Collection<String> types = new HashSet<String>();
 
-      for (ClusterConfigMappingEntity e : clusterEntity.getConfigMappingEntities()) {
+      for (ClusterConfigMappingEntity e : clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId())) {
         if (e.isSelected() > 0) {
           DesiredConfig c = new DesiredConfig();
           c.setServiceName(null);
@@ -2370,12 +2380,14 @@ public class ClusterImpl implements Cluster {
     //disable all configs related to service
     if (serviceConfigEntity.getGroupId() == null) {
       Collection<String> configTypes = serviceConfigTypes.get(serviceName);
-      for (ClusterConfigMappingEntity entity : clusterEntity.getConfigMappingEntities()) {
+      List<ClusterConfigMappingEntity> mappingEntities =
+          clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId());
+      for (ClusterConfigMappingEntity entity : mappingEntities) {
         if (configTypes.contains(entity.getType()) && entity.isSelected() > 0) {
           entity.setSelected(0);
+          clusterDAO.mergeConfigMapping(entity);
         }
       }
-      clusterEntity = clusterDAO.merge(clusterEntity);
 
       for (ClusterConfigEntity configEntity : serviceConfigEntity.getClusterConfigEntities()) {
         selectConfig(configEntity.getType(), configEntity.getTag(), user);
@@ -2432,12 +2444,14 @@ public class ClusterImpl implements Cluster {
 
   @Transactional
   void selectConfig(String type, String tag, String user) {
-    Collection<ClusterConfigMappingEntity> entities = clusterEntity.getConfigMappingEntities();
+    Collection<ClusterConfigMappingEntity> entities =
+        clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId());
 
     //disable previous config
     for (ClusterConfigMappingEntity e : entities) {
       if (e.isSelected() > 0 && e.getType().equals(type)) {
         e.setSelected(0);
+        clusterDAO.mergeConfigMapping(e);
       }
     }
 
@@ -2449,9 +2463,8 @@ public class ClusterImpl implements Cluster {
     entity.setUser(user);
     entity.setType(type);
     entity.setTag(tag);
-    entities.add(entity);
+    clusterDAO.persistConfigMapping(entity);
 
-    clusterEntity = clusterDAO.merge(clusterEntity);
   }
 
   @Transactional
@@ -2483,7 +2496,11 @@ public class ClusterImpl implements Cluster {
     }
 
     if (serviceName == null) {
-      LOG.error("No service found for config type '{}', service config version not created");
+      ArrayList<String> configTypes = new ArrayList<>();
+      for (Config config: configs) {
+        configTypes.add(config.getType());
+      }
+      LOG.error("No service found for config types '{}', service config version not created", configTypes);
       return null;
     } else {
       return createServiceConfigVersion(serviceName, user, serviceConfigVersionNote);
@@ -2502,7 +2519,7 @@ public class ClusterImpl implements Cluster {
 
     //add configs from this service
     Collection<String> configTypes = serviceConfigTypes.get(serviceName);
-    for (ClusterConfigMappingEntity mappingEntity : clusterEntity.getConfigMappingEntities()) {
+    for (ClusterConfigMappingEntity mappingEntity : clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId())) {
       if (mappingEntity.isSelected() > 0 && configTypes.contains(mappingEntity.getType())) {
         ClusterConfigEntity configEntity =
           clusterDAO.findConfig(getClusterId(), mappingEntity.getType(), mappingEntity.getTag());
@@ -2522,7 +2539,7 @@ public class ClusterImpl implements Cluster {
     loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
-      for (ClusterConfigMappingEntity e : clusterEntity.getConfigMappingEntities()) {
+      for (ClusterConfigMappingEntity e : clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId())) {
         if (e.isSelected() > 0 && e.getType().equals(configType)) {
           return getConfig(e.getType(), e.getTag());
         }
@@ -2538,7 +2555,7 @@ public class ClusterImpl implements Cluster {
   public boolean isConfigTypeExists(String configType) {
     clusterGlobalLock.readLock().lock();
     try {
-      for (ClusterConfigMappingEntity e : clusterEntity.getConfigMappingEntities()) {
+      for (ClusterConfigMappingEntity e : clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId())) {
         if (e.getType().equals(configType)) {
           return true;
         }
@@ -2928,7 +2945,7 @@ public class ClusterImpl implements Cluster {
   public void applyLatestConfigurations(StackId stackId) {
     clusterGlobalLock.writeLock().lock();
     try {
-      Collection<ClusterConfigMappingEntity> configMappingEntities = clusterEntity.getConfigMappingEntities();
+      Collection<ClusterConfigMappingEntity> configMappingEntities = clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId());
 
       // disable previous config
       for (ClusterConfigMappingEntity e : configMappingEntities) {
@@ -2952,7 +2969,7 @@ public class ClusterImpl implements Cluster {
         }
       }
 
-      clusterEntity = clusterDAO.merge(clusterEntity);
+      clusterDAO.mergeConfigMappings(clusterConfigMappingEntities);
 
       cacheConfigurations();
     } finally {
@@ -3036,7 +3053,8 @@ public class ClusterImpl implements Cluster {
     clusterEntity = clusterDAO.merge(clusterEntity);
 
     // remove config mappings
-    Collection<ClusterConfigMappingEntity> configMappingEntities = clusterEntity.getConfigMappingEntities();
+    Collection<ClusterConfigMappingEntity> configMappingEntities =
+        clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId());
     for (ClusterConfigEntity removedClusterConfig : removedClusterConfigs) {
       String removedClusterConfigType = removedClusterConfig.getType();
       String removedClusterConfigTag = removedClusterConfig.getTag();
@@ -3170,6 +3188,14 @@ public class ClusterImpl implements Cluster {
       clusterGlobalLock.writeLock().unlock();
     }
   }
+
+  private ClusterEntity getClusterEntity() {
+    if (!clusterDAO.isManaged(clusterEntity)) {
+      clusterEntity = clusterDAO.findById(clusterEntity.getClusterId());
+    }
+    return clusterEntity;
+  }
 }
+
 
 
