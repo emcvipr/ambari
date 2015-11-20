@@ -15,20 +15,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.ambari.server.state.alert;
 
+/**
+ * Alert when the source type is defined as {@link org.apache.ambari.server.state.alert.SourceType#RECOVERY}
+ * <p/>
+ * Equality checking for instances of this class should be executed on every
+ * member to ensure that reconciling stack differences is correct.
+ */
+public class RecoverySource extends Source {
 
-var App = require('app');
+  public RecoverySource() {
 
-App.ConfigVersion = App.ServiceConfigVersion.extend({
-  configProperties: DS.hasMany('App.ConfigProperty'),
+  }
 
-  /**
-   * this flag is true when we compare some version with
-   * this config version
-   * this flag make influence on displaying properties
-   * @property {boolean} [isForCompare=false]
-   */
-  isForCompare: DS.attr('boolean', {defaultValue: false})
-});
-
-App.ConfigVersion.FIXTURES = [];
+}
