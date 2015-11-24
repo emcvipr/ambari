@@ -2145,6 +2145,7 @@ public class BlueprintConfigurationProcessor {
     multiHiveSiteMap.put("hive.zookeeper.quorum", new MultipleHostTopologyUpdater("ZOOKEEPER_SERVER"));
     multiHiveSiteMap.put("hive.cluster.delegation.token.store.zookeeper.connectString", new MultipleHostTopologyUpdater("ZOOKEEPER_SERVER"));
 
+/*
     // HIVE Atlas integration
     hiveSiteMap.put("hive.exec.post.hooks", new NonTopologyUpdater() {
       @Override
@@ -2207,6 +2208,7 @@ public class BlueprintConfigurationProcessor {
         return String.format("%s://%s:%s", scheme, host, port);
       }
     });
+*/
 
 
     // OOZIE_SERVER
