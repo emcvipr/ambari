@@ -29,8 +29,10 @@ import org.apache.ambari.server.orm.entities.UserEntity;
 import org.apache.ambari.server.orm.entities.ViewEntity;
 import org.apache.ambari.server.orm.entities.ViewInstanceEntity;
 import org.apache.ambari.server.security.authorization.ResourceType;
+import org.apache.ambari.server.security.authorization.RoleAuthorization;
 import org.apache.ambari.server.view.ViewRegistry;
 
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -88,6 +90,12 @@ public class AmbariPrivilegeResourceProvider extends PrivilegeResourceProvider<O
    */
   public AmbariPrivilegeResourceProvider() {
     super(propertyIds, keyPropertyIds, Resource.Type.AmbariPrivilege);
+
+    EnumSet<RoleAuthorization> requiredAuthorizations = EnumSet.of(RoleAuthorization.AMBARI_ASSIGN_ROLES);
+    setRequiredCreateAuthorizations(requiredAuthorizations);
+    setRequiredDeleteAuthorizations(requiredAuthorizations);
+    setRequiredGetAuthorizations(requiredAuthorizations);
+    setRequiredUpdateAuthorizations(requiredAuthorizations);
   }
 
   // ----- AmbariPrivilegeResourceProvider ---------------------------------
@@ -146,25 +154,31 @@ public class AmbariPrivilegeResourceProvider extends PrivilegeResourceProvider<O
       ResourceEntity resourceEntity = privilegeEntity.getResource();
       ResourceTypeEntity type = resourceEntity.getResourceType();
       String typeName = type.getName();
-      String privilegeType;
+      ResourceType resourceType = ResourceType.translate(typeName);
 
-      if (ResourceType.CLUSTER.name().equalsIgnoreCase(typeName)) {
-        ClusterEntity clusterEntity = (ClusterEntity) resourceEntities.get(resourceEntity.getId());
-        privilegeType = ResourceType.CLUSTER.name();
-        setResourceProperty(resource, PRIVILEGE_CLUSTER_NAME_PROPERTY_ID, clusterEntity.getClusterName(), requestedIds);
-      } else if (ResourceType.AMBARI.name().equalsIgnoreCase(typeName)) {
-        privilegeType = ResourceType.AMBARI.name();
-      } else {
-        privilegeType = ResourceType.VIEW.name();
-        ViewInstanceEntity viewInstanceEntity = (ViewInstanceEntity) resourceEntities.get(resourceEntity.getId());
-        ViewEntity viewEntity = viewInstanceEntity.getViewEntity();
+      if(resourceType != null) {
+        switch (resourceType) {
+          case AMBARI:
+            // there is nothing special to add for this case
+            break;
+          case CLUSTER:
+            ClusterEntity clusterEntity = (ClusterEntity) resourceEntities.get(resourceEntity.getId());
+            setResourceProperty(resource, PRIVILEGE_CLUSTER_NAME_PROPERTY_ID, clusterEntity.getClusterName(), requestedIds);
+            break;
+          case VIEW:
+            ViewInstanceEntity viewInstanceEntity = (ViewInstanceEntity) resourceEntities.get(resourceEntity.getId());
+            ViewEntity viewEntity = viewInstanceEntity.getViewEntity();
 
-        setResourceProperty(resource, PRIVILEGE_VIEW_NAME_PROPERTY_ID, viewEntity.getCommonName(), requestedIds);
-        setResourceProperty(resource, PRIVILEGE_VIEW_VERSION_PROPERTY_ID, viewEntity.getVersion(), requestedIds);
-        setResourceProperty(resource, PRIVILEGE_INSTANCE_NAME_PROPERTY_ID, viewInstanceEntity.getName(), requestedIds);
+            setResourceProperty(resource, PRIVILEGE_VIEW_NAME_PROPERTY_ID, viewEntity.getCommonName(), requestedIds);
+            setResourceProperty(resource, PRIVILEGE_VIEW_VERSION_PROPERTY_ID, viewEntity.getVersion(), requestedIds);
+            setResourceProperty(resource, PRIVILEGE_INSTANCE_NAME_PROPERTY_ID, viewInstanceEntity.getName(), requestedIds);
+            break;
+        }
+
+        setResourceProperty(resource, PRIVILEGE_TYPE_PROPERTY_ID, resourceType.name(), requestedIds);
       }
-      setResourceProperty(resource, PRIVILEGE_TYPE_PROPERTY_ID, privilegeType, requestedIds);
     }
+
     return resource;
   }
   @Override

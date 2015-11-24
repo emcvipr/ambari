@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,22 +16,20 @@
  * limitations under the License.
  */
 
-import Ember from 'ember';
-import { moduleForComponent, test } from 'ember-qunit';
+package org.apache.ambari.server.security.authorization;
 
-moduleForComponent('query-editor', 'QueryEditorComponent', {
-  unit: true
-});
+import org.junit.Test;
 
-test('initEditor sets the editor on didInsertElement', function () {
-  expect(2);
+import static org.junit.Assert.*;
 
-  var component = this.subject();
+public class RoleAuthorizationTest {
 
-  equal(component.get('editor'), undefined, 'element not rendered. Editor not set.');
-
-  this.$();
-
-  ok(component.get('editor'), 'element rendered. Editor set.');
-});
-
+  @Test
+  public void testTranslate() throws Exception {
+    assertEquals(RoleAuthorization.VIEW_USE, RoleAuthorization.translate("VIEW.USE"));
+    assertEquals(RoleAuthorization.SERVICE_VIEW_METRICS, RoleAuthorization.translate("SERVICE.VIEW_METRICS"));
+    assertEquals(RoleAuthorization.HOST_VIEW_METRICS, RoleAuthorization.translate("HOST.VIEW_METRICS"));
+    assertEquals(RoleAuthorization.CLUSTER_VIEW_METRICS, RoleAuthorization.translate("CLUSTER.VIEW_METRICS"));
+    assertEquals(RoleAuthorization.AMBARI_ADD_DELETE_CLUSTERS, RoleAuthorization.translate("AMBARI.ADD_DELETE_CLUSTERS"));
+  }
+}

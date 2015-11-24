@@ -191,6 +191,42 @@ hdp23properties.push({
     "category": "LDAPSettings"
   },
   {
+    "name": "ranger.sso.providerurl",
+    "serviceName": "RANGER",
+    "filename": "ranger-admin-site.xml",
+    "category": "KnoxSSOSettings"
+  },
+  {
+    "name": "ranger.sso.publicKey",
+    "serviceName": "RANGER",
+    "filename": "ranger-admin-site.xml",
+    "category": "KnoxSSOSettings"
+  },
+  {
+    "name": "ranger.sso.cookiename",
+    "serviceName": "RANGER",
+    "filename": "ranger-admin-site.xml",
+    "category": "KnoxSSOSettings"
+  },
+  {
+    "name": "ranger.sso.enabled",
+    "serviceName": "RANGER",
+    "filename": "ranger-admin-site.xml",
+    "category": "KnoxSSOSettings"
+  },
+  {
+    "name": "ranger.sso.query.param.originalurl",
+    "serviceName": "RANGER",
+    "filename": "ranger-admin-site.xml",
+    "category": "KnoxSSOSettings"
+  },
+  {
+    "name": "ranger.sso.browser.useragent",
+    "serviceName": "RANGER",
+    "filename": "ranger-admin-site.xml",
+    "category": "KnoxSSOSettings"
+  },
+  {
     "name": "ranger.ldap.ad.domain",
     "serviceName": "RANGER",
     "filename": "ranger-admin-site.xml",

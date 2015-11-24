@@ -15,23 +15,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.hadoop.metrics2.sink.timeline;
 
-import Ember from 'ember';
-import { moduleForComponent, test } from 'ember-qunit';
+public class PrecisionLimitExceededException extends IllegalArgumentException {
 
-moduleForComponent('query-editor', 'QueryEditorComponent', {
-  unit: true
-});
+  private static final long serialVersionUID = 1L;
 
-test('initEditor sets the editor on didInsertElement', function () {
-  expect(2);
+  public PrecisionLimitExceededException(String message, Throwable cause) {
+    super(message, cause);
+  }
 
-  var component = this.subject();
+  public PrecisionLimitExceededException(String message) {
+    super(message);
+  }
 
-  equal(component.get('editor'), undefined, 'element not rendered. Editor not set.');
+  public PrecisionLimitExceededException(Throwable cause) {
+    super(cause);
+  }
 
-  this.$();
-
-  ok(component.get('editor'), 'element rendered. Editor set.');
-});
-
+}
