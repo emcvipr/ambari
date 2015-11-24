@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -15,34 +15,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.hadoop.metrics2.sink.timeline;
 
-package org.apache.ambari.server.controller;
+public class PrecisionLimitExceededException extends IllegalArgumentException {
 
-public class TaskStatusRequest {
-  protected Long requestId;
-  protected Long taskId;
+  private static final long serialVersionUID = 1L;
 
-  public TaskStatusRequest() {
+  public PrecisionLimitExceededException(String message, Throwable cause) {
+    super(message, cause);
   }
 
-  public TaskStatusRequest(Long requestId, Long taskId) {
-    this.requestId = requestId;
-    this.taskId = taskId;
+  public PrecisionLimitExceededException(String message) {
+    super(message);
   }
 
-  public Long getRequestId() {
-    return requestId;
+  public PrecisionLimitExceededException(Throwable cause) {
+    super(cause);
   }
 
-  public void setRequestId(Long requestId) {
-    this.requestId = requestId;
-  }
-
-  public Long getTaskId() {
-    return taskId;
-  }
-
-  public void setTaskId(Long taskId) {
-    this.taskId = taskId;
-  }
 }

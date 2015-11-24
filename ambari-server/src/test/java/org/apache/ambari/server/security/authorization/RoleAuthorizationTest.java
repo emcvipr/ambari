@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,19 +16,20 @@
  * limitations under the License.
  */
 
+package org.apache.ambari.server.security.authorization;
 
-var App = require('app');
+import org.junit.Test;
 
-App.ConfigVersion = App.ServiceConfigVersion.extend({
-  configProperties: DS.hasMany('App.ConfigProperty'),
+import static org.junit.Assert.*;
 
-  /**
-   * this flag is true when we compare some version with
-   * this config version
-   * this flag make influence on displaying properties
-   * @property {boolean} [isForCompare=false]
-   */
-  isForCompare: DS.attr('boolean', {defaultValue: false})
-});
+public class RoleAuthorizationTest {
 
-App.ConfigVersion.FIXTURES = [];
+  @Test
+  public void testTranslate() throws Exception {
+    assertEquals(RoleAuthorization.VIEW_USE, RoleAuthorization.translate("VIEW.USE"));
+    assertEquals(RoleAuthorization.SERVICE_VIEW_METRICS, RoleAuthorization.translate("SERVICE.VIEW_METRICS"));
+    assertEquals(RoleAuthorization.HOST_VIEW_METRICS, RoleAuthorization.translate("HOST.VIEW_METRICS"));
+    assertEquals(RoleAuthorization.CLUSTER_VIEW_METRICS, RoleAuthorization.translate("CLUSTER.VIEW_METRICS"));
+    assertEquals(RoleAuthorization.AMBARI_ADD_DELETE_CLUSTERS, RoleAuthorization.translate("AMBARI.ADD_DELETE_CLUSTERS"));
+  }
+}

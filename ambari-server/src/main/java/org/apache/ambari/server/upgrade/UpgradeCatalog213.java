@@ -837,7 +837,7 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
           }
           if (stackId != null && stackId.getStackName().equals("HDP") &&
               VersionUtils.compareVersions(stackId.getStackVersion(), "2.2") >= 0) {
-            if (content.indexOf("MaxDirectMemorySize={{hbase_max_direct_memory_size}}m") < 0) {
+            if (!content.contains("MaxDirectMemorySize={{hbase_max_direct_memory_size}}m")) {
               String newPartOfContent = "\n\nexport HBASE_REGIONSERVER_OPTS=\"$HBASE_REGIONSERVER_OPTS {% if hbase_max_direct_memory_size %} -XX:MaxDirectMemorySize={{hbase_max_direct_memory_size}}m {% endif %}\"\n\n";
               content += newPartOfContent;
               updateConfig = true;
@@ -917,8 +917,8 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
           if (amsSite != null) {
             Map<String, String> newProperties = new HashMap<>();
 
-            //Changed AMS result set limit from 5760 to 11520.
-            newProperties.put("timeline.metrics.service.default.result.limit", String.valueOf(11520));
+            //Changed AMS result set limit from 5760 to 15840.
+            newProperties.put("timeline.metrics.service.default.result.limit", String.valueOf(15840));
 
             //Interval
             newProperties.put("timeline.metrics.cluster.aggregator.second.interval", String.valueOf(120));
@@ -1078,7 +1078,7 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
       String newHeapSizeRegex = "export HADOOP_HEAPSIZE={{hive_heapsize}} # Setting for HiveServer2 and Client\n" +
               "fi\n" +
               "\n" +
-              "export HADOOP_CLIENT_OPTS=\"$HADOOP_CLIENT_OPTS  -Xmx${HADOOP_HEAPSIZE}m\"";
+              "export HADOOP_CLIENT_OPTS=\"$HADOOP_CLIENT_OPTS  -Xmx${HADOOP_HEAPSIZE}m\"\n";
       return hiveEnvContent.replaceAll(oldHeapSizeRegex, Matcher.quoteReplacement(newHeapSizeRegex));
     }
   }

@@ -25,6 +25,10 @@ Em.I18n.translations = {
   'app.reloadPopup.text': 'Trying to connect to server...',
   'app.reloadPopup.noClusterName.text': 'Failed to retrieve cluster name, trying to reload...',
   'app.reloadPopup.header': 'Reload Page',
+  'app.redirectIssuePopup.header': 'Login Redirect Issue',
+  'app.redirectIssuePopup.body': 'For single sign-on, make sure that Knox Gateway and Ambari Server are located on the same host or subdomain.' +
+    '<br/>Alternatively login as an Ambari local user using the local login page.<br />' +
+    '<a href="{0}" target="_blank">{0}</a>',
 
   'app.loadingPlaceholder': 'Loading...',
   'app.versionMismatchAlert.title': 'Ambari Server / Web Client Version Mismatch',
@@ -1875,8 +1879,11 @@ Em.I18n.translations = {
   'services.service.add':'Add Service',
   'services.service.startAll':'Start All',
   'services.service.stopAll':'Stop All',
+  'services.service.restartAllRequired':'Restart All Required',
   'services.service.startAll.confirmMsg' : 'You are about to start all services',
   'services.service.stopAll.confirmMsg' : 'You are about to stop all services',
+  'services.service.refreshAll.confirmMsg': '<p>You are about to restart {0}</p>' +
+    '<div class="alert alert-warning">This will trigger alerts as the service is restarted. To suppress alerts, turn on Maintenance Mode for services listed above prior to running Restart All Required</div>',
   'services.service.start.confirmMsg' : 'You are about to start {0}',
   'services.service.stop.confirmMsg' : 'You are about to stop {0}',
   'services.service.stop.confirmButton': 'Confirm Stop',
