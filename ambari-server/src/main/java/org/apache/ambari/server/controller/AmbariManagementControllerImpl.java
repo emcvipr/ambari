@@ -1432,7 +1432,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
             break;
           } else {
             for (Entry<String, String> property : requestConfigProperties.entrySet()) {
-              if (!property.getValue().equals(clusterConfigProperties.get(property.getKey()))) {
+              if (!StringUtils.equals(property.getValue(),clusterConfigProperties.get(property.getKey()))) {
                 isConfigurationCreationNeeded =true;
                 break;
               }
@@ -4326,7 +4326,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
   }
 
   @Transactional
-  private void createWidgetsAndLayouts(Cluster cluster, List<WidgetLayout> widgetLayouts) {
+  void createWidgetsAndLayouts(Cluster cluster, List<WidgetLayout> widgetLayouts) {
     String user = "ambari";
     Long clusterId = cluster.getClusterId();
     ClusterEntity clusterEntity = clusterDAO.findById(clusterId);
