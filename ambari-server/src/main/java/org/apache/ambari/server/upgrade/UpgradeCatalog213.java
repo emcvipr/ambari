@@ -29,31 +29,17 @@ import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.DBAccessor.DBColumnInfo;
-import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
-import org.apache.ambari.server.orm.dao.ClusterDAO;
-import org.apache.ambari.server.orm.dao.ClusterVersionDAO;
-import org.apache.ambari.server.orm.dao.DaoUtils;
-import org.apache.ambari.server.orm.dao.HostVersionDAO;
-import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
-import org.apache.ambari.server.orm.dao.StackDAO;
-import org.apache.ambari.server.orm.dao.UpgradeDAO;
-import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
-import org.apache.ambari.server.orm.entities.ClusterEntity;
-import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
-import org.apache.ambari.server.orm.entities.HostEntity;
-import org.apache.ambari.server.orm.entities.HostVersionEntity;
-import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
-import org.apache.ambari.server.orm.entities.StackEntity;
-import org.apache.ambari.server.orm.entities.UpgradeEntity;
+import org.apache.ambari.server.orm.dao.*;
+import org.apache.ambari.server.orm.entities.*;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
 import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.SecurityType;
-import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.StackInfo;
 import org.apache.ambari.server.state.alert.SourceType;
+import org.apache.ambari.server.state.kerberos.*;
 import org.apache.ambari.server.state.stack.upgrade.Direction;
 import org.apache.ambari.server.state.stack.upgrade.RepositoryVersionHelper;
 import org.apache.ambari.server.state.stack.upgrade.UpgradeType;
@@ -314,97 +300,95 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
     updateZookeeperLog4j();
     updateHiveConfig();
     updateAccumuloConfigs();
+    updateKerberosDescriptorArtifacts();
     updateKnoxTopology();
   }
 
   protected void updateKnoxTopology() throws AmbariException {
     AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
     for (final Cluster cluster : getCheckedClusterMap(ambariManagementController.getClusters()).values()) {
-      Service knoxService = cluster.getService(KNOX_SERVICE);
-      if (knoxService != null) {
-        Config topology = cluster.getDesiredConfigByType(TOPOLOGY_CONFIG);
-        if (topology != null) {
-          String content = topology.getProperties().get(CONTENT_PROPERTY);
-          if (content != null) {
-            Document topologyXml = convertStringToDocument(content);
-            if (topologyXml != null) {
-              Element root = topologyXml.getDocumentElement();
-              if (root != null)  {
-                NodeList providerNodes = root.getElementsByTagName("provider");
-                boolean authorizationProviderExists = false;
-                try {
-                  for (int i = 0; i < providerNodes.getLength(); i++) {
-                    Node providerNode = providerNodes.item(i);
-                    NodeList childNodes = providerNode.getChildNodes();
-                    for (int k = 0; k < childNodes.getLength(); k++) {
-                      Node child = childNodes.item(k);
-                      child.normalize();
-                      String childTextContent = child.getTextContent();
-                      if (childTextContent != null && childTextContent.toLowerCase().equals("authorization")) {
-                        authorizationProviderExists = true;
-                        break;
-                      }
-                    }
-                    if (authorizationProviderExists) {
+      Config topology = cluster.getDesiredConfigByType(TOPOLOGY_CONFIG);
+      if (topology != null) {
+        String content = topology.getProperties().get(CONTENT_PROPERTY);
+        if (content != null) {
+          Document topologyXml = convertStringToDocument(content);
+          if (topologyXml != null) {
+            Element root = topologyXml.getDocumentElement();
+            if (root != null)  {
+              NodeList providerNodes = root.getElementsByTagName("provider");
+              boolean authorizationProviderExists = false;
+              try {
+                for (int i = 0; i < providerNodes.getLength(); i++) {
+                  Node providerNode = providerNodes.item(i);
+                  NodeList childNodes = providerNode.getChildNodes();
+                  for (int k = 0; k < childNodes.getLength(); k++) {
+                    Node child = childNodes.item(k);
+                    child.normalize();
+                    String childTextContent = child.getTextContent();
+                    if (childTextContent != null && childTextContent.toLowerCase().equals("authorization")) {
+                      authorizationProviderExists = true;
                       break;
                     }
                   }
-                } catch(Exception e) {
-                  e.printStackTrace();
-                  LOG.error("Error occurred during check 'authorization' provider already exists in topology." + e);
-                  return;
-                }
-                if (!authorizationProviderExists) {
-                  NodeList nodeList = root.getElementsByTagName("gateway");
-                  if (nodeList != null && nodeList.getLength() > 0) {
-                    boolean rangerPluginEnabled = isRangerPluginEnabled(cluster);
-
-                    Node gatewayNode = nodeList.item(0);
-                    Element newProvider = topologyXml.createElement("provider");
-
-                    Element role = topologyXml.createElement("role");
-                    role.appendChild(topologyXml.createTextNode("authorization"));
-                    newProvider.appendChild(role);
-
-                    Element name = topologyXml.createElement("name");
-                    if (rangerPluginEnabled) {
-                      name.appendChild(topologyXml.createTextNode("XASecurePDPKnox"));
-                    } else {
-                      name.appendChild(topologyXml.createTextNode("AclsAuthz"));
-                    }
-                    newProvider.appendChild(name);
-
-                    Element enabled = topologyXml.createElement("enabled");
-                    enabled.appendChild(topologyXml.createTextNode("true"));
-                    newProvider.appendChild(enabled);
-
-
-                    gatewayNode.appendChild(newProvider);
-
-                    DOMSource topologyDomSource = new DOMSource(root);
-                    StringWriter writer = new StringWriter();
-                    try {
-                      Transformer transformer = TransformerFactory.newInstance().newTransformer();
-                      transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
-                      transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
-                      transformer.setOutputProperty(OutputKeys.METHOD, "xml");
-                      transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-                      transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "5");
-                      transformer.transform(topologyDomSource, new StreamResult(writer));
-                    } catch (TransformerConfigurationException e) {
-                      e.printStackTrace();
-                      LOG.error("Unable to create transformer instance, to convert Document(XML) to String. " + e);
-                      return;
-                    } catch (TransformerException e) {
-                      e.printStackTrace();
-                      LOG.error("Unable to transform Document(XML) to StringWriter. " + e);
-                      return;
-                    }
-
-                    content = writer.toString();
-                    Map<String, String> updates = Collections.singletonMap(CONTENT_PROPERTY, content);
-                    updateConfigurationPropertiesForCluster(cluster, TOPOLOGY_CONFIG, updates, true, false);
+                  if (authorizationProviderExists) {
+                    break;
                   }
+                }
+              } catch(Exception e) {
+                e.printStackTrace();
+                LOG.error("Error occurred during check 'authorization' provider already exists in topology." + e);
+                return;
+              }
+              if (!authorizationProviderExists) {
+                NodeList nodeList = root.getElementsByTagName("gateway");
+                if (nodeList != null && nodeList.getLength() > 0) {
+                  boolean rangerPluginEnabled = isRangerPluginEnabled(cluster);
+
+                  Node gatewayNode = nodeList.item(0);
+                  Element newProvider = topologyXml.createElement("provider");
+
+                  Element role = topologyXml.createElement("role");
+                  role.appendChild(topologyXml.createTextNode("authorization"));
+                  newProvider.appendChild(role);
+
+                  Element name = topologyXml.createElement("name");
+                  if (rangerPluginEnabled) {
+                    name.appendChild(topologyXml.createTextNode("XASecurePDPKnox"));
+                  } else {
+                    name.appendChild(topologyXml.createTextNode("AclsAuthz"));
+                  }
+                  newProvider.appendChild(name);
+
+                  Element enabled = topologyXml.createElement("enabled");
+                  enabled.appendChild(topologyXml.createTextNode("true"));
+                  newProvider.appendChild(enabled);
+
+
+                  gatewayNode.appendChild(newProvider);
+
+                  DOMSource topologyDomSource = new DOMSource(root);
+                  StringWriter writer = new StringWriter();
+                  try {
+                    Transformer transformer = TransformerFactory.newInstance().newTransformer();
+                    transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
+                    transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+                    transformer.setOutputProperty(OutputKeys.METHOD, "xml");
+                    transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+                    transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "5");
+                    transformer.transform(topologyDomSource, new StreamResult(writer));
+                  } catch (TransformerConfigurationException e) {
+                    e.printStackTrace();
+                    LOG.error("Unable to create transformer instance, to convert Document(XML) to String. " + e);
+                    return;
+                  } catch (TransformerException e) {
+                    e.printStackTrace();
+                    LOG.error("Unable to transform Document(XML) to StringWriter. " + e);
+                    return;
+                  }
+
+                  content = writer.toString();
+                  Map<String, String> updates = Collections.singletonMap(CONTENT_PROPERTY, content);
+                  updateConfigurationPropertiesForCluster(cluster, TOPOLOGY_CONFIG, updates, true, false);
                 }
               }
             }
@@ -616,6 +600,38 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
   }
 
   /**
+   * {@inheritDoc}
+   */
+  @Override
+  protected void updateKerberosDescriptorArtifact(ArtifactDAO artifactDAO, ArtifactEntity artifactEntity) throws AmbariException {
+    if (artifactEntity != null) {
+      Map<String, Object> data = artifactEntity.getArtifactData();
+
+      if (data != null) {
+        final KerberosDescriptor kerberosDescriptor = new KerberosDescriptorFactory().createInstance(data);
+
+        if (kerberosDescriptor != null) {
+          KerberosServiceDescriptor hdfsService = kerberosDescriptor.getService("HDFS");
+          if(hdfsService != null) {
+            // before 2.1.3 hdfs indentity expected to be in HDFS service
+            KerberosIdentityDescriptor hdfsIdentity = hdfsService.getIdentity("hdfs");
+            KerberosComponentDescriptor namenodeComponent = hdfsService.getComponent("NAMENODE");
+            hdfsIdentity.setName("hdfs");
+            hdfsService.removeIdentity("hdfs");
+            namenodeComponent.putIdentity(hdfsIdentity);
+          }
+          updateKerberosDescriptorIdentityReferences(kerberosDescriptor, "/HDFS/hdfs", "/HDFS/NAMENODE/hdfs");
+          updateKerberosDescriptorIdentityReferences(kerberosDescriptor.getServices(), "/HDFS/hdfs", "/HDFS/NAMENODE/hdfs");
+
+          artifactEntity.setArtifactData(kerberosDescriptor.toMap());
+          artifactDAO.merge(artifactEntity);
+        }
+      }
+    }
+  }
+
+  /**
+   * If still on HDP 2.1, then no repo versions exist, so need to bootstrap the HDP 2.1 repo version,
    * If still on HDP 2.1, then no repo versions exist, so need to bootstrap the HDP 2.1 repo version,
    * and mark it as CURRENT in the cluster_version table for the cluster, as well as the host_version table
    * for all hosts.
@@ -1171,6 +1187,12 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
     regSearch = "\\{\\{regionserver_heapsize\\}\\}";
     replacement = "{{regionserver_heapsize}}m";
     content = content.replaceAll(regSearch, replacement);
+    regSearch = "export HBASE_HEAPSIZE=";
+    replacement = "#export HBASE_HEAPSIZE=";
+    content = content.replaceAll(regSearch, replacement);
+    content += "\n" +
+      "# The maximum amount of heap to use for hbase shell.\n" +
+      "export HBASE_SHELL_OPTS=\"-Xmx256m\"\n";
     return content;
   }
 

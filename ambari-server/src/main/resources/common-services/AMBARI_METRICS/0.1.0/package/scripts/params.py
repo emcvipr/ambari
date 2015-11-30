@@ -98,8 +98,14 @@ hbase_classpath_additional = default("/configurations/ams-hbase-env/hbase_classp
 master_heapsize = config['configurations']['ams-hbase-env']['hbase_master_heapsize']
 regionserver_heapsize = config['configurations']['ams-hbase-env']['hbase_regionserver_heapsize']
 
+# Check if hbase java options already have appended "m". If Yes, remove the trailing m.
+metrics_collector_heapsize = int(trim_heap_property(str(metrics_collector_heapsize), "m"))
+master_heapsize = int(trim_heap_property(str(master_heapsize), "m"))
+regionserver_heapsize = int(trim_heap_property(str(regionserver_heapsize), "m"))
+
 regionserver_xmn_max = default('/configurations/ams-hbase-env/hbase_regionserver_xmn_max', None)
 if regionserver_xmn_max:
+  regionserver_xmn_max = int(trim_heap_property(str(regionserver_xmn_max), "m"))
   regionserver_xmn_percent = config['configurations']['ams-hbase-env']['hbase_regionserver_xmn_ratio']
   regionserver_xmn_size = calc_xmn_from_xms(regionserver_heapsize, regionserver_xmn_percent, regionserver_xmn_max)
 else:
@@ -110,8 +116,6 @@ hbase_master_xmn_size = config['configurations']['ams-hbase-env']['hbase_master_
 hbase_master_maxperm_size = config['configurations']['ams-hbase-env']['hbase_master_maxperm_size']
 
 # Check if hbase java options already have appended "m". If Yes, remove the trailing m.
-master_heapsize = int(trim_heap_property(str(master_heapsize), "m"))
-regionserver_heapsize = int(trim_heap_property(str(regionserver_heapsize), "m"))
 hbase_master_maxperm_size = int(trim_heap_property(str(hbase_master_maxperm_size), "m"))
 hbase_master_xmn_size = int(trim_heap_property(str(hbase_master_xmn_size), "m"))
 regionserver_xmn_size = int(trim_heap_property(str(regionserver_xmn_size), "m"))
