@@ -166,7 +166,7 @@ function setConfigs() {
       cluster: '%@rmproxy/ws/v1/cluster'.fmt(resourcesPrefix)
     },
     otherNamespace: {
-      cluster: '%@rmproxy/cluster'.fmt(resourcesPrefix)
+      cluster: '%@rmredirect/cluster'.fmt(resourcesPrefix)
     }
   });
 

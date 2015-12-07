@@ -64,12 +64,14 @@ public class AmbariAuthorizationFilter implements Filter {
   private static final String API_USERS_ALL_PATTERN = API_VERSION_PREFIX + "/users.*";
   private static final String API_PRIVILEGES_ALL_PATTERN = API_VERSION_PREFIX + "/privileges.*";
   private static final String API_GROUPS_ALL_PATTERN = API_VERSION_PREFIX + "/groups.*";
+  private static final String API_CLUSTERS_PATTERN = API_VERSION_PREFIX + "/clusters/(\\w+)?";
   private static final String API_CLUSTERS_ALL_PATTERN = API_VERSION_PREFIX + "/clusters.*";
   private static final String API_VIEWS_ALL_PATTERN = API_VERSION_PREFIX + "/views.*";
   private static final String API_PERSIST_ALL_PATTERN = API_VERSION_PREFIX + "/persist.*";
   private static final String API_LDAP_SYNC_EVENTS_ALL_PATTERN = API_VERSION_PREFIX + "/ldap_sync_events.*";
   private static final String API_CREDENTIALS_ALL_PATTERN = API_VERSION_PREFIX + "/clusters/.*?/credentials.*";
   private static final String API_CREDENTIALS_AMBARI_PATTERN = API_VERSION_PREFIX + "/clusters/.*?/credentials/ambari\\..*";
+  private static final String API_STACK_VERSIONS_PATTERN = API_VERSION_PREFIX + "/stacks/.*?/versions/.*";
 
   protected static final String LOGIN_REDIRECT_BASE = "/#/login?targetURI=";
 
@@ -156,11 +158,6 @@ public class AmbariAuthorizationFilter implements Filter {
               authorized = true;
               break;
             }
-          } else if (requestURI.matches(API_CREDENTIALS_ALL_PATTERN)) {
-            if (permissionId.equals(PermissionEntity.CLUSTER_ADMINISTRATOR_PERMISSION)) {
-              authorized = true;
-              break;
-            }
           } else if (requestURI.matches(API_CLUSTERS_ALL_PATTERN)) {
             if (permissionId.equals(PermissionEntity.CLUSTER_USER_PERMISSION) ||
                 permissionId.equals(PermissionEntity.CLUSTER_ADMINISTRATOR_PERMISSION)) {
@@ -200,7 +197,6 @@ public class AmbariAuthorizationFilter implements Filter {
           (!httpRequest.getMethod().equals("GET")
               || requestURI.matches(VIEWS_CONTEXT_ALL_PATTERN)
               || requestURI.matches(API_GROUPS_ALL_PATTERN)
-              || requestURI.matches(API_CREDENTIALS_ALL_PATTERN)
               || requestURI.matches(API_LDAP_SYNC_EVENTS_ALL_PATTERN))) {
 
         httpResponse.setHeader("WWW-Authenticate", "Basic realm=\"" + realm + "\"");
@@ -256,6 +252,10 @@ public class AmbariAuthorizationFilter implements Filter {
    */
   private boolean authorizationPerformedInternally(String requestURI) {
     return requestURI.matches(API_USERS_ALL_PATTERN) ||
+        requestURI.matches(API_GROUPS_ALL_PATTERN) ||
+        requestURI.matches(API_CREDENTIALS_ALL_PATTERN) ||
+        requestURI.matches(API_CLUSTERS_PATTERN) ||
+        requestURI.matches(API_STACK_VERSIONS_PATTERN) ||
         requestURI.matches(API_PRIVILEGES_ALL_PATTERN);
   }
 

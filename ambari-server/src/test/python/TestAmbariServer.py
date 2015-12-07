@@ -3068,16 +3068,27 @@ class TestAmbariServer(TestCase):
     pass
 
   @not_for_platform(PLATFORM_WINDOWS)
-  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch("os.path.isdir")
+  @patch("os.mkdir")
+  @patch("os.chown")
+  @patch("pwd.getpwnam")
+  @patch.object(OSCheck, "get_os_family")
   @patch.object(LinuxDBMSConfig, "_setup_remote_server")
   @patch("ambari_server.dbConfiguration_linux.print_info_msg")
   @patch("ambari_server.dbConfiguration_linux.read_password")
   @patch("ambari_server.dbConfiguration_linux.get_validated_string_input")
   @patch("ambari_server.dbConfiguration.get_validated_string_input")
   @patch("ambari_server.serverSetup.get_YN_input")
-  def test_prompt_db_properties_oracle_sid(self, gyni_mock, gvsi_mock, gvsi_2_mock, rp_mock, print_info_msg_mock, srs_mock):
+  def test_prompt_db_properties_postgre_adv(self, gyni_mock, gvsi_mock, gvsi_2_mock, rp_mock, print_info_msg_mock, sls_mock,
+                                            get_os_family_mock, get_pw_nam_mock, chown_mock, mkdir_mock, isdir_mock):
     gyni_mock.return_value = True
     list_of_return_values = ["ambari-server", "ambari", "2", "1521", "localhost", "2"]
+    get_os_family_mock.return_value = OSConst.SUSE_FAMILY
+    pw = MagicMock()
+    pw.setattr('pw_uid', 0)
+    pw.setattr('pw_gid', 0)
+    get_pw_nam_mock.return_value = pw
+
 
     def side_effect(*args, **kwargs):
       return list_of_return_values.pop()
@@ -3118,24 +3129,38 @@ class TestAmbariServer(TestCase):
     self.assertEqual(dbmsConfig.database_username, "ambari")
     self.assertEqual(dbmsConfig.database_password, "bigdata")
 
+    isdir_mock.return_value = False
+
     dbmsConfig.configure_database(props)
 
     self.assertEqual(dbmsConfig.database_username, "ambari-server")
     self.assertEqual(dbmsConfig.database_password, "password")
     self.assertEqual(dbmsConfig.sid_or_sname, "sid")
+    self.assertTrue(chown_mock.called)
+    self.assertTrue(mkdir_mock.called)
     pass
 
   @not_for_platform(PLATFORM_WINDOWS)
-  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch("os.path.isdir")
+  @patch("os.mkdir")
+  @patch("os.chown")
+  @patch("pwd.getpwnam")
+  @patch.object(OSCheck, "get_os_family")
   @patch.object(PGConfig, "_setup_local_server")
   @patch("ambari_server.dbConfiguration_linux.print_info_msg")
   @patch("ambari_server.dbConfiguration_linux.read_password")
   @patch("ambari_server.dbConfiguration_linux.get_validated_string_input")
   @patch("ambari_server.dbConfiguration.get_validated_string_input")
   @patch("ambari_server.serverSetup.get_YN_input")
-  def test_prompt_db_properties_postgre_adv(self, gyni_mock, gvsi_mock, gvsi_2_mock, rp_mock, print_info_msg_mock, sls_mock):
+  def test_prompt_db_properties_postgre_adv(self, gyni_mock, gvsi_mock, gvsi_2_mock, rp_mock, print_info_msg_mock, sls_mock,
+                                            get_os_family_mock, get_pw_nam_mock, chown_mock, mkdir_mock, isdir_mock):
     gyni_mock.return_value = True
     list_of_return_values = ["ambari-server", "ambari", "ambari", "1"]
+    get_os_family_mock.return_value = OSConst.SUSE_FAMILY
+    pw = MagicMock()
+    pw.setattr('pw_uid', 0)
+    pw.setattr('pw_gid', 0)
+    get_pw_nam_mock.return_value = pw
 
     def side_effect(*args, **kwargs):
       return list_of_return_values.pop()
@@ -3458,6 +3483,7 @@ class TestAmbariServer(TestCase):
 
   @not_for_platform(PLATFORM_WINDOWS)
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch("pwd.getpwnam")
   @patch("ambari_commons.firewall.run_os_command")
   @patch("os.path.exists")
   @patch("os.path.isfile")
@@ -3499,7 +3525,7 @@ class TestAmbariServer(TestCase):
                  store_password_file_mock, get_ambari_properties_1_mock, update_properties_mock,
                  get_YN_input_1_mock, ensure_jdbc_driver_installed_mock,
                  remove_file_mock, isfile_mock, exists_mock,
-                 run_os_command_mock):
+                 run_os_command_mock, get_pw_nam_mock):
     hostname = "localhost"
     db_name = "db_ambari"
     postgres_schema = "sc_ambari"
@@ -3523,6 +3549,10 @@ class TestAmbariServer(TestCase):
     failed = False
     properties = Properties()
 
+    def side_effect(username):
+      raise KeyError("")
+
+    get_pw_nam_mock.side_effect = side_effect
     get_YN_input_mock.return_value = False
     isfile_mock.return_value = False
     verify_setup_allowed_method.return_value = 0
@@ -4648,32 +4678,6 @@ class TestAmbariServer(TestCase):
     args = [""]
     _ambari_server_.restore(args)
     self.assertTrue(bkrestore_mock.called)
-    pass
-
-  @patch("ambari_server.serverUpgrade.is_root")
-  @patch("ambari_server.serverUpgrade.check_database_name_property")
-  @patch("ambari_server.serverUpgrade.run_stack_upgrade")
-  def test_upgrade_stack(self, run_stack_upgrade_mock,
-                         check_database_name_property_mock, is_root_mock):
-    # Testing call under non-root
-    is_root_mock.return_value = False
-
-    args = ['', 'HDP-2.0']
-    try:
-      upgrade_stack(args)
-      self.fail("Should throw exception")
-    except FatalException as fe:
-      # Expected
-      self.assertTrue("root-level" in fe.reason)
-      pass
-
-    # Testing calls under root
-    is_root_mock.return_value = True
-    run_stack_upgrade_mock.return_value = 0
-    upgrade_stack(args)
-
-    self.assertTrue(run_stack_upgrade_mock.called)
-    run_stack_upgrade_mock.assert_called_with(['', 'HDP-2.0'], "HDP", "2.0", None, None)
     pass
 
   @patch("ambari_server.serverUpgrade.get_ambari_properties")

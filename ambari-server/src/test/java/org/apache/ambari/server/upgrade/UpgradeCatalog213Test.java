@@ -40,8 +40,22 @@ import org.apache.ambari.server.controller.MaintenanceStateHelper;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
-import org.apache.ambari.server.orm.dao.*;
-import org.apache.ambari.server.orm.entities.*;
+import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
+import org.apache.ambari.server.orm.dao.ArtifactDAO;
+import org.apache.ambari.server.orm.dao.ClusterDAO;
+import org.apache.ambari.server.orm.dao.ClusterVersionDAO;
+import org.apache.ambari.server.orm.dao.DaoUtils;
+import org.apache.ambari.server.orm.dao.HostVersionDAO;
+import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
+import org.apache.ambari.server.orm.dao.StackDAO;
+import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
+import org.apache.ambari.server.orm.entities.ArtifactEntity;
+import org.apache.ambari.server.orm.entities.ClusterEntity;
+import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
+import org.apache.ambari.server.orm.entities.HostEntity;
+import org.apache.ambari.server.orm.entities.HostVersionEntity;
+import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
+import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.stack.StackManagerFactory;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
@@ -52,7 +66,10 @@ import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.StackInfo;
-import org.apache.ambari.server.state.kerberos.*;
+import org.apache.ambari.server.state.kerberos.KerberosComponentDescriptor;
+import org.apache.ambari.server.state.kerberos.KerberosDescriptor;
+import org.apache.ambari.server.state.kerberos.KerberosDescriptorFactory;
+import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptor;
 import org.apache.ambari.server.state.stack.OsFamily;
 import org.apache.ambari.server.state.stack.upgrade.RepositoryVersionHelper;
 import org.easymock.Capture;
@@ -77,6 +94,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static junit.framework.Assert.assertNotNull;
+import static junit.framework.Assert.assertNull;
 import static org.easymock.EasyMock.anyLong;
 import static org.easymock.EasyMock.anyObject;
 import static org.easymock.EasyMock.capture;
@@ -90,9 +109,6 @@ import static org.easymock.EasyMock.replay;
 import static org.easymock.EasyMock.reset;
 import static org.easymock.EasyMock.verify;
 import static org.junit.Assert.assertTrue;
-
-import static junit.framework.Assert.assertNotNull;
-import static junit.framework.Assert.assertNull;
 /**
  * {@link org.apache.ambari.server.upgrade.UpgradeCatalog213} unit tests.
  */
@@ -228,6 +244,7 @@ public class UpgradeCatalog213Test {
     Method updateHadoopEnvConfig = UpgradeCatalog213.class.getDeclaredMethod("updateHadoopEnv");
     Method updateAlertDefinitions = UpgradeCatalog213.class.getDeclaredMethod("updateAlertDefinitions");
     Method updateRangerEnvConfig = UpgradeCatalog213.class.getDeclaredMethod("updateRangerEnvConfig");
+    Method updateRangerUgsyncSiteConfig = UpgradeCatalog213.class.getDeclaredMethod("updateRangerUgsyncSiteConfig");
     Method updateHiveConfig = UpgradeCatalog213.class.getDeclaredMethod("updateHiveConfig");
     Method updateAccumuloConfigs = UpgradeCatalog213.class.getDeclaredMethod("updateAccumuloConfigs");
     Method updateKerberosDescriptorArtifacts = AbstractUpgradeCatalog.class.getDeclaredMethod("updateKerberosDescriptorArtifacts");
@@ -245,6 +262,7 @@ public class UpgradeCatalog213Test {
       .addMockedMethod(updateZookeeperLog4j)
       .addMockedMethod(updateHadoopEnvConfig)
       .addMockedMethod(updateRangerEnvConfig)
+      .addMockedMethod(updateRangerUgsyncSiteConfig)
       .addMockedMethod(updateHiveConfig)
       .addMockedMethod(updateAccumuloConfigs)
       .addMockedMethod(updateKerberosDescriptorArtifacts)
@@ -271,6 +289,8 @@ public class UpgradeCatalog213Test {
     upgradeCatalog213.updateZookeeperLog4j();
     expectLastCall().once();
     upgradeCatalog213.updateRangerEnvConfig();
+    expectLastCall().once();
+    upgradeCatalog213.updateRangerUgsyncSiteConfig();
     expectLastCall().once();
     upgradeCatalog213.updateHiveConfig();
     expectLastCall().once();
@@ -596,97 +616,17 @@ public class UpgradeCatalog213Test {
     String oldContent = "export HBASE_CLASSPATH=${HBASE_CLASSPATH}\n" +
       "\n" +
       "# The maximum amount of heap to use, in MB. Default is 1000.\n" +
-      "export HBASE_HEAPSIZE={{hbase_heapsize}}\n" +
-      "\n" +
-      "{% if java_version &lt; 8 %}\n" +
-      "export HBASE_MASTER_OPTS=\" -XX:PermSize=64m -XX:MaxPermSize={{hbase_master_maxperm_size}} -Xms{{hbase_heapsize}} -Xmx{{hbase_heapsize}} -Xmn{{hbase_master_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
-      "export HBASE_REGIONSERVER_OPTS=\"-XX:MaxPermSize=128m -Xmn{{regionserver_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}} -Xmx{{regionserver_heapsize}}\"\n" +
-      "{% else %}\n" +
-      "export HBASE_MASTER_OPTS=\" -Xms{{hbase_heapsize}} -Xmx{{hbase_heapsize}} -Xmn{{hbase_master_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
-      "export HBASE_REGIONSERVER_OPTS=\" -Xmn{{regionserver_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}} -Xmx{{regionserver_heapsize}}\"\n" +
-      "{% endif %}\n";
+      "export HBASE_HEAPSIZE={{hbase_heapsize}}\n";
+
     String expectedContent = "export HBASE_CLASSPATH=${HBASE_CLASSPATH}\n" +
       "\n" +
       "# The maximum amount of heap to use, in MB. Default is 1000.\n" +
-      "#export HBASE_HEAPSIZE={{hbase_heapsize}}m\n" +
+      "#export HBASE_HEAPSIZE={{hbase_heapsize}}\n" +
       "\n" +
-      "{% if java_version &lt; 8 %}\n" +
-      "export HBASE_MASTER_OPTS=\" -XX:PermSize=64m -XX:MaxPermSize={{hbase_master_maxperm_size}}m -Xms{{hbase_heapsize}}m -Xmx{{hbase_heapsize}}m -Xmn{{hbase_master_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
-      "export HBASE_REGIONSERVER_OPTS=\"-XX:MaxPermSize=128m -Xmn{{regionserver_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}}m -Xmx{{regionserver_heapsize}}m\"\n" +
-      "{% else %}\n" +
-      "export HBASE_MASTER_OPTS=\" -Xms{{hbase_heapsize}}m -Xmx{{hbase_heapsize}}m -Xmn{{hbase_master_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly\"\n" +
-      "export HBASE_REGIONSERVER_OPTS=\" -Xmn{{regionserver_xmn_size}}m -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSInitiatingOccupancyOnly -Xms{{regionserver_heapsize}}m -Xmx{{regionserver_heapsize}}m\"\n" +
-      "{% endif %}\n\n" +
       "# The maximum amount of heap to use for hbase shell.\n" +
       "export HBASE_SHELL_OPTS=\"-Xmx256m\"\n";
     String result = (String) updateAmsHbaseEnvContent.invoke(upgradeCatalog213, oldContent);
     Assert.assertEquals(expectedContent, result);
-  }
-
-  @Test
-  public void testUpdateAmsEnvContent() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-    Method updateAmsEnvContent = UpgradeCatalog213.class.getDeclaredMethod("updateAmsEnvContent", String.class);
-    UpgradeCatalog213 upgradeCatalog213 = new UpgradeCatalog213(injector);
-    String oldContent = "# AMS Collector heapsize\n" +
-      "export AMS_COLLECTOR_HEAPSIZE={{metrics_collector_heapsize}}\n";
-    String expectedContent = "# AMS Collector heapsize\n" +
-      "export AMS_COLLECTOR_HEAPSIZE={{metrics_collector_heapsize}}m\n";
-    String result = (String) updateAmsEnvContent.invoke(upgradeCatalog213, oldContent);
-    Assert.assertEquals(expectedContent, result);
-  }
-
-  @Test
-  public void testUpdateAmsConfigs() throws Exception {
-    EasyMockSupport easyMockSupport = new EasyMockSupport();
-    final AmbariManagementController mockAmbariManagementController = easyMockSupport.createNiceMock(AmbariManagementController.class);
-    final ConfigHelper mockConfigHelper = easyMockSupport.createMock(ConfigHelper.class);
-
-    final Clusters mockClusters = easyMockSupport.createStrictMock(Clusters.class);
-    final Cluster mockClusterExpected = easyMockSupport.createNiceMock(Cluster.class);
-    final Map<String, String> propertiesAmsEnv = new HashMap<String, String>() {
-      {
-        put("metrics_collector_heapsize", "512m");
-      }
-    };
-
-    final Map<String, String> propertiesAmsHbaseEnv = new HashMap<String, String>() {
-      {
-        put("hbase_regionserver_heapsize", "512m");
-        put("regionserver_xmn_size", "512m");
-        put("hbase_master_xmn_size", "512m");
-        put("hbase_master_maxperm_size", "512");
-      }
-    };
-
-    final Config mockAmsEnv = easyMockSupport.createNiceMock(Config.class);
-    final Config mockAmsHbaseEnv = easyMockSupport.createNiceMock(Config.class);
-
-    final Injector mockInjector = Guice.createInjector(new AbstractModule() {
-      @Override
-      protected void configure() {
-        bind(AmbariManagementController.class).toInstance(mockAmbariManagementController);
-        bind(ConfigHelper.class).toInstance(mockConfigHelper);
-        bind(Clusters.class).toInstance(mockClusters);
-        bind(EntityManager.class).toInstance(entityManager);
-
-        bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
-        bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
-      }
-    });
-
-    expect(mockAmbariManagementController.getClusters()).andReturn(mockClusters).once();
-    expect(mockClusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
-      put("normal", mockClusterExpected);
-    }}).once();
-
-    expect(mockClusterExpected.getDesiredConfigByType("ams-env")).andReturn(mockAmsEnv).atLeastOnce();
-    expect(mockClusterExpected.getDesiredConfigByType("ams-hbase-env")).andReturn(mockAmsHbaseEnv).atLeastOnce();
-    expect(mockAmsEnv.getProperties()).andReturn(propertiesAmsEnv).atLeastOnce();
-    expect(mockAmsHbaseEnv.getProperties()).andReturn(propertiesAmsHbaseEnv).atLeastOnce();
-
-    easyMockSupport.replayAll();
-    mockInjector.getInstance(UpgradeCatalog213.class).updateAMSConfigs();
-    easyMockSupport.verifyAll();
   }
 
   @Test
@@ -711,6 +651,7 @@ public class UpgradeCatalog213Test {
         put("timeline.metrics.cluster.aggregator.minute.ttl", String.valueOf(7776000));
         put("timeline.metrics.cluster.aggregator.second.checkpointCutOffMultiplier", String.valueOf(2));
         put("timeline.metrics.cluster.aggregator.second.disabled", String.valueOf(false));
+        put("hbase.fifo.compaction.policy.enabled", String.valueOf(true));
       }
     };
     EasyMockSupport easyMockSupport = new EasyMockSupport();
@@ -723,7 +664,7 @@ public class UpgradeCatalog213Test {
       put("normal", cluster);
     }}).once();
     expect(cluster.getDesiredConfigByType("ams-site")).andReturn(mockAmsSite).atLeastOnce();
-    expect(mockAmsSite.getProperties()).andReturn(oldPropertiesAmsSite).times(1);
+    expect(mockAmsSite.getProperties()).andReturn(oldPropertiesAmsSite).times(2);
 
     Injector injector = easyMockSupport.createNiceMock(Injector.class);
     expect(injector.getInstance(Gson.class)).andReturn(null).anyTimes();
@@ -754,6 +695,66 @@ public class UpgradeCatalog213Test {
     Map<String, String> updatedProperties = configurationRequest.getProperties();
     assertTrue(Maps.difference(newPropertiesAmsSite, updatedProperties).areEqual());
 
+  }
+
+  @Test
+  public void testAmsHbaseSiteUpdateConfigs() throws Exception{
+
+    Map<String, String> oldPropertiesAmsHbaseSite = new HashMap<String, String>() {
+      {
+        //Including only those properties that might be present in an older version.
+        put("zookeeper.session.timeout.localHBaseCluster", String.valueOf(20000));
+      }
+    };
+    Map<String, String> newPropertiesAmsSite = new HashMap<String, String>() {
+      {
+        put("zookeeper.session.timeout.localHBaseCluster", String.valueOf(120000));
+        put("hbase.normalizer.enabled", String.valueOf(true));
+        put("hbase.normalizer.period", String.valueOf(600000));
+        put("hbase.master.normalizer.class", "org.apache.hadoop.hbase.master.normalizer.SimpleRegionNormalizer");
+
+      }
+    };
+    EasyMockSupport easyMockSupport = new EasyMockSupport();
+
+    Clusters clusters = easyMockSupport.createNiceMock(Clusters.class);
+    final Cluster cluster = easyMockSupport.createNiceMock(Cluster.class);
+    Config mockAmsHbaseSite = easyMockSupport.createNiceMock(Config.class);
+
+    expect(clusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
+      put("normal", cluster);
+    }}).once();
+    expect(cluster.getDesiredConfigByType("ams-hbase-site")).andReturn(mockAmsHbaseSite).atLeastOnce();
+    expect(mockAmsHbaseSite.getProperties()).andReturn(oldPropertiesAmsHbaseSite).atLeastOnce();
+
+    Injector injector = easyMockSupport.createNiceMock(Injector.class);
+    expect(injector.getInstance(Gson.class)).andReturn(null).anyTimes();
+    expect(injector.getInstance(MaintenanceStateHelper.class)).andReturn(null).anyTimes();
+    expect(injector.getInstance(KerberosHelper.class)).andReturn(createNiceMock(KerberosHelper.class)).anyTimes();
+
+    replay(injector, clusters, mockAmsHbaseSite, cluster);
+
+    AmbariManagementControllerImpl controller = createMockBuilder(AmbariManagementControllerImpl.class)
+      .addMockedMethod("createConfiguration")
+      .addMockedMethod("getClusters", new Class[] { })
+      .withConstructor(createNiceMock(ActionManager.class), clusters, injector)
+      .createNiceMock();
+
+    Injector injector2 = easyMockSupport.createNiceMock(Injector.class);
+    Capture<ConfigurationRequest> configurationRequestCapture = EasyMock.newCapture();
+    ConfigurationResponse configurationResponseMock = easyMockSupport.createMock(ConfigurationResponse.class);
+
+    expect(injector2.getInstance(AmbariManagementController.class)).andReturn(controller).anyTimes();
+    expect(controller.getClusters()).andReturn(clusters).anyTimes();
+    expect(controller.createConfiguration(capture(configurationRequestCapture))).andReturn(configurationResponseMock).once();
+
+    replay(controller, injector2, configurationResponseMock);
+    new UpgradeCatalog213(injector2).updateAMSConfigs();
+    easyMockSupport.verifyAll();
+
+    ConfigurationRequest configurationRequest = configurationRequestCapture.getValue();
+    Map<String, String> updatedProperties = configurationRequest.getProperties();
+    assertTrue(Maps.difference(newPropertiesAmsSite, updatedProperties).areEqual());
   }
 
   @Test
@@ -820,6 +821,29 @@ public class UpgradeCatalog213Test {
   }
 
   @Test
+  public void testUpdateAmsEnvContent() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+    Method updateAmsEnvContent = UpgradeCatalog213.class.getDeclaredMethod("updateAmsEnvContent", String.class);
+    UpgradeCatalog213 upgradeCatalog213 = new UpgradeCatalog213(injector);
+    String oldContent = "some_content";
+
+    String expectedContent = "some_content" + "\n" +
+      "# AMS Collector GC options\n" +
+      "export AMS_COLLECTOR_GC_OPTS=\"-XX:+UseConcMarkSweepGC -XX:CMSInitiatingOccupancyFraction=70 " +
+      "-XX:+UseCMSInitiatingOccupancyOnly -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps " +
+      "-XX:+UseGCLogFileRotation -XX:GCLogFileSize=10M " +
+      "-Xloggc:{{ams_collector_log_dir}}/collector-gc.log-`date +'%Y%m%d%H%M'`\"\n" +
+      "export AMS_COLLECTOR_OPTS=\"$AMS_COLLECTOR_OPTS $AMS_COLLECTOR_GC_OPTS\"\n"+
+      "\n" +
+      "# HBase compaction policy enabled\n" +
+      "export HBASE_NORMALIZATION_ENABLED={{ams_hbase_normalizer_enabled}}\n" +
+      "\n" +
+      "# HBase compaction policy enabled\n" +
+      "export HBASE_FIFO_COMPACTION_POLICY_ENABLED={{ams_hbase_fifo_compaction_policy_enabled}}\n";
+
+    String result = (String) updateAmsEnvContent.invoke(upgradeCatalog213, oldContent);
+    Assert.assertEquals(expectedContent, result);
+  }
+  
   public void testUpdateKafkaConfigs() throws Exception {
     EasyMockSupport easyMockSupport = new EasyMockSupport();
     final AmbariManagementController mockAmbariManagementController = easyMockSupport.createNiceMock(AmbariManagementController.class);
@@ -883,7 +907,7 @@ public class UpgradeCatalog213Test {
             Map.class, boolean.class, boolean.class)
         .createMock();
     upgradeCatalog213.updateConfigurationPropertiesForCluster(mockClusterExpected,
-        "kafka-env", updates, true, false);
+      "kafka-env", updates, true, false);
     expectLastCall().once();
 
     expect(mockAmbariManagementController.createConfiguration(EasyMock.<ConfigurationRequest>anyObject())).andReturn(mockConfigurationResponse);
@@ -1114,6 +1138,53 @@ public class UpgradeCatalog213Test {
       Assert.assertEquals(String.class, upgradeTypeCol.getType());
       Assert.assertEquals("upgrade_type", upgradeTypeCol.getName());
     }
+  }
+
+  @Test
+  public void testUpdateRangerUgsyncSiteConfig() throws Exception {
+    EasyMockSupport easyMockSupport = new EasyMockSupport();
+    final AmbariManagementController mockAmbariManagementController = easyMockSupport.createNiceMock(AmbariManagementController.class);
+    final Clusters mockClusters = easyMockSupport.createStrictMock(Clusters.class);
+    final Cluster mockClusterExpected = easyMockSupport.createNiceMock(Cluster.class);
+    final Map<String, String> propertiesRangerUgsyncSite = new HashMap<String, String>() {{
+        put("ranger.usersync.source.impl.class", "ldap");
+    }};
+
+    final Config mockRangerUgsyncSite = easyMockSupport.createNiceMock(Config.class);
+    final Injector mockInjector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(AmbariManagementController.class).toInstance(mockAmbariManagementController);
+        bind(Clusters.class).toInstance(mockClusters);
+        bind(EntityManager.class).toInstance(entityManager);
+
+        bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
+        bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
+      }
+    });
+
+    expect(mockAmbariManagementController.getClusters()).andReturn(mockClusters).once();
+    expect(mockClusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
+      put("normal", mockClusterExpected);
+    }}).atLeastOnce();
+    expect(mockClusterExpected.getDesiredConfigByType("ranger-ugsync-site")).andReturn(mockRangerUgsyncSite).atLeastOnce();
+
+    expect(mockRangerUgsyncSite.getProperties()).andReturn(propertiesRangerUgsyncSite).atLeastOnce();
+
+    Map<String, String> updates = Collections.singletonMap("ranger.usersync.source.impl.class", "org.apache.ranger.ldapusersync.process.LdapUserGroupBuilder");
+    UpgradeCatalog213 upgradeCatalog213 = createMockBuilder(UpgradeCatalog213.class)
+            .withConstructor(Injector.class)
+            .withArgs(mockInjector)
+            .addMockedMethod("updateConfigurationPropertiesForCluster", Cluster.class, String.class,
+                    Map.class, boolean.class, boolean.class)
+            .createMock();
+    upgradeCatalog213.updateConfigurationPropertiesForCluster(mockClusterExpected,
+            "ranger-ugsync-site", updates, true, false);
+    expectLastCall().once();
+
+    easyMockSupport.replayAll();
+    mockInjector.getInstance(UpgradeCatalog213.class).updateRangerUgsyncSiteConfig();
+    easyMockSupport.verifyAll();
   }
 
   @Test

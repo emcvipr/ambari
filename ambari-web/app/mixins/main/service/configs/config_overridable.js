@@ -17,7 +17,7 @@
  */
 
 var App = require('app');
-var arrayUtils = require('utils/array_utils');
+var validator = require('utils/validator');
 
 /**
  * Mixin with methods for config groups and overrides processing
@@ -133,8 +133,11 @@ App.ConfigOverridable = Em.Mixin.create({
           var newConfigGroup = {
             id: serviceName + "_NEW_" + configGroups.length,
             name: newConfigGroupName,
+            is_default: false,
+            parent_config_group_id: App.ServiceConfigGroup.getParentConfigGroupId(serviceId),
             description: Em.I18n.t('config.group.description.default').format(new Date().toDateString()),
             service_id: serviceId,
+            service_name: serviceId,
             hosts: [],
             desired_configs: []
           };
@@ -167,10 +170,15 @@ App.ConfigOverridable = Em.Mixin.create({
         var isWarning = false;
         var optionSelect = this.get('optionSelectConfigGroup');
         if (!optionSelect) {
-          var nn = this.get('newConfigGroupName');
-          if (nn && configGroups.mapProperty('name').contains(nn.trim())) {
-            msg = Em.I18n.t("config.group.selection.dialog.err.name.exists");
-            isWarning = true;
+          var nn = this.get('newConfigGroupName').trim();
+          if (nn) {
+            if (!validator.isValidConfigGroupName(nn)) {
+              msg = Em.I18n.t("form.validator.configGroupName");
+              isWarning = true;
+            } else if (configGroups.mapProperty('name').contains(nn)) {
+              msg = Em.I18n.t("config.group.selection.dialog.err.name.exists");
+              isWarning = true;
+            }
           }
         }
         this.set('warningMessage', msg);
@@ -182,9 +190,7 @@ App.ConfigOverridable = Em.Mixin.create({
         selectConfigGroupRadioButton: Em.Checkbox.extend({
           tagName: 'input',
           attributeBindings: ['type', 'checked', 'disabled'],
-          checked: function () {
-            return this.get('parentView.parentView.optionSelectConfigGroup');
-          }.property('parentView.parentView.optionSelectConfigGroup'),
+          checked: Em.computed.alias('parentView.parentView.optionSelectConfigGroup'),
           type: 'radio',
           disabled: false,
           click: function () {
@@ -200,9 +206,7 @@ App.ConfigOverridable = Em.Mixin.create({
         createConfigGroupRadioButton: Em.Checkbox.extend({
           tagName: 'input',
           attributeBindings: ['type', 'checked'],
-          checked: function () {
-            return !this.get('parentView.parentView.optionSelectConfigGroup');
-          }.property('parentView.parentView.optionSelectConfigGroup'),
+          checked: Em.computed.not('parentView.parentView.optionSelectConfigGroup'),
           type: 'radio',
           click: function () {
             this.set('parentView.parentView.optionSelectConfigGroup', false);

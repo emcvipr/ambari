@@ -23,7 +23,7 @@ require('router');
 describe('App.Router', function () {
   var router = App.Router.create();
 
-  describe('#loginSuccessCallback()', function() {
+  describe.skip('#loginSuccessCallback()', function() {
 
     beforeEach(function () {
       sinon.stub(App.usersMapper, 'map');
@@ -163,7 +163,7 @@ describe('App.Router', function () {
     });
   });
 
-  describe("#savePreferedPath()", function() {
+  describe.skip("#savePreferedPath()", function() {
     beforeEach(function () {
       router.set('preferedPath', null);
     });
@@ -181,7 +181,7 @@ describe('App.Router', function () {
     });
   });
 
-  describe("#restorePreferedPath()", function() {
+  describe.skip("#restorePreferedPath()", function() {
     it("preferedPath is null", function() {
       router.set('preferedPath', null);
       expect(router.restorePreferedPath()).to.be.false;

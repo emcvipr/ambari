@@ -34,6 +34,7 @@ from resource_management import Script, Execute, format
 from ambari_agent.HostInfo import HostInfo
 from ambari_agent.HostCheckReportFileHandler import HostCheckReportFileHandler
 from resource_management.core.resources import Directory, File
+from resource_management.core.exceptions import Fail
 from ambari_commons.constants import AMBARI_SUDO_BINARY
 from resource_management.core import shell
 
@@ -48,6 +49,9 @@ CHECK_EXISTING_REPOS = "existing_repos"
 CHECK_TRANSPARENT_HUGE_PAGE = "transparentHugePage"
 
 BEFORE_CLEANUP_HOST_CHECKS = ','.join([CHECK_LAST_AGENT_ENV, CHECK_INSTALLED_PACKAGES, CHECK_EXISTING_REPOS, CHECK_TRANSPARENT_HUGE_PAGE])
+
+# If exit_code for some of these checks is not 0 task will be failed
+FALLIBLE_CHECKS = [CHECK_DB_CONNECTION]
 
 DB_MYSQL = "mysql"
 DB_ORACLE = "oracle"
@@ -193,6 +197,19 @@ class CheckHost(Script):
     self.reportFileHandler.writeHostChecksCustomActionsFile(structured_output)
     
     self.put_structured_out(structured_output)
+
+    error_message = ""
+    for check_name in FALLIBLE_CHECKS:
+      if check_name in structured_output and "exit_code" in structured_output[check_name] \
+          and structured_output[check_name]["exit_code"] != 0:
+        error_message += "Check {0} was unsuccessful. Exit code: {1}.".format(check_name, \
+                                                                             structured_output[check_name]["exit_code"])
+        if "message" in structured_output[check_name]:
+          error_message += " Message: {0}".format(structured_output[check_name]["message"])
+        error_message += "\n"
+
+    if error_message:
+      raise Fail(error_message)
 
   def execute_existing_repos_and_installed_packages_check(self, config):
       installedPackages = []
@@ -377,11 +394,14 @@ class CheckHost(Script):
       db_connection_check_structured_output = {"exit_code" : 1, "message": message}
       return db_connection_check_structured_output
 
+    # For Oracle connection as SYS should be as SYSDBA
+    if db_name == DB_ORACLE and user_name.upper() == "SYS":
+      user_name = "SYS AS SYSDBA"
 
     # try to connect to db
     db_connection_check_command = format("{java_exec} -cp {check_db_connection_path}{class_path_delimiter}" \
            "{jdbc_jar_path} -Djava.library.path={java_library_path} org.apache.ambari.server.DBConnectionVerification \"{db_connection_url}\" " \
-           "{user_name} {user_passwd!p} {jdbc_driver_class}")
+           "\"{user_name}\" {user_passwd!p} {jdbc_driver_class}")
 
     if db_name == DB_SQLA:
       db_connection_check_command = "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:{0}{1} {2}".format(agent_cache_dir,

@@ -406,6 +406,9 @@
       Set directory for Phoenix spill files. If possible set this to a
       different mount point from the one for hbase.rootdir in embedded mode.
     </description>
+    <value-attributes>
+      <type>directory</type>
+    </value-attributes>
   </property>
   <property>
     <name>timeline.metrics.service.cluster.aggregator.appIds</name>
@@ -514,6 +517,13 @@
     <description>
       The maximum time to wait for a single watcher check execution
       Default resolution is 30 seconds.
+    </description>
+  </property>
+  <property>
+    <name>timeline.metrics.hbase.fifo.compaction.enabled</name>
+    <value>true</value>
+    <description>
+      Enable Compaction policy for lower for Precision and Minute aggregate tables.
     </description>
   </property>
 

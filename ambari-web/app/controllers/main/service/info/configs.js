@@ -118,12 +118,10 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
    */
   canEdit: function () {
     return (this.get('selectedVersion') == this.get('currentDefaultVersion') || !this.get('selectedConfigGroup.isDefault'))
-        && !this.get('isCompareMode') && App.isAccessible('MANAGER') && !this.get('isHostsConfigsPage');
+        && !this.get('isCompareMode') && App.isAuthorized('SERVICE.MODIFY_CONFIGS') && !this.get('isHostsConfigsPage');
   }.property('selectedVersion', 'isCompareMode', 'currentDefaultVersion', 'selectedConfigGroup.isDefault'),
 
-  serviceConfigs: function () {
-    return App.config.get('preDefinedServiceConfigs');
-  }.property('App.config.preDefinedServiceConfigs'),
+  serviceConfigs: Em.computed.alias('App.config.preDefinedServiceConfigs'),
 
   /**
    * Number of errors in the configs in the selected service (only for AdvancedTab if App supports Enhanced Configs)
@@ -486,13 +484,9 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
   onLoadOverrides: function (allConfigs) {
     this.get('servicesToLoad').forEach(function(serviceName) {
       var configGroups = serviceName == this.get('content.serviceName') ? this.get('configGroups') : this.get('dependentConfigGroups').filterProperty('serviceName', serviceName);
-      var serviceNames = [ serviceName ];
-      if(serviceName === 'OOZIE') {
-        // For Oozie, also add ELService properties which are marked as FALCON properties.
-        serviceNames.push('FALCON');
-      }
+      var configTypes = App.StackService.find(serviceName).get('configTypeList');
       var configsByService = this.get('allConfigs').filter(function (c) {
-        return serviceNames.contains(c.get('serviceName'));
+        return configTypes.contains(App.config.getConfigTagFromFileName(c.get('filename')));
       });
       var serviceConfig = App.config.createServiceConfig(serviceName, configGroups, configsByService, configsByService.length);
       this.addHostNamesToConfigs(serviceConfig);

@@ -17,10 +17,25 @@
  */
 package org.apache.ambari.server.controller.internal;
 
-import com.google.common.collect.Lists;
-import com.google.gson.Gson;
-import com.google.inject.Inject;
-import com.google.inject.Provider;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_PACKAGE_FOLDER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.VERSION;
+
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
@@ -93,24 +108,10 @@ import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_PACKAGE_FOLDER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.VERSION;
+import com.google.common.collect.Lists;
+import com.google.gson.Gson;
+import com.google.inject.Inject;
+import com.google.inject.Provider;
 
 /**
  * Manages the ability to start and get status of upgrades.
@@ -672,6 +673,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
     Cluster cluster = getManagementController().getClusters().getCluster(clusterName);
     ConfigHelper configHelper = getManagementController().getConfigHelper();
+    String userName = getManagementController().getAuthName();
 
     // the version being upgraded or downgraded to (ie 2.2.1.0-1234)
     final String version = (String) requestMap.get(UPGRADE_VERSION);
@@ -680,12 +682,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     if (direction.isUpgrade()) {
       resolver = new MasterHostResolver(configHelper, cluster);
     } else {
-      if (upgradeType == UpgradeType.ROLLING) {
-        resolver = new MasterHostResolver(configHelper, cluster, version);
-      } else {
-        // due to EU stop components at the start of upgrade, components will never advertise their updated versions
-        resolver = new MasterHostResolver(configHelper, cluster);
-      }
+      resolver = new MasterHostResolver(configHelper, cluster, version);
     }
 
     StackId sourceStackId = null;
@@ -765,7 +762,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     if (pack.getType() == UpgradeType.ROLLING) {
       // Desired configs must be set before creating stages because the config tag
       // names are read and set on the command for filling in later
-      applyStackAndProcessConfigurations(targetStackId.getStackName(), cluster, version, direction, pack);
+      applyStackAndProcessConfigurations(targetStackId.getStackName(), cluster, version, direction, pack, userName);
     }
 
     // Resolve or build a proper config upgrade pack
@@ -903,14 +900,20 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
    * @param upgradePack
    *          upgrade pack used for upgrade or downgrade. This is needed to determine
    *          which services are effected.
+   * @param userName
+   *          username performing the action
    * @throws AmbariException
    */
-  public void applyStackAndProcessConfigurations(String stackName, Cluster cluster, String version, Direction direction, UpgradePack upgradePack)
+  public void applyStackAndProcessConfigurations(String stackName, Cluster cluster, String version, Direction direction, UpgradePack upgradePack, String userName)
       throws AmbariException {
     RepositoryVersionEntity targetRve = s_repoVersionDAO.findByStackNameAndVersion(stackName, version);
     if (null == targetRve) {
       LOG.info("Could not find version entity for {}; not setting new configs", version);
       return;
+    }
+
+    if (null == userName) {
+      userName = getManagementController().getAuthName();
     }
 
     // if the current and target stacks are the same (ie HDP 2.2.0.0 -> 2.2.1.0)
@@ -937,7 +940,6 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     Map<String, Map<String, String>> newConfigurationsByType = null;
     ConfigHelper configHelper = getManagementController().getConfigHelper();
 
-    // TODO AMBARI-12698, handle jumping across several stacks
     if (direction == Direction.UPGRADE) {
       // populate a map of default configurations for the old stack (this is
       // used when determining if a property has been customized and should be
@@ -1074,7 +1076,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     // !!! configs must be created after setting the stack version
     if (null != newConfigurationsByType) {
       configHelper.createConfigTypes(cluster, getManagementController(), newConfigurationsByType,
-          getManagementController().getAuthName(), "Configuration created for Upgrade");
+          userName, "Configuration created for Upgrade");
     }
   }
 
@@ -1179,7 +1181,9 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     ActionExecutionContext actionContext = new ActionExecutionContext(cluster.getClusterName(),
         "ru_execute_tasks", Collections.singletonList(filter), params);
 
-    actionContext.setIgnoreMaintenance(true);
+    // hosts in maintenance mode are excluded from the upgrade
+    actionContext.setMaintenanceModeIgnored(false);
+
     actionContext.setTimeout(Short.valueOf(s_configuration.getDefaultAgentTaskTimeout(false)));
     actionContext.setRetryAllowed(allowRetry);
     actionContext.setAutoSkipFailures(context.isComponentFailureAutoSkipped());
@@ -1275,9 +1279,11 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     ActionExecutionContext actionContext = new ActionExecutionContext(cluster.getClusterName(),
         function, filters, commandParams);
     actionContext.setTimeout(Short.valueOf(s_configuration.getDefaultAgentTaskTimeout(false)));
-    actionContext.setIgnoreMaintenance(true);
     actionContext.setRetryAllowed(allowRetry);
     actionContext.setAutoSkipFailures(context.isComponentFailureAutoSkipped());
+
+    // hosts in maintenance mode are excluded from the upgrade
+    actionContext.setMaintenanceModeIgnored(false);
 
     ExecuteCommandJson jsons = s_commandExecutionHelper.get().getCommandJson(actionContext,
         cluster, context.getEffectiveStackId());
@@ -1333,9 +1339,12 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         "SERVICE_CHECK", filters, commandParams);
 
     actionContext.setTimeout(Short.valueOf(s_configuration.getDefaultAgentTaskTimeout(false)));
-    actionContext.setIgnoreMaintenance(true);
     actionContext.setRetryAllowed(allowRetry);
     actionContext.setAutoSkipFailures(context.isServiceCheckFailureAutoSkipped());
+
+    // hosts in maintenance mode are excluded from the upgrade and should not be
+    // candidates for service checks
+    actionContext.setMaintenanceModeIgnored(false);
 
     ExecuteCommandJson jsons = s_commandExecutionHelper.get().getCommandJson(actionContext,
         cluster, context.getEffectiveStackId());
@@ -1448,9 +1457,11 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         commandParams);
 
     actionContext.setTimeout(Short.valueOf((short) -1));
-    actionContext.setIgnoreMaintenance(true);
     actionContext.setRetryAllowed(allowRetry);
     actionContext.setAutoSkipFailures(context.isComponentFailureAutoSkipped());
+
+    // hosts in maintenance mode are excluded from the upgrade
+    actionContext.setMaintenanceModeIgnored(false);
 
     ExecuteCommandJson jsons = s_commandExecutionHelper.get().getCommandJson(actionContext,
         cluster, context.getEffectiveStackId());

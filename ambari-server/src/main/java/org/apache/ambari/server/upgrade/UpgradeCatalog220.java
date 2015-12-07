@@ -195,6 +195,7 @@ public class UpgradeCatalog220 extends AbstractUpgradeCatalog {
     dbAccessor.insertRow(ROLE_AUTHORIZATION_TABLE, columnNames, new String[]{"'CLUSTER.VIEW_CONFIGS'", "'View configuration'"}, false);
     dbAccessor.insertRow(ROLE_AUTHORIZATION_TABLE, columnNames, new String[]{"'CLUSTER.VIEW_STACK_DETAILS'", "'View stack version details'"}, false);
     dbAccessor.insertRow(ROLE_AUTHORIZATION_TABLE, columnNames, new String[]{"'CLUSTER.VIEW_ALERTS'", "'View alerts'"}, false);
+    dbAccessor.insertRow(ROLE_AUTHORIZATION_TABLE, columnNames, new String[]{"'CLUSTER.MANAGE_CREDENTIALS'", "'Manage external credentials'"}, false);
     dbAccessor.insertRow(ROLE_AUTHORIZATION_TABLE, columnNames, new String[]{"'CLUSTER.TOGGLE_ALERTS'", "'Enable/disable alerts'"}, false);
     dbAccessor.insertRow(ROLE_AUTHORIZATION_TABLE, columnNames, new String[]{"'CLUSTER.TOGGLE_KERBEROS'", "'Enable/disable Kerberos'"}, false);
     dbAccessor.insertRow(ROLE_AUTHORIZATION_TABLE, columnNames, new String[]{"'CLUSTER.UPGRADE_DOWNGRADE_STACK'", "'Upgrade/downgrade stack'"}, false);
@@ -286,6 +287,7 @@ public class UpgradeCatalog220 extends AbstractUpgradeCatalog {
     map.put("CLUSTER.VIEW_CONFIGS", clusterUserAndUp);
     map.put("CLUSTER.VIEW_STACK_DETAILS", clusterUserAndUp);
     map.put("CLUSTER.VIEW_ALERTS", clusterUserAndUp);
+    map.put("CLUSTER.MANAGE_CREDENTIALS", clusterAdministratorAndUp);
     map.put("CLUSTER.TOGGLE_ALERTS", clusterAdministratorAndUp);
     map.put("CLUSTER.TOGGLE_KERBEROS", clusterAdministratorAndUp);
     map.put("CLUSTER.UPGRADE_DOWNGRADE_STACK", clusterAdministratorAndUp);
@@ -337,10 +339,10 @@ public class UpgradeCatalog220 extends AbstractUpgradeCatalog {
     columns.add(new DBColumnInfo(ROLE_AUTHORIZATION_ID_COL, String.class, 100, null, false));
     dbAccessor.createTable(PERMISSION_ROLE_AUTHORIZATION_TABLE, columns, PERMISSION_ID_COL, ROLE_AUTHORIZATION_ID_COL);
 
-    dbAccessor.addFKConstraint(PERMISSION_ROLE_AUTHORIZATION_TABLE, "FK_permission_roleauthorization_permission_id",
+    dbAccessor.addFKConstraint(PERMISSION_ROLE_AUTHORIZATION_TABLE, "FK_permission_roleauth_pid",
         PERMISSION_ID_COL, ADMIN_PERMISSION_TABLE, PERMISSION_ID_COL, false);
 
-    dbAccessor.addFKConstraint(PERMISSION_ROLE_AUTHORIZATION_TABLE, "FK_permission_roleauthorization_authorization_id",
+    dbAccessor.addFKConstraint(PERMISSION_ROLE_AUTHORIZATION_TABLE, "FK_permission_roleauth_aid",
         ROLE_AUTHORIZATION_ID_COL, ROLE_AUTHORIZATION_TABLE, ROLE_AUTHORIZATION_ID_COL, false);
   }
 

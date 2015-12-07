@@ -117,7 +117,7 @@ public class AmbariAuthorizationFilterTest {
     filter.doFilter(request, response, chain);
 
     verify(request, response, chain, filter, securityContext, authentication, authority,
-               privilegeEntity, permission, filterConfig);
+        privilegeEntity, permission, filterConfig);
   }
 
   @Test
@@ -205,14 +205,14 @@ public class AmbariAuthorizationFilterTest {
     urlTests.put("/api/v1/views", "POST", false);
     urlTests.put("/api/v1/persist/SomeValue", "GET", true);
     urlTests.put("/api/v1/persist/SomeValue", "POST", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", false);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", true);
     urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", false);
     urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", false);
     urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", false);
@@ -221,7 +221,7 @@ public class AmbariAuthorizationFilterTest {
     urlTests.put("/api/v1/users/user1", "POST", true);
     urlTests.put("/api/v1/users/user2", "GET", true);
     urlTests.put("/api/v1/users/user2", "POST", true);
-    urlTests.put("/api/v1/groups", "GET", false);
+    urlTests.put("/api/v1/groups", "GET", true);
     urlTests.put("/api/v1/ldap_sync_events", "GET", false);
     urlTests.put("/any/other/URL", "GET", true);
     urlTests.put("/any/other/URL", "POST", false);
@@ -238,10 +238,10 @@ public class AmbariAuthorizationFilterTest {
     urlTests.put("/api/v1/views", "POST", false);
     urlTests.put("/api/v1/persist/SomeValue", "GET", true);
     urlTests.put("/api/v1/persist/SomeValue", "POST", true);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", false);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", true);
     urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", true);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", false);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", true);
     urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", true);
     urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", true);
     urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", true);
@@ -254,7 +254,7 @@ public class AmbariAuthorizationFilterTest {
     urlTests.put("/api/v1/users/user1", "POST", true);
     urlTests.put("/api/v1/users/user2", "GET", true);
     urlTests.put("/api/v1/users/user2", "POST", true);
-    urlTests.put("/api/v1/groups", "GET", false);
+    urlTests.put("/api/v1/groups", "GET", true);
     urlTests.put("/api/v1/ldap_sync_events", "GET", false);
     urlTests.put("/any/other/URL", "GET", true);
     urlTests.put("/any/other/URL", "POST", false);
@@ -266,19 +266,19 @@ public class AmbariAuthorizationFilterTest {
   public void testDoFilter_viewUserAccess() throws Exception {
     final Table<String, String, Boolean> urlTests = HashBasedTable.create();
     urlTests.put("/api/v1/clusters/cluster", "GET",  true);
-    urlTests.put("/api/v1/clusters/cluster", "POST",  false);
+    urlTests.put("/api/v1/clusters/cluster", "POST",  true);
     urlTests.put("/api/v1/views", "GET", true);
     urlTests.put("/api/v1/views", "POST", true);
     urlTests.put("/api/v1/persist/SomeValue", "GET", true);
     urlTests.put("/api/v1/persist/SomeValue", "POST", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", false);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", true);
     urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", true);
     urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", true);
     urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", false);
@@ -287,7 +287,7 @@ public class AmbariAuthorizationFilterTest {
     urlTests.put("/api/v1/users/user1", "POST", true);
     urlTests.put("/api/v1/users/user2", "GET", true);
     urlTests.put("/api/v1/users/user2", "POST", true);
-    urlTests.put("/api/v1/groups", "GET", false);
+    urlTests.put("/api/v1/groups", "GET", true);
     urlTests.put("/api/v1/ldap_sync_events", "GET", false);
     urlTests.put("/any/other/URL", "GET", true);
     urlTests.put("/any/other/URL", "POST", false);
@@ -299,19 +299,19 @@ public class AmbariAuthorizationFilterTest {
   public void testDoFilter_userNoPermissionsAccess() throws Exception {
     final Table<String, String, Boolean> urlTests = HashBasedTable.create();
     urlTests.put("/api/v1/clusters/cluster", "GET",  true);
-    urlTests.put("/api/v1/clusters/cluster", "POST",  false);
+    urlTests.put("/api/v1/clusters/cluster", "POST",  true);
     urlTests.put("/api/v1/views", "GET", true);
     urlTests.put("/api/v1/views", "POST", false);
     urlTests.put("/api/v1/persist/SomeValue", "GET", true);
     urlTests.put("/api/v1/persist/SomeValue", "POST", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", false);
-    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", false);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", true);
     urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", false);
     urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", false);
     urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", false);

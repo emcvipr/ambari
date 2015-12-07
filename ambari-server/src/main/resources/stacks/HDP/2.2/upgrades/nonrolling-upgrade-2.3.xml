@@ -287,11 +287,23 @@
       </execute-stage>
 
       <execute-stage service="RANGER" component="RANGER_ADMIN" title="Apply config changes for Ranger">
+        <task xsi:type="configure" id="hdp_2_3_0_0_update_ranger_usersync_sync_source"/>
+      </execute-stage>
+
+      <execute-stage service="RANGER" component="RANGER_ADMIN" title="Apply config changes for Ranger">
         <task xsi:type="configure" id="hdp_2_3_0_0_update_ranger_usersync_properties"/>
       </execute-stage>
 
       <execute-stage service="RANGER" component="RANGER_ADMIN" title="Apply config changes for Ranger">
         <task xsi:type="configure" id="hdp_2_3_0_0_update_ranger_delete_oracle_home"/>
+      </execute-stage>
+
+      <execute-stage service="RANGER" component="RANGER_ADMIN" title="Apply config changes for Ranger">
+        <task xsi:type="configure" id="hdp_2_3_0_0_update_ranger_admin_hdfs_audit"/>
+      </execute-stage>
+
+      <execute-stage service="RANGER" component="RANGER_ADMIN" title="Apply config changes for Ranger">
+        <task xsi:type="configure" id="hdp_2_3_0_0_update_ranger_admin_db_audit"/>
       </execute-stage>
 
       <!--HDFS-->
@@ -556,7 +568,6 @@
       <service-check>false</service-check>
       <skippable>true</skippable>
       <supports-auto-skip-failure>false</supports-auto-skip-failure>
-      <direction>UPGRADE</direction>
 
       <execute-stage service="HDFS" component="NAMENODE" title="Wait to leave Safemode">
         <task xsi:type="execute" hosts="all" summary="Wait for NameNode to leave Safemode">

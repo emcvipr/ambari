@@ -2059,6 +2059,10 @@ var urls = {
     real: '/privileges?PrivilegeInfo/principal_name={userName}&fields=*',
     mock: '/data/users/privileges_{userName}.json'
   },
+  'router.user.authorizations': {
+    real: '/users/{userName}/authorizations?fields=*',
+    mock: '/data/users/privileges_{userName}.json'
+  },
   'router.login.clusters': {
     'real': '/clusters?fields=Clusters/provisioning_state',
     'mock': '/data/clusters/info.json'
@@ -2838,7 +2842,7 @@ var ajax = Em.Object.extend({
 
     var opt = {};
     if (!urls[config.name]) {
-      console.warn('Invalid name provided!');
+      console.warn('Invalid name provided `' + config.name + '`!');
       return null;
     }
     opt = formatRequest.call(urls[config.name], params);
