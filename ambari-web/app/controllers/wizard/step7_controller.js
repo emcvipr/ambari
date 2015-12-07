@@ -517,7 +517,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
    * @method _updateIsEditableFlagForConfig
    */
   _updateIsEditableFlagForConfig: function (serviceConfigProperty, defaultGroupSelected) {
-    if (App.isAccessible('ADMIN')) {
+    if (App.isAuthorized('AMBARI.ADD_DELETE_CLUSTERS')) {
       if (defaultGroupSelected && !this.get('isHostsConfigsPage') && !Em.get(serviceConfigProperty, 'group')) {
         serviceConfigProperty.set('isEditable', serviceConfigProperty.get('isReconfigurable'));
       } else if (Em.get(serviceConfigProperty, 'group') && Em.get(serviceConfigProperty, 'group.name') == this.get('selectedConfigGroup.name')) {
@@ -721,7 +721,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
     if (this.get('wizardController.name') == 'addServiceController') {
       // for Add Service just remove or add dependent properties and ignore config values changes
       // for installed services only
-      this.addRemoveDependentConfigs(this.get('installedServiceNames'));
       this.clearDependenciesForInstalledServices(this.get('installedServiceNames'), this.get('stepConfigs'));
     }
     // * add dependencies based on recommendations

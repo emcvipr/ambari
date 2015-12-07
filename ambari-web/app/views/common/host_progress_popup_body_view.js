@@ -643,7 +643,7 @@ App.HostProgressPopupBodyView = App.TableView.extend({
       tasksInfo.pushObject(this.get("controller").createTask(_task));
     }, this);
     if (tasksInfo.length) {
-      this.get("controller").set("popupHeaderName", event.context.publicName);
+      this.get("controller").set("popupHeaderName", event.context.get('publicNameDisplay'));
       this.get("controller").set("currentHostName", event.context.publicName);
     }
     this.switchLevel("TASKS_LIST");
@@ -722,13 +722,14 @@ App.HostProgressPopupBodyView = App.TableView.extend({
    * @method createClipBoard
    */
   createClipBoard: function () {
-    var logElement = $(".task-detail-log-maintext");
+    var logElement = $(".task-detail-log-maintext"),
+      logElementRect = logElement[0].getBoundingClientRect();
     $(".task-detail-log-clipboard-wrap").html('<textarea class="task-detail-log-clipboard"></textarea>');
     $(".task-detail-log-clipboard")
       .html("stderr: \n" + $(".stderr").html() + "\n stdout:\n" + $(".stdout").html())
       .css('display', 'block')
-      .width(logElement.width())
-      .height(logElement.height())
+      .width(logElementRect.width)
+      .height(logElementRect.height)
       .select();
 
     logElement.css("display", "none");

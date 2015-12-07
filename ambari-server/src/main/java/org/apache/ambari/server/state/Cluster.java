@@ -404,10 +404,16 @@ public interface Cluster {
    */
   boolean isConfigTypeExists(String configType);
   /**
-   * Gets the desired configurations for the cluster.
+   * Gets the active desired configurations for the cluster.
    * @return a map of type-to-configuration information.
    */
   Map<String, DesiredConfig> getDesiredConfigs();
+
+  /**
+   * Gets all versions of the desired configurations for the cluster.
+   * @return a map of type-to-configuration information.
+   */
+  Map<String, Set<DesiredConfig>> getAllDesiredConfigVersions();
 
 
   /**
@@ -613,4 +619,10 @@ public interface Cluster {
    * Clear cluster caches and re-read data from database
    */
   void invalidateData();
+
+  /**
+   * Returns whether this cluster was provisioned by a Blueprint or not.
+   * @return true if the cluster was deployed with a Blueprint otherwise false.
+   */
+  boolean isBluePrintDeployed();
 }

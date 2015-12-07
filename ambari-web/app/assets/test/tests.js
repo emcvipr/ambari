@@ -149,6 +149,7 @@ var files = [
   'test/mixins/common/widget_mixin_test',
   'test/mixins/main/host/details/host_components/decommissionable_test',
   'test/mixins/main/service/configs/widget_popover_support_test',
+  'test/mixins/main/service/configs/config_overridable_test',
   'test/mixins/routers/redirections_test',
   'test/mixins/wizard/addSeccurityConfigs_test',
   'test/mixins/wizard/wizard_menu_view_test',
@@ -332,12 +333,10 @@ var files = [
 App.initialize();
 describe('Ambari Web Unit tests', function() {
 
-  for (var i = 0; i < files.length; i++) {
-
-    describe(files[i], function() {
-      require(files[i]);
+  files.forEach(function (file) {
+    describe(file, function() {
+      require(file);
     });
-
-  }
+  });
 
 });

@@ -86,15 +86,23 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
   private static final String TOPOLOGY_CONFIG = "topology";
   private static final String KAFKA_BROKER = "kafka-broker";
   private static final String KAFKA_ENV_CONFIG = "kafka-env";
-  private static final String KAFKA_ENV_CONTENT_KERBEROS_PARAMS = "export KAFKA_KERBEROS_PARAMS={{kafka_kerberos_params}}";
+  private static final String KAFKA_ENV_CONTENT_KERBEROS_PARAMS =
+    "export KAFKA_KERBEROS_PARAMS={{kafka_kerberos_params}}";
   private static final String AMS_ENV = "ams-env";
   private static final String AMS_HBASE_ENV = "ams-hbase-env";
   private static final String AMS_SITE = "ams-site";
+  private static final String AMS_HBASE_SITE = "ams-hbase-site";
+  private static final String AMS_HBASE_SITE_ZK_TIMEOUT_PROPERTY =
+    "zookeeper.session.timeout.localHBaseCluster";
+  private static final String AMS_HBASE_SITE_NORMALIZER_ENABLED_PROPERTY = "hbase.normalizer.enabled";
+  private static final String AMS_HBASE_SITE_NORMALIZER_PERIOD_PROPERTY = "hbase.normalizer.period";
+  private static final String AMS_HBASE_SITE_NORMALIZER_CLASS_PROPERTY = "hbase.master.normalizer.class";
   private static final String HBASE_ENV_CONFIG = "hbase-env";
   private static final String FLUME_ENV_CONFIG = "flume-env";
   private static final String HIVE_SITE_CONFIG = "hive-site";
   private static final String HIVE_ENV_CONFIG = "hive-env";
   private static final String RANGER_ENV_CONFIG = "ranger-env";
+  private static final String RANGER_UGSYNC_SITE_CONFIG = "ranger-ugsync-site";
   private static final String ZOOKEEPER_LOG4J_CONFIG = "zookeeper-log4j";
   private static final String NIMBS_MONITOR_FREQ_SECS_PROPERTY = "nimbus.monitor.freq.secs";
   private static final String HIVE_SERVER2_OPERATION_LOG_LOCATION_PROPERTY = "hive.server2.logging.operation.log.location";
@@ -128,6 +136,8 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
   private static final String RANGER_KNOX_PLUGIN_ENABLED_PROPERTY = "ranger-knox-plugin-enabled";
   private static final String RANGER_YARN_PLUGIN_ENABLED_PROPERTY = "ranger-yarn-plugin-enabled";
   private static final String RANGER_KAFKA_PLUGIN_ENABLED_PROPERTY = "ranger-kafka-plugin-enabled";
+
+  private static final String RANGER_USERSYNC_SOURCE_IMPL_CLASS_PROPERTY = "ranger.usersync.source.impl.class";
 
   private static final String BLUEPRINT_TABLE = "blueprint";
   private static final String SECURITY_TYPE_COLUMN = "security_type";
@@ -214,9 +224,9 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
 
   private void executeBlueprintDDLUpdates() throws AmbariException, SQLException {
     dbAccessor.addColumn(BLUEPRINT_TABLE, new DBAccessor.DBColumnInfo(SECURITY_TYPE_COLUMN,
-        String.class, 32, "NONE", false));
+      String.class, 32, "NONE", false));
     dbAccessor.addColumn(BLUEPRINT_TABLE, new DBAccessor.DBColumnInfo(SECURITY_DESCRIPTOR_REF_COLUMN,
-        String.class, null, null, true));
+      String.class, null, null, true));
   }
 
   /**
@@ -229,7 +239,7 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
    */
   protected void executeStageDDLUpdates() throws SQLException {
     dbAccessor.addColumn(STAGE_TABLE,
-            new DBAccessor.DBColumnInfo("supports_auto_skip_failure", Integer.class, 1, 0, false));
+      new DBAccessor.DBColumnInfo("supports_auto_skip_failure", Integer.class, 1, 0, false));
   }
 
   /**
@@ -297,6 +307,7 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
     updateHadoopEnv();
     updateKafkaConfigs();
     updateRangerEnvConfig();
+    updateRangerUgsyncSiteConfig();
     updateZookeeperLog4j();
     updateHiveConfig();
     updateAccumuloConfigs();
@@ -786,7 +797,7 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
       long clusterID = cluster.getClusterId();
 
       final AlertDefinitionEntity journalNodeProcessAlertDefinitionEntity = alertDefinitionDAO.findByName(
-          clusterID, "journalnode_process");
+        clusterID, "journalnode_process");
       final AlertDefinitionEntity hostDiskUsageAlertDefinitionEntity = alertDefinitionDAO.findByName(
           clusterID, "ambari_agent_disk_usage");
 
@@ -1012,42 +1023,36 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
 
       if (clusterMap != null && !clusterMap.isEmpty()) {
         for (final Cluster cluster : clusterMap.values()) {
-          Config amsEnv = cluster.getDesiredConfigByType(AMS_ENV);
-          if (amsEnv != null) {
-            Map<String, String> amsEnvProperties = amsEnv.getProperties();
 
-            String metrics_collector_heapsize = amsEnvProperties.get("metrics_collector_heapsize");
-            String content = amsEnvProperties.get("content");
-            Map<String, String> newProperties = new HashMap<>();
-            newProperties.put("metrics_collector_heapsize", memoryToIntMb(metrics_collector_heapsize));
-            newProperties.put("content", updateAmsEnvContent(content));
-            updateConfigurationPropertiesForCluster(cluster, AMS_ENV, newProperties, true, true);
-          }
           Config amsHbaseEnv = cluster.getDesiredConfigByType(AMS_HBASE_ENV);
           if (amsHbaseEnv != null) {
             Map<String, String> amsHbaseEnvProperties = amsHbaseEnv.getProperties();
-            String hbase_regionserver_heapsize = amsHbaseEnvProperties.get("hbase_regionserver_heapsize");
-            String regionserver_xmn_size = amsHbaseEnvProperties.get("regionserver_xmn_size");
-            String hbase_master_xmn_size = amsHbaseEnvProperties.get("hbase_master_xmn_size");
-            String hbase_master_maxperm_size = amsHbaseEnvProperties.get("hbase_master_maxperm_size");
-            String hbase_master_heapsize = amsHbaseEnvProperties.get("hbase_master_heapsize");
             String content = amsHbaseEnvProperties.get("content");
-
             Map<String, String> newProperties = new HashMap<>();
-            newProperties.put("hbase_regionserver_heapsize", memoryToIntMb(hbase_regionserver_heapsize));
-            newProperties.put("regionserver_xmn_size", memoryToIntMb(regionserver_xmn_size));
-            newProperties.put("hbase_master_xmn_size", memoryToIntMb(hbase_master_xmn_size));
-            newProperties.put("hbase_master_maxperm_size", memoryToIntMb(hbase_master_maxperm_size));
-            newProperties.put("hbase_master_heapsize", memoryToIntMb(hbase_master_heapsize));
             newProperties.put("content", updateAmsHbaseEnvContent(content));
             updateConfigurationPropertiesForCluster(cluster, AMS_HBASE_ENV, newProperties, true, true);
           }
+
+          Config amsEnv = cluster.getDesiredConfigByType(AMS_ENV);
+          if (amsHbaseEnv != null) {
+            Map<String, String> amsEnvProperties = amsEnv.getProperties();
+            String content = amsEnvProperties.get("content");
+            Map<String, String> newProperties = new HashMap<>();
+            newProperties.put("content", updateAmsEnvContent(content));
+            updateConfigurationPropertiesForCluster(cluster, AMS_ENV, newProperties, true, true);
+          }
+
           Config amsSite = cluster.getDesiredConfigByType(AMS_SITE);
           if (amsSite != null) {
+            Map<String, String> currentAmsSiteProperties = amsSite.getProperties();
             Map<String, String> newProperties = new HashMap<>();
 
             //Changed AMS result set limit from 5760 to 15840.
-            newProperties.put("timeline.metrics.service.default.result.limit", String.valueOf(15840));
+            if(currentAmsSiteProperties.containsKey("timeline.metrics.service.default.result.limit") &&
+              currentAmsSiteProperties.get("timeline.metrics.service.default.result.limit").equals(String.valueOf(5760))) {
+              LOG.info("Updating timeline.metrics.service.default.result.limit to 15840");
+              newProperties.put("timeline.metrics.service.default.result.limit", String.valueOf(15840));
+            }
 
             //Interval
             newProperties.put("timeline.metrics.cluster.aggregator.second.interval", String.valueOf(120));
@@ -1064,12 +1069,87 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
             //disabled
             newProperties.put("timeline.metrics.cluster.aggregator.second.disabled", String.valueOf(false));
 
+            //Add compaction policy property
+            newProperties.put("hbase.fifo.compaction.policy.enabled", String.valueOf(true));
+
             updateConfigurationPropertiesForCluster(cluster, AMS_SITE, newProperties, true, true);
+          }
+
+          Config amsHbaseSite = cluster.getDesiredConfigByType(AMS_HBASE_SITE);
+          if (amsHbaseSite != null) {
+            Map<String, String> amsHbaseSiteProperties = amsHbaseSite.getProperties();
+            Map<String, String> newProperties = new HashMap<>();
+
+            String zkTimeout = amsHbaseSiteProperties.get(AMS_HBASE_SITE_ZK_TIMEOUT_PROPERTY);
+            // if old default, set new default
+            if ("20000".equals(zkTimeout)) {
+              newProperties.put(AMS_HBASE_SITE_ZK_TIMEOUT_PROPERTY, "120000");
+            }
+
+            //Adding hbase.normalizer.period to upgrade
+            if(!amsHbaseSiteProperties.containsKey(AMS_HBASE_SITE_NORMALIZER_ENABLED_PROPERTY)) {
+              LOG.info("Enabling " + AMS_HBASE_SITE_NORMALIZER_ENABLED_PROPERTY);
+              newProperties.put(AMS_HBASE_SITE_NORMALIZER_ENABLED_PROPERTY, String.valueOf(true));
+            }
+
+            if(!amsHbaseSiteProperties.containsKey(AMS_HBASE_SITE_NORMALIZER_PERIOD_PROPERTY)) {
+              LOG.info("Updating " + AMS_HBASE_SITE_NORMALIZER_PERIOD_PROPERTY);
+              newProperties.put(AMS_HBASE_SITE_NORMALIZER_PERIOD_PROPERTY, String.valueOf(600000));
+            }
+
+            if(!amsHbaseSiteProperties.containsKey(AMS_HBASE_SITE_NORMALIZER_CLASS_PROPERTY)) {
+              LOG.info("Updating " + AMS_HBASE_SITE_NORMALIZER_CLASS_PROPERTY);
+              newProperties.put(AMS_HBASE_SITE_NORMALIZER_CLASS_PROPERTY,
+                "org.apache.hadoop.hbase.master.normalizer.SimpleRegionNormalizer");
+            }
+            updateConfigurationPropertiesForCluster(cluster, AMS_HBASE_SITE, newProperties, true, true);
           }
         }
       }
     }
 
+  }
+
+  protected String updateAmsHbaseEnvContent(String content) {
+    if (content == null) {
+      return null;
+    }
+    String regSearch = "export HBASE_HEAPSIZE=";
+    String replacement = "#export HBASE_HEAPSIZE=";
+    content = content.replaceAll(regSearch, replacement);
+    content += "\n" +
+      "# The maximum amount of heap to use for hbase shell.\n" +
+      "export HBASE_SHELL_OPTS=\"-Xmx256m\"\n";
+    return content;
+  }
+
+  protected String updateAmsEnvContent(String content) {
+    if (content == null) {
+      return null;
+    }
+    if (!content.contains("AMS_COLLECTOR_GC_OPTS")) {
+      content += "\n" +
+        "# AMS Collector GC options\n" +
+        "export AMS_COLLECTOR_GC_OPTS=\"-XX:+UseConcMarkSweepGC -XX:CMSInitiatingOccupancyFraction=70 " +
+        "-XX:+UseCMSInitiatingOccupancyOnly -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps " +
+        "-XX:+UseGCLogFileRotation -XX:GCLogFileSize=10M " +
+        "-Xloggc:{{ams_collector_log_dir}}/collector-gc.log-`date +'%Y%m%d%H%M'`\"\n" +
+        "export AMS_COLLECTOR_OPTS=\"$AMS_COLLECTOR_OPTS $AMS_COLLECTOR_GC_OPTS\"\n";
+    }
+
+    if (!content.contains("HBASE_NORMALIZATION_ENABLED")) {
+      content += "\n" +
+        "# HBase compaction policy enabled\n" +
+        "export HBASE_NORMALIZATION_ENABLED={{ams_hbase_normalizer_enabled}}\n";
+    }
+
+    if (!content.contains("HBASE_FIFO_COMPACTION_POLICY_ENABLED")) {
+      content += "\n" +
+        "# HBase compaction policy enabled\n" +
+        "export HBASE_FIFO_COMPACTION_POLICY_ENABLED={{ams_hbase_fifo_compaction_policy_enabled}}\n";
+    }
+
+    return content;
   }
 
   protected void updateKafkaConfigs() throws AmbariException {
@@ -1158,42 +1238,30 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
     }
   }
 
-  protected String updateAmsEnvContent(String oldContent) {
-    if (oldContent == null) {
-      return null;
-    }
-    String regSearch = "export\\s*AMS_COLLECTOR_HEAPSIZE\\s*=\\s*\\{\\{metrics_collector_heapsize\\}\\}";
-    String replacement = "export AMS_COLLECTOR_HEAPSIZE={{metrics_collector_heapsize}}m";
-    return oldContent.replaceAll(regSearch, replacement);
-  }
+  protected void updateRangerUgsyncSiteConfig() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
 
-  protected String updateAmsHbaseEnvContent(String content) {
-    if (content == null) {
-      return null;
+    for (final Cluster cluster : getCheckedClusterMap(ambariManagementController.getClusters()).values()) {
+      Config rangerUgsyncSiteProperties = cluster.getDesiredConfigByType(RANGER_UGSYNC_SITE_CONFIG);
+      if (rangerUgsyncSiteProperties != null && rangerUgsyncSiteProperties.getProperties().containsKey(RANGER_USERSYNC_SOURCE_IMPL_CLASS_PROPERTY)) {
+        String sourceClassValue = rangerUgsyncSiteProperties.getProperties().get(RANGER_USERSYNC_SOURCE_IMPL_CLASS_PROPERTY);
+        if (sourceClassValue != null) {
+          if ("ldap".equals(sourceClassValue)) {
+            Map<String, String> updates = Collections.singletonMap(RANGER_USERSYNC_SOURCE_IMPL_CLASS_PROPERTY,
+                "org.apache.ranger.ldapusersync.process.LdapUserGroupBuilder");
+            updateConfigurationPropertiesForCluster(cluster, RANGER_UGSYNC_SITE_CONFIG, updates, true, false);
+          } else if ("unix".equals(sourceClassValue)) {
+            Map<String, String> updates = Collections.singletonMap(RANGER_USERSYNC_SOURCE_IMPL_CLASS_PROPERTY,
+                "org.apache.ranger.unixusersync.process.UnixUserGroupBuilder");
+            updateConfigurationPropertiesForCluster(cluster, RANGER_UGSYNC_SITE_CONFIG, updates, true, false);
+          } else if ("file".equals(sourceClassValue)) {
+            Map<String, String> updates = Collections.singletonMap(RANGER_USERSYNC_SOURCE_IMPL_CLASS_PROPERTY,
+                "org.apache.ranger.unixusersync.process.FileSourceUserGroupBuilder");
+            updateConfigurationPropertiesForCluster(cluster, RANGER_UGSYNC_SITE_CONFIG, updates, true, false);
+          }
+        }
+      }
     }
-
-    String regSearch = "\\{\\{hbase_heapsize\\}\\}";
-    String replacement = "{{hbase_heapsize}}m";
-    content = content.replaceAll(regSearch, replacement);
-    regSearch = "\\{\\{hbase_master_maxperm_size\\}\\}";
-    replacement = "{{hbase_master_maxperm_size}}m";
-    content = content.replaceAll(regSearch, replacement);
-    regSearch = "\\{\\{hbase_master_xmn_size\\}\\}";
-    replacement = "{{hbase_master_xmn_size}}m";
-    content = content.replaceAll(regSearch, replacement);
-    regSearch = "\\{\\{regionserver_xmn_size\\}\\}";
-    replacement = "{{regionserver_xmn_size}}m";
-    content = content.replaceAll(regSearch, replacement);
-    regSearch = "\\{\\{regionserver_heapsize\\}\\}";
-    replacement = "{{regionserver_heapsize}}m";
-    content = content.replaceAll(regSearch, replacement);
-    regSearch = "export HBASE_HEAPSIZE=";
-    replacement = "#export HBASE_HEAPSIZE=";
-    content = content.replaceAll(regSearch, replacement);
-    content += "\n" +
-      "# The maximum amount of heap to use for hbase shell.\n" +
-      "export HBASE_SHELL_OPTS=\"-Xmx256m\"\n";
-    return content;
   }
 
   protected String updateHiveEnvContent(String hiveEnvContent) {
@@ -1254,34 +1322,5 @@ public class UpgradeCatalog213 extends AbstractUpgradeCatalog {
         }
       } // else -- no special client-configuration is necessary.
     }
-  }
-
-  private String memoryToIntMb(String memorySize) {
-    if (memorySize == null) {
-      return "0";
-    }
-    Integer value = 0;
-    try {
-      value = Integer.parseInt(memorySize.replaceAll("\\D+", ""));
-    } catch (NumberFormatException ex) {
-      LOG.error(ex.getMessage());
-    }
-    char unit = memorySize.toUpperCase().charAt(memorySize.length() - 1);
-    // Recalculate memory size to Mb
-    switch (unit) {
-      case 'K':
-        value /= 1024;
-        break;
-      case 'B':
-        value /= (1024*1024);
-        break;
-      case 'G':
-        value *= 1024;
-        break;
-      case 'T':
-        value *= 1024*1024;
-        break;
-    }
-    return value.toString();
   }
 }

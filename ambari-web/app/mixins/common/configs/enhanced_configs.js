@@ -40,9 +40,7 @@ App.EnhancedConfigsMixin = Em.Mixin.create({
    * flag is true when Ambari changes some of the dependent properties
    * @type {boolean}
    */
-  hasChangedDependencies: function() {
-    return App.get('isClusterSupportsEnhancedConfigs') && this.get('isControllerSupportsEnhancedConfigs') && this.get('changedProperties.length') > 0;
-  }.property('changedProperties.length'),
+  hasChangedDependencies: Em.computed.and('App.isClusterSupportsEnhancedConfigs', 'isControllerSupportsEnhancedConfigs', 'changedProperties.length'),
 
   /**
    * defines is block with changed dependent configs should be shown
@@ -183,7 +181,7 @@ App.EnhancedConfigsMixin = Em.Mixin.create({
       return p && p.concat(c);
     });
     var cleanDependencies = this.get('_dependentConfigValues').reject(function(item) {
-      if ('hadoop.proxyuser'.contains(Em.get(item, 'name'))) return false;
+      if (Em.get(item, 'propertyName').contains('hadoop.proxyuser')) return false;
       if (installedServices.contains(Em.get(item, 'serviceName'))) {
         var stackProperty = App.configsCollection.getConfigByName(item.propertyName, item.fileName);
         var parentConfigs = stackProperty && stackProperty.propertyDependsOn;
@@ -698,6 +696,9 @@ App.EnhancedConfigsMixin = Em.Mixin.create({
             isNotSaved: !Em.get(propertyToAdd, 'isDeleted'),
             isRequired: stackProperty && stackProperty.isRequired !== false
           });
+          if (!Em.get(propertyToAdd, 'isDeleted')) {
+            addedProperty.set('initialValue', null);
+          }
           stepConfigs.get('configs').pushObject(addedProperty);
           addedProperty.validate();
         } else {

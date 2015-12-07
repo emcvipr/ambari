@@ -327,7 +327,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
   admin: Em.Route.extend({
     route: '/admin',
     enter: function (router, transition) {
-      if (router.get('loggedIn') && !App.isAccessible('upgrade_ADMIN')) {
+      if (router.get('loggedIn') && !App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK')) {
         Em.run.next(function () {
           router.transitionTo('main.dashboard.index');
         });
@@ -335,7 +335,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
     },
 
     routePath: function (router, event) {
-      if (!App.isAccessible('upgrade_ADMIN')) {
+      if (!App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK')) {
         Em.run.next(function () {
           App.router.transitionTo('main.dashboard.index');
         });
@@ -639,14 +639,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
             //if service is not existed then route to default service
             if (item.get('isLoaded')) {
               if (router.get('mainServiceItemController.isConfigurable')) {
-                // HDFS service config page requires service metrics information to determine NameNode HA state and hide SNameNode category
-                if (item.get('serviceName') === 'HDFS') {
-                  router.get('mainController').isLoading.call(router.get('clusterController'), 'isServiceContentFullyLoaded').done(function () {
-                    router.get('mainServiceItemController').connectOutlet('mainServiceInfoConfigs', item);
-                  });
-                } else {
-                  router.get('mainServiceItemController').connectOutlet('mainServiceInfoConfigs', item);
-                }
+                router.get('mainServiceItemController').connectOutlet('mainServiceInfoConfigs', item);
               }
               else {
                 // if service doesn't have configs redirect to summary
