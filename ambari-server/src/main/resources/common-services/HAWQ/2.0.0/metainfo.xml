@@ -85,16 +85,6 @@
             <scriptType>PYTHON</scriptType>
             <timeout>600</timeout>
           </commandScript>
-           <dependencies>
-            <dependency>
-              <name>HDFS/DATANODE</name>
-              <scope>host</scope>
-              <auto-deploy>
-                <enabled>false</enabled>
-                <co-locate>HDFS/DATANODE</co-locate>
-              </auto-deploy>
-            </dependency>
-          </dependencies>
         </component>
       </components> 
       <requiredServices>
@@ -120,6 +110,7 @@
 
       <configuration-dependencies>
         <config-type>hawq-site</config-type>
+        <config-type>hawq-env</config-type>
         <config-type>gpcheck-env</config-type>
       </configuration-dependencies>
     </service>

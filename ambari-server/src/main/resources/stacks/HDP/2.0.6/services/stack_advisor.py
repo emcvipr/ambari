@@ -311,7 +311,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
         and services['configurations'] \
         and 'admin-properties' in services['configurations'] and 'policymgr_external_url' in services['configurations']['admin-properties']['properties'] \
         and services['configurations']['admin-properties']['properties']['policymgr_external_url'] \
-        and not services['configurations']['admin-properties']['properties']['policymgr_external_url'].strip().isempty():
+        and services['configurations']['admin-properties']['properties']['policymgr_external_url'].strip():
 
         # in case of HA deployment keep the policymgr_external_url specified in the config
         policymgr_external_url = services['configurations']['admin-properties']['properties']['policymgr_external_url']
@@ -908,7 +908,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     validationItems = []
     servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
     # Storm AMS integration
-    if 'AMBARI_METRICS' in servicesList and \
+    if 'AMBARI_METRICS' in servicesList and "metrics.reporter.register" in properties and \
       "org.apache.hadoop.metrics2.sink.storm.StormTimelineMetricsReporter" not in properties.get("metrics.reporter.register"):
 
       validationItems.append({"config-name": 'metrics.reporter.register',

@@ -376,16 +376,16 @@ App.Router = Em.Router.extend({
           isOperator: true
         });
       }
-      if (isAdmin || clusterPermissions.contains('CLUSTER.USER') || clusterPermissions.contains('CLUSTER.ADMINISTRATOR')) {
-        router.transitionToApp();
-      } else {
+      if (App.get('isOnlyViewUser')) {
         router.transitionToViews();
+      } else {
+        router.transitionToApp();
       }
     } else {
-      if (isAdmin) {
-        router.transitionToAdminView();
-      } else {
+      if (App.get('isOnlyViewUser')) {
         router.transitionToViews();
+      } else {
+        router.transitionToAdminView();
       }
     }
     App.set('isPermissionDataLoaded', true);

@@ -154,8 +154,7 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
     'upgradeType',
     'failuresTolerance',
     'isDowngrade',
-    'downgradeAllowed',
-    'isSuspended'
+    'downgradeAllowed'
   ],
 
   /**
@@ -251,14 +250,14 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    * @type {string}
    */
   requestStatus: function () {
-    if (this.get('isSuspended')) {
+    if (this.get('upgradeData.Upgrade') && this.get('upgradeData.Upgrade.request_status') == 'ABORTED') {
       return 'SUSPENDED';
     } else if (this.get('upgradeData.Upgrade')){
       return this.get('upgradeData.Upgrade.request_status');
     } else {
       return '';
     }
-  }.property('isSuspended', 'upgradeData.Upgrade.request_status'),
+  }.property('upgradeData.Upgrade.request_status'),
 
   init: function () {
     this.initDBProperties();
@@ -676,6 +675,13 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
           label: version.get('displayName'),
           type: method.get('type')
         });
+      } else {
+        //if method not supported in current stack version, mark as check completed
+        method.setProperties({
+          isCheckComplete: false,
+          isCheckRequestInProgress: false,
+          action: ''
+        });
       }
     }, this);
   },
@@ -744,14 +750,14 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
             placement: "top",
             title: Em.I18n.t('admin.stackVersions.version.upgrade.upgradeOptions.tolerance.tooltip')
           });
-          App.tooltip($(".not-allowed-by-version"), {
-            placement: "bottom",
-            title: Em.I18n.t('admin.stackVersions.version.upgrade.upgradeOptions.notAllowed')
-          });
           Em.run.later(this, function () {
             App.tooltip($(".thumbnail.check-failed"), {
               placement: "bottom",
               title: Em.I18n.t('admin.stackVersions.version.upgrade.upgradeOptions.preCheck.failed.tooltip')
+            });
+            App.tooltip($(".not-allowed-by-version"), {
+              placement: "bottom",
+              title: Em.I18n.t('admin.stackVersions.version.upgrade.upgradeOptions.notAllowed')
             });
           }, 1000);
         },
@@ -1523,9 +1529,7 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
     var self = this;
     return this.abortUpgrade().done(function () {
       App.set('upgradeState', 'ABORTED');
-      self.set('isSuspended', true);
       self.setDBProperty('upgradeState', 'ABORTED');
-      self.setDBProperty('isSuspended', true);
       App.clusterStatus.setClusterStatus({
         wizardControllerName: self.get('name'),
         localdb: App.db.data
@@ -1541,9 +1545,7 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
     this.retryUpgrade().done(function () {
       App.set('upgradeState', 'PENDING');
       App.propertyDidChange('upgradeAborted');
-      self.set('isSuspended', false);
       self.setDBProperty('upgradeState', 'PENDING');
-      self.setDBProperty('isSuspended', false);
       App.clusterStatus.setClusterStatus({
         wizardControllerName: self.get('name'),
         localdb: App.db.data

@@ -20,7 +20,6 @@ package org.apache.ambari.server.security.authorization;
 
 import java.io.IOException;
 import java.security.Principal;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.servlet.Filter;
@@ -36,7 +35,6 @@ import com.google.inject.Inject;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.orm.entities.PermissionEntity;
 import org.apache.ambari.server.orm.entities.PrivilegeEntity;
-import org.apache.ambari.server.orm.entities.ViewInstanceEntity.ViewInstanceVersionDTO;
 import org.apache.ambari.server.security.authorization.internal.InternalAuthenticationToken;
 import org.apache.ambari.server.view.ViewRegistry;
 import org.apache.commons.lang.StringUtils;
@@ -65,13 +63,18 @@ public class AmbariAuthorizationFilter implements Filter {
   private static final String API_PRIVILEGES_ALL_PATTERN = API_VERSION_PREFIX + "/privileges.*";
   private static final String API_GROUPS_ALL_PATTERN = API_VERSION_PREFIX + "/groups.*";
   private static final String API_CLUSTERS_PATTERN = API_VERSION_PREFIX + "/clusters/(\\w+)?";
+  private static final String API_WIDGET_LAYOUTS_PATTERN = API_VERSION_PREFIX + "/clusters/.*?/widget_layouts.*?";
   private static final String API_CLUSTERS_ALL_PATTERN = API_VERSION_PREFIX + "/clusters.*";
   private static final String API_VIEWS_ALL_PATTERN = API_VERSION_PREFIX + "/views.*";
   private static final String API_PERSIST_ALL_PATTERN = API_VERSION_PREFIX + "/persist.*";
   private static final String API_LDAP_SYNC_EVENTS_ALL_PATTERN = API_VERSION_PREFIX + "/ldap_sync_events.*";
   private static final String API_CREDENTIALS_ALL_PATTERN = API_VERSION_PREFIX + "/clusters/.*?/credentials.*";
   private static final String API_CREDENTIALS_AMBARI_PATTERN = API_VERSION_PREFIX + "/clusters/.*?/credentials/ambari\\..*";
+  private static final String API_CLUSTER_REQUESTS_ALL_PATTERN = API_VERSION_PREFIX + "/clusters/.*?/requests.*";
+  private static final String API_CLUSTER_SERVICES_ALL_PATTERN = API_VERSION_PREFIX + "/clusters/.*?/services.*";
+  private static final String API_HOSTS_ALL_PATTERN = API_VERSION_PREFIX + "/clusters/.*?/hosts.*";
   private static final String API_STACK_VERSIONS_PATTERN = API_VERSION_PREFIX + "/stacks/.*?/versions/.*";
+  private static final String API_HOSTS_ALL = API_VERSION_PREFIX + "/hosts.*";
 
   protected static final String LOGIN_REDIRECT_BASE = "/#/login?targetURI=";
 
@@ -186,17 +189,9 @@ public class AmbariAuthorizationFilter implements Filter {
         }
       }
 
-      if (!authorized && requestURI.matches(VIEWS_CONTEXT_PATH_PATTERN)) {
-        final ViewInstanceVersionDTO dto = parseViewInstanceInfo(requestURI);
-        authorized = getViewRegistry().checkPermission(dto.getViewName(), dto.getVersion(), dto.getInstanceName(), true);
-      }
-
-
       // allow GET for everything except /views, /api/v1/users, /api/v1/groups, /api/v1/ldap_sync_events
       if (!authorized &&
           (!httpRequest.getMethod().equals("GET")
-              || requestURI.matches(VIEWS_CONTEXT_ALL_PATTERN)
-              || requestURI.matches(API_GROUPS_ALL_PATTERN)
               || requestURI.matches(API_LDAP_SYNC_EVENTS_ALL_PATTERN))) {
 
         httpResponse.setHeader("WWW-Authenticate", "Basic realm=\"" + realm + "\"");
@@ -254,8 +249,16 @@ public class AmbariAuthorizationFilter implements Filter {
     return requestURI.matches(API_USERS_ALL_PATTERN) ||
         requestURI.matches(API_GROUPS_ALL_PATTERN) ||
         requestURI.matches(API_CREDENTIALS_ALL_PATTERN) ||
+        requestURI.matches(API_PRIVILEGES_ALL_PATTERN) ||
+        requestURI.matches(API_CLUSTER_REQUESTS_ALL_PATTERN) ||
+        requestURI.matches(API_CLUSTER_SERVICES_ALL_PATTERN) ||
         requestURI.matches(API_CLUSTERS_PATTERN) ||
         requestURI.matches(API_STACK_VERSIONS_PATTERN) ||
+        requestURI.matches(API_VIEWS_ALL_PATTERN) ||
+        requestURI.matches(VIEWS_CONTEXT_PATH_PATTERN) ||
+        requestURI.matches(API_WIDGET_LAYOUTS_PATTERN) ||
+        requestURI.matches(API_HOSTS_ALL_PATTERN) ||
+        requestURI.matches(API_HOSTS_ALL) ||
         requestURI.matches(API_PRIVILEGES_ALL_PATTERN);
   }
 
@@ -283,25 +286,6 @@ public class AmbariAuthorizationFilter implements Filter {
       value = filterConfig.getServletContext().getInitParameter(parameterName);
     }
     return value == null || value.length() == 0 ? defaultValue : value;
-  }
-
-  /**
-   * Parses context path into view name, version and instance name
-   *
-   * @param contextPath the context path
-   * @return null if context path doesn't match correct pattern
-   */
-  static ViewInstanceVersionDTO parseViewInstanceInfo(String contextPath) {
-    final Pattern pattern = Pattern.compile(VIEWS_CONTEXT_PATH_PATTERN);
-    final Matcher matcher = pattern.matcher(contextPath);
-    if (!matcher.matches()) {
-      return null;
-    } else {
-      final String viewName = matcher.group(1);
-      final String version = matcher.group(2);
-      final String instanceName = matcher.group(3);
-      return new ViewInstanceVersionDTO(viewName, version, instanceName);
-    }
   }
 
   SecurityContext getSecurityContext() {

@@ -26,54 +26,15 @@ describe('App.WidgetWizardStep3Controller', function () {
     content: Em.Object.create()
   });
 
-  describe("#isEditController", function () {
-    it("empty name", function () {
-      controller.set('content.controllerName', '');
-      controller.propertyDidChange('isEditController');
-      expect(controller.get('isEditController')).to.be.false;
-    });
-    it("widgetEditController name", function () {
-      controller.set('content.controllerName', 'widgetEditController');
-      controller.propertyDidChange('isEditController');
-      expect(controller.get('isEditController')).to.be.true;
-    });
-  });
+  App.TestAliases.testAsComputedEqual(controller, 'isEditController', 'content.controllerName', 'widgetEditController');
 
-  describe("#widgetScope", function () {
-    it("isSharedChecked - false", function () {
-      controller.set('isSharedChecked', false);
-      controller.propertyDidChange('widgetScope');
-      expect(controller.get('widgetScope')).to.equal('User');
-    });
-    it("isSharedChecked - true", function () {
-      controller.set('isSharedChecked', true);
-      controller.propertyDidChange('widgetScope');
-      expect(controller.get('widgetScope')).to.equal('Cluster');
-    });
-  });
+  App.TestAliases.testAsComputedIfThenElse(controller, 'widgetScope', 'isSharedChecked', 'Cluster', 'User');
 
-  describe("#isSubmitDisabled", function () {
-    it("widgetName - null", function () {
-      controller.set('widgetName', null);
-      controller.propertyDidChange('isSubmitDisabled');
-      expect(controller.get('isSubmitDisabled')).to.be.true;
-    });
-    it("widgetName empty ", function () {
-      controller.set('widgetName', '');
-      controller.propertyDidChange('isSubmitDisabled');
-      expect(controller.get('isSubmitDisabled')).to.be.true;
-    });
-    it("widgetName contains only whitespace", function () {
-      controller.set('widgetName', ' ');
-      controller.propertyDidChange('isSubmitDisabled');
-      expect(controller.get('isSubmitDisabled')).to.be.true;
-    });
-    it("widgetName correct", function () {
-      controller.set('widgetName', 'w1');
-      controller.propertyDidChange('isSubmitDisabled');
-      expect(controller.get('isSubmitDisabled')).to.be.false;
-    });
-  });
+  App.TestAliases.testAsComputedGte(controller, 'isNameInvalid', 'widgetName.length', 129);
+
+  App.TestAliases.testAsComputedGte(controller, 'isDescriptionInvalid', 'widgetDescription.length', 2049);
+
+  App.TestAliases.testAsComputedOr(controller, 'isSubmitDisabled', ['widgetNameEmpty', 'isNameInvalid', 'isDescriptionInvalid']);
 
   describe("#initPreviewData()", function () {
     beforeEach(function () {

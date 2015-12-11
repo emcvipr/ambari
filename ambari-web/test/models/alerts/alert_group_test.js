@@ -18,21 +18,12 @@
 
 var App = require('app');
 
-App.MainAdminAuthenticationView = Em.View.extend({
-  templateName:require('templates/main/admin/authentication'),
-  form:App.AuthenticationForm.create({}),
-  pushAuthenticationToForm:function () {
-    var auth = App.Authentication.find(1);
-    App.router.set('mainAdminAuthenticationController.content', auth);
-    this.form.set('object', auth);
-  },
-  didInsertElement: function (){
-    this._super();
-    this.pushAuthenticationToForm();
-  },
+function getModel() {
+  return App.AlertGroup.createRecord();
+}
 
-  ldapChecked: Em.computed.alias('form.field.method.value'),
+describe('App.AlertGroup', function() {
 
-  useCredentials: Em.computed.alias('form.field.bindMethod.value')
+  App.TestAliases.testAsComputedAlias(getModel(), 'isAddDefinitionsDisabled', 'default', 'boolean');
 
 });

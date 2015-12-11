@@ -263,6 +263,9 @@
         <task xsi:type="configure" id="hdp_2_3_0_0_yarn_rm_check_cs_root_max_capacity"/>
       </execute-stage>
 
+      <execute-stage service="YARN" component="RESOURCEMANAGER" title="Calculating Yarn Properties">
+        <task xsi:type="server_action" summary="Calculating Yarn Properties" class="org.apache.ambari.server.serveraction.upgrades.YarnConfigCalculation" />
+      </execute-stage>
 
       <!--HBASE-->
       <execute-stage service="HBASE" component="HBASE_MASTER" title="Apply config changes for HBase Master">
@@ -293,6 +296,10 @@
 
       <!--HIVE-->
       <execute-stage service="HIVE" component="HIVE_SERVER" title="Apply config changes for Hive Server">
+        <task xsi:type="configure" id="hdp_2_2_0_0_hive_server_keberized_token_store_class"/>
+      </execute-stage>
+
+      <execute-stage service="HIVE" component="HIVE_SERVER" title="Apply config changes for Hive Server">
         <task xsi:type="configure" id="hdp_2_3_0_0_hive_server_replace_auth_manager"/>
       </execute-stage>
 
@@ -307,7 +314,6 @@
       <execute-stage service="HIVE" component="WEBHCAT_SERVER">
         <task xsi:type="configure" id="hdp_2_3_0_0_webhcat_server_update_configuration_paths"/>
       </execute-stage>
-
 
       <!--OOZIE-->
       <execute-stage service="OOZIE" component="OOZIE_SERVER" title="Apply config changes for Oozie Server">
@@ -327,15 +333,6 @@
       <execute-stage service="STORM" component="NIMBUS" title="Apply config changes for Nimbus">
         <task xsi:type="configure" id="hdp_2_3_0_0_update_storm_env"/>
       </execute-stage>
-
-      <execute-stage service="STORM" component="NIMBUS" title="Apply config changes for Nimbus">
-        <task xsi:type="configure" id="hdp_2_3_0_0_add_storm_cluster_logs_content"/>
-      </execute-stage>
-
-      <execute-stage service="STORM" component="NIMBUS" title="Apply config changes for Nimbus">
-        <task xsi:type="configure" id="hdp_2_3_0_0_add_storm_worker_logs_content"/>
-      </execute-stage>
-
 
       <execute-stage service="STORM" component="NIMBUS" title="Apply config changes for Nimbus">
         <task xsi:type="configure" id="hdp_2_3_0_0_nimbus_update_env_vars"/>

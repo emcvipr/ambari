@@ -27,8 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import junit.framework.Assert;
-
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.controller.ResourceProviderFactory;
 import org.apache.ambari.server.controller.predicate.AndPredicate;
@@ -44,13 +42,13 @@ import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
 import org.apache.ambari.server.orm.dao.StackDAO;
 import org.apache.ambari.server.orm.entities.ClusterEntity;
 import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
+import org.apache.ambari.server.orm.entities.OperatingSystemEntity;
+import org.apache.ambari.server.orm.entities.RepositoryEntity;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.security.TestAuthenticationFactory;
 import org.apache.ambari.server.security.authorization.AuthorizationException;
 import org.apache.ambari.server.state.Clusters;
-import org.apache.ambari.server.orm.entities.RepositoryEntity;
-import org.apache.ambari.server.orm.entities.OperatingSystemEntity;
 import org.apache.ambari.server.state.OperatingSystemInfo;
 import org.apache.ambari.server.state.RepositoryInfo;
 import org.apache.ambari.server.state.RepositoryVersionState;
@@ -64,14 +62,16 @@ import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.google.common.collect.Sets;
 import com.google.gson.Gson;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.persist.PersistService;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+
+import junit.framework.Assert;
 
 /**
  * RepositoryVersionResourceProvider tests.
@@ -233,12 +233,12 @@ public class RepositoryVersionResourceProviderTest {
 
   @Test
   public void testCreateResourcesAsAdministrator() throws Exception {
-    testCreateResources(TestAuthenticationFactory.createAdministrator("admin"));
+    testCreateResources(TestAuthenticationFactory.createAdministrator());
   }
 
   @Test(expected = AuthorizationException.class)
   public void testCreateResourcesAsClusterAdministrator() throws Exception {
-    testCreateResources(TestAuthenticationFactory.createClusterAdministrator("User1"));
+    testCreateResources(TestAuthenticationFactory.createClusterAdministrator());
   }
 
   private void testCreateResources(Authentication authentication) throws Exception {
@@ -268,12 +268,12 @@ public class RepositoryVersionResourceProviderTest {
 
   @Test
   public void testGetResourcesAsAdministrator() throws Exception {
-    testGetResources(TestAuthenticationFactory.createAdministrator("admin"));
+    testGetResources(TestAuthenticationFactory.createAdministrator());
   }
 
   @Test
   public void testGetResourcesAsClusterAdministrator() throws Exception {
-    testGetResources(TestAuthenticationFactory.createClusterAdministrator("User1"));
+    testGetResources(TestAuthenticationFactory.createClusterAdministrator());
   }
 
   private void testGetResources(Authentication authentication) throws Exception {
@@ -376,12 +376,12 @@ public class RepositoryVersionResourceProviderTest {
 
   @Test
   public void testDeleteResourcesAsAdministrator() throws Exception {
-    testDeleteResources(TestAuthenticationFactory.createAdministrator("admin"));
+    testDeleteResources(TestAuthenticationFactory.createAdministrator());
   }
 
   @Test(expected = AuthorizationException.class)
   public void testDeleteResourcesAsClusterAdministrator() throws Exception {
-    testDeleteResources(TestAuthenticationFactory.createClusterAdministrator("User1"));
+    testDeleteResources(TestAuthenticationFactory.createClusterAdministrator());
   }
 
   private void testDeleteResources(Authentication authentication) throws Exception {
@@ -416,12 +416,12 @@ public class RepositoryVersionResourceProviderTest {
 
   @Test
   public void testUpdateResourcesAsAdministrator() throws Exception {
-    testUpdateResources(TestAuthenticationFactory.createAdministrator("admin"));
+    testUpdateResources(TestAuthenticationFactory.createAdministrator());
   }
 
   @Test(expected = AuthorizationException.class)
   public void testUpdateResourcesAsClusterAdministrator() throws Exception {
-    testUpdateResources(TestAuthenticationFactory.createClusterAdministrator("User1"));
+    testUpdateResources(TestAuthenticationFactory.createClusterAdministrator());
   }
 
   private void testUpdateResources(Authentication authentication) throws Exception {
@@ -500,8 +500,8 @@ public class RepositoryVersionResourceProviderTest {
 
     try {
       provider.updateResources(updateRequest, new AndPredicate(predicateStackName, predicateStackVersion));
-      Assert.fail("Update of upgrade pack should not be allowed when repo version is installed on any cluster");
     } catch (Exception ex) {
+      Assert.fail("Update of repository should be allowed when repo version is installed on any cluster");
     }
   }
 
