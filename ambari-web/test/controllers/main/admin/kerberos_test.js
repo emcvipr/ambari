@@ -22,6 +22,12 @@ describe('App.MainAdminKerberosController', function() {
 
   var controller = App.MainAdminKerberosController.create({});
 
+  App.TestAliases.testAsComputedEqual(controller, 'isManualKerberos', 'kdc_type', 'none');
+
+  App.TestAliases.testAsComputedSomeBy(controller, 'isPropertiesChanged', 'stepConfigs', 'isPropertiesChanged', true);
+
+  App.TestAliases.testAsComputedOr(controller, 'isSaveButtonDisabled', ['isSubmitDisabled', '!isPropertiesChanged']);
+
   describe('#prepareConfigProperties', function() {
     beforeEach(function() {
       sinon.stub(App.Service, 'find').returns([

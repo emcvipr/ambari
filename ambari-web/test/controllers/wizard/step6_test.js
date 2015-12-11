@@ -44,43 +44,41 @@ var controller,
       isSelected: true
     })
   ];
+
+function getController() {
+  var controller = App.WizardStep6Controller.create({
+    content: Em.Object.create({
+      hosts: {},
+      masterComponentHosts: {},
+      services: services,
+      controllerName: ''
+    })
+  });
+
+  var h = {}, m = [];
+  Em.A(['host0', 'host1', 'host2', 'host3']).forEach(function (hostName) {
+    var obj = Em.Object.create({
+      name: hostName,
+      hostName: hostName,
+      bootStatus: 'REGISTERED'
+    });
+    h[hostName] = obj;
+    m.push(obj);
+  });
+
+  controller.set('content.hosts', h);
+  controller.set('content.masterComponentHosts', m);
+  controller.set('isMasters', false);
+  return controller;
+}
+
 describe('App.WizardStep6Controller', function () {
 
   beforeEach(function () {
-    controller = App.WizardStep6Controller.create();
-    controller.set('content', Em.Object.create({
-      hosts: {},
-      masterComponentHosts: {},
-      services: services
-    }));
-
-    var h = {}, m = [];
-    Em.A(['host0', 'host1', 'host2', 'host3']).forEach(function (hostName) {
-      var obj = Em.Object.create({
-        name: hostName,
-        hostName: hostName,
-        bootStatus: 'REGISTERED'
-      });
-      h[hostName] = obj;
-      m.push(obj);
-    });
-
-    controller.set('content.hosts', h);
-    controller.set('content.masterComponentHosts', m);
-    controller.set('isMasters', false);
-
+    controller = getController();
   });
 
-  describe('#isAddHostWizard', function () {
-    it('true if content.controllerName is addHostController', function () {
-      controller.set('content.controllerName', 'addHostController');
-      expect(controller.get('isAddHostWizard')).to.equal(true);
-    });
-    it('false if content.controllerName is not addHostController', function () {
-      controller.set('content.controllerName', 'mainController');
-      expect(controller.get('isAddHostWizard')).to.equal(false);
-    });
-  });
+  App.TestAliases.testAsComputedEqual(getController(), 'isAddHostWizard', 'content.controllerName', 'addHostController');
 
   describe('#installedServiceNames', function () {
     it(' should filter content.services by isInstalled property', function () {
@@ -210,27 +208,7 @@ describe('App.WizardStep6Controller', function () {
     });
   });
 
-  describe('#anyGeneralErrors', function () {
-    beforeEach(function () {
-      controller.set('errorMessage', undefined);
-    });
-    it('should return errorMessage', function () {
-      controller.set('errorMessage', "error 404");
-      expect(controller.get('anyGeneralErrors')).to.be.true
-    });
-    it('true if generalErrorMessages is non empty array and errorMessage is undefined', function () {
-      controller.set('generalErrorMessages', ["error1", "error2"]);
-      expect(controller.get('anyGeneralErrors')).to.equal(true);
-    });
-    it('false if generalErrorMessages is empty array and errorMessage is undefined', function () {
-      controller.set('generalErrorMessages', []);
-      expect(controller.get('anyGeneralErrors')).to.equal(false);
-    });
-    it('undefined if generalErrorMessages is undefined and errorMessage is undefined', function () {
-      controller.set('generalErrorMessages', undefined);
-      expect(controller.get('anyGeneralErrors')).to.equal(false);
-    });
-  });
+  App.TestAliases.testAsComputedOr(getController(), 'anyGeneralErrors', ['errorMessage', 'generalErrorMessages.length']);
 
   describe('#render', function () {
     it('true if loaded', function () {
@@ -311,31 +289,11 @@ describe('App.WizardStep6Controller', function () {
     });
   });
 
-  describe('#anyGeneralIssues', function () {
-    it('should return error message if errorMessage', function () {
-      controller.set('errorMessage', "error 404");
-      expect(controller.get('anyGeneralIssues')).to.be.true;
-    });
-    it('should return true if we have several errors', function () {
-      controller.set('generalErrorMessages', ["error 404", "error"]);
-      expect(controller.get('anyGeneralIssues')).to.be.true;
-    });
-    it('should return true if we have several warnings', function () {
-      controller.set('generalWarningMessages', ["error 404", "error"]);
-      expect(controller.get('anyGeneralIssues')).to.be.true;
-    });
-  });
+  App.TestAliases.testAsComputedOr(getController(), 'anyGeneralIssues', ['anyGeneralErrors', 'anyGeneralWarnings']);
 
-  describe('#anyErrors', function () {
-    it('true if generalErrorMessages is non empty', function () {
-      controller.set('generalErrorMessages', ["error 404", "error"]);
-      expect(controller.get('anyErrors')).to.equal(true);
-    });
-    it('false if generalErrorMessages is empty', function () {
-      controller.set('generalErrorMessages', []);
-      expect(controller.get('anyErrors')).to.equal(false);
-    });
-  });
+  App.TestAliases.testAsComputedOr(getController(), 'anyErrors', ['anyGeneralErrors', 'anyHostErrors']);
+
+  App.TestAliases.testAsComputedOr(getController(), 'anyWarnings', ['anyGeneralWarnings', 'anyHostWarnings']);
 
   describe('#anyWarnings', function () {
     it('true if generalWarningMessages is non empty', function () {
@@ -348,27 +306,9 @@ describe('App.WizardStep6Controller', function () {
     });
   });
 
-  describe('#isInstallerWizard', function () {
-    it('true if content.controllerName is addHostController', function () {
-      controller.set('content.controllerName', 'installerController');
-      expect(controller.get('isInstallerWizard')).to.equal(true);
-    });
-    it('false if content.controllerName is not addHostController', function () {
-      controller.set('content.controllerName', 'mainController');
-      expect(controller.get('isInstallerWizard')).to.equal(false);
-    });
-  });
+  App.TestAliases.testAsComputedEqual(getController(), 'isInstallerWizard', 'content.controllerName', 'installerController');
 
-  describe('#isAddServiceWizard', function () {
-    it('true if content.controllerName is addServiceController', function () {
-      controller.set('content.controllerName', 'addServiceController');
-      expect(controller.get('isAddServiceWizard')).to.equal(true);
-    });
-    it('false if content.controllerName is not addServiceController', function () {
-      controller.set('content.controllerName', 'mainController');
-      expect(controller.get('isAddServiceWizard')).to.equal(false);
-    });
-  });
+  App.TestAliases.testAsComputedEqual(getController(), 'isAddServiceWizard', 'content.controllerName', 'addServiceController');
 
   describe('#selectClientHost', function () {
     it('true if isClientsSet false', function () {
@@ -1006,7 +946,7 @@ describe('App.WizardStep6Controller', function () {
     });
   });
 
-describe('#getCurrentBlueprint', function () {
+  describe('#getCurrentBlueprint', function () {
     var tests = Em.A([
       {
         clientComponents: Em.A([{component_name: "name1"}]),

@@ -60,8 +60,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
 
   addMiscTabToPage: true,
 
-  selectedServiceNameTrigger: null,
-
   /**
    * Is Submit-click processing now
    * @type {bool}
@@ -634,8 +632,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
 
     var configs = (storedConfigs && storedConfigs.length) ? storedConfigs : App.configsCollection.getAll();
 
-    this.resolveConfigThemeConditions(configs);
-
     this.set('groupsToDelete', this.get('wizardController').getDBProperty('groupsToDelete') || []);
     if (this.get('wizardController.name') === 'addServiceController' && !this.get('content.serviceConfigProperties.length')) {
       App.router.get('configurationController').getConfigsByTags(this.get('serviceConfigTags')).done(function (loadedConfigs) {
@@ -666,15 +662,26 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
               themeResource = App.SubSection.find().findProperty('name', configCondition.get('name'));
             } else if (configCondition.get('type') === 'subsectionTab') {
               themeResource = App.SubSectionTab.find().findProperty('name', configCondition.get('name'));
+            } else if (configCondition.get('type') === 'config') {
+              //simulate section wrapper for condition type "config"
+              themeResource = Em.Object.create({
+                configProperties: [
+                  Em.Object.create({
+                    name: configCondition.get('configName'),
+                    fileName: configCondition.get('fileName')
+                  })
+                ]
+              });
             }
             if (themeResource) {
               themeResource.get('configProperties').forEach(function (_configId) {
-                configs.find(function (item) {
+                configs.forEach(function (item) {
                   if (App.config.configId(item.name, item.filename) === _configId) {
+                    // if config has already been hidden by condition with "subsection" or "subsectionTab" type
+                    // then ignore condition of "config" type
+                    if (configCondition.get('type') === 'config' && item.hiddenBySection) return false;
                     item.hiddenBySection = !valueAttributes['visible'];
-                    return true;
                   }
-                  return false;
                 });
               }, this);
             }
@@ -691,6 +698,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
     if (App.get('isKerberosEnabled') && this.get('wizardController.name') == 'addServiceController') {
       this.addKerberosDescriptorConfigs(configs, this.get('wizardController.kerberosDescriptorConfigs') || []);
     }
+    this.resolveConfigThemeConditions(configs);
     var stepConfigs = this.createStepConfigs();
     var serviceConfigs = this.renderConfigs(stepConfigs, configs);
     // if HA is enabled -> Make some reconfigurations
@@ -915,12 +923,23 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
       {
         serviceName: 'ACCUMULO',
         configToUpdate: 'instance.volumes'
+      },
+      {
+        serviceName: 'HAWQ',
+        configToUpdate: 'hawq_dfs_url',
+        regexPattern: /(^.*:[0-9]+)(?=\/)/,
+        replacementValue: nameServiceId.get('value')
       }
     ]).forEach(function (c) {
       if (selectedServiceNames.contains(c.serviceName) && nameServiceId) {
-        var cfg = serviceConfigs.findProperty('serviceName', c.serviceName).configs.findProperty('name', c.configToUpdate),
-          newValue = cfg.get('value').replace(/\/\/.*:[0-9]+/i, '//' + nameServiceId.get('value'));
-
+        var cfg = serviceConfigs.findProperty('serviceName', c.serviceName).configs.findProperty('name', c.configToUpdate);
+        var regexPattern = /\/\/.*:[0-9]+/i;
+        var replacementValue = '//' + nameServiceId.get('value');
+        if (typeof(c.regexPattern) !== "undefined" && typeof(c.replacementValue) !== "undefined") {
+          regexPattern = c.regexPattern;
+          replacementValue = c.replacementValue;
+        }
+        var newValue = cfg.get('value').replace(regexPattern, replacementValue);
         cfg.setProperties({
           value: newValue,
           recommendedValue: newValue
@@ -1524,7 +1543,6 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
       {
         var service = errorServices[0];
         this.set('selectedService', service);
-        this.propertyDidChange('selectedServiceNameTrigger');
         $('a[href="#' + service.serviceName + '"]').tab('show');
       }
     }

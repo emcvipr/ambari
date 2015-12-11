@@ -129,12 +129,42 @@ public class ClusterResourceProviderTest {
 
   @Test
   public void testCreateResource_blueprint_asAdministrator() throws Exception {
-    testCreateResource_blueprint(TestAuthenticationFactory.createAdministrator("admin"));
+    testCreateResource_blueprint(TestAuthenticationFactory.createAdministrator());
   }
 
   @Test(expected = AuthorizationException.class)
   public void testCreateResource_blueprint__NonAdministrator() throws Exception {
-    testCreateResource_blueprint(TestAuthenticationFactory.createClusterAdministrator("User1"));
+    testCreateResource_blueprint(TestAuthenticationFactory.createClusterAdministrator());
+  }
+
+  @Test
+  public void testCreateResource_blueprint_With_ProvisionAction() throws Exception {
+    Set<Map<String, Object>> requestProperties = createBlueprintRequestProperties(CLUSTER_NAME, BLUEPRINT_NAME);
+    Map<String, Object> properties = requestProperties.iterator().next();
+    properties.put(ProvisionClusterRequest.PROVISION_ACTION_PROPERTY, "INSTALL_ONLY");
+    Map<String, String> requestInfoProperties = new HashMap<String, String>();
+    requestInfoProperties.put(Request.REQUEST_INFO_BODY_PROPERTY, "{}");
+
+    // set expectations
+    expect(request.getProperties()).andReturn(requestProperties).anyTimes();
+    expect(request.getRequestInfoProperties()).andReturn(requestInfoProperties).anyTimes();
+
+    expect(securityFactory.createSecurityConfigurationFromRequest(anyObject(HashMap.class), anyBoolean())).andReturn(null)
+      .once();
+    expect(topologyFactory.createProvisionClusterRequest(properties, null)).andReturn(topologyRequest).once();
+    expect(topologyManager.provisionCluster(topologyRequest)).andReturn(requestStatusResponse).once();
+    expect(requestStatusResponse.getRequestId()).andReturn(5150L).anyTimes();
+
+    replayAll();
+
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator());
+
+    RequestStatus requestStatus = provider.createResources(request);
+    assertEquals(5150L, requestStatus.getRequestResource().getPropertyValue(PropertyHelper.getPropertyId("Requests", "id")));
+    assertEquals(Resource.Type.Request, requestStatus.getRequestResource().getType());
+    assertEquals("Accepted", requestStatus.getRequestResource().getPropertyValue(PropertyHelper.getPropertyId("Requests", "status")));
+
+    verifyAll();
   }
 
   @Test(expected = IllegalArgumentException.class)
@@ -160,7 +190,7 @@ public class ClusterResourceProviderTest {
     expect(requestStatusResponse.getRequestId()).andReturn(5150L).anyTimes();
 
     replayAll();
-    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator("admin"));
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator());
     RequestStatus requestStatus = provider.createResources(request);
   }
 
@@ -185,7 +215,7 @@ public class ClusterResourceProviderTest {
     expect(requestStatusResponse.getRequestId()).andReturn(5150L).anyTimes();
 
     replayAll();
-    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator("admin"));
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator());
     RequestStatus requestStatus = provider.createResources(request);
     assertEquals(5150L, requestStatus.getRequestResource().getPropertyValue(PropertyHelper.getPropertyId("Requests", "id")));
     assertEquals(Resource.Type.Request, requestStatus.getRequestResource().getType());
@@ -206,18 +236,18 @@ public class ClusterResourceProviderTest {
       ("test"));
 
     replayAll();
-    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator("admin"));
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator());
     provider.createResources(request);
   }
 
   @Test
   public void testCreateResourcesAsAdministrator() throws Exception{
-    testCreateResources(TestAuthenticationFactory.createAdministrator("admin"));
+    testCreateResources(TestAuthenticationFactory.createAdministrator());
   }
 
   @Test(expected = AuthorizationException.class)
   public void testCreateResourcesAsNonAdministrator() throws Exception{
-    testCreateResources(TestAuthenticationFactory.createClusterAdministrator("User1"));
+    testCreateResources(TestAuthenticationFactory.createClusterAdministrator());
   }
 
   @Test
@@ -235,7 +265,7 @@ public class ClusterResourceProviderTest {
     // replay
     replay(managementController, response);
 
-    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator("admin"));
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator());
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
         type,
@@ -282,12 +312,12 @@ public class ClusterResourceProviderTest {
 
   @Test
   public void testGetResourcesAsAdministrator() throws Exception{
-    testGetResources(TestAuthenticationFactory.createAdministrator("admin"));
+    testGetResources(TestAuthenticationFactory.createAdministrator());
   }
 
   @Test
   public void testGetResourcesAsNonAdministrator() throws Exception{
-    testGetResources(TestAuthenticationFactory.createClusterAdministrator("User1"));
+    testGetResources(TestAuthenticationFactory.createClusterAdministrator());
   }
 
   public void testGetResources(Authentication authentication) throws Exception{
@@ -376,42 +406,42 @@ public class ClusterResourceProviderTest {
 
   @Test
   public void testUpdateResourcesAsAdministrator() throws Exception{
-    testUpdateResources(TestAuthenticationFactory.createAdministrator("admin"));
+    testUpdateResources(TestAuthenticationFactory.createAdministrator());
   }
 
   @Test
   public void testUpdateResourcesAsClusterAdministrator() throws Exception{
-    testUpdateResources(TestAuthenticationFactory.createClusterAdministrator("User1"));
+    testUpdateResources(TestAuthenticationFactory.createClusterAdministrator());
   }
 
   @Test(expected = AuthorizationException.class)
-  public void testUpdateResourcesAsServiceAdministrator() throws Exception {
-    testUpdateResources(TestAuthenticationFactory.createServiceAdministrator("User10"));
+  public void testUpdateResourcesAsServiceOperator() throws Exception {
+    testUpdateResources(TestAuthenticationFactory.createServiceOperator());
   }
 
   @Test
   public void testUpdateWithConfigurationAsAdministrator() throws Exception {
-    testUpdateWithConfiguration(TestAuthenticationFactory.createAdministrator("admin"));
+    testUpdateWithConfiguration(TestAuthenticationFactory.createAdministrator());
   }
 
   @Test
   public void testUpdateWithConfigurationAsClusterAdministrator() throws Exception {
-    testUpdateWithConfiguration(TestAuthenticationFactory.createClusterAdministrator("User1"));
+    testUpdateWithConfiguration(TestAuthenticationFactory.createClusterAdministrator());
   }
 
   @Test(expected = AuthorizationException.class)
-  public void testUpdateWithConfigurationAsServiceAdministrator() throws Exception {
-    testUpdateWithConfiguration(TestAuthenticationFactory.createServiceAdministrator("User10"));
+  public void testUpdateWithConfigurationAsServiceOperator() throws Exception {
+    testUpdateWithConfiguration(TestAuthenticationFactory.createServiceOperator());
   }
 
   @Test
   public void testDeleteResourcesAsAdministrator() throws Exception{
-    testDeleteResources(TestAuthenticationFactory.createAdministrator("admin"));
+    testDeleteResources(TestAuthenticationFactory.createAdministrator());
   }
 
   @Test(expected = AuthorizationException.class)
   public void testDeleteResourcesAsNonAdministrator() throws Exception{
-    testDeleteResources(TestAuthenticationFactory.createClusterAdministrator("User1"));
+    testDeleteResources(TestAuthenticationFactory.createClusterAdministrator());
   }
 
   //todo: configuration properties are not being added to props

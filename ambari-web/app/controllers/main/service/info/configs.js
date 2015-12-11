@@ -17,7 +17,6 @@
  */
 
 var App = require('app');
-require('controllers/wizard/slave_component_groups_controller');
 var batchUtils = require('utils/batch_scheduled_requests');
 var databaseUtils = require('utils/configs/database');
 
@@ -26,8 +25,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
   name: 'mainServiceInfoConfigsController',
 
   isHostsConfigsPage: false,
-
-  forceTransition: false,
 
   isRecommendedLoaded: true,
 
@@ -38,8 +35,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
   selectedService: null,
 
   selectedConfigGroup: null,
-
-  selectedServiceNameTrigger: null,
 
   requestsInProgress: [],
 
@@ -151,7 +146,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
    * Determines if some config value is changed
    * @type {boolean}
    */
-  isPropertiesChanged: Em.computed.someBy('stepConfigs', 'isPropertiesChanged', true),
+  isPropertiesChanged: Em.computed.alias('selectedService.isPropertiesChanged'),
 
   /**
    * Filter text will be located here
@@ -276,7 +271,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
       saveInProgress: false,
       isInit: true,
       hash: null,
-      forceTransition: false,
       dataIsLoaded: false,
       versionLoaded: false,
       filter: '',
@@ -494,9 +488,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
     }, this);
 
     var selectedService = this.get('stepConfigs').findProperty('serviceName', this.get('content.serviceName'));
-    if (this.get('selectedService.serviceName') != selectedService.get('serviceName')) {
-      this.propertyDidChange('selectedServiceNameTrigger');
-    }
     this.set('selectedService', selectedService);
     this.checkOverrideProperty(selectedService);
     if (!App.Service.find().someProperty('serviceName', 'RANGER')) {

@@ -640,6 +640,18 @@ public class ClusterImpl implements Cluster {
   }
 
   @Override
+  public Long getResourceId() {
+    ResourceEntity resourceEntity = clusterEntity.getResource();
+    if (resourceEntity == null) {
+      LOG.warn("There is no resource associated with this cluster:\n\tCluster Name: {}\n\tCluster ID: {}",
+          getClusterName(), getClusterId());
+      return null;
+    } else {
+      return resourceEntity.getId();
+    }
+  }
+
+  @Override
   public void addServiceComponentHosts(Collection<ServiceComponentHost> serviceComponentHosts) throws AmbariException {
     clusterGlobalLock.writeLock().lock();
     try {
@@ -2261,8 +2273,8 @@ public class ClusterImpl implements Cluster {
         if (StringUtils.equals(entry.getValue(), configType)) {
           if (serviceName != null) {
             if (entry.getKey()!=null && !StringUtils.equals(serviceName, entry.getKey())) {
-              throw new IllegalArgumentException("Config type {} belongs to {} service, " +
-                "but config group qualified for {}");
+              throw new IllegalArgumentException(String.format("Config type %s belongs to %s service, " +
+                "but also qualified for %s", configType, serviceName, entry.getKey()));
             }
           } else {
             serviceName = entry.getKey();

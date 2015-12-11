@@ -37,6 +37,10 @@ describe('App.upgradeWizardView', function () {
   });
   view.removeObserver('App.clusterName', view, 'startPolling');
 
+  App.TestAliases.testAsComputedOr(view, 'isManualProceedDisabled', ['!isManualDone', 'controller.requestInProgress']);
+
+  App.TestAliases.testAsComputedEqualProperties(view, 'isFinalizeItem', 'manualItem.context', 'controller.finalizeContext');
+
   describe("#upgradeGroups", function () {
     it("upgradeGroups is null", function () {
       view.set('controller.upgradeData.upgradeGroups', null);
@@ -229,21 +233,6 @@ describe('App.upgradeWizardView', function () {
     });
   });
 
-  describe("#isManualProceedDisabled", function () {
-    it("requestInProgress is false", function () {
-      view.set('isManualDone', true);
-      view.set('controller.requestInProgress', false);
-      view.propertyDidChange('isManualProceedDisabled');
-      expect(view.get('isManualProceedDisabled')).to.be.false;
-    });
-    it("requestInProgress is true", function () {
-      view.set('controller.requestInProgress', true);
-      view.propertyDidChange('isManualProceedDisabled');
-      expect(view.get('isManualProceedDisabled')).to.be.true;
-    });
-
-  });
-
   describe("#failedItem", function () {
     it("no running item", function () {
       view.set('activeGroup.upgradeItems', []);
@@ -388,20 +377,7 @@ describe('App.upgradeWizardView', function () {
     });
   });
 
-  describe("#isDowngradeAvailable", function () {
-    it("downgrade available", function () {
-      view.set('controller.isDowngrade', false);
-      view.set('controller.downgradeAllowed', true);
-      view.propertyDidChange('isDowngradeAvailable');
-      expect(view.get('isDowngradeAvailable')).to.be.true;
-    });
-    it("downgrade unavailable", function () {
-      view.set('controller.isDowngrade', true);
-      view.set('controller.downgradeAllowed', true);
-      view.propertyDidChange('isDowngradeAvailable');
-      expect(view.get('isDowngradeAvailable')).to.be.false;
-    });
-  });
+  App.TestAliases.testAsComputedAnd(view, 'isDowngradeAvailable', ['!controller.isDowngrade', 'controller.downgradeAllowed']);
 
   describe("#taskDetails", function () {
     it("runningItem present", function () {
@@ -431,18 +407,6 @@ describe('App.upgradeWizardView', function () {
       });
       view.propertyDidChange('taskDetails');
       expect(view.get('taskDetails')).to.be.null;
-    });
-  });
-
-  describe("#isFinalizeItem", function () {
-    it("depends of manualItem.context", function () {
-      view.reopen({
-        manualItem: {
-          context: 'Confirm Finalize'
-        }
-      });
-      view.propertyDidChange('isFinalizeItem');
-      expect(view.get('isFinalizeItem')).to.be.true;
     });
   });
 
@@ -494,7 +458,7 @@ describe('App.upgradeWizardView', function () {
           status: 'ABORTED',
           isDowngrade: false
         },
-        result: Em.I18n.t('admin.stackUpgrade.state.aborted')
+        result: Em.I18n.t('admin.stackUpgrade.state.paused')
       },
       {
         data: {
@@ -571,15 +535,7 @@ describe('App.upgradeWizardView', function () {
           status: 'ABORTED',
           isDowngrade: true
         },
-        result: Em.I18n.t('admin.stackUpgrade.state.aborted.downgrade')
-      },
-      {
-        data: {
-          status: 'ABORTED',
-          isDowngrade: false,
-          isSuspended: true
-        },
-        result: Em.I18n.t('admin.stackUpgrade.state.paused')
+        result: Em.I18n.t('admin.stackUpgrade.state.paused.downgrade')
       },
       {
         data: {
@@ -619,7 +575,6 @@ describe('App.upgradeWizardView', function () {
     ].forEach(function (test) {
         it('status = ' + test.data.status + ", isDowngrade = " + test.data.isDowngrade, function () {
           view.set('controller.isDowngrade', test.data.isDowngrade);
-          view.set('controller.isSuspended', test.data.isSuspended);
           view.set('controller.upgradeData.Upgrade.request_status', test.data.status);
           view.propertyDidChange('upgradeStatusLabel');
           expect(view.get('upgradeStatusLabel')).to.equal(test.result);

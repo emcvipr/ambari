@@ -37,6 +37,9 @@ module.exports = Em.Application.create({
   isOperator: false,
   isPermissionDataLoaded: false,
   auth: null,
+  isOnlyViewUser: function() {
+    return App.auth && (App.auth.length == 0 || (App.isAuthorized('VIEW.USE') && App.auth.length == 1));
+  }.property('auth'),
 
   /**
    * @type {boolean}
@@ -76,8 +79,8 @@ module.exports = Em.Application.create({
    * @returns {boolean}
    */
   upgradeAborted: function () {
-    return this.get('upgradeState') === "ABORTED" && !App.router.get('mainAdminStackAndUpgradeController.isSuspended');
-  }.property('upgradeState', 'router.mainAdminStackAndUpgradeController.isSuspended'),
+    return this.get('upgradeState') === "ABORTED";
+  }.property('upgradeState'),
 
   /**
    * RU is running
@@ -93,15 +96,14 @@ module.exports = Em.Application.create({
   wizardIsNotFinished: function () {
     return this.get('upgradeIsRunning') ||
            this.get('upgradeAborted') ||
-           App.router.get('wizardWatcherController.isNonWizardUser') ||
-           App.router.get('mainAdminStackAndUpgradeController.isSuspended');
-  }.property('upgradeIsRunning', 'upgradeAborted', 'router.wizardWatcherController.isNonWizardUser', 'router.mainAdminStackAndUpgradeController.isSuspended'),
+           App.router.get('wizardWatcherController.isNonWizardUser');
+  }.property('upgradeIsRunning', 'upgradeAborted', 'router.wizardWatcherController.isNonWizardUser'),
 
   isAuthorized: function(authRoles, options) {
     var result = false;
     authRoles = $.map(authRoles.split(","), $.trim);
 
-    if (!App.router.get('mainAdminStackAndUpgradeController.isSuspended') &&
+    if (!(this.get('upgradeState') == "ABORTED") &&
         !App.get('supports.opsDuringRollingUpgrade') &&
         !['INIT', 'COMPLETED'].contains(this.get('upgradeState')) ||
         !App.auth){

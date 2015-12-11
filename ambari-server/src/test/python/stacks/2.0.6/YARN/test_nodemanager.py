@@ -336,6 +336,7 @@ class TestNodeManager(RMFTestCase):
     self.assertResourceCalled('Directory', '/hadoop/yarn/log',
                               action = ['delete']
     )
+    self.assertResourceCalled('Directory', '/var/lib/hadoop-yarn',)
     self.assertResourceCalled('File', '/var/lib/hadoop-yarn/nm_security_enabled',
                               content= 'Marker file to track first start after enabling/disabling security. During first start yarn local, log dirs are removed and recreated'
     )
@@ -522,13 +523,15 @@ class TestNodeManager(RMFTestCase):
                               group = 'hadoop',
                               )
 
+  @patch("socket.gethostbyname")
   @patch('time.sleep')
   @patch.object(resource_management.libraries.functions, "get_hdp_version", new = MagicMock(return_value='2.3.0.0-1234'))
-  def test_post_upgrade_restart(self, time_mock):
+  def test_post_upgrade_restart(self, time_mock, socket_gethostbyname_mock):
     process_output = """
       c6401.ambari.apache.org:45454  RUNNING  c6401.ambari.apache.org:8042  0
     """
     mocks_dict = {}
+    socket_gethostbyname_mock.return_value = "test_host"
 
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/nodemanager.py",
       classname = "Nodemanager",

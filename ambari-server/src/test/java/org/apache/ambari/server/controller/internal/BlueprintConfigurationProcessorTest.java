@@ -18,6 +18,7 @@
 
 package org.apache.ambari.server.controller.internal;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
@@ -6061,6 +6062,214 @@ public class BlueprintConfigurationProcessorTest {
 
     // Then
     assertEquals("kms://http@host1:9292/kms", clusterConfig.getPropertyValue(configType, "hadoop.security.key.provider.path"));
+  }
+
+  @Test
+  public void testYamlMultiValueWithSingleQuoteFlowStyleFormatSingleValue() throws Exception {
+    // Given
+    BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator  yamlMultiValuePropertyDecorator = new BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator(null);
+    String originalValue = "test_value";
+
+
+    // When
+    String newValue = yamlMultiValuePropertyDecorator.doFormat(originalValue);
+
+    // Then
+    String expectedValue =  "['test_value']";
+    assertEquals(expectedValue, newValue);
+  }
+
+  @Test
+  public void testYamlMultiValueWithPlainFlowStyleFormatSingleValue() throws Exception {
+    // Given
+    BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator  yamlMultiValuePropertyDecorator = new BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator(null, BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator.FlowStyle.PLAIN);
+    String originalValue = "test_value";
+
+
+    // When
+    String newValue = yamlMultiValuePropertyDecorator.doFormat(originalValue);
+
+    // Then
+    String expectedValue =  "[test_value]";
+    assertEquals(expectedValue, newValue);
+  }
+
+  @Test
+  public void testYamlMultiValueWithSingleQuoteFlowStyleFormatMultiValue() throws Exception {
+    // Given
+    BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator  yamlMultiValuePropertyDecorator = new BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator(null);
+    String originalValue = "test_value1,test_value2";
+
+
+    // When
+    String newValue = yamlMultiValuePropertyDecorator.doFormat(originalValue);
+
+    // Then
+    String expectedValue =  "['test_value1','test_value2']";
+    assertEquals(expectedValue, newValue);
+  }
+
+  @Test
+  public void testYamlMultiValueWithPlainFlowStyleFormatMultiValue() throws Exception {
+    // Given
+    BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator  yamlMultiValuePropertyDecorator = new BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator(null, BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator.FlowStyle.PLAIN);
+    String originalValue = "test_value1,test_value2";
+
+
+    // When
+    String newValue = yamlMultiValuePropertyDecorator.doFormat(originalValue);
+
+    // Then
+    String expectedValue =  "[test_value1,test_value2]";
+    assertEquals(expectedValue, newValue);
+  }
+
+  @Test
+  public void testYamlMultiValueWithSingleQuoteFlowStyleFormatSingleValueInSquareBrackets() throws Exception {
+    // Given
+    BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator  yamlMultiValuePropertyDecorator = new BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator(null);
+    String originalValue = "['test_value']";
+
+
+    // When
+    String newValue = yamlMultiValuePropertyDecorator.doFormat(originalValue);
+
+    // Then
+    String expectedValue =  "['test_value']";
+    assertEquals(expectedValue, newValue);
+  }
+
+
+  @Test
+  public void testYamlMultiValueFormatWithPlainFlowStyleSingleValueInSquareBrackets() throws Exception {
+    // Given
+    BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator  yamlMultiValuePropertyDecorator = new BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator(null, BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator.FlowStyle.PLAIN);
+    String originalValue = "[test_value]";
+
+
+    // When
+    String newValue = yamlMultiValuePropertyDecorator.doFormat(originalValue);
+
+    // Then
+    String expectedValue =  "[test_value]";
+    assertEquals(expectedValue, newValue);
+  }
+
+
+  @Test
+  public void testYamlMultiValueWithSingleQuoteFlowStyleFormatMultiValueInSquareBrackets() throws Exception {
+    // Given
+    BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator  yamlMultiValuePropertyDecorator = new BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator(null);
+    String originalValue = "['test_value1','test_value2']";
+
+
+    // When
+    String newValue = yamlMultiValuePropertyDecorator.doFormat(originalValue);
+
+    // Then
+    String expectedValue =  "['test_value1','test_value2']";
+    assertEquals(expectedValue, newValue);
+  }
+
+  @Test
+  public void testYamlMultiValueWithPlainFlowStyleFormatMultiValueInSquareBrackets() throws Exception {
+    // Given
+    BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator  yamlMultiValuePropertyDecorator = new BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator(null, BlueprintConfigurationProcessor.YamlMultiValuePropertyDecorator.FlowStyle.PLAIN);
+    String originalValue = "[test_value1,test_value2]";
+
+
+    // When
+    String newValue = yamlMultiValuePropertyDecorator.doFormat(originalValue);
+
+    // Then
+    String expectedValue =  "[test_value1,test_value2]";
+    assertEquals(expectedValue, newValue);
+  }
+
+  @Test
+  public void testMultipleHostTopologyUpdaterWithYamlPropertySingleHostValue() throws Exception {
+    // Given
+    String component = "test_component";
+    BlueprintConfigurationProcessor.MultipleHostTopologyUpdater mhtu = new BlueprintConfigurationProcessor.MultipleHostTopologyUpdater(component);
+
+    String propertyOriginalValue1 = "['%HOSTGROUP::group_1%']";
+    String propertyOriginalValue2 = "[%HOSTGROUP::group_1%]";
+
+    // When
+    String updatedValue1 = mhtu.resolveHostGroupPlaceholder(propertyOriginalValue1, null, ImmutableList.<String>of("host1:100"));
+    String updatedValue2 = mhtu.resolveHostGroupPlaceholder(propertyOriginalValue2, null, ImmutableList.<String>of("host1:100"));
+
+    // Then
+    assertEquals("host1:100", updatedValue1);
+
+    assertEquals("host1:100", updatedValue2);
+  }
+
+
+
+  @Test
+  public void testMultipleHostTopologyUpdaterWithYamlPropertyMultiHostValue() throws Exception {
+    // Given
+    String component = "test_component";
+    BlueprintConfigurationProcessor.MultipleHostTopologyUpdater mhtu = new BlueprintConfigurationProcessor.MultipleHostTopologyUpdater(component);
+
+    String propertyOriginalValue1 = "['%HOSTGROUP::group_1%', '%HOSTGROUP::group_2%']";
+    String propertyOriginalValue2 = "[%HOSTGROUP::group_1%, %HOSTGROUP::group_2%]";
+
+    // When
+    String updatedValue1 = mhtu.resolveHostGroupPlaceholder(propertyOriginalValue1, null, ImmutableList.<String>of("host1:100", "host2:200"));
+    String updatedValue2 = mhtu.resolveHostGroupPlaceholder(propertyOriginalValue2, null, ImmutableList.<String>of("host1:100", "host2:200"));
+
+    // Then
+    assertEquals("host1:100,host2:200", updatedValue1);
+
+    assertEquals("host1:100,host2:200", updatedValue2);
+  }
+
+
+  @Test
+  public void testMultipleHostTopologyUpdaterWithSingleHostWithSuffixValue() throws Exception {
+    // Given
+    String component = "test_component";
+    BlueprintConfigurationProcessor.MultipleHostTopologyUpdater mhtu = new BlueprintConfigurationProcessor.MultipleHostTopologyUpdater(component);
+
+    String propertyOriginalValue = "http://%HOSTGROUP::group_1%#";
+
+    // When
+    String updatedValue = mhtu.resolveHostGroupPlaceholder(propertyOriginalValue, null, ImmutableList.<String>of("host1:100"));
+
+    // Then
+    assertEquals("http://host1:100#", updatedValue);
+  }
+
+  @Test
+  public void testMultipleHostTopologyUpdaterWithMultiHostWithSuffixValue() throws Exception {
+    // Given
+    String component = "test_component";
+    BlueprintConfigurationProcessor.MultipleHostTopologyUpdater mhtu = new BlueprintConfigurationProcessor.MultipleHostTopologyUpdater(component);
+
+    String propertyOriginalValue = "http://%HOSTGROUP::group_1,HOSTGROUP::group_2%/resource";
+
+    // When
+    String updatedValue = mhtu.resolveHostGroupPlaceholder(propertyOriginalValue, null, ImmutableList.<String>of("host1:100", "host2:200"));
+
+    // Then
+    assertEquals("http://host1:100,host2:200/resource", updatedValue);
+  }
+
+  @Test
+  public void testMultipleHostTopologyUpdaterWithMultiHostValue() throws Exception {
+    // Given
+    String component = "test_component";
+    BlueprintConfigurationProcessor.MultipleHostTopologyUpdater mhtu = new BlueprintConfigurationProcessor.MultipleHostTopologyUpdater(component);
+
+    String propertyOriginalValue = "%HOSTGROUP::group_1%:11,%HOSTGROUP::group_2%:11";
+
+    // When
+    String updatedValue = mhtu.resolveHostGroupPlaceholder(propertyOriginalValue, null, ImmutableList.<String>of("host1:100", "host2:200"));
+
+    // Then
+    assertEquals("host1:100,host2:200", updatedValue);
   }
 
 

@@ -17,11 +17,20 @@
  */
 
 var App = require('app');
+var model;
 
-App.MainAdminAdvancedPasswordView = App.Form.extend({
-  fieldsOptions:[
-    { name:"password", displayName:Em.I18n.t('common.password'), displayType:"password", disableRequiredOnExistent:true },
-    { name:"passwordRetype", displayName:Em.I18n.t('form.passwordRetype'), displayType:"passwordRetype", disableRequiredOnExistent:true }
-  ],
-  fields: []
+function getModel() {
+  return App.Tab.createRecord();
+}
+
+describe('App.Tab', function () {
+
+  beforeEach(function () {
+    model = getModel();
+  });
+
+  App.TestAliases.testAsComputedSumBy(getModel(), 'errorsCount', 'sections', 'errorsCount');
+
+  App.TestAliases.testAsComputedIfThenElse(getModel(), 'tooltipMsg', 'isHiddenByFilter', Em.I18n.t('services.service.config.nothing.to.display') , '');
+
 });
