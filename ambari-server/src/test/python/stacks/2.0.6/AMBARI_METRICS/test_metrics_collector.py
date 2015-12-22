@@ -114,14 +114,17 @@ class TestMetricsCollector(RMFTestCase):
     self.assertResourceCalled('Directory', '/etc/ambari-metrics-collector/conf',
                               owner = 'ams',
                               group = 'hadoop',
-                              recursive = True
+                              create_parents = True,
+                              recursive_ownership = True,
     )
     self.assertResourceCalled('Directory', '/var/lib/ambari-metrics-collector/checkpoint',
                               owner = 'ams',
                               group = 'hadoop',
                               cd_access = 'a',
-                              recursive = True
+                              create_parents = True,
+                              recursive_ownership = True,
     )
+
     self.assertResourceCalled('XmlConfig', 'ams-site.xml',
                               owner = 'ams',
                               group = 'hadoop',
@@ -155,14 +158,14 @@ class TestMetricsCollector(RMFTestCase):
                               owner = 'ams',
                               group = 'hadoop',
                               cd_access = 'a',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
     )
     self.assertResourceCalled('Directory', '/var/run/ambari-metrics-collector',
                               owner = 'ams',
                               cd_access = 'a',
                               group = 'hadoop',
-                              recursive = True,
+                              create_parents = True,
                               mode=0755,
     )
     self.assertResourceCalled('File', '/usr/lib/ams-hbase/bin/hadoop',
@@ -172,7 +175,7 @@ class TestMetricsCollector(RMFTestCase):
     self.assertResourceCalled('Directory', '/etc/security/limits.d',
                               owner = 'root',
                               group = 'root',
-                              recursive = True
+                              create_parents = True
     )
     self.assertResourceCalled('File', '/etc/security/limits.d/ams.conf',
                               owner='root',
@@ -218,19 +221,23 @@ class TestMetricsCollector(RMFTestCase):
     self.assertResourceCalled('Directory', '/etc/ams-hbase/conf',
                               owner = 'ams',
                               group = 'hadoop',
-                              recursive = True
+                              create_parents = True,
+                              recursive_ownership = True,
     )
+
     self.assertResourceCalled('Directory', '/var/lib/ambari-metrics-collector/hbase-tmp',
                               owner = 'ams',
                               cd_access = 'a',
-                              recursive = True
+                              create_parents = True,
+                              recursive_ownership = True,
     )
+
     self.assertResourceCalled('Directory', '/var/lib/ambari-metrics-collector/hbase-tmp/local/jars',
                               owner = 'ams',
                               cd_access = 'a',
                               group = 'hadoop',
                               mode = 0775,
-                              recursive = True
+                              create_parents = True
     )
     self.assertResourceCalled('XmlConfig', 'hbase-site.xml',
                               owner = 'ams',
@@ -261,13 +268,13 @@ class TestMetricsCollector(RMFTestCase):
                               )
     self.assertResourceCalled('Directory', '/var/run/ambari-metrics-collector/',
                               owner = 'ams',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
                               cd_access = "a",
     )
     self.assertResourceCalled('Directory', '/var/log/ambari-metrics-collector',
                               owner = 'ams',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
                               cd_access = "a",
     )
@@ -324,8 +331,12 @@ class TestMetricsCollector(RMFTestCase):
         self.assertResourceCalled('Directory', '/var/lib/ambari-metrics-collector/hbase',
                                   owner = 'ams',
                                   cd_access="a",
-                                  recursive = True
+                                  create_parents = True,
+                                  recursive_ownership = True,
         )
+
+      if (not distributed):
+
         self.assertResourceCalled('File', '/var/run/ambari-metrics-collector//distributed_mode',
                                   owner = 'ams',
                                   action = ['delete']

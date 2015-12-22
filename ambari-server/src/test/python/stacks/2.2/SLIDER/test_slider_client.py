@@ -37,13 +37,14 @@ class TestSliderClient(RMFTestCase):
 
     self.assertResourceCalled('Directory',
                               '/usr/hdp/current/slider-client/conf',
-                              recursive=True
+                              create_parents = True
     )
 
     self.assertResourceCalled('XmlConfig',
                               'slider-client.xml',
                               conf_dir='/usr/hdp/current/slider-client/conf',
-                              configurations=self.getConfig()['configurations']['slider-client']
+                              configurations=self.getConfig()['configurations']['slider-client'],
+                              mode=0644
     )
 
     self.assertResourceCalled('File', '/usr/hdp/current/slider-client/conf/slider-env.sh',
@@ -53,7 +54,7 @@ class TestSliderClient(RMFTestCase):
 
     self.assertResourceCalled('Directory',
                               '/usr/hdp/current/storm-slider-client/conf',
-                              recursive=True
+                              create_parents = True
     )
 
     self.assertResourceCalled('File', '/usr/hdp/current/storm-slider-client/conf/storm-slider-env.sh',

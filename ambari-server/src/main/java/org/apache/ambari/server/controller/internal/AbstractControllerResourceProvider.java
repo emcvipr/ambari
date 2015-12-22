@@ -83,8 +83,32 @@ public abstract class AbstractControllerResourceProvider extends AbstractAuthori
    * @return the resource id or null if not found
    * @throws AmbariException if the named cluster does not exist
    */
+  protected Long getClusterId(String clusterName) throws AmbariException {
+    Cluster cluster = (clusterName == null) ? null : managementController.getClusters().getCluster(clusterName);
+    return (cluster == null) ? null : cluster.getClusterId();
+  }
+
+  /**
+   * Gets the resource id for the named cluster
+   *
+   * @param clusterName the name of the relevant cluster
+   * @return the resource id or null if not found
+   * @throws AmbariException if the named cluster does not exist
+   */
   protected Long getClusterResourceId(String clusterName) throws AmbariException {
-    Cluster cluster = managementController.getClusters().getCluster(clusterName);
+    Cluster cluster = (clusterName == null) ? null : managementController.getClusters().getCluster(clusterName);
+    return (cluster == null) ? null : cluster.getResourceId();
+  }
+
+  /**
+   * Gets the resource id for the cluster with the specified id
+   *
+   * @param clusterId the id of the relevant cluster
+   * @return the resource id or null if not found
+   * @throws AmbariException if the cluster does not exist
+   */
+  protected Long getClusterResourceId(Long clusterId) throws AmbariException {
+    Cluster cluster = (clusterId == null) ? null : managementController.getClusters().getClusterById(clusterId);
     return (cluster == null) ? null : cluster.getResourceId();
   }
 
@@ -177,6 +201,8 @@ public abstract class AbstractControllerResourceProvider extends AbstractAuthori
         return new StackArtifactResourceProvider(managementController);
       case Theme:
         return new ThemeArtifactResourceProvider(managementController);
+      case QuickLink:
+        return new QuickLinkArtifactResourceProvider(managementController);
       case ActiveWidgetLayout:
         return new ActiveWidgetLayoutResourceProvider(managementController);
       case WidgetLayout:

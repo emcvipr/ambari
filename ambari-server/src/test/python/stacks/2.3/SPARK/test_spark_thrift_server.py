@@ -81,13 +81,13 @@ class TestSparkThriftServer(RMFTestCase):
     self.assertResourceCalled('Directory', '/var/run/spark',
         owner = 'spark',
         group = 'hadoop',
-        recursive = True,
+        create_parents = True,
         mode = 0775
     )
     self.assertResourceCalled('Directory', '/var/log/spark',
         owner = 'spark',
         group = 'hadoop',
-        recursive = True,
+        create_parents = True,
         mode = 0775
     )
     self.assertResourceCalled('HdfsResource', '/user/spark',
@@ -143,6 +143,7 @@ class TestSparkThriftServer(RMFTestCase):
     self.assertResourceCalled('PropertiesFile', '/usr/hdp/current/spark-client/conf/spark-thrift-sparkconf.conf',
         key_value_delimiter = ' ',
         owner = 'hive',
+        group = 'hadoop',
         properties = self.getConfig()['configurations']['spark-thrift-sparkconf']
     )
 

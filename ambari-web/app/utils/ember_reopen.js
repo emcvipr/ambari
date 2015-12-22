@@ -128,6 +128,16 @@ Ember.sum = function (a, b) {
 };
 
 /**
+ * Execute passed callback
+ *
+ * @param {Function} callback
+ * @returns {*}
+ */
+Ember.clb = function (callback) {
+  return callback();
+};
+
+/**
  *
  */
 Ember.RadioButton = Ember.Checkbox.extend({
@@ -259,6 +269,7 @@ Ember.Router.reopen({
     var args = arguments;
     var transitionTo = self._super;
     var callback = function () {
+      self.get('location').setURL(path);
       transitionTo.apply(self, args);
     };
     var realPath;

@@ -40,8 +40,6 @@ tmp_dir = Script.get_tmp_dir()
 stack_name = default("/hostLevelParams/stack_name", None)
 upgrade_direction = default("/commandParams/upgrade_direction", None)
 version = default("/commandParams/version", None)
-if version is None:
-  version = get_hdp_version('knox-server')
 # E.g., 2.3.2.0
 version_formatted = format_hdp_stack_version(version)
 
@@ -68,8 +66,6 @@ if stack_name and stack_name.upper() == "HDP":
     knox_data_dir = format('/usr/hdp/{version}/knox/data')
     Logger.info(format("Detected HDP with stack version {version}, will use knox_data_dir = {knox_data_dir}"))
 
-
-knox_logs_dir = '/var/log/knox'
 
 knox_master_secret_path = format('{knox_data_dir}/security/master')
 knox_cert_store_path = format('{knox_data_dir}/security/keystores/gateway.jks')

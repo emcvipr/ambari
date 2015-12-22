@@ -169,9 +169,8 @@ App.ServiceConfigProperty = Em.Object.extend({
       }
     });
     return originalSCPIssued || overridesIssue;
-  }.property('errorMessage', 'warnMessage', 'overrideErrorTrigger'),
+  }.property('errorMessage', 'warnMessage', 'overrides.@each.warnMessage', 'overrides.@each.errorMessage'),
 
-  overrideErrorTrigger: 0, //Trigger for overridable property error
   index: null, //sequence number in category
   editDone: false, //Text field: on focusOut: true, on focusIn: false
   isNotSaved: false, // user property was added but not saved
@@ -202,11 +201,30 @@ App.ServiceConfigProperty = Em.Object.extend({
   additionalView: null,
 
   /**
-   * On Overridable property error message, change overrideErrorTrigger value to recount number of errors service have
+   * If config is saved we should compare config <code>value<code> with <code>savedValue<code> to
+   * find out if it was changed, but if config in not saved there is no <code>savedValue<code>, so
+   * we should use <code>initialValue<code> instead.
    */
-  observeErrors: function () {
-    this.set("overrideErrorTrigger", this.get("overrideErrorTrigger") + 1);
-  }.observes("overrides.@each.errorMessage"),
+  isNotInitialValue: function() {
+    if (Em.isNone(this.get('savedValue')) && !Em.isNone(this.get('initialValue'))) {
+      var value = this.get('value'), initialValue = this.get('initialValue');
+      if (this.get('stackConfigProperty.valueAttributes.type') == 'float') {
+        initialValue = !Em.isNone(initialValue) ? '' + parseFloat(initialValue) : null;
+        value = '' + parseFloat(value);
+      }
+      return initialValue !== value;
+    }
+    return false;
+  }.property('initialValue', 'savedValue', 'value', 'stackConfigProperty.valueAttributes.type'),
+
+  /**
+   * Is property has active override with error
+   */
+  isValidOverride: function () {
+    return this.get('overrides.length') ? !this.get('overrides').find(function(o) {
+     return Em.get(o, 'isEditable') && Em.get(o, 'errorMessage');
+    }) : true;
+  }.property("overrides.@each.errorMessage"),
   /**
    * No override capabilities for fields which are not edtiable
    * and fields which represent master hosts.
@@ -330,7 +348,7 @@ App.ServiceConfigProperty = Em.Object.extend({
     var isWarn = false;
 
     if (typeof value === 'string' && value.length === 0) {
-      if (this.get('isRequired')) {
+      if (this.get('isRequired') && this.get('widgetType') != 'test-db-connection') {
         this.set('errorMessage', 'This is required');
         isError = true;
       } else {

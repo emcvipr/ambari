@@ -107,6 +107,12 @@ def __update_hdfs_client():
     for key in required_keys:
       hdfs_client_dict[key] = params.hdfs_site[key]
 
+  # security
+  if params.security_enabled:
+    hdfs_client_dict["hadoop.security.authentication"] = "kerberos"
+  else:
+    hdfs_client_dict.pop("hadoop.security.authentication", None) # remove the entry
+
   XmlConfig("hdfs-client.xml",
             conf_dir=hawq_constants.hawq_config_dir,
             configurations=ConfigDictionary(hdfs_client_dict),
@@ -173,10 +179,19 @@ def __update_hawq_site():
   Sets up hawq-site.xml
   """
   import params
+  
+  hawq_site_modifiable = dict(params.hawq_site)
+
+  if params.security_enabled:
+    hawq_site_modifiable["enable_secure_filesystem"] = "ON"
+    hawq_site_modifiable["krb_server_keyfile"] = hawq_constants.hawq_keytab_file
+  else:
+    hawq_site_modifiable.pop("enable_secure_filesystem", None) # remove the entry
+    hawq_site_modifiable.pop("krb_server_keyfile", None) # remove the entry
 
   XmlConfig("hawq-site.xml",
             conf_dir=hawq_constants.hawq_config_dir,
-            configurations=params.hawq_site,
+            configurations=ConfigDictionary(hawq_site_modifiable),
             configuration_attributes=params.config['configuration_attributes']['hawq-site'],
             owner=hawq_constants.hawq_user,
             group=hawq_constants.hawq_group,
@@ -208,7 +223,7 @@ def __update_limits_file():
   """
   import params
   # Ensure limits directory exists
-  Directory(hawq_constants.limits_conf_dir, recursive=True, owner=hawq_constants.root_user, group=hawq_constants.root_user)
+  Directory(hawq_constants.limits_conf_dir, create_parents = True, owner=hawq_constants.root_user, group=hawq_constants.root_user)
 
   # Generate limits for hawq user
   limits_file_content = "#### HAWQ Limits Parameters  ###########\n"
@@ -251,7 +266,7 @@ def __update_sysctl_file():
   Updates /etc/sysctl.d/hawq_sysctl.conf file with the HAWQ parameters on CentOS/RHEL.
   """
   # Ensure sys ctl sub-directory exists
-  Directory(hawq_constants.sysctl_conf_dir, recursive=True, owner=hawq_constants.root_user, group=hawq_constants.root_user)
+  Directory(hawq_constants.sysctl_conf_dir, create_parents = True, owner=hawq_constants.root_user, group=hawq_constants.root_user)
 
   # Generate temporary file with kernel parameters needed by hawq
   File(hawq_constants.hawq_sysctl_tmp_file, content=__convert_sysctl_dict_to_text(), owner=hawq_constants.hawq_user,

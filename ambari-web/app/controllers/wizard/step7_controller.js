@@ -132,13 +132,11 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
    * Number of errors in the configs in the selected service
    * @type {number}
    */
-  errorsCount: function () {
-    return this.get('selectedService.configs').filter(function (config) {
-      return Em.isNone(config.get('widgetType'));
-    }).filter(function(config) {
-      return !config.get('isValid') || (config.get('overrides') || []).someProperty('isValid', false);
-    }).filterProperty('isVisible').length;
-  }.property('selectedService.configs.@each.isValid', 'selectedService.configs.@each.isVisible','selectedService.configs.@each.overrideErrorTrigger'),
+  errorsCount: function() {
+    return this.get('selectedService.configsWithErrors').filter(function(c) {
+      return Em.isNone(c.get('widget'));
+    }).length;
+  }.property('selectedService.configsWithErrors.length'),
 
   /**
    * Should Next-button be disabled
@@ -665,12 +663,7 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
             } else if (configCondition.get('type') === 'config') {
               //simulate section wrapper for condition type "config"
               themeResource = Em.Object.create({
-                configProperties: [
-                  Em.Object.create({
-                    name: configCondition.get('configName'),
-                    fileName: configCondition.get('fileName')
-                  })
-                ]
+                configProperties: [App.config.configId(configCondition.get('configName'), configCondition.get('fileName'))]
               });
             }
             if (themeResource) {
@@ -825,27 +818,26 @@ App.WizardStep7Controller = Em.Controller.extend(App.ServerValidatorMixin, App.E
     };
     var configsByService = {}, dependencies = this.get('configDependencies');
 
-    stepConfigs.forEach(function (service) {
-      if (!configsByService[service.get('serviceName')])  {
-        configsByService[service.get('serviceName')] = service.get('configs');
+    configs.forEach(function (_config) {
+      if (!configsByService[_config.serviceName]) {
+        configsByService[_config.serviceName] = [];
       }
-      if (['addServiceController', 'installerController'].contains(this.get('wizardController.name'))) {
-        this.addHostNamesToConfigs(service, localDB.masterComponentHosts, localDB.slaveComponentHosts);
+      var serviceConfigProperty = App.ServiceConfigProperty.create(_config);
+      this.updateHostOverrides(serviceConfigProperty, _config);
+      if (this.get('wizardController.name') === 'addServiceController') {
+        this._updateIsEditableFlagForConfig(serviceConfigProperty, true);
       }
+      if (!this.get('content.serviceConfigProperties.length') && !serviceConfigProperty.get('hasInitialValue')) {
+        App.ConfigInitializer.initialValue(serviceConfigProperty, localDB, dependencies);
+      }
+      serviceConfigProperty.validate();
+      configsByService[_config.serviceName].pushObject(serviceConfigProperty);
     }, this);
 
-    configs.forEach(function (_config) {
-      if (configsByService[_config.serviceName]) {
-        var serviceConfigProperty = App.ServiceConfigProperty.create(_config);
-        this.updateHostOverrides(serviceConfigProperty, _config);
-        if (this.get('wizardController.name') === 'addServiceController') {
-          this._updateIsEditableFlagForConfig(serviceConfigProperty, true);
-        }
-        if (!this.get('content.serviceConfigProperties.length') && !serviceConfigProperty.get('hasInitialValue')) {
-          App.ConfigInitializer.initialValue(serviceConfigProperty, localDB, dependencies);
-        }
-        serviceConfigProperty.validate();
-        configsByService[_config.serviceName].pushObject(serviceConfigProperty);
+    stepConfigs.forEach(function (service) {
+      service.set('configs', configsByService[service.get('serviceName')]);
+      if (['addServiceController', 'installerController'].contains(this.get('wizardController.name'))) {
+        this.addHostNamesToConfigs(service, localDB.masterComponentHosts, localDB.slaveComponentHosts);
       }
     }, this);
     return stepConfigs;
