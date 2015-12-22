@@ -41,6 +41,7 @@ import org.apache.ambari.server.state.alert.Scope;
 import org.apache.ambari.server.state.alert.SourceType;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -302,6 +303,7 @@ public class AlertDefinitionDAOTest {
    * @throws Exception
    */
   @Test
+  @Ignore
   public void testCascadeDelete() throws Exception {
     AlertDefinitionEntity definition = helper.createAlertDefinition(clusterId);
 
@@ -381,8 +383,7 @@ public class AlertDefinitionDAOTest {
     ClusterDAO clusterDAO = injector.getInstance(ClusterDAO.class);
     ClusterEntity clusterEntity = clusterDAO.findById(clusterId);
     clusterDAO.refresh(clusterEntity);
-    injector.getInstance(UnitOfWork.class).end();
-    injector.getInstance(UnitOfWork.class).begin();
+
     Clusters clusters = injector.getInstance(Clusters.class);
     Cluster cluster = clusters.getClusterById(clusterId);
     cluster.delete();

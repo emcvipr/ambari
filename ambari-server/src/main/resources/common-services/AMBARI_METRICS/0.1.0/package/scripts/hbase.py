@@ -27,16 +27,16 @@ def hbase(name=None, action = None):
   import params
   Directory(params.hbase_conf_dir,
             owner = params.hadoop_user,
-            recursive = True
+            create_parents = True
   )
   Directory(params.hbase_tmp_dir,
-             recursive = True,
+             create_parents = True,
              owner = params.hadoop_user
   )
 
   Directory (os.path.join(params.local_dir, "jars"),
              owner = params.hadoop_user,
-             recursive = True
+             create_parents = True
   )
 
   XmlConfig("hbase-site.xml",
@@ -73,7 +73,7 @@ def hbase(name=None, action = None):
   if name != "client":
     Directory (params.hbase_log_dir,
                owner = params.hadoop_user,
-               recursive = True
+               create_parents = True
     )
 
   if (params.hbase_log4j_props != None):
@@ -94,13 +94,15 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
   Directory(params.hbase_conf_dir,
       owner = params.hbase_user,
       group = params.user_group,
-      recursive = True
+      create_parents = True,
+      recursive_ownership = True,
   )
 
   Directory (params.hbase_tmp_dir,
              owner = params.hbase_user,
              cd_access="a",
-             recursive = True
+             create_parents = True,
+             recursive_ownership = True,
   )
 
   Directory (os.path.join(params.local_dir, "jars"),
@@ -108,7 +110,7 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
              group = params.user_group,
              cd_access="a",
              mode=0775,
-             recursive = True
+             create_parents = True
   )
 
   merged_ams_hbase_site = {}
@@ -131,7 +133,7 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
               mode = 0755,
               group=params.user_group,
               cd_access="a",
-              recursive=True
+              create_parents = True
     )
   pass
 
@@ -176,14 +178,14 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
   if name != "client":
     Directory( params.hbase_pid_dir,
                owner = params.hbase_user,
-               recursive = True,
+               create_parents = True,
                cd_access = "a",
                mode = 0755,
     )
 
     Directory (params.hbase_log_dir,
                owner = params.hbase_user,
-               recursive = True,
+               create_parents = True,
                cd_access = "a",
                mode = 0755,
     )
@@ -229,7 +231,8 @@ def hbase(name=None # 'master' or 'regionserver' or 'client'
       Directory(local_root_dir,
                 owner = params.hbase_user,
                 cd_access="a",
-                recursive = True
+                create_parents = True,
+                recursive_ownership = True
       )
 
       File(format("{params.hbase_pid_dir}/distributed_mode"), action="delete", owner=params.hbase_user)

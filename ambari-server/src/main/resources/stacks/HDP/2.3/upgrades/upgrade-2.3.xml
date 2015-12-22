@@ -91,7 +91,7 @@
 
       <execute-stage service="OOZIE" component="OOZIE_SERVER" title="Pre Upgrade Oozie Backup">
         <task xsi:type="manual">
-          <message>Before continuing, please backup the Oozie Server database on {{hosts.all}}.</message>
+          <message>Before continuing, please backup the Oozie Server database referenced by the Oozie server located on {{hosts.all}}.</message>
         </task>
       </execute-stage>
 
@@ -226,6 +226,7 @@
       <service-check>false</service-check>
       <service name="SPARK">
         <component>SPARK_JOBHISTORYSERVER</component>
+        <component>SPARK_THRIFTSERVER</component>
       </service>
     </group>
 
