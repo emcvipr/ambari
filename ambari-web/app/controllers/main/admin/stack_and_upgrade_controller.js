@@ -140,6 +140,10 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    */
   requestInProgress: false,
   /**
+   * @type {number} repo id, request for which is currently in progress
+   */
+  requestInProgressRepoId: null,
+  /**
    * @type {boolean} true while no updated upgrade info is loaded after retry
    */
   isRetryPending: false,
@@ -589,13 +593,6 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
       }
     });
     this.setDBProperty('currentVersion', this.get('currentVersion'));
-
-    // show a "preparing the upgrade..." dialog in case the api call returns too slow
-    setTimeout(function () {
-      if (App.router.get('currentState.name') != 'stackUpgrade') {
-        App.showAlertPopup(Em.I18n.t('admin.stackUpgrade.dialog.prepareUpgrade.header'), Em.I18n.t('admin.stackUpgrade.dialog.prepareUpgrade.body'));
-      }
-    }, 1000);
   },
 
   /**
@@ -1147,6 +1144,8 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    */
   installRepoVersion: function (repo) {
     this.set('requestInProgress', true);
+    this.set('requestInProgressRepoId', repo.get('id'));
+
     var data = {
       ClusterStackVersions: {
         stack: repo.get('stackVersionType'),
@@ -1163,6 +1162,7 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
       error: 'installRepoVersionError',
       callback: function() {
         this.sender.set('requestInProgress', false);
+        this.sender.set('requestInProgressRepoId', null);
       }
     });
   },
@@ -1300,6 +1300,10 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    * @method installStackVersionSuccess
    */
   installRepoVersionSuccess: function (data, opt, params) {
+    if(data && data.statusText == "timeout") {
+      App.showAlertPopup(Em.I18n.t('admin.stackVersions.upgrade.installPackage.fail.title'), Em.I18n.t('admin.stackVersions.upgrade.installPackage.fail.timeout'));
+      return false;
+    }
     var version = App.RepositoryVersion.find(params.id);
     App.db.set('repoVersionInstall', 'id', [data.Requests.id]);
     App.clusterStatus.setClusterStatus({
@@ -1326,6 +1330,9 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
         var json = $.parseJSON(data.responseText);
         body = json.message;
       } catch (err) {}
+    }
+    if(data && data.statusText == "timeout") {
+      body = Em.I18n.t('admin.stackVersions.upgrade.installPackage.fail.timeout');
     }
     App.showAlertPopup(header, body);
   },
@@ -1409,9 +1416,6 @@ App.MainAdminStackAndUpgradeController = Em.Controller.extend(App.LocalStorage, 
    * @return {App.ModalPopup}
    */
   openUpgradeDialog: function () {
-    if ($('.modal') && $('.modal .modal-header #modal-label').text().trim() == Em.I18n.t('admin.stackUpgrade.dialog.prepareUpgrade.header')) {
-      $('.modal .modal-footer button.btn-success').click();
-    }
     App.router.transitionTo('admin.stackUpgrade');
   },
 
