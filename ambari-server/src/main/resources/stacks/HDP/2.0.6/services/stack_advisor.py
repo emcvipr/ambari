@@ -239,6 +239,27 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       if len(namenodes.split(',')) > 1:
         putHDFSSitePropertyAttributes("dfs.namenode.rpc-address", "delete", "true")
 
+    #Initialize default 'dfs.datanode.data.dir' if needed
+    if (not hdfsSiteProperties) or ('dfs.datanode.data.dir' not in hdfsSiteProperties):
+      putHDFSSiteProperty('dfs.datanode.data.dir', '/hadoop/hdfs/data')
+    #dfs.datanode.du.reserved should be set to 10-15% of volume size
+    mountPoints = []
+    mountPointDiskAvailableSpace = [] #kBytes
+    for host in hosts["items"]:
+      for diskInfo in host["Hosts"]["disk_info"]:
+        mountPoints.append(diskInfo["mountpoint"])
+        mountPointDiskAvailableSpace.append(long(diskInfo["size"]))
+    maxFreeVolumeSize = 0l #kBytes
+    dataDirs = hdfsSiteProperties['dfs.datanode.data.dir'].split(",")
+    for dataDir in dataDirs:
+      mp = getMountPointForDir(dataDir, mountPoints)
+      for i in range(len(mountPoints)):
+        if mp == mountPoints[i]:
+          if mountPointDiskAvailableSpace[i] > maxFreeVolumeSize:
+            maxFreeVolumeSize = mountPointDiskAvailableSpace[i]
+      
+    putHDFSSiteProperty('dfs.datanode.du.reserved', maxFreeVolumeSize * 1024 / 8) #Bytes
+    
     # recommendations for "hadoop.proxyuser.*.hosts", "hadoop.proxyuser.*.groups" properties in core-site
     self.recommendHadoopProxyUsers(configurations, services, hosts)
 
@@ -467,6 +488,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     rootDir = "file:///var/lib/ambari-metrics-collector/hbase"
     tmpDir = "/var/lib/ambari-metrics-collector/hbase-tmp"
     hbaseClusterDistributed = False
+    zk_port_default = []
     if "ams-hbase-site" in services["configurations"]:
       if "hbase.rootdir" in services["configurations"]["ams-hbase-site"]["properties"]:
         rootDir = services["configurations"]["ams-hbase-site"]["properties"]["hbase.rootdir"]
@@ -474,12 +496,13 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
         tmpDir = services["configurations"]["ams-hbase-site"]["properties"]["hbase.tmp.dir"]
       if "hbase.cluster.distributed" in services["configurations"]["ams-hbase-site"]["properties"]:
         hbaseClusterDistributed = services["configurations"]["ams-hbase-site"]["properties"]["hbase.cluster.distributed"].lower() == 'true'
+      if "hbase.zookeeper.property.clientPort" in services["configurations"]["ams-hbase-site"]["properties"]:
+        zk_port_default = services["configurations"]["ams-hbase-site"]["properties"]["hbase.zookeeper.property.clientPort"]
 
-    if hbaseClusterDistributed:
+    # Skip recommendation item if default value is present
+    if hbaseClusterDistributed and not "{{zookeeper_clientPort}}" in zk_port_default:
       zkPort = self.getZKPort(services)
       putAmsHbaseSiteProperty("hbase.zookeeper.property.clientPort", zkPort)
-    else:
-      putAmsHbaseSiteProperty("hbase.zookeeper.property.clientPort", "61181")
 
     mountpoints = ["/"]
     for collectorHostName in amsCollectorHosts:
@@ -787,7 +810,8 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
   def getServiceConfigurationValidators(self):
     return {
-      "HDFS": {"hadoop-env": self.validateHDFSConfigurationsEnv},
+      "HDFS": { "hdfs-site": self.validateHDFSConfigurations,
+                "hadoop-env": self.validateHDFSConfigurationsEnv},
       "MAPREDUCE2": {"mapred-site": self.validateMapReduce2Configurations},
       "YARN": {"yarn-site": self.validateYARNConfigurations},
       "HBASE": {"hbase-env": self.validateHbaseEnvConfigurations},
@@ -1290,6 +1314,10 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
                         {"config-name": 'hbase_master_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'hbase_master_heapsize')},
                         {"config-name": "hbase_user", "item": self.validatorEqualsPropertyItem(properties, "hbase_user", hbase_site, "hbase.superuser")} ]
     return self.toConfigurationValidationProblems(validationItems, "hbase-env")
+
+  def validateHDFSConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
+    validationItems = [{"config-name": 'dfs.datanode.du.reserved', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'dfs.datanode.du.reserved')}]
+    return self.toConfigurationValidationProblems(validationItems, "hdfs-site")
 
   def validateHDFSConfigurationsEnv(self, properties, recommendedDefaults, configurations, services, hosts):
     validationItems = [ {"config-name": 'namenode_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'namenode_heapsize')},

@@ -20,6 +20,10 @@
 angular.module('ambariAdminConsole')
   .controller('UsersListCtrl',['$scope', 'User', '$modal', '$rootScope', 'UserConstants', '$translate', function($scope, User, $modal, $rootScope, UserConstants, $translate) {
   var $t = $translate.instant;
+  $scope.constants = {
+    admin: $t('users.ambariAdmin'),
+    users: $t('common.users').toLowerCase()
+  };
   $scope.users = [];
   $scope.usersPerPage = 10;
   $scope.currentPage = 1;
@@ -88,6 +92,7 @@ angular.module('ambariAdminConsole')
     $scope.currentNameFilter = '';
     $scope.currentTypeFilter = $scope.typeFilterOptions[0];
     $scope.currentActiveFilter = $scope.activeFilterOptions[0];
+    $scope.adminFilter = false;
     $scope.resetPagination();
   };
 
@@ -96,7 +101,7 @@ angular.module('ambariAdminConsole')
   $scope.$watch(
     function (scope) {
       return Boolean(scope.currentNameFilter || (scope.currentActiveFilter && scope.currentActiveFilter.value !== '*')
-        || (scope.currentTypeFilter && scope.currentTypeFilter.value !== '*'));
+        || (scope.currentTypeFilter && scope.currentTypeFilter.value !== '*') || $scope.adminFilter);
     },
     function (newValue, oldValue, scope) {
       scope.isNotEmptyFilter = newValue;
