@@ -19,11 +19,13 @@
 package org.apache.ambari.server.upgrade;
 
 
-import com.google.inject.AbstractModule;
 import com.google.common.collect.Maps;
 import com.google.gson.Gson;
+import com.google.inject.AbstractModule;
+import com.google.inject.Binder;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import com.google.inject.Module;
 import com.google.inject.Provider;
 import com.google.inject.persist.PersistService;
 import junit.framework.Assert;
@@ -57,9 +59,11 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.easymock.EasyMock.capture;
 import static org.easymock.EasyMock.createMockBuilder;
 import static org.easymock.EasyMock.createNiceMock;
 import static org.easymock.EasyMock.createStrictMock;
+import static org.easymock.EasyMock.eq;
 import static org.easymock.EasyMock.expect;
 import static org.easymock.EasyMock.expectLastCall;
 import static org.easymock.EasyMock.replay;
@@ -76,8 +80,6 @@ public class UpgradeCatalog221Test {
   private EntityManager entityManager = createNiceMock(EntityManager.class);
   private UpgradeCatalogHelper upgradeCatalogHelper;
   private StackEntity desiredStackEntity;
-
-
 
   @Before
   public void init() {
@@ -98,6 +100,34 @@ public class UpgradeCatalog221Test {
   @After
   public void tearDown() {
     injector.getInstance(PersistService.class).stop();
+  }
+
+  @Test
+  public void testExecuteDDLUpdates() throws Exception{
+    final DBAccessor dbAccessor = createNiceMock(DBAccessor.class);
+
+    dbAccessor.createIndex(eq("idx_stage_request_id"), eq("stage"), eq("request_id"));
+    expectLastCall().once();
+    dbAccessor.createIndex(eq("idx_hrc_request_id"), eq("host_role_command"), eq("request_id"));
+    expectLastCall().once();
+    dbAccessor.createIndex(eq("idx_rsc_request_id"), eq("role_success_criteria"), eq("request_id"));
+    expectLastCall().once();
+
+
+    replay(dbAccessor);
+    Module module = new Module() {
+      @Override
+      public void configure(Binder binder) {
+        binder.bind(DBAccessor.class).toInstance(dbAccessor);
+        binder.bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
+        binder.bind(EntityManager.class).toInstance(entityManager);
+      }
+    };
+
+    Injector injector = Guice.createInjector(module);
+    UpgradeCatalog221 upgradeCatalog221 = injector.getInstance(UpgradeCatalog221.class);
+    upgradeCatalog221.executeDDLUpdates();
+    verify(dbAccessor);
   }
 
   @Test
@@ -249,6 +279,13 @@ public class UpgradeCatalog221Test {
       amsHbaseSecuritySite,
       clusterEnvProperties);
 
+    // Test zookeeper client port set to default
+    amsHbaseSecuritySite.put("hbase.zookeeper.property.clientPort", "61181");
+    newPropertiesAmsHbaseSite.put("hbase.zookeeper.property.clientPort", "{{zookeeper_clientPort}}");
+    testAmsHbaseSiteUpdates(Collections.singletonMap("hbase.zookeeper.property.clientPort", "61181"),
+      newPropertiesAmsHbaseSite,
+      amsHbaseSecuritySite,
+      clusterEnvProperties);
   }
 
   private void testAmsHbaseSiteUpdates(Map<String, String> oldPropertiesAmsHbaseSite,
