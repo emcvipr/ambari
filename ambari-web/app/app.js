@@ -99,7 +99,16 @@ module.exports = Em.Application.create({
            App.router.get('wizardWatcherController.isNonWizardUser');
   }.property('upgradeIsRunning', 'upgradeAborted', 'router.wizardWatcherController.isNonWizardUser'),
 
+  /**
+   * Options:
+   *  - ignoreWizard: ignore when some wizard is running by another user (default `false`)
+   *
+   * @param {string} authRoles
+   * @param {object} options
+   * @returns {boolean}
+   */
   isAuthorized: function(authRoles, options) {
+    options = $.extend({ignoreWizard: false}, options);
     var result = false;
     authRoles = $.map(authRoles.split(","), $.trim);
 
@@ -110,7 +119,7 @@ module.exports = Em.Application.create({
       return false;
     }
 
-    if (App.router.get('wizardWatcherController.isNonWizardUser')) {
+    if (!options.ignoreWizard && App.router.get('wizardWatcherController.isNonWizardUser')) {
       return false;
     }
 
@@ -194,10 +203,9 @@ module.exports = Em.Application.create({
   /**
    * when working with enhanced configs we should rely on stack version
    * as version that is below 2.2 doesn't supports it
-   * even if flag <code>supports.enhancedConfigs<code> is true
    * @type {boolean}
    */
-  isClusterSupportsEnhancedConfigs: Em.computed.and('isHadoop22Stack', 'supports.enhancedConfigs'),
+  isClusterSupportsEnhancedConfigs: Em.computed.alias('isHadoop22Stack'),
 
   /**
    * If NameNode High Availability is enabled
@@ -343,6 +351,10 @@ module.exports = Em.Application.create({
 
     clients: function () {
       return App.StackServiceComponent.find().filterProperty('isClient').mapProperty('componentName')
+    }.property('App.router.clusterController.isLoaded'),
+
+    nonHDP: function () {
+      return App.StackServiceComponent.find().filterProperty('isNonHDPComponent').mapProperty('componentName')
     }.property('App.router.clusterController.isLoaded')
   })
 });

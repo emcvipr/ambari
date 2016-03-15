@@ -26,9 +26,10 @@ from resource_management import *
 from resource_management.core.exceptions import ComponentIsNotRunning
 from resource_management.core.logger import Logger
 from resource_management.core import shell
+from resource_management.libraries.functions.version import compare_versions
+from resource_management.libraries.functions.version import format_stack_version
 
-
-def setup_spark(env, type, action = None):
+def setup_spark(env, type, upgrade_type = None, action = None):
   import params
 
   Directory([params.spark_pid_dir, params.spark_log_dir],
@@ -57,14 +58,16 @@ def setup_spark(env, type, action = None):
   File(os.path.join(params.spark_conf, 'spark-env.sh'),
        owner=params.spark_user,
        group=params.spark_group,
-       content=InlineTemplate(params.spark_env_sh)
+       content=InlineTemplate(params.spark_env_sh),
+       mode=0644,
   )
 
   #create log4j.properties in etc/conf dir
   File(os.path.join(params.spark_conf, 'log4j.properties'),
        owner=params.spark_user,
        group=params.spark_group,
-       content=params.spark_log4j_properties
+       content=params.spark_log4j_properties,
+       mode=0644,
   )
 
   #create metrics.properties in etc/conf dir
@@ -72,6 +75,12 @@ def setup_spark(env, type, action = None):
        owner=params.spark_user,
        group=params.spark_group,
        content=InlineTemplate(params.spark_metrics_properties)
+  )
+  
+  Directory(params.spark_logs_dir,
+       owner=params.spark_user,
+       group=params.spark_group,
+       mode=0755,   
   )
 
   if params.is_hive_installed:
@@ -88,4 +97,17 @@ def setup_spark(env, type, action = None):
       owner = params.hive_user,
       group = params.user_group,
       key_value_delimiter = " ",
+    )
+
+  effective_version = params.version if upgrade_type is not None else params.stack_version_formatted
+  if effective_version:
+    effective_version = format_stack_version(effective_version)
+
+  if params.spark_thrift_fairscheduler_content and effective_version and compare_versions(effective_version, '2.4.0.0') >= 0:
+    # create spark-thrift-fairscheduler.xml
+    File(os.path.join(params.spark_conf,"spark-thrift-fairscheduler.xml"),
+      owner=params.spark_user,
+      group=params.spark_group,
+      mode=0755,
+      content=InlineTemplate(params.spark_thrift_fairscheduler_content)
     )

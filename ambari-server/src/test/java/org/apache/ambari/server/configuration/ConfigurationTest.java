@@ -319,6 +319,21 @@ public class ConfigurationTest {
 
 
   @Test
+  public void testGetDefaultServerTaskTimeout() {
+    Properties ambariProperties = new Properties();
+    Configuration conf = new Configuration(ambariProperties);
+
+    Assert.assertEquals(Integer.valueOf(1200), conf.getDefaultServerTaskTimeout());
+
+    ambariProperties = new Properties();
+    ambariProperties.setProperty(Configuration.SERVER_TASK_TIMEOUT_KEY, "3600");
+
+    conf = new Configuration(ambariProperties);
+
+    Assert.assertEquals(Integer.valueOf(3600), conf.getDefaultServerTaskTimeout());
+  }
+
+  @Test
   public void testGetLdapServerProperties_WrongManagerPassword() throws Exception {
     final Properties ambariProperties = new Properties();
     ambariProperties.setProperty(Configuration.LDAP_MANAGER_PASSWORD_KEY, "somePassword");
@@ -531,6 +546,116 @@ public class ConfigurationTest {
     Assert.assertTrue(configuration.isAlertCacheEnabled());
     Assert.assertEquals(60, configuration.getAlertCacheFlushInterval());
     Assert.assertEquals(1000, configuration.getAlertCacheSize());
+  }
+
+  @Test
+  public void testPropertyProviderThreadPoolSizes() throws Exception {
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+
+    Assert.assertEquals(2 * Runtime.getRuntime().availableProcessors(), configuration.getPropertyProvidersThreadPoolCoreSize());
+    Assert.assertEquals(4 * Runtime.getRuntime().availableProcessors(), configuration.getPropertyProvidersThreadPoolMaxSize());
+
+    ambariProperties.setProperty(Configuration.PROPERTY_PROVIDER_THREADPOOL_MAX_SIZE_KEY, "44");
+    ambariProperties.setProperty(Configuration.PROPERTY_PROVIDER_THREADPOOL_CORE_SIZE_KEY, "22");
+
+    Assert.assertEquals(22, configuration.getPropertyProvidersThreadPoolCoreSize());
+    Assert.assertEquals(44, configuration.getPropertyProvidersThreadPoolMaxSize());
+  }
+
+
+  public void testGetHostRoleCommandStatusSummaryCacheSize() throws  Exception {
+    // Given
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+    ambariProperties.setProperty(Configuration.SERVER_HRC_STATUS_SUMMARY_CACHE_SIZE, "3000");
+
+    // When
+    long actualCacheSize = configuration.getHostRoleCommandStatusSummaryCacheSize();
+
+    // Then
+    Assert.assertEquals(actualCacheSize, 3000L);
+  }
+
+  @Test
+  public void testGetHostRoleCommandStatusSummaryCacheSizeDefault() throws  Exception {
+    // Given
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+
+    // When
+    long actualCacheSize = configuration.getHostRoleCommandStatusSummaryCacheSize();
+
+    // Then
+    Assert.assertEquals(actualCacheSize, Configuration.SERVER_HRC_STATUS_SUMMARY_CACHE_SIZE_DEFAULT);
+  }
+
+  @Test
+  public void testGetHostRoleCommandStatusSummaryCacheExpiryDuration() throws  Exception {
+    // Given
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+    ambariProperties.setProperty(Configuration.SERVER_HRC_STATUS_SUMMARY_CACHE_EXPIRY_DURATION, "60");
+
+    // When
+    long actualCacheExpiryDuration = configuration.getHostRoleCommandStatusSummaryCacheExpiryDuration();
+
+    // Then
+    Assert.assertEquals(actualCacheExpiryDuration, 60L);
+  }
+
+  @Test
+  public void testGetHostRoleCommandStatusSummaryCacheExpiryDurationDefault() throws  Exception {
+    // Given
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+
+    // When
+    long actualCacheExpiryDuration = configuration.getHostRoleCommandStatusSummaryCacheExpiryDuration();
+
+    // Then
+    Assert.assertEquals(actualCacheExpiryDuration, Configuration.SERVER_HRC_STATUS_SUMMARY_CACHE_EXPIRY_DURATION_DEFAULT);
+  }
+
+  @Test
+  public void testGetHostRoleCommandStatusSummaryCacheEnabled() throws  Exception {
+    // Given
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+    ambariProperties.setProperty(Configuration.SERVER_HRC_STATUS_SUMMARY_CACHE_ENABLED, "true");
+
+    // When
+    boolean actualCacheEnabledConfig = configuration.getHostRoleCommandStatusSummaryCacheEnabled();
+
+    // Then
+    Assert.assertEquals(actualCacheEnabledConfig, true);
+  }
+
+  @Test
+  public void testGetHostRoleCommandStatusSummaryCacheDisabled() throws  Exception {
+    // Given
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+    ambariProperties.setProperty(Configuration.SERVER_HRC_STATUS_SUMMARY_CACHE_ENABLED, "false");
+
+    // When
+    boolean actualCacheEnabledConfig = configuration.getHostRoleCommandStatusSummaryCacheEnabled();
+
+    // Then
+    Assert.assertEquals(actualCacheEnabledConfig, false);
+  }
+
+  @Test
+  public void testGetHostRoleCommandStatusSummaryCacheEnabledDefault() throws  Exception {
+    // Given
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+
+    // When
+    boolean actualCacheEnabledConfig = configuration.getHostRoleCommandStatusSummaryCacheEnabled();
+
+    // Then
+    Assert.assertEquals(actualCacheEnabledConfig, Configuration.SERVER_HRC_STATUS_SUMMARY_CACHE_ENABLED_DEFAULT);
   }
 
 }

@@ -19,7 +19,7 @@ limitations under the License.
 """
 import os
 from resource_management.libraries.script import Script
-from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from resource_management.libraries.functions.version import format_stack_version, compare_versions
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.functions.default import default
 
@@ -30,9 +30,9 @@ stack_name = default("/hostLevelParams/stack_name", None)
 version = default("/commandParams/version", None)
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+stack_version_formatted = format_stack_version(stack_version_unformatted)
 
-stack_is_hdp23_or_further = Script.is_hdp_stack_greater_or_equal("2.3")
+stack_is_hdp23_or_further = Script.is_stack_greater_or_equal("2.3")
 
 if stack_is_hdp23_or_further:
   kms_home = '/usr/hdp/current/ranger-kms'
@@ -51,6 +51,8 @@ ranger_admin_hosts = config['clusterHostInfo']['ranger_admin_hosts'][0]
 has_ranger_admin = len(ranger_admin_hosts) > 0
 kms_host = config['clusterHostInfo']['ranger_kms_server_hosts'][0]
 kms_port = config['configurations']['kms-env']['kms_port']
+
+create_db_user = config['configurations']['kms-env']['create_db_user']
 
 #kms properties
 db_flavor = (config['configurations']['kms-properties']['DB_FLAVOR']).lower()
@@ -123,6 +125,7 @@ downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 
 driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
 driver_curl_target = format("{java_share_dir}/{jdbc_jar_name}")
+ews_lib_jar_path = format("{kms_home}/ews/webapp/lib/{jdbc_jar_name}")
 
 if db_flavor == 'sqla':
   downloaded_custom_connector = format("{tmp_dir}/sqla-client-jdbc.tar.gz")
@@ -191,7 +194,13 @@ ssl_truststore_password = unicode(config['configurations']['ranger-kms-policymgr
 #For SQLA explicitly disable audit to DB for Ranger
 if xa_audit_db_flavor == 'sqla':
   xa_audit_db_is_enabled = False
+
 current_host = config['hostname']
 ranger_kms_hosts = config['clusterHostInfo']['ranger_kms_server_hosts']
 if current_host in ranger_kms_hosts:
   kms_host = current_host
+
+check_db_connection_jar_name = "DBConnectionVerification.jar"
+check_db_connection_jar = format("/usr/lib/ambari-agent/{check_db_connection_jar_name}")
+ranger_kms_jdbc_connection_url = config['configurations']['dbks-site']['ranger.ks.jpa.jdbc.url']
+ranger_kms_jdbc_driver = config['configurations']['dbks-site']['ranger.ks.jpa.jdbc.driver']

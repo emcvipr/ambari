@@ -18,6 +18,7 @@
 
 import Ember from 'ember';
 import constants from 'hive/utils/constants';
+import ENV from '../config/environment';
 
 export default Ember.Controller.extend({
   databaseService: Ember.inject.service(constants.namingConventions.database),
@@ -25,6 +26,7 @@ export default Ember.Controller.extend({
 
   pageCount: 10,
 
+  previousSelectedDatabaseName : "" ,
   selectedDatabase: Ember.computed.alias('databaseService.selectedDatabase'),
   databases: Ember.computed.alias('databaseService.databases'),
 
@@ -92,12 +94,18 @@ export default Ember.Controller.extend({
   selectedDatabaseChanged: function () {
     var self = this;
 
+    this.resetSearch();
+
     this.set('isLoading', true);
 
     this.get('databaseService').getAllTables().then(function () {
       self.set('isLoading', false);
-    }, function (err) {
-      self._handleError(err);
+      self.set('previousSelectedDatabaseName',self.get('selectedDatabase').get('name'));
+      self.get('notifyService').info("Selected database : "+self.get('selectedDatabase').get('name'));
+    }, function (error) {
+      self.get('notifyService').pushError("Error while selecting database : "+self.get('selectedDatabase').get('name'),error.responseJSON.message+"\n"+error.responseJSON.trace);
+      self.get('databaseService').setDatabaseByName(self.get('previousSelectedDatabaseName'));
+      self.set('isLoading', false);
     });
   }.observes('selectedDatabase'),
 
@@ -147,12 +155,13 @@ export default Ember.Controller.extend({
 
   getDatabases: function () {
     var self = this;
-    var selectedDatabase = this.get('selectedDatabase');
+    var selectedDatabase = this.get('selectedDatabase.name') || 'default';
 
     this.set('isLoading', true);
 
     this.get('databaseService').getDatabases().then(function (databases) {
       self.set('isLoading');
+      self.get('databaseService').setDatabaseByName(selectedDatabase);
     }).catch(function (error) {
       self._handleError(error);
 
@@ -164,9 +173,57 @@ export default Ember.Controller.extend({
     });
   }.on('init'),
 
+  syncDatabases: function() {
+    var oldDatabaseNames = this.store.all('database').mapBy('name');
+    var self = this;
+    return this.get('databaseService').getDatabasesFromServer().then(function(data) {
+      // Remove the databases from store which are not in server
+      data.forEach(function(dbName) {
+        if(!oldDatabaseNames.contains(dbName)) {
+          self.store.createRecord('database', {
+            id: dbName,
+            name: dbName
+          });
+        }
+      });
+      // Add the databases in store which are new in server
+      oldDatabaseNames.forEach(function(dbName) {
+        if(!data.contains(dbName)) {
+          self.store.find('database', dbName).then(function(db) {
+            self.store.unloadRecord(db);
+          });
+        }
+      });
+    });
+  },
+
+  initiateDatabaseSync: function() {
+    // This was required so that the unit test would not stall
+    if(ENV.environment !== "test") {
+      Ember.run.later(this, function() {
+        this.syncDatabases();
+        this.initiateDatabaseSync();
+      }, 15000);
+    }
+  }.on('init'),
+
+  resetSearch: function() {
+    var resultsTab = this.get('tabs').findBy('view', constants.namingConventions.databaseSearch);
+    var databaseExplorerTab = this.get('tabs').findBy('view', constants.namingConventions.databaseTree);
+    var tableSearchResults = this.get('tableSearchResults');
+    resultsTab.set('visible', false);
+    this.set('selectedTab', databaseExplorerTab);
+    this.set('tableSearchTerm', '');
+    this.set('columnSearchTerm', '');
+    tableSearchResults.set('tables', undefined);
+    tableSearchResults.set('hasNext', undefined);
+  },
+
+
   actions: {
     refreshDatabaseExplorer: function () {
       this.getDatabases();
+      this.resetSearch();
     },
 
     passwordLDAPDB: function(){

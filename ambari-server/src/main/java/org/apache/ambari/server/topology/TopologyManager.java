@@ -28,6 +28,7 @@ import org.apache.ambari.server.controller.ClusterRequest;
 import org.apache.ambari.server.controller.KerberosHelper;
 import org.apache.ambari.server.controller.RequestStatusResponse;
 import org.apache.ambari.server.controller.internal.ArtifactResourceProvider;
+import org.apache.ambari.server.controller.internal.CalculatedStatus;
 import org.apache.ambari.server.controller.internal.CredentialResourceProvider;
 import org.apache.ambari.server.controller.internal.ProvisionClusterRequest;
 import org.apache.ambari.server.controller.internal.RequestImpl;
@@ -380,7 +381,7 @@ public class TopologyManager {
     }
   }
 
-  public Request getRequest(long requestId) {
+  public LogicalRequest getRequest(long requestId) {
     ensureInitialized();
     return allRequests.get(requestId);
   }
@@ -459,20 +460,24 @@ public class TopologyManager {
     return clusterTopologyMap.get(clusterId);
   }
 
-  public Map<String, Collection<String>> getProjectedTopology() {
+  public Map<String, Collection<String>> getPendingHostComponents() {
     ensureInitialized();
     Map<String, Collection<String>> hostComponentMap = new HashMap<String, Collection<String>>();
 
     for (LogicalRequest logicalRequest : allRequests.values()) {
-      Map<String, Collection<String>> requestTopology = logicalRequest.getProjectedTopology();
-      for (Map.Entry<String, Collection<String>> entry : requestTopology.entrySet()) {
-        String host = entry.getKey();
-        Collection<String> hostComponents = hostComponentMap.get(host);
-        if (hostComponents == null) {
-          hostComponents = new HashSet<String>();
-          hostComponentMap.put(host, hostComponents);
+      Map<Long, HostRoleCommandStatusSummaryDTO> summary = logicalRequest.getStageSummaries();
+      final CalculatedStatus status = CalculatedStatus.statusFromStageSummary(summary, summary.keySet());
+      if (status.getStatus().isInProgress()) {
+        Map<String, Collection<String>> requestTopology = logicalRequest.getProjectedTopology();
+        for (Map.Entry<String, Collection<String>> entry : requestTopology.entrySet()) {
+          String host = entry.getKey();
+          Collection<String> hostComponents = hostComponentMap.get(host);
+          if (hostComponents == null) {
+            hostComponents = new HashSet<String>();
+            hostComponentMap.put(host, hostComponents);
+          }
+          hostComponents.addAll(entry.getValue());
         }
-        hostComponents.addAll(entry.getValue());
       }
     }
     return hostComponentMap;
@@ -580,6 +585,10 @@ public class TopologyManager {
     final String hostName = host.getHostName();
     try {
       topology.addHostToTopology(response.getHostGroupName(), hostName);
+
+      // update the host with the rack info if applicable
+      updateHostWithRackInfo(topology, response, host);
+
     } catch (InvalidTopologyException e) {
       // host already registered
       throw new RuntimeException("An internal error occurred while performing request host registration: " + e, e);
@@ -612,6 +621,24 @@ public class TopologyManager {
 
       task.init(topology, ambariContext);
       executor.execute(task);
+    }
+  }
+
+  private void updateHostWithRackInfo(ClusterTopology topology, HostOfferResponse response, HostImpl host) {
+    // the rack info from the cluster creation template
+    String rackInfoFromTemplate = topology.getHostGroupInfo().get(response.getHostGroupName()).getHostRackInfo().get
+        (host.getHostName());
+
+    if (null != rackInfoFromTemplate) {
+      host.setRackInfo(rackInfoFromTemplate);
+      host.persist();
+      try {
+        // todo: do we need this in case of blueprints?
+        ambariContext.getController().registerRackChange(ambariContext.getClusterName(topology.getClusterId()));
+      } catch (AmbariException e) {
+        LOG.error("Could not register rack change for cluster id {}", topology.getClusterId());
+        LOG.error("Exception during rack change: ", e);
+      }
     }
   }
 

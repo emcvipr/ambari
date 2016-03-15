@@ -85,13 +85,16 @@ class ServiceCheckDefault(ServiceCheck):
     import params
     env.set_params(params)
 
-    if params.hdp_stack_version_major != "" and compare_versions(params.hdp_stack_version_major, '2.2') >= 0:
+    if params.stack_version_formatted_major != "" and compare_versions(params.stack_version_formatted_major, '2.2') >= 0:
       path_to_distributed_shell_jar = "/usr/hdp/current/hadoop-yarn-client/hadoop-yarn-applications-distributedshell.jar"
     else:
       path_to_distributed_shell_jar = "/usr/lib/hadoop-yarn/hadoop-yarn-applications-distributedshell*.jar"
 
     yarn_distrubuted_shell_check_cmd = format("yarn org.apache.hadoop.yarn.applications.distributedshell.Client "
-                                              "-shell_command ls -num_containers {number_of_nm} -jar {path_to_distributed_shell_jar}")
+                                              "-shell_command ls "
+                                              "-num_containers {number_of_nm} "
+                                              "-jar {path_to_distributed_shell_jar} "
+                                              "-timeout 30000")
 
     if params.security_enabled:
       kinit_cmd = format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser_principal};")
@@ -114,8 +117,8 @@ class ServiceCheckDefault(ServiceCheck):
         application_name = item
 
     json_response_received = False
-    for rm_host in params.rm_hosts:
-      info_app_url = params.scheme + "://" + rm_host + ":" + params.rm_active_port + "/ws/v1/cluster/apps/" + application_name
+    for rm_webapp_address in params.rm_webapp_addresses_list:
+      info_app_url = params.scheme + "://" + rm_webapp_address + "/ws/v1/cluster/apps/" + application_name
 
       get_app_info_cmd = "curl --negotiate -u : -ksL --connect-timeout " + CURL_CONNECTION_TIMEOUT + " " + info_app_url
 

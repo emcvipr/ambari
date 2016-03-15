@@ -263,7 +263,7 @@ describe('App.WidgetWizardStep2Controller', function () {
     });
 
     it('check id', function () {
-      expect(controller.get('expressions').mapProperty('id')).to.eql([1, 2]);;
+      expect(controller.get('expressions').mapProperty('id')).to.eql([1, 2]);
     });
 
     it('check isRemovable', function () {
@@ -731,7 +731,7 @@ describe('App.WidgetWizardStep2Controller', function () {
     });
     it("user is moved to the next step", function () {
       controller.next();
-      expect(App.router.send.calledWith('next'));
+      expect(App.router.send.calledWith('next')).to.be.true;
     });
   });
 });

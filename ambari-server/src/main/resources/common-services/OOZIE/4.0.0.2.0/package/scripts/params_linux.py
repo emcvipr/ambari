@@ -19,13 +19,15 @@ limitations under the License.
 """
 from resource_management import *
 from ambari_commons.constants import AMBARI_SUDO_BINARY
+from ambari_commons.str_utils import cbool, cint
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions import conf_select
-from resource_management.libraries.functions import hdp_select
-from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions import stack_select
+from resource_management.libraries.functions.version import format_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.functions import get_port_from_url
+from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
 from resource_management.libraries.script.script import Script
 
 from resource_management.libraries.functions.get_lzo_packages import get_lzo_packages
@@ -46,19 +48,21 @@ hostname = config["hostname"]
 version = default("/commandParams/version", None)
 stack_name = default("/hostLevelParams/stack_name", None)
 upgrade_direction = default("/commandParams/upgrade_direction", None)
+agent_stack_retry_on_unavailability = cbool(config["hostLevelParams"]["agent_stack_retry_on_unavailability"])
+agent_stack_retry_count = cint(config["hostLevelParams"]["agent_stack_retry_count"])
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+stack_version_formatted = format_stack_version(stack_version_unformatted)
 
 hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
-hadoop_bin_dir = hdp_select.get_hadoop_dir("bin")
-hadoop_lib_home = hdp_select.get_hadoop_dir("lib")
+hadoop_bin_dir = stack_select.get_hadoop_dir("bin")
+hadoop_lib_home = stack_select.get_hadoop_dir("lib")
 
 #hadoop params
-if Script.is_hdp_stack_greater_or_equal("2.2"):
+if Script.is_stack_greater_or_equal("2.2"):
   # something like 2.3.0.0-1234
   stack_version = None
-  upgrade_stack = hdp_select._get_upgrade_stack()
+  upgrade_stack = stack_select._get_upgrade_stack()
   if upgrade_stack is not None and len(upgrade_stack) == 2 and upgrade_stack[1] is not None:
     stack_version = upgrade_stack[1]
 
@@ -106,7 +110,10 @@ execute_path = oozie_bin_dir + os.pathsep + hadoop_bin_dir
 oozie_user = config['configurations']['oozie-env']['oozie_user']
 smokeuser = config['configurations']['cluster-env']['smokeuser']
 smokeuser_principal = config['configurations']['cluster-env']['smokeuser_principal_name']
+
+# This config actually contains {oozie_user}
 oozie_admin_users = format(config['configurations']['oozie-env']['oozie_admin_users'])
+
 user_group = config['configurations']['cluster-env']['user_group']
 jdk_location = config['hostLevelParams']['jdk_location']
 check_db_connection_jar_name = "DBConnectionVerification.jar"
@@ -124,6 +131,11 @@ security_enabled = config['configurations']['cluster-env']['security_enabled']
 oozie_heapsize = config['configurations']['oozie-env']['oozie_heapsize']
 oozie_permsize = config['configurations']['oozie-env']['oozie_permsize']
 
+limits_conf_dir = "/etc/security/limits.d"
+
+oozie_user_nofile_limit = config['configurations']['oozie-env']['oozie_user_nofile_limit']
+oozie_user_nproc_limit = config['configurations']['oozie-env']['oozie_user_nproc_limit']
+
 kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
 oozie_service_keytab = config['configurations']['oozie-site']['oozie.service.HadoopAccessorService.keytab.file']
 oozie_principal = config['configurations']['oozie-site']['oozie.service.HadoopAccessorService.kerberos.principal']
@@ -132,7 +144,7 @@ oozie_site = config['configurations']['oozie-site']
 # Need this for yarn.nodemanager.recovery.dir in yarn-site
 yarn_log_dir_prefix = config['configurations']['yarn-env']['yarn_log_dir_prefix']
 
-if security_enabled and Script.is_hdp_stack_less_than("2.2"):
+if security_enabled and Script.is_stack_less_than("2.2"):
   #older versions of oozie have problems when using _HOST in principal
   oozie_site = dict(config['configurations']['oozie-site'])
   oozie_site['oozie.service.HadoopAccessorService.kerberos.principal'] = \
@@ -183,7 +195,7 @@ if https_port is not None:
 hdfs_site = config['configurations']['hdfs-site']
 fs_root = config['configurations']['core-site']['fs.defaultFS']
 
-if Script.is_hdp_stack_less_than("2.2"):
+if Script.is_stack_less_than("2.2"):
   put_shared_lib_to_hdfs_cmd = format("hadoop --config {hadoop_conf_dir} dfs -put {oozie_shared_lib} {oozie_hdfs_user_dir}")
 # for newer
 else:
@@ -194,27 +206,22 @@ jdbc_driver_name = default("/configurations/oozie-site/oozie.service.JPAService.
 # BECAUSE PATH TO CLASSES COULD BE CHANGED
 sqla_db_used = False
 if jdbc_driver_name == "com.microsoft.sqlserver.jdbc.SQLServerDriver":
-  jdbc_driver_jar = "sqljdbc4.jar"
-  jdbc_symlink_name = "mssql-jdbc-driver.jar"
+  jdbc_driver_jar = default("/hostLevelParams/custom_mssql_jdbc_name", None)
 elif jdbc_driver_name == "com.mysql.jdbc.Driver":
-  jdbc_driver_jar = "mysql-connector-java.jar"
-  jdbc_symlink_name = "mysql-jdbc-driver.jar"
+  jdbc_driver_jar = default("/hostLevelParams/custom_mysql_jdbc_name", None)
 elif jdbc_driver_name == "org.postgresql.Driver":
   jdbc_driver_jar = format("{oozie_home}/libserver/postgresql-9.0-801.jdbc4.jar")  #oozie using it's own postgres jdbc
-  jdbc_symlink_name = "postgres-jdbc-driver.jar"
 elif jdbc_driver_name == "oracle.jdbc.driver.OracleDriver":
-  jdbc_driver_jar = "ojdbc.jar"
-  jdbc_symlink_name = "oracle-jdbc-driver.jar"
+  jdbc_driver_jar = default("/hostLevelParams/custom_oracle_jdbc_name", None)
 elif jdbc_driver_name == "sap.jdbc4.sqlanywhere.IDriver":
-  jdbc_driver_jar = "sajdbc4.jar"
-  jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
+  jdbc_driver_jar = default("/hostLevelParams/custom_sqlanywhere_jdbc_name", None)
   sqla_db_used = True
 else:
   jdbc_driver_jar = ""
   jdbc_symlink_name = ""
 
-driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
-driver_curl_target = format("{java_share_dir}/{jdbc_driver_jar}")
+default("/hostLevelParams/custom_sqlanywhere_jdbc_name", None)
+driver_curl_source = format("{jdk_location}/{jdbc_driver_jar}")
 downloaded_custom_connector = format("{tmp_dir}/{jdbc_driver_jar}")
 if jdbc_driver_name == "org.postgresql.Driver":
   target = jdbc_driver_jar
@@ -257,6 +264,7 @@ import functools
 HdfsResource = functools.partial(
   HdfsResource,
   user=hdfs_user,
+  hdfs_resource_ignore_file = "/var/lib/ambari-agent/data/.hdfs_resource_ignore",
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,
@@ -265,6 +273,7 @@ HdfsResource = functools.partial(
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
   default_fs = default_fs,
+  immutable_paths = get_not_managed_resources(),
   dfs_type = dfs_type
 )
 

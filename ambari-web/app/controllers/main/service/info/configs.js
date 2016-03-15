@@ -53,7 +53,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
     return this.get('groupsStore').filter(function(group) {
       return this.get('dependentServiceNames').contains(group.get('serviceName'));
     }, this);
-  }.property('content.serviceName', 'dependentServiceNames', 'groupsStore.length', 'groupStore.@each.name'),
+  }.property('content.serviceName', 'dependentServiceNames', 'groupsStore.length', 'groupsStore.@each.name'),
 
   allConfigs: [],
 
@@ -179,24 +179,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
       caption: 'common.combobox.dropdown.issues'
     }
   ],
-
-  /**
-   * get array of config properties that are shown in settings tab
-   * @type {String[]}
-   */
-  settingsTabProperties: function () {
-    var properties = [];
-    App.Tab.find().forEach(function (t) {
-      if (!t.get('isAdvanced') && t.get('serviceName') === this.get('content.serviceName')) {
-        t.get('sections').forEach(function (s) {
-          s.get('subSections').forEach(function (ss) {
-            properties = properties.concat(ss.get('configProperties'));
-          });
-        });
-      }
-    }, this);
-    return properties;
-  }.property('content.serviceName', 'App.router.clusterController.isStackConfigsLoaded'),
 
   /**
    * Dropdown menu items in filter combobox
@@ -361,15 +343,15 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
   prepareConfigObjects: function(data, serviceName) {
     this.get('stepConfigs').clear();
 
-    var configGroups = [];
-    data.items.forEach(function (v) {
-      if (v.group_name == 'default') {
-        v.configurations.forEach(function (c) {
-          configGroups.pushObject(c);
+    var configs = [];
+    data.items.forEach(function (version) {
+      if (version.group_name == 'default') {
+        version.configurations.forEach(function (configObject) {
+          configs = configs.concat(App.config.getConfigsFromJSON(configObject, true));
         });
       }
     });
-    var configs = App.config.mergePredefinedWithSaved(configGroups, serviceName, this.get('selectedConfigGroup'), this.get('canEdit'));
+
     configs = App.config.sortConfigs(configs);
     /**
      * if property defined in stack but somehow it missed from cluster properties (can be after stack upgrade)
@@ -379,42 +361,38 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
 
     //put properties from capacity-scheduler.xml into one config with textarea view
     if (this.get('content.serviceName') === 'YARN') {
-      var configsToSkip = this.get('settingsTabProperties').filterProperty('filename', 'capacity-scheduler.xml');
-      configs = App.config.fileConfigsIntoTextarea(configs, 'capacity-scheduler.xml', configsToSkip);
+      configs = App.config.addYarnCapacityScheduler(configs);
     }
 
     if (this.get('content.serviceName') === 'KERBEROS') {
       var kdc_type = configs.findProperty('name', 'kdc_type');
       if (kdc_type.get('value') === 'none') {
-        configs.findProperty('name', 'kdc_host').set('isRequired', false).set('isVisible', false);
-        configs.findProperty('name', 'admin_server_host').set('isRequired', false).set('isVisible', false);
-        configs.findProperty('name', 'domains').set('isRequired', false).set('isVisible', false);
+        configs.findProperty('name', 'kdc_host').set('isVisible', false);
+        configs.findProperty('name', 'admin_server_host').set('isVisible', false);
+        configs.findProperty('name', 'domains').set('isVisible', false);
       } else if (kdc_type.get('value') === 'active-directory') {
         configs.findProperty('name', 'container_dn').set('isVisible', true);
         configs.findProperty('name', 'ldap_url').set('isVisible', true);
       }
     }
 
+    this.setPropertyIsEditable(configs);
     this.set('allConfigs', configs);
-    //add configs as names of host components
-    this.addDBProperties(configs);
   },
 
   /**
-   * This method should add UI properties that are market as <code>'isRequiredByAgent': false<code>
+   * Set <code>isEditable<code> proeperty based on selected group, security
+   * and controller restriction
    * @param configs
    */
-  addDBProperties: function(configs) {
-    if (this.get('content.serviceName') === 'HIVE') {
-      var propertyToAdd = App.configsCollection.getConfigByName('hive_hostname','hive-env'),
-        cfg = App.config.createDefaultConfig(propertyToAdd.name, propertyToAdd.serviceName, propertyToAdd.filename, true, propertyToAdd),
-        connectionUrl = configs.findProperty('name', 'javax.jdo.option.ConnectionURL');
-      if (cfg && connectionUrl) {
-        cfg.savedValue = cfg.value = databaseUtils.getDBLocationFromJDBC(connectionUrl.get('value'));
-        configs.pushObject(App.ServiceConfigProperty.create(cfg));
-      }
+  setPropertyIsEditable: function(configs) {
+    if (!this.get('selectedConfigGroup.isDefault') || !this.get('canEdit')) {
+      configs.setEach('isEditable', false);
+    } else if (App.get('isKerberosEnabled')) {
+      configs.filterProperty('isSecureConfig').setEach('isEditable', false);
     }
   },
+
   /**
    * adds properties form stack that doesn't belong to cluster
    * to step configs
@@ -424,7 +402,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
    * @method mergeWithStackProperties
    */
   mergeWithStackProperties: function (configs) {
-    this.get('settingsTabProperties').forEach(function (advanced_id) {
+    App.config.getPropertiesFromTheme(this.get('content.serviceName')).forEach(function (advanced_id) {
       if (!configs.someProperty('id', advanced_id)) {
         var advanced = App.configsCollection.getConfig(advanced_id);
         if (advanced) {
@@ -446,8 +424,8 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
           for (var prop in config.properties) {
             var fileName = App.config.getOriginalFileName(config.type);
             var serviceConfig = allConfigs.filterProperty('name', prop).findProperty('filename', fileName);
-            var value = App.config.formatPropertyValue(serviceConfig, config.properties[prop]);
             if (serviceConfig) {
+              var value = App.config.formatPropertyValue(serviceConfig, config.properties[prop]);
               var isFinal = !!(config.properties_attributes && config.properties_attributes.final && config.properties_attributes.final[prop]);
               if (self.get('selectedConfigGroup.isDefault') || configGroup.get('name') == self.get('selectedConfigGroup.name')) {
                 var overridePlainObject = {
@@ -461,7 +439,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
               }
             } else {
               var isEditable = self.get('canEdit') && configGroup.get('name') == self.get('selectedConfigGroup.name');
-              allConfigs.push(App.config.createCustomGroupConfig(prop, fileName, value, configGroup, isEditable));
+              allConfigs.push(App.config.createCustomGroupConfig(prop, fileName, config.properties[prop], configGroup, isEditable));
             }
           }
         });
@@ -494,7 +472,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
     } else {
       App.config.removeRangerConfigs(this.get('stepConfigs'));
     }
-    this.getRecommendationsForDependencies(null, this._onLoadComplete.bind(this));
+    this.loadConfigRecommendations(null, this._onLoadComplete.bind(this));
     App.loadTimer.finish('Service Configs Page');
   },
 

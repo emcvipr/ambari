@@ -17,15 +17,11 @@
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.v2;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixHBaseAccessor;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.AbstractTimelineAggregator;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.Condition;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.EmptyCondition;
-import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL;
-
 import java.io.IOException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -34,9 +30,9 @@ import java.util.Date;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.GET_AGGREGATED_HOST_METRIC_GROUPBY_SQL;
 
 public class TimelineMetricHostAggregator extends AbstractTimelineAggregator {
-  private static final Log LOG = LogFactory.getLog(TimelineMetricHostAggregator.class);
 
-  public TimelineMetricHostAggregator(PhoenixHBaseAccessor hBaseAccessor,
+  public TimelineMetricHostAggregator(String aggregatorName,
+                                      PhoenixHBaseAccessor hBaseAccessor,
                                       Configuration metricsConf,
                                       String checkpointLocation,
                                       Long sleepIntervalMillis,
@@ -45,9 +41,9 @@ public class TimelineMetricHostAggregator extends AbstractTimelineAggregator {
                                       String tableName,
                                       String outputTableName,
                                       Long nativeTimeRangeDelay) {
-    super(hBaseAccessor, metricsConf, checkpointLocation, sleepIntervalMillis,
-      checkpointCutOffMultiplier, hostAggregatorDisabledParam, tableName,
-      outputTableName, nativeTimeRangeDelay);
+    super(aggregatorName, hBaseAccessor, metricsConf, checkpointLocation,
+      sleepIntervalMillis, checkpointCutOffMultiplier, hostAggregatorDisabledParam,
+      tableName, outputTableName, nativeTimeRangeDelay);
   }
 
   @Override
@@ -64,10 +60,12 @@ public class TimelineMetricHostAggregator extends AbstractTimelineAggregator {
     condition.setDoUpdate(true);
 
     condition.setStatement(String.format(GET_AGGREGATED_HOST_METRIC_GROUPBY_SQL,
-      PhoenixTransactSQL.getNaiveTimeRangeHint(startTime, nativeTimeRangeDelay),
-      outputTableName, tableName, startTime, endTime));
+      getQueryHint(startTime), outputTableName, endTime, tableName, startTime, endTime));
+
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Condition: " + condition.toString());
+    }
 
     return condition;
   }
-
 }

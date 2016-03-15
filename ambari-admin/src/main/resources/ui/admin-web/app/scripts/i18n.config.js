@@ -66,16 +66,44 @@ angular.module('ambariAdminConsole')
       'all': 'All',
       'group': 'Group',
       'user': 'User',
+      'settings': 'Settings',
+      'authentication': 'Authentication',
       'deleteConfirmation': 'Are you sure you want to delete {{instanceType}} {{instanceName}}?',
       'local': 'Local',
       'ldap': 'LDAP',
       'jwt': 'JWT',
       'warning': 'Warning',
       'filterInfo': '{{showed}} of {{total}} {{term}} showing',
+      'usersGroups': 'Users/Groups',
+      'enabled': 'Enabled',
+      'disabled': 'Disabled',
+      'NA': 'n/a',
+      'blockViewLabel': 'BLOCK',
+      'listViewLabel': 'LIST',
 
       'clusterNameChangeConfirmation': {
         'title': 'Confirm Cluster Name Change',
         'message': 'Are you sure you want to change the cluster name to {{clusterName}}?'
+      },
+
+      'loginActivities': {
+        'loginActivities':'Login Activities',
+        'loginMessage': 'Login Message',
+        'loginMessage.placeholder': 'Please enter login message',
+        'buttonText.placeholder': 'Please enter button text',
+        'homeDirectory': 'Home Directory',
+        'notEmpty': 'These field cannot be empty',
+        'saveError': 'Save error',
+        'message': 'Message',
+        'buttonText': 'Button',
+        'status': 'Status',
+        'status.disabled': 'Disabled',
+        'homeDirectory.alert': 'Many Ambari Views store user preferences in the logged in user\'s / user directory in HDFS. Optionally, Ambari can auto-create these directories for users on login.',
+        'homeDirectory.autoCreate': 'Auto-Create HDFS user directories',
+        'homeDirectory.header': 'User Directory Creation Options',
+        'homeDirectory.template': 'User Directory creation template',
+        'homeDirectory.group': 'Default Group',
+        'homeDirectory.permissions': 'Permissions'
       },
 
       'controls': {
@@ -85,7 +113,8 @@ angular.module('ambariAdminConsole')
         'save': 'Save',
         'clearFilters': 'clear filters',
         'confirmChange': 'Confirm Change',
-        'discard': 'Discard'
+        'discard': 'Discard',
+        'remove': 'Remove'
       },
 
       'alerts': {
@@ -257,7 +286,10 @@ angular.module('ambariAdminConsole')
         'clusterAdministrator': 'Cluster Administrator',
         'clusterOperator': 'Cluster Operator',
         'serviceAdministrator': 'Service Administrator',
-        'serviceOperator': 'Service Operator'
+        'serviceOperator': 'Service Operator',
+        'ambariAdmin': 'Administrator',
+        'viewUser': 'View User',
+        'none': 'None'
       },
 
       'alerts': {
@@ -269,7 +301,8 @@ angular.module('ambariAdminConsole')
         'removeUserError': 'Removing from group error',
         'cannotAddUser': 'Cannot add user to group',
         'passwordChanged': 'Password changed.',
-        'cannotChangePassword': 'Cannot change password'
+        'cannotChangePassword': 'Cannot change password',
+        'roleChanged': '{{name}} changed to {{role}}'
       }
     },
 
@@ -277,6 +310,11 @@ angular.module('ambariAdminConsole')
       'current': 'Current',
       'inUse': 'In Use',
       'installed': 'Installed',
+      'uploadFile': 'Upload Version Definition File',
+      'enterURL': 'Version Definition File URL',
+      'defaultURL': 'https://',
+      'readInfo': 'Read Version Info',
+      'browse': 'Browse',
       'installOn': 'Install on...',
       'register': 'Register Version',
       'deregister': 'Deregister Version',
@@ -286,23 +324,115 @@ angular.module('ambariAdminConsole')
       'os': 'OS',
       'baseURL': 'Base URL',
       'skipValidation': 'Skip Repository Base URL validation (Advanced)',
-
+      'noVersions': 'Select version to display details.',
+      'patch': 'Patch',
+      'introduction': 'To register a new version in Ambari, provide a Version Definition File, confirm the software repository information and save the version.',
+      'contents': {
+        'title': 'Contents',
+        'empty': 'No contents to display'
+      },
+      'details': {
+        'stackName': 'Stack Name',
+        'displayName': 'Display Name',
+        'version': 'Version',
+        'actualVersion': 'Actual Version',
+        'releaseNotes': 'Release Notes'
+      },
+      'useRedhatSatellite': 'Use RedHat Satellite/Spacewalk',
       'changeBaseURLConfirmation': {
         'title': 'Confirm Base URL Change',
         'message': 'You are about to change repository Base URLs that are already in use. Please confirm that you intend to make this change and that the new Base URLs point to the same exact Stack version and build'
       },
 
       'alerts': {
-        'baseURLs': 'Provide Base URLs for the Operating Systems you are configuring. Uncheck all other Operating Systems.',
+        'baseURLs': 'Provide Base URLs for the Operating Systems you are configuring.',
         'validationFailed': 'Some of the repositories failed validation. Make changes to the base url or skip validation if you are sure that urls are correct',
         'skipValidationWarning': '<b>Warning:</b> This is for advanced users only. Use this option if you want to skip validation for Repository Base URLs.',
+        'useRedhatSatelliteWarning': 'Disable distributed repositories and use RedHat Satellite/Spacewalk channels instead',
         'filterListError': 'Fetch stack version filter list error',
         'versionCreated': 'Created version <a href="#/stackVersions/{{stackName}}/{{versionName}}/edit">{{stackName}}-{{versionName}}</a>',
         'versionCreationError': 'Version creation error',
         'osListError': 'getSupportedOSList error',
+        'readVersionInfoError': 'Version Definition read error',
         'versionEdited': 'Edited version <a href="#/stackVersions/{{stackName}}/{{versionName}}/edit">{{displayName}}</a>',
         'versionUpdateError': 'Version update error',
         'versionDeleteError': 'Version delete error'
+      }
+    },
+
+    'authentication': {
+      'description': 'Ambari supports authenticating against local Ambari users created and stored in the Ambari Database, or authenticating against a LDAP server:',
+      'ldap': 'LDAP Authentication',
+      'on': 'On',
+      'off': 'Off',
+
+      'connectivity': {
+        'title': 'LDAP Connectivity Configuration',
+        'host': 'LDAP Server Host',
+        'port': 'LDAP Server Port',
+        'ssl': 'Use SSL?',
+        'trustStore': {
+          'label': 'Trust Store',
+          'options': {
+            'default': 'JDK Default',
+            'custom': 'Custom'
+          }
+        },
+        'trustStorePath': 'Trust Store Path',
+        'trustStoreType': {
+          'label': 'Trust Store Type',
+          'options': {
+            'jks': 'JKS',
+            'jceks': 'JCEKS',
+            'pkcs12': 'PKCS12'
+          }
+        },
+        'trustStorePassword': 'Trust Store Password',
+        'dn': 'Bind DN',
+        'bindPassword': 'Bind Password',
+
+        'controls': {
+          'testConnection': 'Test Connection'
+        }
+      },
+
+      'attributes': {
+        'title': 'LDAP Attribute Configuration',
+        'detection': {
+          'label': 'Identifying the proper attributes to be used when authenticating and looking up users and groups can be specified manually, or automatically detected. Please choose:',
+          'options': {
+            'manual': 'Define Attributes Manually',
+            'auto': 'Auto-Detect Attributes'
+          }
+        },
+        'userSearch': 'User Search Base',
+        'groupSearch': 'Group Search Base',
+        'detected': 'The following attributes were detected, please review and Test Attributes to ensure their accuracy.',
+        'userObjClass': 'User Object Class',
+        'userNameAttr': 'User Name Attribute',
+        'groupObjClass': 'Group Object Class',
+        'groupNameAttr': 'Group Name Attribute',
+        'groupMemberAttr': 'Group Member Attribute',
+        'distinguishedNameAttr': 'Distinguished Name Attribute',
+        'test': {
+          'description': 'To quickly test the chosen attributes click the button below. During this process you can specify a test user name and password and Ambari will attempt to authenticate and retrieve group membership information',
+          'username': 'Test Username',
+          'password': 'Test Password'
+        },
+        'groupsList': 'List of Groups',
+
+        'controls': {
+          'autoDetect': 'Perform Auto-Detection',
+          'testAttrs': 'Test Attributes'
+        },
+
+        'alerts': {
+          'successfulAuth': 'Successful Authentication'
+        }
+      },
+
+      'controls': {
+        'test': 'Test'
       }
     }
   });

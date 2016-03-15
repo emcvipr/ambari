@@ -32,8 +32,6 @@ import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.controller.KerberosHelper;
 import org.apache.ambari.server.controller.MaintenanceStateHelper;
 import org.apache.ambari.server.controller.RequestStatusResponse;
-import org.apache.ambari.server.controller.ServiceComponentHostRequest;
-import org.apache.ambari.server.controller.ServiceComponentHostResponse;
 import org.apache.ambari.server.controller.ServiceRequest;
 import org.apache.ambari.server.controller.ServiceResponse;
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
@@ -46,6 +44,8 @@ import org.apache.ambari.server.controller.spi.ResourceAlreadyExistsException;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.controller.utilities.ServiceCalculatedStateFactory;
+import org.apache.ambari.server.controller.utilities.state.ServiceCalculatedState;
 import org.apache.ambari.server.metadata.RoleCommandOrder;
 import org.apache.ambari.server.security.authorization.AuthorizationException;
 import org.apache.ambari.server.security.authorization.AuthorizationHelper;
@@ -56,7 +56,6 @@ import org.apache.ambari.server.serveraction.kerberos.KerberosInvalidConfigurati
 import org.apache.ambari.server.serveraction.kerberos.KerberosMissingAdminCredentialsException;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
-import org.apache.ambari.server.state.ComponentInfo;
 import org.apache.ambari.server.state.MaintenanceState;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponent;
@@ -65,10 +64,11 @@ import org.apache.ambari.server.state.ServiceFactory;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.State;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.Validate;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -109,18 +109,6 @@ public class ServiceResourceProvider extends AbstractControllerResourceProvider 
           SERVICE_CLUSTER_NAME_PROPERTY_ID,
           SERVICE_SERVICE_NAME_PROPERTY_ID}));
 
-  // Service state calculation
-  private static final Map<String, ServiceState> serviceStateMap = new HashMap<String, ServiceState>();
-  static {
-    serviceStateMap.put("HDFS", new HDFSServiceState());
-    serviceStateMap.put("HBASE", new HBaseServiceState());
-    serviceStateMap.put("FLUME", new FlumeServiceState());
-    serviceStateMap.put("HIVE", new HiveServiceState());
-    serviceStateMap.put("OOZIE", new OozieServiceState());
-    serviceStateMap.put("YARN", new YARNServiceState());
-  }
-
-  private static final ServiceState DEFAULT_SERVICE_STATE = new DefaultServiceState();
 
   private MaintenanceStateHelper maintenanceStateHelper;
 
@@ -162,7 +150,7 @@ public class ServiceResourceProvider extends AbstractControllerResourceProvider 
              ResourceAlreadyExistsException,
              NoSuchParentResourceException {
 
-    final Set<ServiceRequest> requests = new HashSet<ServiceRequest>();
+    final Set<ServiceRequest> requests = new HashSet<>();
     for (Map<String, Object> propertyMap : request.getProperties()) {
       requests.add(getRequest(propertyMap));
     }
@@ -352,115 +340,11 @@ public class ServiceResourceProvider extends AbstractControllerResourceProvider 
       LOG.warn("Received an empty requests set");
       return;
     }
-
-    Clusters       clusters       = getManagementController().getClusters();
-    AmbariMetaInfo ambariMetaInfo = getManagementController().getAmbariMetaInfo();
-
+    Clusters clusters = getManagementController().getClusters();
     // do all validation checks
-    Map<String, Set<String>> serviceNames = new HashMap<String, Set<String>>();
-    Set<String> duplicates = new HashSet<String>();
-    for (ServiceRequest request : requests) {
-      if (request.getClusterName() == null
-          || request.getClusterName().isEmpty()
-          || request.getServiceName() == null
-          || request.getServiceName().isEmpty()) {
-        throw new IllegalArgumentException("Cluster name and service name"
-            + " should be provided when creating a service");
-      }
-
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Received a createService request"
-            + ", clusterName=" + request.getClusterName()
-            + ", serviceName=" + request.getServiceName()
-            + ", request=" + request);
-      }
-
-      if(!AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, getClusterResourceId(request.getClusterName()), RoleAuthorization.SERVICE_ADD_DELETE_SERVICES)) {
-        throw new AuthorizationException("The user is not authorized to create services");
-      }
-
-      if (!serviceNames.containsKey(request.getClusterName())) {
-        serviceNames.put(request.getClusterName(), new HashSet<String>());
-      }
-      if (serviceNames.get(request.getClusterName())
-          .contains(request.getServiceName())) {
-        // throw error later for dup
-        duplicates.add(request.getServiceName());
-        continue;
-      }
-      serviceNames.get(request.getClusterName()).add(request.getServiceName());
-
-      if (request.getDesiredState() != null
-          && !request.getDesiredState().isEmpty()) {
-        State state = State.valueOf(request.getDesiredState());
-        if (!state.isValidDesiredState()
-            || state != State.INIT) {
-          throw new IllegalArgumentException("Invalid desired state"
-              + " only INIT state allowed during creation"
-              + ", providedDesiredState=" + request.getDesiredState());
-        }
-      }
-
-      Cluster cluster;
-      try {
-        cluster = clusters.getCluster(request.getClusterName());
-      } catch (ClusterNotFoundException e) {
-        throw new ParentObjectNotFoundException("Attempted to add a service to a cluster which doesn't exist", e);
-      }
-      try {
-        Service s = cluster.getService(request.getServiceName());
-        if (s != null) {
-          // throw error later for dup
-          duplicates.add(request.getServiceName());
-          continue;
-        }
-      } catch (ServiceNotFoundException e) {
-        // Expected
-      }
-
-      StackId stackId = cluster.getDesiredStackVersion();
-      if (!ambariMetaInfo.isValidService(stackId.getStackName(),
-          stackId.getStackVersion(), request.getServiceName())) {
-        throw new IllegalArgumentException("Unsupported or invalid service"
-            + " in stack"
-            + ", clusterName=" + request.getClusterName()
-            + ", serviceName=" + request.getServiceName()
-            + ", stackInfo=" + stackId.getStackId());
-      }
-    }
-
-    // ensure only a single cluster update
-    if (serviceNames.size() != 1) {
-      throw new IllegalArgumentException("Invalid arguments, updates allowed"
-          + "on only one cluster at a time");
-    }
-
-    // Validate dups
-    if (!duplicates.isEmpty()) {
-      StringBuilder svcNames = new StringBuilder();
-      boolean first = true;
-      for (String svcName : duplicates) {
-        if (!first) {
-          svcNames.append(",");
-        }
-        first = false;
-        svcNames.append(svcName);
-      }
-      String clusterName = requests.iterator().next().getClusterName();
-      String msg;
-      if (duplicates.size() == 1) {
-        msg = "Attempted to create a service which already exists: "
-            + ", clusterName=" + clusterName  + " serviceName=" + svcNames.toString();
-      } else {
-        msg = "Attempted to create services which already exist: "
-            + ", clusterName=" + clusterName  + " serviceNames=" + svcNames.toString();
-      }
-      throw new DuplicateResourceException(msg);
-    }
+    validateCreateRequests(requests, clusters);
 
     ServiceFactory serviceFactory = getManagementController().getServiceFactory();
-
-    // now to the real work
     for (ServiceRequest request : requests) {
       Cluster cluster = clusters.getCluster(request.getClusterName());
 
@@ -471,11 +355,10 @@ public class ServiceResourceProvider extends AbstractControllerResourceProvider 
 
       s.setDesiredState(state);
       s.setDesiredStackVersion(cluster.getDesiredStackVersion());
+      s.persist();
       cluster.addService(s);
       // Initialize service widgets
       getManagementController().initializeWidgetsAndLayouts(cluster, s);
-
-      s.persist();
     }
   }
 
@@ -915,548 +798,11 @@ public class ServiceResourceProvider extends AbstractControllerResourceProvider 
     return null;
   }
 
-  // Get the State of a host component
-  private static State getHostComponentState(ServiceComponentHostResponse hostComponent) {
-    return State.valueOf(hostComponent.getLiveState());
-  }
-
   // calculate the service state, accounting for the state of the host components
   private String calculateServiceState(String clusterName, String serviceName) {
-
-    ServiceState serviceState = serviceStateMap.get(serviceName);
-    if (serviceState == null) {
-      serviceState = DEFAULT_SERVICE_STATE;
-    }
-    State state = serviceState.getState(getManagementController(), clusterName, serviceName);
-
-    return state.toString();
+    ServiceCalculatedState serviceCalculatedState = ServiceCalculatedStateFactory.getServiceStateProvider(serviceName);
+    return serviceCalculatedState.getState(clusterName, serviceName).toString();
   }
-
-
-  // ----- inner class ServiceState ------------------------------------------
-
-  /**
-   * Interface to allow for different state calculations for different services.
-   * TODO : see if this functionality can be moved to service definitions.
-   */
-  protected interface ServiceState {
-    public State getState(AmbariManagementController controller, String clusterName, String serviceName);
-  }
-
-  /**
-   * Default calculator of service state.
-   * The following rules should apply :
-   * For services that have all components DISABLED, the service state should be DISABLED.
-   * For services that have any master components, the service state should
-   * be STARTED if all master components are STARTED.
-   * For services that have all client components, the service state should
-   * be INSTALLED if all of the components are INSTALLED.
-   * For all other cases the state of the service should match the highest state of all
-   * of its component states or UNKNOWN if the component states can not be determined.
-   */
-  protected static class DefaultServiceState implements ServiceState {
-
-    @Override
-    public State getState(AmbariManagementController controller, String clusterName, String serviceName) {
-      AmbariMetaInfo ambariMetaInfo = controller.getAmbariMetaInfo();
-      Clusters       clusters       = controller.getClusters();
-
-      if (clusterName != null && clusterName.length() > 0) {
-        try {
-          Cluster cluster = clusters.getCluster(clusterName);
-          if (cluster != null) {
-            StackId stackId = cluster.getDesiredStackVersion();
-
-            ServiceComponentHostRequest request = new ServiceComponentHostRequest(clusterName,
-                serviceName, null, null, null);
-
-            Set<ServiceComponentHostResponse> hostComponentResponses =
-                controller.getHostComponents(Collections.singleton(request));
-
-            State   masterState = null;
-            State   clientState = null;
-            State   otherState = null;
-            State   maxMMState = null; // The worst state among components in MM
-
-            boolean hasDisabled  = false;
-            boolean hasMaster    = false;
-            boolean hasOther     = false;
-            boolean hasClient    = false;
-            boolean hasMM        = false;
-
-            for (ServiceComponentHostResponse hostComponentResponse : hostComponentResponses ) {
-              try {
-                ComponentInfo componentInfo = ambariMetaInfo.getComponent(stackId.getStackName(),
-                    stackId.getStackVersion(), hostComponentResponse.getServiceName(),
-                    hostComponentResponse.getComponentName());
-
-                State state = getHostComponentState(hostComponentResponse);
-                // Components in MM should not affect service status,
-                // so we tend to ignore them
-                boolean isInMaintenance = ! MaintenanceState.OFF.toString().
-                    equals(hostComponentResponse.getMaintenanceState());
-
-                if (state.equals(State.DISABLED)) {
-                  hasDisabled = true;
-                }
-
-                if (isInMaintenance & !componentInfo.isClient()) {
-                  hasMM = true;
-                  if ( maxMMState == null || state.ordinal() > maxMMState.ordinal()) {
-                    maxMMState = state;
-                  }
-                }
-
-                if (componentInfo.isMaster()) {
-                  if (state.equals(State.STARTED) || ! isInMaintenance) {
-                    // We rely on master's state to determine service state
-                    hasMaster = true;
-                  }
-
-                  if (! state.equals(State.STARTED) &&
-                      ! isInMaintenance &&  // Ignore status of MM component
-                      ( masterState == null || state.ordinal() > masterState.ordinal())) {
-                    masterState = state;
-                  }
-                } else if (componentInfo.isClient()) {
-                  hasClient = true;
-                  if (!state.equals(State.INSTALLED) &&
-                      (clientState == null || state.ordinal() > clientState.ordinal())) {
-                    clientState = state;
-                  }
-                } else {
-                  if (state.equals(State.STARTED) || ! isInMaintenance) {
-                    // We rely on slaves's state to determine service state
-                    hasOther = true;
-                  }
-                  if (! state.equals(State.STARTED) &&
-                      ! isInMaintenance && // Ignore status of MM component
-                      ( otherState == null || state.ordinal() > otherState.ordinal())) {
-                    otherState = state;
-                  }
-                }
-              } catch (ObjectNotFoundException e) {
-                // component doesn't exist, nothing to do
-              }
-            }
-
-            return hasMaster   ? masterState == null ? State.STARTED : masterState :
-                   hasOther    ? otherState == null ? State.STARTED : otherState :
-                   hasClient   ? clientState == null ? State.INSTALLED : clientState :
-                   hasDisabled ? State.DISABLED :
-                   hasMM       ? maxMMState : State.UNKNOWN;
-          }
-        } catch (AmbariException e) {
-          LOG.error("Can't determine service state.", e);
-        }
-      }
-      return State.UNKNOWN;
-    }
-  }
-
-  /**
-   * Calculator of Oozie service state.
-   */
-  protected static class OozieServiceState implements ServiceState {
-
-    @Override
-    public State getState(AmbariManagementController controller,String clusterName, String serviceName) {
-      AmbariMetaInfo ambariMetaInfo = controller.getAmbariMetaInfo();
-      Clusters       clusters       = controller.getClusters();
-
-      if (clusterName != null && clusterName.length() > 0) {
-        try {
-          Cluster cluster = clusters.getCluster(clusterName);
-          if (cluster != null) {
-            StackId stackId = cluster.getDesiredStackVersion();
-
-            ServiceComponentHostRequest request = new ServiceComponentHostRequest(clusterName,
-                    serviceName, null, null, null);
-
-            Set<ServiceComponentHostResponse> hostComponentResponses =
-                    controller.getHostComponents(Collections.singleton(request));
-
-            int     oozieServerActiveCount = 0;
-            State   nonStartedState        = null;
-
-            for (ServiceComponentHostResponse hostComponentResponse : hostComponentResponses ) {
-              try {
-                ComponentInfo componentInfo = ambariMetaInfo.getComponent(stackId.getStackName(),
-                        stackId.getStackVersion(), hostComponentResponse.getServiceName(),
-                        hostComponentResponse.getComponentName());
-
-                if (componentInfo.isMaster()) {
-                  State state = getHostComponentState(hostComponentResponse);
-
-                  switch (state) {
-                    case STARTED:
-                    case DISABLED:
-                      String componentName = hostComponentResponse.getComponentName();
-                      if (componentName.equals("OOZIE_SERVER")) {
-                        ++oozieServerActiveCount;
-                      }
-                      break;
-                    default:
-                      nonStartedState = state;
-                  }
-                }
-              } catch (ObjectNotFoundException e) {
-                // component doesn't exist, nothing to do
-              }
-            }
-
-            // should have state INSTALLED when there is no active OOZIE_SERVER
-            if (oozieServerActiveCount > 0) {
-              return State.STARTED;
-            }
-            return nonStartedState == null ? State.INSTALLED : nonStartedState;
-          }
-        } catch (AmbariException e) {
-          LOG.error("Can't determine service state.", e);
-        }
-      }
-      return State.UNKNOWN;
-    }
-  }
-
-  /**
-   * Calculator of HIVE service state.
-   */
-  protected static class HiveServiceState implements ServiceState {
-
-    @Override
-    public State getState(AmbariManagementController controller, String clusterName, String serviceName) {
-      AmbariMetaInfo ambariMetaInfo = controller.getAmbariMetaInfo();
-      Clusters       clusters       = controller.getClusters();
-
-      if (clusterName != null && clusterName.length() > 0) {
-        try {
-          Cluster cluster = clusters.getCluster(clusterName);
-          if (cluster != null) {
-            StackId stackId = cluster.getDesiredStackVersion();
-
-            ServiceComponentHostRequest request = new ServiceComponentHostRequest(clusterName,
-                    serviceName, null, null, null);
-
-            Set<ServiceComponentHostResponse> hostComponentResponses =
-                    controller.getHostComponents(Collections.singleton(request));
-
-            int activeHiveMetastoreComponentCount = 0;
-            State nonStartedState = null;
-            boolean embeddedMysqlComponentExists = false;
-            boolean hiveServerComponentStarted = false;
-            boolean webHcatComponentStarted = false;
-            boolean mysqlComponentStarted = false;
-
-            for (ServiceComponentHostResponse hostComponentResponse : hostComponentResponses ) {
-              try {
-                ComponentInfo componentInfo = ambariMetaInfo.getComponent(stackId.getStackName(),
-                        stackId.getStackVersion(), hostComponentResponse.getServiceName(),
-                        hostComponentResponse.getComponentName());
-
-                if (componentInfo.isMaster()) {
-                  State state = getHostComponentState(hostComponentResponse);
-
-                  String componentName = hostComponentResponse.getComponentName();
-                  if (componentName.equals("MYSQL_SERVER")) {
-                    embeddedMysqlComponentExists = true;
-                  }
-
-                  switch (state) {
-                    case STARTED:
-                    case DISABLED:
-                      if (componentName.equals("HIVE_METASTORE")) {
-                        ++activeHiveMetastoreComponentCount;
-                      } else if (componentName.equals("HIVE_SERVER")) {
-                        hiveServerComponentStarted = true;
-                      } else if (componentName.equals("MYSQL_SERVER")) {
-                        mysqlComponentStarted = true;
-                      } else if (componentName.equals("WEBHCAT_SERVER")) {
-                        webHcatComponentStarted = true;
-                      }
-                      break;
-                    default:
-                      nonStartedState = state;
-                  }
-                }
-              } catch (ObjectNotFoundException e) {
-                // component doesn't exist, nothing to do
-              }
-            }
-
-            if (nonStartedState == null ||
-                (hiveServerComponentStarted && webHcatComponentStarted && activeHiveMetastoreComponentCount > 0 &&
-                 (embeddedMysqlComponentExists ? mysqlComponentStarted : true))) {
-              return State.STARTED;
-            }
-            return nonStartedState == null ? State.INSTALLED : nonStartedState;
-          }
-        } catch (AmbariException e) {
-          LOG.error("Can't determine service state.", e);
-        }
-      }
-      return State.UNKNOWN;
-    }
-  }
-
-  /**
-   * Calculator of HDFS service state.
-   */
-  protected static class HDFSServiceState implements ServiceState {
-
-    @Override
-    public State getState(AmbariManagementController controller,String clusterName, String serviceName) {
-      AmbariMetaInfo ambariMetaInfo = controller.getAmbariMetaInfo();
-      Clusters       clusters       = controller.getClusters();
-
-      if (clusterName != null && clusterName.length() > 0) {
-        try {
-          Cluster cluster = clusters.getCluster(clusterName);
-          if (cluster != null) {
-            StackId stackId = cluster.getDesiredStackVersion();
-
-            ServiceComponentHostRequest request = new ServiceComponentHostRequest(clusterName,
-                serviceName, null, null, null);
-
-            Set<ServiceComponentHostResponse> hostComponentResponses =
-                controller.getHostComponents(Collections.singleton(request));
-
-            int     nameNodeCount       = 0;
-            int     nameNodeActiveCount = 0;
-            boolean hasSecondary        = false;
-            boolean hasJournal          = false;
-            State   nonStartedState     = null;
-
-            for (ServiceComponentHostResponse hostComponentResponse : hostComponentResponses ) {
-              try {
-                ComponentInfo componentInfo = ambariMetaInfo.getComponent(stackId.getStackName(),
-                    stackId.getStackVersion(), hostComponentResponse.getServiceName(),
-                    hostComponentResponse.getComponentName());
-
-                if (componentInfo.isMaster()) {
-                  String componentName = hostComponentResponse.getComponentName();
-                  boolean isNameNode = false;
-
-                  if (componentName.equals("NAMENODE")) {
-                    ++nameNodeCount;
-                    isNameNode = true;
-                  } else if (componentName.equals("SECONDARY_NAMENODE")) {
-                    hasSecondary = true;
-                  } else if (componentName.equals("JOURNALNODE")) {
-                    hasJournal = true;
-                  }
-
-                  State state = getHostComponentState(hostComponentResponse);
-
-                  switch (state) {
-                    case STARTED:
-                    case DISABLED:
-                      if (isNameNode) {
-                        ++nameNodeActiveCount;
-                      }
-                      break;
-                    default:
-                      nonStartedState = state;
-                  }
-                }
-              } catch (ObjectNotFoundException e) {
-                // component doesn't exist, nothing to do
-              }
-            }
-
-            if ( nonStartedState == null ||  // all started
-                ((nameNodeCount > 0 && !hasSecondary || hasJournal) &&
-                    nameNodeActiveCount > 0)) {  // at least one active namenode
-              return State.STARTED;
-            }
-            return nonStartedState;
-          }
-        } catch (AmbariException e) {
-          LOG.error("Can't determine service state.", e);
-        }
-      }
-      return State.UNKNOWN;
-    }
-  }
-
-  /**
-   * Calculator of HBase service state.
-   */
-  protected static class HBaseServiceState implements ServiceState {
-
-    @Override
-    public State getState(AmbariManagementController controller,String clusterName, String serviceName) {
-      AmbariMetaInfo ambariMetaInfo = controller.getAmbariMetaInfo();
-      Clusters       clusters       = controller.getClusters();
-
-      if (clusterName != null && clusterName.length() > 0) {
-        try {
-          Cluster cluster = clusters.getCluster(clusterName);
-          if (cluster != null) {
-            StackId stackId = cluster.getDesiredStackVersion();
-
-            ServiceComponentHostRequest request = new ServiceComponentHostRequest(clusterName,
-                serviceName, null, null, null);
-
-            Set<ServiceComponentHostResponse> hostComponentResponses =
-                controller.getHostComponents(Collections.singleton(request));
-
-            int     hBaseMasterActiveCount = 0;
-            State   nonStartedState        = null;
-
-            for (ServiceComponentHostResponse hostComponentResponse : hostComponentResponses ) {
-              try {
-                ComponentInfo componentInfo = ambariMetaInfo.getComponent(stackId.getStackName(),
-                    stackId.getStackVersion(), hostComponentResponse.getServiceName(),
-                    hostComponentResponse.getComponentName());
-
-                if (componentInfo.isMaster()) {
-                  State state = getHostComponentState(hostComponentResponse);
-
-                  switch (state) {
-                    case STARTED:
-                    case DISABLED:
-                      String componentName = hostComponentResponse.getComponentName();
-                      if (componentName.equals("HBASE_MASTER")) {
-                        ++hBaseMasterActiveCount;
-                      }
-                      break;
-                    default:
-                      nonStartedState = state;
-                  }
-                }
-              } catch (ObjectNotFoundException e) {
-                // component doesn't exist, nothing to do
-              }
-            }
-
-            // should have state INSTALLED when there is no active HBASE_MASTER
-            if (hBaseMasterActiveCount > 0) {
-              return State.STARTED;
-            }
-            return nonStartedState == null ? State.INSTALLED : nonStartedState;
-          }
-        } catch (AmbariException e) {
-          LOG.error("Can't determine service state.", e);
-        }
-      }
-      return State.UNKNOWN;
-    }
-  }
-
-  /**
-   * Determines the service status for Flume.  Generically, this means that
-   * the state of Flume is the lowest ordinal state calculated.  For example:
-   * <ul>
-   *   <li>If all handlers are STARTED, service is STARTED.</li>
-   *   <li>If one handler is INSTALLED, the service is INSTALLED.</li>
-   * </ul>
-   */
-  protected static class FlumeServiceState implements ServiceState {
-    @Override
-    public State getState(AmbariManagementController controller,
-        String clusterName, String serviceName) {
-      Clusters       clusters       = controller.getClusters();
-
-      if (clusterName != null && clusterName.length() > 0) {
-        try {
-          Cluster cluster = clusters.getCluster(clusterName);
-          if (cluster != null) {
-
-            ServiceComponentHostRequest request = new ServiceComponentHostRequest(clusterName,
-                serviceName, null, null, null);
-
-            Set<ServiceComponentHostResponse> hostComponentResponses =
-                controller.getHostComponents(Collections.singleton(request));
-
-            State state = State.UNKNOWN;
-            for (ServiceComponentHostResponse schr : hostComponentResponses) {
-              State schState = getHostComponentState(schr);
-              if (schState.ordinal() < state.ordinal()) {
-                state = schState;
-              }
-            }
-            return state;
-          }
-        } catch (AmbariException e) {
-          LOG.error("Can't determine service state.", e);
-        }
-      }
-
-      return State.UNKNOWN;
-    }
-  }
-  
-  /**
-   * Calculator of YARN service state.
-   */
-  protected static class YARNServiceState implements ServiceState {
-	  @Override
-      public State getState(AmbariManagementController controller,String clusterName, String serviceName) {
-        AmbariMetaInfo ambariMetaInfo = controller.getAmbariMetaInfo();
-        Clusters       clusters       = controller.getClusters();
-
-        if (clusterName != null && clusterName.length() > 0) {
-          try {
-            Cluster cluster = clusters.getCluster(clusterName);
-            if (cluster != null) {
-              StackId stackId = cluster.getDesiredStackVersion();
-
-              ServiceComponentHostRequest request = new ServiceComponentHostRequest(clusterName,
-                  serviceName, null, null, null);
-
-              Set<ServiceComponentHostResponse> hostComponentResponses =
-                  controller.getHostComponents(Collections.singleton(request));
-
-              int     resourceManagerActiveCount      = 0;
-              boolean isAppTimeLineServerActive       = false;
-              State   nonStartedState                 = null;
-
-              for (ServiceComponentHostResponse hostComponentResponse : hostComponentResponses ) {
-                try {
-                  ComponentInfo componentInfo = ambariMetaInfo.getComponent(stackId.getStackName(),
-                      stackId.getStackVersion(), hostComponentResponse.getServiceName(),
-                      hostComponentResponse.getComponentName());
-
-                  if (componentInfo.isMaster()) {
-                    String componentName = hostComponentResponse.getComponentName();
-
-                    State state = getHostComponentState(hostComponentResponse);
-
-                    switch (state) {
-                      case STARTED:
-                      case DISABLED:
-                        if (componentName.equals("RESOURCEMANAGER")) {
-                          ++resourceManagerActiveCount;
-                        } else if (componentName.equals("APP_TIMELINE_SERVER")) {
-                          isAppTimeLineServerActive = true;
-                        }
-                        break;
-                      default:
-                        nonStartedState = state;
-                    }
-                  }
-                } catch (ObjectNotFoundException e) {
-                  // component doesn't exist, nothing to do
-                }
-              }
-
-              if ( nonStartedState == null ||  // all started
-                  (isAppTimeLineServerActive &&
-                      resourceManagerActiveCount > 0)) {  // at least one active resource manager
-                return State.STARTED;
-              }
-              return nonStartedState;
-            }
-          } catch (AmbariException e) {
-            LOG.error("Can't determine service state.", e);
-          }      
-        }
-        return State.UNKNOWN;
-      }	  
-        
-  }
-	
 
   /**
    * Determine whether a service state change is valid.
@@ -1524,5 +870,87 @@ public class ServiceResourceProvider extends AbstractControllerResourceProvider 
     }
 
     return serviceSpecificProperties;
+  }
+
+  private void validateCreateRequests(Set<ServiceRequest> requests, Clusters clusters)
+          throws AuthorizationException, AmbariException {
+
+    AmbariMetaInfo ambariMetaInfo = getManagementController().getAmbariMetaInfo();
+    Map<String, Set<String>> serviceNames = new HashMap<>();
+    Set<String> duplicates = new HashSet<>();
+    for (ServiceRequest request : requests) {
+      final String clusterName = request.getClusterName();
+      final String serviceName = request.getServiceName();
+      Validate.notEmpty(clusterName, "Cluster name should be provided when creating a service");
+      Validate.notEmpty(serviceName, "Service name should be provided when creating a service");
+
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Received a createService request"
+                + ", clusterName=" + clusterName + ", serviceName=" + serviceName + ", request=" + request);
+      }
+
+      if(!AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, getClusterResourceId(clusterName), RoleAuthorization.SERVICE_ADD_DELETE_SERVICES)) {
+        throw new AuthorizationException("The user is not authorized to create services");
+      }
+
+      if (!serviceNames.containsKey(clusterName)) {
+        serviceNames.put(clusterName, new HashSet<String>());
+      }
+
+      if (serviceNames.get(clusterName).contains(serviceName)) {
+        // throw error later for dup
+        duplicates.add(serviceName);
+        continue;
+      }
+      serviceNames.get(clusterName).add(serviceName);
+
+      if (StringUtils.isNotEmpty(request.getDesiredState())) {
+        State state = State.valueOf(request.getDesiredState());
+        if (!state.isValidDesiredState() || state != State.INIT) {
+          throw new IllegalArgumentException("Invalid desired state"
+                  + " only INIT state allowed during creation"
+                  + ", providedDesiredState=" + request.getDesiredState());
+        }
+      }
+
+      Cluster cluster;
+      try {
+        cluster = clusters.getCluster(clusterName);
+      } catch (ClusterNotFoundException e) {
+        throw new ParentObjectNotFoundException("Attempted to add a service to a cluster which doesn't exist", e);
+      }
+      try {
+        Service s = cluster.getService(serviceName);
+        if (s != null) {
+          // throw error later for dup
+          duplicates.add(serviceName);
+          continue;
+        }
+      } catch (ServiceNotFoundException e) {
+        // Expected
+      }
+
+      StackId stackId = cluster.getDesiredStackVersion();
+      if (!ambariMetaInfo.isValidService(stackId.getStackName(),
+              stackId.getStackVersion(), request.getServiceName())) {
+        throw new IllegalArgumentException("Unsupported or invalid service in stack, clusterName=" + clusterName
+                + ", serviceName=" + serviceName + ", stackInfo=" + stackId.getStackId());
+      }
+    }
+    // ensure only a single cluster update
+    if (serviceNames.size() != 1) {
+      throw new IllegalArgumentException("Invalid arguments, updates allowed"
+              + "on only one cluster at a time");
+    }
+
+    // Validate dups
+    if (!duplicates.isEmpty()) {
+      String clusterName = requests.iterator().next().getClusterName();
+      String msg = "Attempted to create a service which already exists: "
+              + ", clusterName=" + clusterName  + " serviceName=" + StringUtils.join(duplicates, ",");
+
+      throw new DuplicateResourceException(msg);
+    }
+
   }
 }

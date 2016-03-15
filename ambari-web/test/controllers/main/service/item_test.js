@@ -27,6 +27,29 @@ require('controllers/global/cluster_controller');
 require('controllers/main/service/reassign_controller');
 require('controllers/main/service/item');
 var batchUtils = require('utils/batch_scheduled_requests');
+var testHelpers = require('test/helpers');
+var stackSerivceModel = {
+  'HDFS': Em.Object.create({
+    serviceName: 'HDFS',
+    requiredServices: ['ZOOKEEPER']
+  }),
+  'YARN': Em.Object.create({
+    serviceName: 'YARN',
+    requiredServices: ['MAPREDUCE2', 'HDFS']
+  }),
+  'MAPREDUCE2': Em.Object.create({
+    serviceName: 'MAPREDUCE2',
+    requiredServices: ['YARN']
+  }),
+  'TEZ': Em.Object.create({
+    serviceName: 'TEZ',
+    requiredServices: ['YARN']
+  }),
+  'HIVE': Em.Object.create({
+    serviceName: 'HIVE',
+    requiredServices: ['YARN', 'TEZ']
+  })
+};
 
 describe('App.MainServiceItemController', function () {
 
@@ -251,88 +274,6 @@ describe('App.MainServiceItemController', function () {
     });
   });
 
-  describe("#startStopPopupPrimary", function () {
-
-    var mainServiceItemController;
-    var tests = [
-      {
-        data: {
-          "serviceName": "HDFS",
-          "state": "STARTED",
-          "query": Em.Object.create({ServiceInfo: "FAIL"})
-        },
-        request: {
-          "RequestInfo": {
-            "context": "_PARSE_.START.HDFS"
-          },
-          "Body": {
-            "ServiceInfo": {
-              "state": "STARTED"
-            }
-          }
-        },
-        m: "Start HDFS"
-      },
-      {
-        data: {
-          "serviceName": "YARN",
-          "state": "STOPPED",
-          "query": Em.Object.create({ServiceInfo: "FAIL"})
-        },
-        request: {
-          "RequestInfo": {
-            "context": "_PARSE_.STOP.YARN"
-          },
-          "Body": {
-            "ServiceInfo": {
-              "state": "STOPPED"
-            }
-          }
-        },
-        m: "Stop YARN"
-      }
-    ];
-
-    beforeEach(function () {
-      sinon.spy($, 'ajax');
-    });
-
-    afterEach(function () {
-      $.ajax.restore();
-    });
-
-
-    tests.forEach(function (test, index) {
-
-      describe('case #' + (index + 1), function () {
-
-        beforeEach(function () {
-          mainServiceItemController = App.MainServiceItemController.create({content: {serviceName: test.data.serviceName}});
-          mainServiceItemController.startStopPopupPrimary(test.data.state, test.data.query);
-          this.data = JSON.parse($.ajax.args[0][0].data);
-        });
-
-        it('request is sent with valid data ' + (index + 1), function () {
-          expect($.ajax.calledOnce).to.equal(true);
-          expect(this.data.Body.ServiceInfo.state).to.equal(test.request.Body.ServiceInfo.state);
-          expect(this.data.RequestInfo.context).to.equal(test.request.RequestInfo.context);
-        });
-
-        it('isStopDisabled is true ' + (index + 1), function () {
-          expect(mainServiceItemController.get('isStopDisabled')).to.equal(true);
-        });
-
-        it('isStartDisabled is true ' + (index + 1), function () {
-          expect(mainServiceItemController.get('isStartDisabled')).to.equal(true);
-        });
-
-      });
-
-    });
-
-
-  });
-
   describe("#startService , #stopService", function () {
     var mainServiceItemController = App.MainServiceItemController.create({startStopPopup: Em.K});
     beforeEach(function () {
@@ -516,16 +457,15 @@ describe('App.MainServiceItemController', function () {
       });
       
       it ("should not display a dependent list if it is to start a service", function() {
-        var mainServiceItemController = App.MainServiceItemController.create(
+        var _mainServiceItemController = App.MainServiceItemController.create(
             {content: {serviceName: "HDFS", passiveState:'OFF'}});
-        mainServiceItemController.startStopPopup(event, "");
+        _mainServiceItemController.startStopPopup(event, "");
         expect(Em.I18n.t.calledWith('services.service.stop.warningMsg.dependent.services')).to.not.be.ok;
       });
       
       describe ("should display dependent list if other services depend on the one to be stopped", function() {
-        var mainServiceItemController;
         beforeEach(function () {
-          mainServiceItemController = App.MainServiceItemController.create(
+          var _mainServiceItemController = App.MainServiceItemController.create(
             {content: {
               serviceName: "HDFS",
               passiveState:'OFF',
@@ -535,10 +475,10 @@ describe('App.MainServiceItemController', function () {
               }]
             }}
           );
-          mainServiceItemController.startStopPopup(event, "INSTALLED");
+          _mainServiceItemController.startStopPopup(event, "INSTALLED");
           this.dependencies = Em.I18n.t('services.service.stop.warningMsg.dependent.services').format("HDFS", "HBase,YARN");
           this.msg = Em.I18n.t('services.service.stop.warningMsg.turnOnMM').format("HDFS");
-          this.fullMsg = mainServiceItemController.addAdditionalWarningMessage("INSTALLED", this.msg, "HDFS");
+          this.fullMsg = _mainServiceItemController.addAdditionalWarningMessage("INSTALLED", this.msg, "HDFS");
         });
 
         it('turnOnMM message is shown', function () {
@@ -555,12 +495,12 @@ describe('App.MainServiceItemController', function () {
       describe("should display the dependent service if another service depends on the one to be stopped", function() {
 
         beforeEach(function () {
-          var mainServiceItemController = App.MainServiceItemController.create(
+          var _mainServiceItemController = App.MainServiceItemController.create(
             {content: {serviceName: "HIVE", passiveState:'OFF'}});
-          mainServiceItemController.startStopPopup(event, "INSTALLED");
+          _mainServiceItemController.startStopPopup(event, "INSTALLED");
           this.dependencies = Em.I18n.t('services.service.stop.warningMsg.dependent.services').format("HIVE", "Spark");
           this.msg = Em.I18n.t('services.service.stop.warningMsg.turnOnMM').format("HIVE");
-          this.fullMsg = mainServiceItemController.addAdditionalWarningMessage("INSTALLED", this.msg, "HIVE");
+          this.fullMsg = _mainServiceItemController.addAdditionalWarningMessage("INSTALLED", this.msg, "HIVE");
         });
 
         it('message about dependent services is shown', function () {
@@ -1060,12 +1000,10 @@ describe('App.MainServiceItemController', function () {
   describe("#runSmokeTestPrimary", function () {
     beforeEach(function () {
       sinon.stub(App, 'get').withArgs('clusterName').returns('myCluster');
-      sinon.spy($, 'ajax');
     });
 
     afterEach(function () {
       App.get.restore();
-      $.ajax.restore();
     });
 
     var tests = [
@@ -1109,11 +1047,13 @@ describe('App.MainServiceItemController', function () {
           mainServiceItemController.set("runSmokeTestErrorCallBack", Em.K);
           mainServiceItemController.set("runSmokeTestSuccessCallBack", Em.K);
           mainServiceItemController.runSmokeTestPrimary(test.data.query);
-          this.data = JSON.parse($.ajax.args[0][0].data);
+          this.args = testHelpers.findAjaxRequest('name', 'service.item.smoke')[0];
+          this.data = this.args.data;
+          this.data = JSON.parse(App.ajax.fakeGetUrl('service.item.smoke').format(this.data).data);
         });
 
         it('ajax request is sent', function () {
-          expect($.ajax.calledOnce).to.equal(true);
+          expect(this.args).exists;
         });
 
         it('RequestInfo.context is valid', function () {
@@ -1258,4 +1198,252 @@ describe('App.MainServiceItemController', function () {
       expect(App.showConfirmationPopup.calledOnce).to.equal(true);
     });
   });
+
+  describe("#findDependentServices()", function() {
+    var mainServiceItemController;
+
+    beforeEach(function() {
+      mainServiceItemController = App.MainServiceItemController.create({});
+      sinon.stub(App.StackService, 'find', function (serviceName) {
+        return stackSerivceModel[serviceName];
+      });
+      this.mockService = sinon.stub(App.Service, 'find');
+    });
+    afterEach(function() {
+      App.StackService.find.restore();
+      this.mockService.restore();
+    });
+
+    it("no services", function() {
+      this.mockService.returns([]);
+      expect(mainServiceItemController.findDependentServices(['S1'])).to.be.empty;
+    });
+
+    it("service has dependencies", function() {
+      this.mockService.returns([
+        Em.Object.create({ serviceName: 'HDFS' }),
+        Em.Object.create({ serviceName: 'YARN' }),
+        Em.Object.create({ serviceName: 'MAPREDUCE2' }),
+        Em.Object.create({ serviceName: 'TEZ' }),
+        Em.Object.create({ serviceName: 'HIVE' })
+      ]);
+      expect(mainServiceItemController.findDependentServices(['YARN', 'MAPREDUCE2'])).to.eql(['TEZ', 'HIVE']);
+    });
+
+    it("service has no dependencies", function() {
+       this.mockService.returns([
+         Em.Object.create({ serviceName: 'HDFS' }),
+         Em.Object.create({ serviceName: 'YARN' }),
+         Em.Object.create({ serviceName: 'MAPREDUCE2' }),
+         Em.Object.create({ serviceName: 'TEZ' }),
+         Em.Object.create({ serviceName: 'HIVE' })
+      ]);
+      expect(mainServiceItemController.findDependentServices(['HIVE'])).to.be.empty;
+    });
+
+    it("service has no dependencies (except interdependent)", function() {
+      this.mockService.returns([
+        Em.Object.create({ serviceName: 'HDFS' }),
+        Em.Object.create({ serviceName: 'YARN' }),
+        Em.Object.create({ serviceName: 'MAPREDUCE2' })
+      ]);
+      expect(mainServiceItemController.findDependentServices(['YARN', 'MAPREDUCE2'])).to.be.empty;
+    });
+
+  });
+
+  describe("#deleteService()", function() {
+    var mainServiceItemController;
+
+    beforeEach(function() {
+      mainServiceItemController = App.MainServiceItemController.create({});
+      this.mockDependentServices = sinon.stub(mainServiceItemController, 'findDependentServices');
+      sinon.stub(mainServiceItemController, 'dependentServicesWarning');
+      sinon.stub(mainServiceItemController, 'servicesDisplayNames', function(servicesDisplayNames) {
+        return servicesDisplayNames;
+      });
+      this.allowUninstallServices = sinon.stub(mainServiceItemController, 'allowUninstallServices');
+      this.mockService = sinon.stub(App.Service, 'find');
+      sinon.stub(App, 'showConfirmationPopup');
+      sinon.stub(App.ModalPopup, 'show');
+      sinon.stub(App.format, 'role', function(name) {return name});
+
+      mainServiceItemController.reopen({
+        interDependentServices: []
+      })
+    });
+    afterEach(function() {
+      mainServiceItemController.allowUninstallServices.restore();
+      mainServiceItemController.servicesDisplayNames.restore();
+      this.mockDependentServices.restore();
+      this.mockService.restore();
+      mainServiceItemController.dependentServicesWarning.restore();
+      App.showConfirmationPopup.restore();
+      App.ModalPopup.show.restore();
+      App.format.role.restore();
+    });
+
+    it("only one service installed", function() {
+      this.mockDependentServices.returns(['S2']);
+      this.mockService.returns(Em.Object.create({length: 1}));
+      mainServiceItemController.deleteService('S1');
+      expect(App.ModalPopup.show.calledWith({
+        secondary: null,
+        header: Em.I18n.t('services.service.delete.popup.header'),
+        encodeBody: false,
+        body: Em.I18n.t('services.service.delete.lastService.popup.body').format('S1')
+      })).to.be.true;
+    });
+
+    it("service has installed dependent services", function() {
+      this.mockDependentServices.returns(['S2']);
+      this.mockService.returns([Em.Object.create({workStatus: App.Service.statesMap.stopped}), Em.Object.create({workStatus: App.Service.statesMap.stopped})]);
+      mainServiceItemController.deleteService('S1');
+      expect(mainServiceItemController.dependentServicesWarning.calledWith('S1', ['S2'])).to.be.true;
+    });
+
+    it("service has not dependent services, and stopped", function() {
+      this.mockDependentServices.returns([]);
+      this.allowUninstallServices.returns(true);
+      this.mockService.returns([Em.Object.create({workStatus: App.Service.statesMap.stopped}), Em.Object.create({workStatus: App.Service.statesMap.stopped})]);
+      mainServiceItemController.deleteService('S1');
+      expect(App.showConfirmationPopup.calledOnce).to.be.true;
+    });
+
+    it("service has not dependent services, and install failed", function() {
+      this.mockDependentServices.returns([]);
+      this.allowUninstallServices.returns(true);
+      this.mockService.returns([Em.Object.create({workStatus: App.Service.statesMap.install_failed}), Em.Object.create({workStatus: App.Service.statesMap.install_failed})]);
+      mainServiceItemController.deleteService('S1');
+      expect(App.showConfirmationPopup.calledOnce).to.be.true;
+    });
+
+    it("service has not dependent services, and not stopped", function() {
+      this.mockDependentServices.returns([]);
+      this.mockService.returns(Em.Object.create({workStatus: App.Service.statesMap.started}));
+      mainServiceItemController.deleteService('S1');
+      expect(App.ModalPopup.show.calledWith({
+        secondary: null,
+        header: Em.I18n.t('services.service.delete.popup.header'),
+        encodeBody: false,
+        body: Em.I18n.t('services.service.delete.popup.mustBeStopped').format('S1')
+      })).to.be.true;
+    });
+  });
+
+  describe("#dependentServicesWarning()", function() {
+    var mainServiceItemController;
+
+    beforeEach(function() {
+      mainServiceItemController = App.MainServiceItemController.create({});
+      sinon.stub(App.ModalPopup, 'show');
+      sinon.stub(App.format, 'role', function(name) {return name});
+    });
+    afterEach(function() {
+      App.ModalPopup.show.restore();
+      App.format.role.restore();
+    });
+
+    it("App.ModalPopup.show should be called", function() {
+      mainServiceItemController.dependentServicesWarning('S1', ['S2']);
+      expect(App.ModalPopup.show.calledOnce).to.be.true;
+    });
+  });
+
+  describe("#confirmDeleteService()", function() {
+    var mainServiceItemController;
+
+    beforeEach(function() {
+      mainServiceItemController = App.MainServiceItemController.create({});
+      sinon.stub(App.ModalPopup, 'show');
+    });
+    afterEach(function() {
+      App.ModalPopup.show.restore();
+    });
+
+    it("App.ModalPopup.show should be called", function() {
+      mainServiceItemController.confirmDeleteService('S1', [], '');
+      expect(App.ModalPopup.show.calledOnce).to.be.true;
+    });
+  });
+
+  describe('#interDependentServices', function() {
+    var mainServiceItemController;
+
+    beforeEach(function() {
+      sinon.stub(App.StackService, 'find', function (serviceName) {
+        return stackSerivceModel[serviceName];
+      });
+      mainServiceItemController = App.MainServiceItemController.create({
+        content: {}
+      });
+    });
+
+    afterEach(function() {
+      App.StackService.find.restore();
+    });
+
+    it('get interdependent services for YARN', function() {
+      mainServiceItemController.set('content', Em.Object.create({
+        serviceName: 'YARN'
+      }));
+      expect(mainServiceItemController.get('interDependentServices')).to.eql(['MAPREDUCE2']);
+    });
+
+    it('get interdependent services for MAPREDUCE2', function() {
+      mainServiceItemController.set('content', Em.Object.create({
+        serviceName: 'MAPREDUCE2'
+      }));
+      expect(mainServiceItemController.get('interDependentServices')).to.eql(['YARN']);
+    });
+  });
+
+  describe("#deleteServiceCall()", function() {
+    var mainServiceItemController;
+
+    beforeEach(function() {
+      mainServiceItemController = App.MainServiceItemController.create({});
+    });
+
+    it("App.ajax.send should be called", function() {
+      mainServiceItemController.deleteServiceCall(['S1', 'S2']);
+      var args = testHelpers.findAjaxRequest('name', 'common.delete.service');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(mainServiceItemController);
+      expect(args[0].data).to.be.eql({
+        serviceName : 'S1',
+        servicesToDeleteNext: ['S2']
+      });
+    });
+  });
+
+  describe("#deleteServiceCallSuccessCallback()", function() {
+    var mainServiceItemController;
+
+    beforeEach(function() {
+      mainServiceItemController = App.MainServiceItemController.create({});
+      sinon.spy(mainServiceItemController, 'loadConfigRecommendations');
+      sinon.spy(mainServiceItemController, 'deleteServiceCall');
+      mainServiceItemController.reopen({
+        interDependentServices: []
+      })
+    });
+    afterEach(function() {
+      mainServiceItemController.loadConfigRecommendations.restore();
+      mainServiceItemController.deleteServiceCall.restore();
+    });
+
+    it("window.location.reload should be called", function() {
+      mainServiceItemController.deleteServiceCallSuccessCallback([], null, {});
+      expect(mainServiceItemController.deleteServiceCall.called).to.be.false;
+      expect(mainServiceItemController.loadConfigRecommendations.calledOnce).to.be.true;
+    });
+
+    it("deleteServiceCall should be called", function() {
+      mainServiceItemController.deleteServiceCallSuccessCallback([], null, {servicesToDeleteNext: true});
+      expect(mainServiceItemController.deleteServiceCall.calledOnce).to.be.true;
+      expect(mainServiceItemController.loadConfigRecommendations.called).to.be.false;
+    });
+  });
+
 });

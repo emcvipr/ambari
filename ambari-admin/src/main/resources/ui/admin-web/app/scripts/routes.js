@@ -24,6 +24,25 @@ angular.module('ambariAdminConsole')
     templateUrl: 'views/main.html',
     controller: 'MainCtrl'
   },
+  authentication: {
+    main: {
+      url: '/authentication',
+      templateUrl: 'views/authentication/main.html',
+      controller: 'AuthenticationMainCtrl'
+    }
+  },
+  loginActivities: {
+    loginMessage:{
+      url: '/loginMessage',
+      templateUrl: 'views/loginActivities/main.html',
+      controller: 'LoginActivitiesMainCtrl'
+    },
+    homeDirectory: {
+      url: '/homeDirectory',
+      templateUrl: 'views/loginActivities/main.html',
+      controller: 'LoginActivitiesMainCtrl'
+    }
+  },
   users: {
     list: {
       url: '/users',
@@ -127,7 +146,17 @@ angular.module('ambariAdminConsole')
   };
   angular.forEach(ROUTES, createRoute);
 }])
-.run(['$rootScope', 'ROUTES', function($rootScope, ROUTES) {
+.run(['$rootScope', 'ROUTES', 'Settings', function($rootScope, ROUTES, Settings) {
   // Make routes available in every template and controller
   $rootScope.ROUTES = ROUTES;
+  $rootScope.$on('$locationChangeStart', function (e, nextUrl) {
+    if (/\/authentication$/.test(nextUrl) && !Settings.isLDAPConfigurationSupported) {
+      e.preventDefault();
+    }
+  });
+  $rootScope.$on('$locationChangeStart', function (e, nextUrl) {
+    if ((/\/loginMessage$/.test(nextUrl) || /\/homeDirectory$/.test(nextUrl)) && !Settings.isLoginActivitiesSupported) {
+      e.preventDefault();
+    }
+  });
 }]);

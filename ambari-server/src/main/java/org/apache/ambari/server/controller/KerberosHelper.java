@@ -45,6 +45,15 @@ public interface KerberosHelper {
    */
   String DIRECTIVE_MANAGE_KERBEROS_IDENTITIES = "manage_kerberos_identities";
   /**
+   * directive used to indicate that the enable Kerberos operation is only to regenerate keytab files
+   */
+  String DIRECTIVE_REGENERATE_KEYTABS = "regenerate_keytabs";
+  /**
+   * directive used to indicate that the enable Kerberos operation should proceed even if the
+   * cluster's security type is not changing
+   */
+  String DIRECTIVE_FORCE_TOGGLE_KERBEROS = "force_toggle_kerberos";
+  /**
    * config type which contains the property used to determine if Kerberos is enabled
    */
   String SECURITY_ENABLED_CONFIG_TYPE = "cluster-env";
@@ -224,6 +233,8 @@ public interface KerberosHelper {
    * @param cluster                the cluster
    * @param existingConfigurations the cluster's existing configurations
    * @param services               the set of services to process
+   * @param kerberosEnabled        true if kerberos is (to be) enabled; otherwise false
+   * @param applyStackAdvisorUpdates true to invoke the stack advisor to validate property updates; false to skip
    * @return a map of configuration updates
    * @throws AmbariException
    * @throws KerberosInvalidConfigurationException if an issue occurs trying to get the
@@ -231,13 +242,37 @@ public interface KerberosHelper {
    */
   Map<String, Map<String, String>> getServiceConfigurationUpdates(Cluster cluster,
                                                                   Map<String, Map<String, String>> existingConfigurations,
-                                                                  Set<String> services, boolean serviceAlreadyExists)
+                                                                  Set<String> services,
+                                                                  boolean serviceAlreadyExists,
+                                                                  boolean kerberosEnabled,
+                                                                  boolean applyStackAdvisorUpdates)
       throws KerberosInvalidConfigurationException, AmbariException;
 
   /**
-   * Ensures that the relevant headless (or user) Kerberos identities are created and cached.
+   * Invokes the Stack Advisor to help determine relevant configuration changes when enabling or
+   * disabling Kerberos
    *
+   * @param cluster                a cluster
+   * @param services               a set of services that are being configured to enabled or disable Kerberos
+   * @param existingConfigurations the cluster's existing configurations
+   * @param kerberosConfigurations the configuration updates to make (must not be mutable)
+   * @param propertiesToIgnore     the configuration properties that should be ignored when applying recommendations
+   * @param kerberosEnabled        true if kerberos is (to be) enabled; otherwise false
+   * @return the configuration updates
+   * @throws AmbariException
+   */
+  Map<String, Map<String, String>> applyStackAdvisorUpdates(Cluster cluster, Set<String> services,
+                                                            Map<String, Map<String, String>> existingConfigurations,
+                                                            Map<String, Map<String, String>> kerberosConfigurations,
+                                                            Map<String, Set<String>> propertiesToIgnore,
+                                                            boolean kerberosEnabled)
+      throws AmbariException;
+
+  /**
+   * Ensures that the relevant headless (or user) Kerberos identities are created and cached.
+   * <p/>
    * This can be called any number of times and only the missing identities will be created.
+   *
    * @param cluster                the cluster
    * @param existingConfigurations the cluster's existing configurations
    * @param services               the set of services to process
@@ -446,11 +481,37 @@ public interface KerberosHelper {
    * If manage_kerberos_identities does exists in the map of request properties, a Boolean value
    * is returned indicating whether its value is "false" (Boolean.FALSE) or not (Boolean.TRUE).
    *
-   * @param requestProperties a map of the requst property name/value pairs
+   * @param requestProperties a map of the request property name/value pairs
    * @return Boolean.TRUE or Boolean.FALSE if the manage_kerberos_identities property exists in the map;
    * otherwise false
    */
   Boolean getManageIdentitiesDirective(Map<String, String> requestProperties);
+
+  /**
+   * Retrieves the value of the force_toggle_kerberos directive from the request properties,
+   * if it exists.
+   * <p/>
+   * If force_toggle_kerberos does not exist in the map of request properties, <code>false</code> is
+   * returned.
+   * <p/>
+   * If force_toggle_kerberos does exists in the map of request properties and is equal to "true",
+   * then <code>true</code> is returned; otherwise <code>false</code> is returned.
+   *
+   * @param requestProperties a map of the request property name/value pairs
+   * @return true if force_toggle_kerberos is "true"; otherwise false
+   */
+  boolean getForceToggleKerberosDirective(Map<String, String> requestProperties);
+
+  /**
+   * Given a list of KerberosIdentityDescriptors, returns a Map fo configuration types to property
+   * names and values.
+   * <p/>
+   * The property names and values are not expected to have any variable replacements done.
+   *
+   * @param identityDescriptors a List of KerberosIdentityDescriptor from which to retrieve configurations
+   * @return a Map of configuration types to property name/value pairs (as a Map)
+   */
+  Map<String, Map<String, String>> getIdentityConfigurations(List<KerberosIdentityDescriptor> identityDescriptors);
 
   /**
    * Returns the active identities for the named cluster.  Results are filtered by host, service,

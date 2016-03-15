@@ -52,24 +52,44 @@ describe('App.KDCCredentialsControllerMixin', function() {
         message: 'Only temporary store available, config should be disabled, and appropriate hint shown'
       }
     ].forEach(function(test) {
-      it(test.message, function() {
-        var configs = [],
-            config;
-        mixedObject.reopen({
-          isStorePersisted: function() {
-            return test.isStorePersisted;
-          }.property()
+      describe(test.message, function() {
+
+        var config;
+
+        beforeEach(function () {
+          var configs = [];
+          mixedObject.reopen({
+            isStorePersisted: function() {
+              return test.isStorePersisted;
+            }.property()
+          });
+          mixedObject.initilizeKDCStoreProperties(configs);
+          config = configs.findProperty('name', 'persist_credentials');
         });
-        mixedObject.initilizeKDCStoreProperties(configs);
-        config = configs.findProperty('name', 'persist_credentials');
-        Em.keys(test.e).forEach(function(key) {
-          assert.equal(Em.get(config, key), test.e[key], 'validate attribute: ' + key);
+
+        Object.keys(test.e).forEach(function(key) {
+          it(key, function () {
+            assert.equal(Em.get(config, key), test.e[key], 'validate attribute: ' + key);
+          });
         });
       });
     });
   });
 
   describe('#createKDCCredentials', function() {
+
+    function createConfig (name, value) {
+      return App.ServiceConfigProperty.create({
+        name: name,
+        value: value
+      });
+    }
+    function resolveWith (data) {
+      return $.Deferred().resolve(data).promise();
+    }
+    function rejectWith (data) {
+      return $.Deferred().reject(data).promise();
+    }
 
     beforeEach(function () {
       sinon.stub(App, 'get').withArgs('clusterName').returns('testName');
@@ -90,18 +110,6 @@ describe('App.KDCCredentialsControllerMixin', function() {
       credentialsUtils.updateCredentials.restore();
     });
 
-    var createConfig = function(name, value) {
-      return App.ServiceConfigProperty.create({
-        name: name,
-        value: value
-      });
-    };
-    var resolveWith = function(data) {
-      return $.Deferred().resolve(data).promise();
-    };
-    var rejectWith = function(data) {
-      return $.Deferred().reject(data).promise();
-    };
     [
       {
         configs: [

@@ -46,6 +46,7 @@ data_cleanup_max_size_MB = 100
 ping_port=8670
 cache_dir={ps}var{ps}lib{ps}ambari-agent{ps}cache
 parallel_execution=0
+system_resource_overrides={ps}etc{ps}resource_overrides
 
 [services]
 
@@ -89,6 +90,7 @@ servicesToPidNames = {
   'KERBEROS_SERVER': 'kadmind.pid',
   'HIVE_SERVER': 'hive-server.pid',
   'HIVE_METASTORE': 'hive.pid',
+  'HIVE_SERVER_INTERACTIVE' : 'hive-interactive.pid',
   'MYSQL_SERVER': 'mysqld.pid',
   'HUE_SERVER': '/var/run/hue/supervisor.pid',
   'WEBHCAT_SERVER': 'webhcat.pid',
@@ -203,15 +205,15 @@ class AmbariConfig:
     
   @staticmethod
   def getAlertsLogFile():
-    if 'AMBARI_ALERTS_AGENT_LOG_DIR' in os.environ:
-      return os.path.join(os.environ['AMBARI_ALERTS_AGENT_LOG_DIR'], "ambari-agent.log")
+    if 'AMBARI_AGENT_LOG_DIR' in os.environ:
+      return os.path.join(os.environ['AMBARI_AGENT_LOG_DIR'], "ambari-agent.log")
     else:
       return os.path.join(os.sep, "var", "log", "ambari-agent", "ambari-alerts.log")
 
   @staticmethod
   def getOutFile():
-    if 'AMBARI_AGENT_OUT_DIR' in os.environ:
-      return os.path.join(os.environ['AMBARI_AGENT_OUT_DIR'], "ambari-agent.out")
+    if 'AMBARI_AGENT_LOG_DIR' in os.environ:
+      return os.path.join(os.environ['AMBARI_AGENT_LOG_DIR'], "ambari-agent.out")
     else:
       return os.path.join(os.sep, "var", "log", "ambari-agent", "ambari-agent.out")
 

@@ -41,8 +41,12 @@ App.UpgradeVersionBoxView = Em.View.extend({
    * @type {number}
    */
   installProgress: function() {
-    var requestId = App.get('testMode') ? 1 : App.db.get('repoVersionInstall', 'id')[0];
-    var installRequest = App.router.get('backgroundOperationsController.services').findProperty('id', requestId);
+    if (App.get('testMode')) return 100;
+
+    var installRequest, requestIds = App.db.get('repoVersionInstall', 'id');
+    if (requestIds) {
+      installRequest = App.router.get('backgroundOperationsController.services').findProperty('id', requestIds[0]);
+    }
     return (installRequest) ? installRequest.get('progress') : 0;
   }.property('App.router.backgroundOperationsController.serviceTimestamp'),
 
@@ -77,17 +81,17 @@ App.UpgradeVersionBoxView = Em.View.extend({
    */
   versionStateMap: {
     'current': {
-      'id': 'current',
+      'value': ['CURRENT'],
       'property': 'currentHosts',
       'label': Em.I18n.t('admin.stackVersions.hosts.popup.header.current')
     },
     'installed': {
-      'id': 'installed',
+      'value': ['INSTALLED'],
       'property': 'installedHosts',
       'label': Em.I18n.t('admin.stackVersions.hosts.popup.header.installed')
     },
     'not_installed': {
-      'id': 'installing',
+      'value': ['INSTALLING', 'INSTALL_FAILED', 'OUT_OF_SYNC'],
       'property': 'notInstalledHosts',
       'label': Em.I18n.t('admin.stackVersions.hosts.popup.header.not_installed')
     }
@@ -171,18 +175,18 @@ App.UpgradeVersionBoxView = Em.View.extend({
         var isDisabled = !App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK') || this.get('controller.requestInProgress') || isInstalling;
         element.set('isButtonGroup', true);
         if (status === 'OUT_OF_SYNC') {
-          element.set('text', Em.I18n.t('admin.stackVersions.version.reinstall'));
+          element.set('text', this.get('isVersionColumnView') ? Em.I18n.t('common.reinstall') : Em.I18n.t('admin.stackVersions.version.reinstall'));
           element.set('action', 'installRepoVersionConfirmation');
           element.get('buttons').pushObject({
-            text: Em.I18n.t('admin.stackVersions.version.performUpgrade'),
+            text: this.get('isVersionColumnView') ? Em.I18n.t('common.upgrade') : Em.I18n.t('admin.stackVersions.version.performUpgrade'),
             action: 'confirmUpgrade',
             isDisabled: isDisabled
           });
         } else {
-          element.set('text', Em.I18n.t('admin.stackVersions.version.performUpgrade'));
+          element.set('text', this.get('isVersionColumnView') ? Em.I18n.t('common.upgrade') : Em.I18n.t('admin.stackVersions.version.performUpgrade'));
           element.set('action', 'confirmUpgrade');
           element.get('buttons').pushObject({
-            text: Em.I18n.t('admin.stackVersions.version.reinstall'),
+            text: this.get('isVersionColumnView') ? Em.I18n.t('common.reinstall') : Em.I18n.t('admin.stackVersions.version.reinstall'),
             action: 'installRepoVersionConfirmation',
             isDisabled: isDisabled
           });
@@ -217,7 +221,8 @@ App.UpgradeVersionBoxView = Em.View.extend({
     }
     else if (isAborted) {
       element.setProperties(statePropertiesMap['SUSPENDED']);
-      element.set('text', this.get('controller.isDowngrade') ? Em.I18n.t('admin.stackUpgrade.dialog.resume.downgrade') : Em.I18n.t('admin.stackUpgrade.dialog.resume'));
+      var text = this.get('controller.isDowngrade') ? Em.I18n.t('admin.stackUpgrade.dialog.resume.downgrade') : Em.I18n.t('admin.stackUpgrade.dialog.resume');
+      element.set('text', this.get('isVersionColumnView') ? Em.I18n.t('common.resume'): text);
       element.set('isDisabled', this.get('controller.requestInProgress'));
     }
     return element;
@@ -234,7 +239,18 @@ App.UpgradeVersionBoxView = Em.View.extend({
     App.tooltip($('.link-tooltip'), {title: Em.I18n.t('admin.stackVersions.version.linkTooltip')});
     App.tooltip($('.hosts-tooltip'));
     App.tooltip($('.out-of-sync-badge'), {title: Em.I18n.t('hosts.host.stackVersions.status.out_of_sync')});
+    Em.run.later(this, function () {
+      if (this.get('maintenanceHosts').length + this.get('notRequiredHosts').length) {
+        App.tooltip(this.$('.hosts-section'), {placement: 'bottom', title: Em.I18n.t('admin.stackVersions.version.hostsInfoTooltip').format(
+          this.get('maintenanceHosts').length + this.get('notRequiredHosts').length, this.get('maintenanceHosts').length, this.get('notRequiredHosts').length
+        )});
+      }
+    }, 1000);
   },
+
+  isPatch: function() {
+    return this.get('content.type') == "PATCH";
+  }.property('content.type'),
 
   /**
    * run custom action of controller
@@ -267,7 +283,7 @@ App.UpgradeVersionBoxView = Em.View.extend({
 
     return stackVersion; 
   },
-  
+
   /**
    * show popup with repositories to edit
    * @return {App.ModalPopup}
@@ -300,6 +316,7 @@ App.UpgradeVersionBoxView = Em.View.extend({
     return this.get('isRepoUrlsEditDisabled') ? null : App.ModalPopup.show({
       classNames: ['repository-list', 'sixty-percent-width-modal'],
       skipValidation: false,
+      useRedhatSatellite: false,
       autoHeight: false,
       /**
        * @type {boolean}
@@ -326,14 +343,17 @@ App.UpgradeVersionBoxView = Em.View.extend({
 
           this.get('content.operatingSystems').forEach(function (os) {
             os.get('repositories').forEach(function (repo) {
-              disablePrimary = (!disablePrimary) ? repo.get('hasError') : disablePrimary;
+              disablePrimary = !disablePrimary ? repo.get('hasError') : disablePrimary;
             }, this);
           }, this);
           this.set('parentView.disablePrimary', disablePrimary);
         },
         templateName: require('templates/main/admin/stack_upgrade/edit_repositories'),
         didInsertElement: function () {
-          App.tooltip($("[rel=skip-validation-tooltip]"), {placement: 'right'});
+          App.tooltip($("[rel=skip-validation-tooltip], [rel=use-redhat-tooltip]"), {placement: 'right'});
+        },
+        willDestroyElement: function () {
+          $("[rel=skip-validation-tooltip], [rel=use-redhat-tooltip]").tooltip('destroy');
         }
       }),
       header: Em.I18n.t('common.repositories'),
@@ -362,7 +382,7 @@ App.UpgradeVersionBoxView = Em.View.extend({
   showHosts: function (event) {
     var status = event.contexts[0];
     var displayName = this.get('content.displayName');
-    var hosts = this.get('content').get(status['property']);
+    var hosts = this.get(status['property']);
     var self = this;
     hosts.sort();
     if (hosts.length) {
@@ -377,7 +397,10 @@ App.UpgradeVersionBoxView = Em.View.extend({
         secondary: Em.I18n.t('common.close'),
         onPrimary: function () {
           this.hide();
-          self.filterHostsByStack(displayName, status.id);
+          if ($('.version-box-popup .modal')) {
+            $('.version-box-popup .modal .modal-footer .btn-success').click();
+          }
+          self.filterHostsByStack(displayName, status.value);
         }
       });
     }
@@ -385,14 +408,78 @@ App.UpgradeVersionBoxView = Em.View.extend({
 
   /**
    * goes to the hosts page with content filtered by repo_version_name and repo_version_state
-   * @param displayName
-   * @param state
+   * @param {string} displayName
+   * @param {Array} states
    * @method filterHostsByStack
    */
-  filterHostsByStack: function (displayName, state) {
-    if (!displayName || !state) return;
-    App.router.get('mainHostController').filterByStack(displayName, state);
+  filterHostsByStack: function (displayName, states) {
+    if (Em.isNone(displayName) || Em.isNone(states) || !states.length) return;
+    App.router.get('mainHostController').filterByStack(displayName, states);
     App.router.get('mainHostController').set('showFilterConditionsFirstLoad', true);
+    App.router.get('mainHostController').set('filterChangeHappened', true);
     App.router.transitionTo('hosts.index');
-  }
+  },
+
+  /**
+   * Not installed hosts should exclude 1.not required hosts 2. Maintenance Mode hosts,
+   * or it maybe confusing to users
+   * @type {Array}
+   */
+  notInstalledHosts: function () {
+    var notInstalledHosts = this.get('content.notInstalledHosts') || App.get('allHostNames');
+    var notRequiredHosts = this.get('notRequiredHosts');
+    var maintenanceHosts = this.get('maintenanceHosts');
+    if (notInstalledHosts.length && notRequiredHosts.length) {
+      notRequiredHosts.forEach(function(not_required) {
+        var index = notInstalledHosts.indexOf(not_required);
+        if (index > -1) {
+          notInstalledHosts.splice(index, 1);
+        }
+      });
+    }
+    if (notInstalledHosts.length && maintenanceHosts.length) {
+      maintenanceHosts.forEach(function(mm_host) {
+        var index = notInstalledHosts.indexOf(mm_host);
+        if (index > -1) {
+          notInstalledHosts.splice(index, 1);
+        }
+      });
+    }
+    return notInstalledHosts;
+  }.property('content.notInstalledHosts', 'notRequiredHosts', 'maintenanceHosts'),
+
+  /**
+   * @type {Array}
+   */
+  maintenanceHosts: function () {
+    return App.Host.find().filterProperty('passiveState', 'ON').mapProperty('hostName') || [];
+  }.property(''),
+
+  /**
+   * Host with no HDP component is not required to install new version
+   * @type {Array}
+   */
+  notRequiredHosts: function () {
+    var notRequiredHosts = [];
+    App.Host.find().forEach(function(host) {
+      if (!host.get('hostComponents').someProperty('isHDPComponent')) {
+        notRequiredHosts.push(host.get('hostName'));
+      }
+    });
+    return notRequiredHosts.uniq() || [];
+  }.property(''),
+
+  /**
+   * @type {Array}
+   */
+  installedHosts: function () {
+    return this.get('content.installedHosts') || [];
+  }.property('content.installedHosts'),
+
+  /**
+   * @type {Array}
+   */
+  currentHosts: function () {
+    return this.get('content.currentHosts') || [];
+  }.property('content.currentHosts')
 });

@@ -42,7 +42,6 @@ class HawqSegment(Script):
     env.set_params(hawq_constants)
     common.setup_user()
     common.setup_common_configurations()
-    common.update_bashrc(hawq_constants.hawq_greenplum_path_file, hawq_constants.hawq_user_bashrc_file)
 
 
   def __start_segment(self):
@@ -74,7 +73,7 @@ class HawqSegment(Script):
     from hawqstatus import get_pid_file
     check_process_status(get_pid_file())
 
-  def immediate_stop(self, env):
+  def immediate_stop_hawq_segment(self, env):
     self.stop(env, mode=hawq_constants.IMMEDIATE)
 
 

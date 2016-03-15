@@ -16,7 +16,6 @@
  * limitations under the License.
  */
 
-var Ember = require('ember');
 var App = require('app');
 require('controllers/wizard/step5_controller');
 var modelSetup = require('test/init_model_test');
@@ -26,11 +25,17 @@ describe('App.WizardStep5Controller', function () {
 
   beforeEach(function () {
     c = App.WizardStep5Controller.create();
+    sinon.stub(App.router, 'send', Em.K);
+    App.router.nextBtnClickInProgress = false;
+  });
+
+  afterEach(function () {
+    App.router.send.restore();
+    App.router.nextBtnClickInProgress = false;
   });
 
   var controller = App.WizardStep5Controller.create();
   controller.set('content', {});
-  var cpu = 2, memory = 4;
 
   controller.set('content', {});
 
@@ -704,11 +709,8 @@ describe('App.WizardStep5Controller', function () {
           });
 
           it('all needed hosts have valid data', function () {
-            result.forEach(function (r, i) {
-              expect(r.get('host_name')).to.equal(test.e[i].host_name);
-              expect(r.get('masterServices.length')).to.equal(test.e[i].masterServices.length);
-              expect(r.get('hostInfo')).to.be.an.object;
-            });
+            expect(result.mapProperty('host_name')).to.be.eql(test.e.mapProperty('host_name'));
+            expect(result.mapProperty('masterServices.length')).to.be.eql(test.e.mapProperty('masterServices.length'));
           });
         });
       });
@@ -1259,31 +1261,17 @@ describe('App.WizardStep5Controller', function () {
 
   });
 
-  describe('#sortComponentsByServiceName', function () {
+  describe('#submit',function(){
+    it('if Next button is clicked multiple times before the next step renders, it must not be processed',function(){
+      c.reopen({isSubmitDisabled:false, submitDisabled:false, useServerValidation:false});
+      c.submit();
+      expect(App.router.send.calledWith('next')).to.equal(true);
 
-    var components = [{
-      "component_name": "METRICS_COLLECTOR",
-      "serviceId": "AMBARI_METRICS"
-    }, {"component_name": "ZOOKEEPER_SERVER", "serviceId": "ZOOKEEPER"}, {
-      "component_name": "NAMENODE",
-      "serviceId": "HDFS"
-    }, {"component_name": "DRPC_SERVER", "serviceId": "STORM"}, {
-      "component_name": "APP_TIMELINE_SERVER",
-      "serviceId": "YARN"
-    }, {"component_name": "RESOURCEMANAGER", "serviceId": "YARN"}, {
-      "component_name": "SECONDARY_NAMENODE",
-      "serviceId": "HDFS"
-    }, {"component_name": "ZOOKEEPER_SERVER", "serviceId": "ZOOKEEPER"}, {
-      "component_name": "HISTORYSERVER",
-      "serviceId": "MAPREDUCE2"
-    }, {"component_name": "NIMBUS", "serviceId": "STORM"}, {"component_name": "STORM_UI_SERVER", "serviceId": "STORM"}];
+      App.router.send.reset();
+      c.submit();
+      expect(App.router.send.calledWith('next')).to.equal(false);
 
-    it('ZKS should be one after anothert', function () {
-      var sorted = c.sortComponentsByServiceName(components);
-      expect(sorted.mapProperty('component_name').join('|').contains('ZOOKEEPER_SERVER|ZOOKEEPER_SERVER')).to.be.true;
     });
-
-
   });
 
 });

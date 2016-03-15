@@ -21,7 +21,7 @@ limitations under the License.
 from ambari_commons import OSCheck
 
 from resource_management.libraries.functions import conf_select
-from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions import stack_select
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions import get_kinit_path
@@ -34,10 +34,12 @@ SERVER_ROLE_DIRECTORY_MAP = {
   'HIVE_SERVER' : 'hive-server2',
   'WEBHCAT_SERVER' : 'hive-webhcat',
   'HIVE_CLIENT' : 'hive-client',
-  'HCAT' : 'hive-client'
+  'HCAT' : 'hive-client',
+  'HIVE_SERVER_INTERACTIVE' : 'hive-server2-hive2'
 }
 
 component_directory = Script.get_component_from_role(SERVER_ROLE_DIRECTORY_MAP, "HIVE_CLIENT")
+component_directory_interactive = Script.get_component_from_role(SERVER_ROLE_DIRECTORY_MAP, "HIVE_SERVER_INTERACTIVE")
 
 config = Script.get_config()
 
@@ -49,7 +51,7 @@ if OSCheck.is_windows_family():
 else:
   hive_pid_dir = config['configurations']['hive-env']['hive_pid_dir']
   hive_pid = 'hive-server.pid'
-
+  hive_interactive_pid = 'hive-interactive.pid'
   hive_metastore_pid = 'hive.pid'
 
   hcat_pid_dir = config['configurations']['hive-env']['hcat_pid_dir'] #hcat_pid_dir
@@ -72,31 +74,38 @@ else:
 
   # default configuration directories
   hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
-  hadoop_bin_dir = hdp_select.get_hadoop_dir("bin")
+  hadoop_bin_dir = stack_select.get_hadoop_dir("bin")
   webhcat_conf_dir = '/etc/hive-webhcat/conf'
   hive_etc_dir_prefix = "/etc/hive"
+  hive_interactive_etc_dir_prefix = "/etc/hive2"
   hive_conf_dir = "/etc/hive/conf"
   hive_client_conf_dir = "/etc/hive/conf"
 
   # !!! required by ranger to be at this location unless HDP 2.3+
   hive_server_conf_dir = "/etc/hive/conf.server"
+  hive_server_interactive_conf_dir = "/etc/hive2/conf.server"
 
   # HDP 2.2+
-  if Script.is_hdp_stack_greater_or_equal("2.2"):
+  if Script.is_stack_greater_or_equal("2.2"):
     webhcat_conf_dir = '/usr/hdp/current/hive-webhcat/conf'
     hive_conf_dir = format("/usr/hdp/current/{component_directory}/conf")
     hive_client_conf_dir = format("/usr/hdp/current/{component_directory}/conf")
 
   # HDP 2.3+
-  if Script.is_hdp_stack_greater_or_equal("2.3"):
+  if Script.is_stack_greater_or_equal("2.3"):
     # ranger is only compatible with this location on HDP 2.3+, not HDP 2.2
     hive_server_conf_dir = format("/usr/hdp/current/{component_directory}/conf/conf.server")
+
 
     # this is NOT a typo.  HDP-2.3 configs for hcatalog/webhcat point to a
     # specific directory which is NOT called 'conf'
     webhcat_conf_dir = '/usr/hdp/current/hive-webhcat/etc/webhcat'
     hive_conf_dir = hive_server_conf_dir
 
+  if Script.is_stack_greater_or_equal("2.6"):
+    hive_server_interactive_conf_dir = format("/usr/hdp/current/{component_directory_interactive}/conf/conf.server")
+
   hive_config_dir = hive_client_conf_dir
-  if 'role' in config and config['role'] in ["HIVE_SERVER", "HIVE_METASTORE"]:
+
+  if 'role' in config and config['role'] in ["HIVE_SERVER", "HIVE_METASTORE", "HIVE_SERVER_INTERACTIVE"]:
     hive_config_dir = hive_server_conf_dir

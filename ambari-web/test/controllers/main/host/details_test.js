@@ -24,6 +24,7 @@ require('models/host_component');
 require('models/host_stack_version');
 var batchUtils = require('utils/batch_scheduled_requests');
 var hostsManagement = require('utils/hosts');
+var testHelpers = require('test/helpers');
 var controller;
 
 function getController() {
@@ -36,15 +37,7 @@ function getController() {
 describe('App.MainHostDetailsController', function () {
 
   beforeEach(function () {
-    sinon.stub(App.ajax, 'send').returns({
-      then: Em.K,
-      complete: Em.K
-    });
     controller = getController();
-  });
-
-  afterEach(function () {
-    App.ajax.send.restore();
   });
 
   App.TestAliases.testAsComputedFilterBy(getController(), 'serviceNonClientActiveComponents', 'serviceActiveComponents', 'isClient', false);
@@ -140,14 +133,12 @@ describe('App.MainHostDetailsController', function () {
   describe("#pullNnCheckPointTime()", function() {
     it("valid request is sent", function() {
       controller.pullNnCheckPointTime('host1');
-      expect(App.ajax.send.calledWith({
-        name: 'common.host_component.getNnCheckPointTime',
-        sender: controller,
-        data: {
-          host: 'host1'
-        },
-        success: 'parseNnCheckPointTime'
-      })).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'common.host_component.getNnCheckPointTime');
+      expect(args[0]).to.exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].data).to.be.eql({
+        host: 'host1'
+      });
     });
   });
 
@@ -166,11 +157,14 @@ describe('App.MainHostDetailsController', function () {
       });
 
       it('1st call endpoint is valid', function () {
-        expect(App.ajax.send.getCall(0).args[0].name).to.be.equal('common.host.host_component.update');
+        var args = testHelpers.findAjaxRequest('name', 'common.host.host_component.update');
+        expect(args).to.exists;
       });
 
       it('1st call data is valid', function () {
-        expect(App.ajax.send.getCall(0).args[0].data).to.be.eql({
+        var args = testHelpers.findAjaxRequest('name', 'common.host.host_component.update');
+        expect(args[0]).to.exists;
+        expect(args[0].data).to.be.eql({
           "hostName": "host1",
           "context": {},
           "component": component,
@@ -201,11 +195,14 @@ describe('App.MainHostDetailsController', function () {
       });
 
       it('1st call endpoint is valid', function () {
-        expect(App.ajax.send.getCall(0).args[0].name).to.be.equal('common.host.host_components.update');
+        var args = testHelpers.findAjaxRequest('name', 'common.host.host_components.update');
+        expect(args).exists;
       });
 
       it('1st call data is valid', function () {
-        expect(App.ajax.send.getCall(0).args[0].data).to.be.eql({
+        var args = testHelpers.findAjaxRequest('name', 'common.host.host_components.update');
+        expect(args[0]).exists;
+        expect(args[0].data).to.be.eql({
           "hostName": "host1",
           "context": {},
           "component": component,
@@ -231,14 +228,12 @@ describe('App.MainHostDetailsController', function () {
     beforeEach(function () {
       sinon.stub(controller, 'mimicWorkStatusChange', Em.K);
       sinon.stub(controller, 'showBackgroundOperationsPopup', Em.K);
-      sinon.stub(App, 'get').withArgs('testMode').returns(false);
       controller.sendComponentCommandSuccessCallback({}, {}, params);
     });
 
     afterEach(function () {
       controller.showBackgroundOperationsPopup.restore();
       controller.mimicWorkStatusChange.restore();
-      App.get.restore();
     });
 
     it('mimicWorkStatusChange is not called', function () {
@@ -466,7 +461,8 @@ describe('App.MainHostDetailsController', function () {
       var popup = controller.upgradeComponent({context: Em.Object.create()});
       expect(App.showConfirmationPopup.calledOnce).to.be.true;
       popup.onPrimary();
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'host.host_component.upgrade');
+      expect(args).exists;
     });
   });
 
@@ -475,9 +471,7 @@ describe('App.MainHostDetailsController', function () {
     beforeEach(function () {
       sinon.spy(App, "showConfirmationPopup");
       sinon.stub(batchUtils, "restartHostComponents", Em.K);
-      sinon.stub(controller, 'checkNnLastCheckpointTime', function(callback) {
-        callback();
-      });
+      sinon.stub(controller, 'checkNnLastCheckpointTime', Em.clb);
     });
     afterEach(function () {
       App.showConfirmationPopup.restore();
@@ -636,15 +630,12 @@ describe('App.MainHostDetailsController', function () {
           }
         }
       }});
-      expect(App.ajax.send.calledWith({
-        name: 'admin.get.all_configurations',
-        sender: controller,
-        data: {
-          urlParams: '(type=oozie-env&tag=tag)'
-        },
-        success: 'onLoadOozieConfigs',
-        error: 'onLoadConfigsErrorCallback'
-      })).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'admin.get.all_configurations');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].data).to.be.eql({
+        urlParams: '(type=oozie-env&tag=tag)'
+      });
     });
   });
 
@@ -657,14 +648,12 @@ describe('App.MainHostDetailsController', function () {
           }
         }
       }});
-      expect(App.ajax.send.calledWith({
-        name: 'admin.get.all_configurations',
-        sender: controller,
-        data: {
-          urlParams: '(type=storm-site&tag=tag)'
-        },
-        success: 'onLoadStormConfigs'
-      })).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'admin.get.all_configurations');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].data).to.be.eql({
+        urlParams: '(type=storm-site&tag=tag)'
+      });
     });
   });
 
@@ -730,14 +719,12 @@ describe('App.MainHostDetailsController', function () {
           }
         }
       }});
-      expect(App.ajax.send.calledWith({
-        name: 'admin.get.all_configurations',
-        sender: controller,
-        data: {
-          urlParams: '(type=hive-site&tag=tag)|(type=webhcat-site&tag=tag)|(type=hive-env&tag=tag)|(type=core-site&tag=tag)'
-        },
-        success: 'onLoadHiveConfigs'
-      })).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'admin.get.all_configurations');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].data).to.be.eql({
+        urlParams: '(type=hive-site&tag=tag)|(type=webhcat-site&tag=tag)|(type=hive-env&tag=tag)|(type=core-site&tag=tag)'
+      });
     });
   });
 
@@ -756,14 +743,12 @@ describe('App.MainHostDetailsController', function () {
           }
         }
       }});
-      expect(App.ajax.send.calledWith({
-        name: 'admin.get.all_configurations',
-        sender: controller,
-        data: {
-          urlParams: '(type=core-site&tag=tag)|(type=hdfs-site&tag=tag)|(type=kms-env&tag=tag)'
-        },
-        success: 'onLoadRangerConfigs'
-      })).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'admin.get.all_configurations');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].data).to.be.eql({
+        urlParams: '(type=core-site&tag=tag)|(type=hdfs-site&tag=tag)|(type=kms-env&tag=tag)'
+      });
     });
   });
 
@@ -827,10 +812,7 @@ describe('App.MainHostDetailsController', function () {
 
   describe('#showAddComponentPopup()', function () {
 
-    var message = 'Comp1',
-      component = Em.Object.create({
-        componentName: ' Comp1'
-      });
+    var message = 'Comp1';
 
     beforeEach(function () {
       sinon.spy(App.ModalPopup, 'show');
@@ -857,7 +839,6 @@ describe('App.MainHostDetailsController', function () {
     });
 
     it('data is null', function () {
-      var data = {Requests: null};
       expect(controller.installNewComponentSuccessCallback(null, {}, {})).to.be.false;
       expect(controller.showBackgroundOperationsPopup.called).to.be.false;
     });
@@ -906,31 +887,71 @@ describe('App.MainHostDetailsController', function () {
         host: {}
       });
       controller.sendRefreshComponentConfigsCommand(component, {});
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'host.host_component.refresh_configs');
+      expect(args[0]).exists;
     });
   });
 
   describe('#loadConfigs()', function () {
     it('Query should be sent', function () {
       controller.loadConfigs();
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'config.tags');
+      expect(args).exists;
     });
   });
 
   describe('#constructConfigUrlParams()', function () {
 
+    function loadService(serviceName) {
+      App.store.load(App.Service, {
+        id: serviceName,
+        service_name: serviceName
+      });
+    }
+
+    var data = {
+      Clusters: {
+        desired_configs: {
+          'core-site': {
+            tag: 1
+          },
+          'hbase-site': {
+            tag: 1
+          },
+          'webhcat-site': {
+            tag: 1
+          },
+          'hive-site': {
+            tag: 1
+          },
+          'storm-site': {
+            tag: 1
+          },
+          'yarn-site': {
+            tag: 1
+          },
+          'zoo.cfg': {
+            tag: 1
+          },
+          'accumulo-site': {
+            tag: 1
+          }
+        }
+      }
+    };
+
+    afterEach(function () {
+      App.Service.find().clear();
+    });
+
     it('URL params should be empty', function () {
-      var data = {};
       App.Service.find().clear();
       expect(controller.constructConfigUrlParams(data)).to.eql([]);
     });
 
     it('isHaEnabled = true', function () {
-      App.store.load(App.Service, {
-        id: 'HDFS',
-        service_name: 'HDFS'
-      });
-      var data = {Clusters: {desired_configs: {'core-site': {tag: 1}}}};
+      loadService('HDFS');
+
       App.HostComponent.find().clear();
       App.propertyDidChange('isHaEnabled');
       expect(controller.constructConfigUrlParams(data)).to.eql(['(type=core-site&tag=1)']);
@@ -942,46 +963,31 @@ describe('App.MainHostDetailsController', function () {
     });
 
     it('HBASE is installed', function () {
-      App.store.load(App.Service, {
-        id: 'HBASE',
-        service_name: 'HBASE'
-      });
+      loadService('HBASE');
       App.propertyDidChange('isHaEnabled');
-      var data = {Clusters: {desired_configs: {'hbase-site': {tag: 1}}}};
       expect(controller.constructConfigUrlParams(data)).to.eql(['(type=hbase-site&tag=1)']);
-      App.Service.find().clear();
     });
 
     it('HIVE is installed', function () {
-      App.store.load(App.Service, {
-        id: 'HIVE',
-        service_name: 'HIVE'
-      });
-      var data = {Clusters: {desired_configs: {'webhcat-site': {tag: 1}, 'hive-site': {tag: 1}}}};
+      loadService('HIVE');
       expect(controller.constructConfigUrlParams(data)).to.eql(['(type=webhcat-site&tag=1)', '(type=hive-site&tag=1)']);
-      App.Service.find().clear();
     });
 
     it('STORM is installed', function () {
-      App.store.load(App.Service, {
-        id: 'STORM',
-        service_name: 'STORM'
-      });
-      var data = {Clusters: {desired_configs: {'storm-site': {tag: 1}}}};
+      loadService('STORM');
       expect(controller.constructConfigUrlParams(data)).to.eql(['(type=storm-site&tag=1)']);
-      App.Service.find().clear();
     });
 
     it('YARN for 2.2 stack is installed', function () {
       App.set('currentStackVersion', 'HDP-2.2.0');
-      App.store.load(App.Service, {
-        id: 'YARN',
-        service_name: 'YARN'
-      });
-      var data = {Clusters: {desired_configs: {'yarn-site': {tag: 1}, 'zoo.cfg': {tag: 1}}}};
+      loadService('YARN');
       expect(controller.constructConfigUrlParams(data)).to.eql(['(type=yarn-site&tag=1)', '(type=zoo.cfg&tag=1)']);
       App.set('currentStackVersion', 'HDP-2.0.1');
-      App.Service.find().clear();
+    });
+
+    it('ACCUMULO is installed', function () {
+      loadService('ACCUMULO');
+      expect(controller.constructConfigUrlParams(data)).to.eql(['(type=accumulo-site&tag=1)']);
     });
 
     describe('isRMHaEnabled true', function () {
@@ -993,7 +999,6 @@ describe('App.MainHostDetailsController', function () {
       });
 
       it('params are valid', function () {
-        var data = {Clusters: {desired_configs: {'yarn-site': {tag: 1}, 'zoo.cfg': {tag: 1}}}};
         expect(controller.constructConfigUrlParams(data)).to.eql(['(type=yarn-site&tag=1)', '(type=zoo.cfg&tag=1)']);
       });
 
@@ -1013,12 +1018,13 @@ describe('App.MainHostDetailsController', function () {
 
     it('url params is empty', function () {
       expect(controller.loadConfigsSuccessCallback()).to.be.false;
-      expect(App.ajax.send.called).to.be.false;
+      var args = testHelpers.findAjaxRequest('name', 'reassign.load_configs');
+      expect(args).not.exists;
     });
     it('url params are correct', function () {
       mockUrlParams = ['param1'];
-      expect(controller.loadConfigsSuccessCallback()).to.be.true;
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'reassign.load_configs');
+      expect(args).exists;
     });
   });
 
@@ -1123,20 +1129,140 @@ describe('App.MainHostDetailsController', function () {
       });
     });
 
+    describe('check groups', function () {
+
+      var data = {
+        items: [
+          {
+            type: 'hive-site',
+            properties: {
+              hs: 'hs'
+            },
+            properties_attributes: {
+              hs: 'pa_hs'
+            }
+          },
+          {
+            type: 'webhcat-site',
+            properties: {
+              ws: 'ws'
+            },
+            properties_attributes: {
+              ws: 'pa_ws'
+            }
+          },
+          {
+            type: 'hbase-site',
+            properties: {
+              hbs: 'hbs'
+            },
+            properties_attributes: {
+              hbs: 'pa_hbs'
+            }
+          },
+          {
+            type: 'accumulo-site',
+            properties: {
+              as: 'as'
+            },
+            properties_attributes: {
+              as: 'pa_as'
+            }
+          }
+        ]
+      };
+
+      beforeEach(function () {
+        sinon.stub(controller, 'updateZkConfigs', Em.K);
+        sinon.stub(App.Service, 'find', function () {
+          return [
+            {serviceName: 'YARN'},
+            {serviceName: 'HBASE'},
+            {serviceName: 'ACCUMULO'}
+          ];
+        });
+        controller.saveZkConfigs(data);
+        this.groups = controller.saveConfigsBatch.args[0][0];
+      });
+
+      afterEach(function () {
+        controller.updateZkConfigs.restore();
+        App.Service.find.restore();
+      });
+
+      it('configs for HIVE', function () {
+        var expected = {
+          "properties": {
+            "hive-site": {
+              "hs": "hs"
+            },
+            "webhcat-site": {
+              "ws": "ws"
+            }
+          },
+          "properties_attributes": {
+            "hive-site": {
+              "hs": "pa_hs"
+            },
+            "webhcat-site": {
+              "ws": "pa_ws"
+            }
+          }
+        };
+        expect(this.groups[0]).to.be.eql(expected);
+      });
+
+      it('configs for HBASE', function () {
+        var expected = {
+          "properties": {
+            "hbase-site": {
+              "hbs": "hbs"
+            }
+          },
+          "properties_attributes": {
+            "hbase-site": {
+              "hbs": "pa_hbs"
+            }
+          }
+        };
+        expect(this.groups[1]).to.be.eql(expected);
+      });
+
+      it('configs for ACCUMULO', function () {
+        var expected = {
+          "properties": {
+            "accumulo-site": {
+              "as": "as"
+            }
+          },
+          "properties_attributes": {
+            "accumulo-site": {
+              "as": "pa_as"
+            }
+          }
+        };
+        expect(this.groups[2]).to.be.eql(expected);
+      });
+
+    });
+
   });
 
   describe("#saveConfigsBatch()", function () {
     it("no groups", function () {
       controller.saveConfigsBatch([]);
-      expect(App.ajax.send.called).to.be.false;
+      var args = testHelpers.filterAjaxRequests('name', 'common.service.configurations');
+      expect(args).to.be.empty;
     });
     it("configs is empty", function () {
       controller.saveConfigsBatch([{}]);
-      expect(App.ajax.send.called).to.be.false;
+      var args = testHelpers.filterAjaxRequests('name', 'common.service.configurations');
+      expect(args).to.be.empty;
     });
     it("configs is correct", function () {
       controller.saveConfigsBatch([{'properties': {'site': {}}, 'properties_attributes': {'site': {}}}]);
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.filterAjaxRequests('name', 'common.service.configurations');
+      expect(args).to.have.property('length').equal(1);
     });
   });
 
@@ -1447,7 +1573,8 @@ describe('App.MainHostDetailsController', function () {
       var popup = controller.installComponent(event);
       expect(App.ModalPopup.show.calledOnce).to.be.true;
       popup.onPrimary();
-      expect(App.ajax.send.called).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'common.host.host_component.update');
+      expect(args).exists;
     });
   });
 
@@ -1560,14 +1687,16 @@ describe('App.MainHostDetailsController', function () {
   describe('#doDecommission()', function () {
     it('Query should be sent', function () {
       controller.doDecommission('', '', '', '');
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'host.host_component.decommission_slave');
+      expect(args).exists;
     });
   });
 
   describe('#doDecommissionRegionServer()', function () {
     it('Query should be sent', function () {
       controller.doDecommissionRegionServer('', '', '', '');
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'host.host_component.recommission_and_restart');
+      expect(args).exists;
     });
   });
 
@@ -1608,7 +1737,9 @@ describe('App.MainHostDetailsController', function () {
       expect(result).to.be.an('object');
     });
     it('request is sent with correct data', function () {
-      expect(App.ajax.send.getCall(0).args[0].data.hostNames).to.equal('host1');
+      var args = testHelpers.findAjaxRequest('name', 'host.region_servers.in_inservice');
+      expect(args[0]).exists;
+      expect(args[0].data.hostNames).to.be.equal('host1');
     });
   });
 
@@ -1699,7 +1830,8 @@ describe('App.MainHostDetailsController', function () {
   describe('#doRecommissionAndStart()', function () {
     it('Query should be sent', function () {
       controller.doRecommissionAndStart('', '', '', '');
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'host.host_component.recommission_and_restart');
+      expect(args).exists;
     });
   });
 
@@ -1856,7 +1988,8 @@ describe('App.MainHostDetailsController', function () {
   describe('#hostPassiveModeRequest()', function () {
     it('Query should be sent', function () {
       controller.hostPassiveModeRequest('', '');
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'bulk_request.hosts.passive_state');
+      expect(args).exists;
     });
   });
 
@@ -2013,7 +2146,7 @@ describe('App.MainHostDetailsController', function () {
       this.stub = sinon.stub(App.HostComponent, 'find').returns([{
         id: 'TASKTRACKER_host1',
         componentName: 'TASKTRACKER'
-      }]);;
+      }]);
     });
 
     afterEach(function () {
@@ -2483,7 +2616,8 @@ describe('App.MainHostDetailsController', function () {
       var popup = controller.executeCustomCommand({context: Em.Object.create()});
       expect(App.showConfirmationPopup.calledOnce).to.be.true;
       popup.onPrimary();
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'service.item.executeCustomCommand');
+      expect(args).exists;
     });
   });
 
@@ -2492,8 +2626,9 @@ describe('App.MainHostDetailsController', function () {
       controller.set('content.hostName', 'host1');
       var component = Em.Object.create({componentName: 'COMP'});
       controller._doDeleteHostComponent(component);
-      expect(App.ajax.send.getCall(0).args[0].name).to.be.equal('common.delete.host_component');
-      expect(App.ajax.send.getCall(0).args[0].data).to.be.eql({
+      var args = testHelpers.findAjaxRequest('name', 'common.delete.host_component');
+      expect(args[0]).exists;
+      expect(args[0].data).to.be.eql({
         componentName: 'COMP',
         hostName: 'host1'
       });
@@ -2501,8 +2636,9 @@ describe('App.MainHostDetailsController', function () {
     it('all components', function () {
       controller.set('content.hostName', 'host1');
       controller._doDeleteHostComponent(null);
-      expect(App.ajax.send.getCall(0).args[0].name).to.be.equal('common.delete.host');
-      expect(App.ajax.send.getCall(0).args[0].data).to.be.eql({
+      var args = testHelpers.findAjaxRequest('name', 'common.delete.host');
+      expect(args[0]).exists;
+      expect(args[0].data).to.be.eql({
         componentName: '',
         hostName: 'host1'
       });
@@ -2588,16 +2724,7 @@ describe('App.MainHostDetailsController', function () {
       controller.mimicWorkStatusChange.restore();
       controller.showBackgroundOperationsPopup.restore();
     });
-    it('testMode is true', function () {
-      App.set('testMode', true);
-
-      controller.upgradeComponentSuccessCallback({}, {}, {component: "COMP"});
-      expect(controller.mimicWorkStatusChange.calledWith("COMP", App.HostComponentStatus.starting, App.HostComponentStatus.started)).to.be.true;
-      expect(controller.showBackgroundOperationsPopup.calledOnce).to.be.true;
-    });
     it('testMode is false', function () {
-      App.set('testMode', false);
-
       controller.upgradeComponentSuccessCallback({}, {}, {component: "COMP"});
       expect(controller.mimicWorkStatusChange.called).to.be.false;
       expect(controller.showBackgroundOperationsPopup.calledOnce).to.be.true;
@@ -2687,12 +2814,10 @@ describe('App.MainHostDetailsController', function () {
     beforeEach(function () {
       sinon.stub(controller, 'showBackgroundOperationsPopup', Em.K);
       sinon.stub(controller, 'mimicWorkStatusChange', Em.K);
-      sinon.stub(App, 'get').withArgs('testMode').returns(false);
     });
     afterEach(function () {
       controller.mimicWorkStatusChange.restore();
       controller.showBackgroundOperationsPopup.restore();
-      App.get.restore();
     });
 
     it('testMode is false', function () {
@@ -2742,7 +2867,9 @@ describe('App.MainHostDetailsController', function () {
         componentName: 'COMP1'
       });
       controller.updateComponentPassiveState(component, 'state', 'message');
-      expect(App.ajax.send.getCall(0).args[0].data).to.be.eql({
+      var args = testHelpers.findAjaxRequest('name', 'common.host.host_component.passive');
+      expect(args[0]).exists;
+      expect(args[0].data).to.be.eql({
         "hostName": "host1",
         "componentName": "COMP1",
         "component": component,
@@ -2808,6 +2935,16 @@ describe('App.MainHostDetailsController', function () {
       expect(controller.updateComponentPassiveState.calledWith(Em.Object.create({
         passiveState: 'OFF'
       }), 'ON')).to.be.true;
+    });
+    it('isImpliedState is true', function () {
+      var event = {
+        context: Em.Object.create({
+          isImpliedState: true
+        })
+      };
+      var result = controller.toggleMaintenanceMode(event);
+      expect(App.showConfirmationPopup.calledOnce).to.be.false;
+      expect(result).to.be.null;
     });
   });
 
@@ -2926,7 +3063,7 @@ describe('App.MainHostDetailsController', function () {
       describe(item.title, function () {
 
         beforeEach(function () {
-          sinon.stub(controller, 'checkComponentDependencies', function (componentName, params) {
+          sinon.stub(controller, 'checkComponentDependencies', function (componentName) {
             return item.dependencies[componentName];
           });
           controller.installClients({
@@ -3039,16 +3176,17 @@ describe('App.MainHostDetailsController', function () {
       beforeEach(function () {
         controller.set('content.hostComponents', Em.A([]));
         controller.doDeleteHost(Em.K);
+        this.args = testHelpers.findAjaxRequest('name', 'common.delete.host');
       });
 
       it('fromDeleteHost is true', function () {
         expect(controller.get('fromDeleteHost')).to.be.true;
       });
       it('1st request is to delete host', function () {
-        expect(App.ajax.send.getCall(0).args[0].name).to.be.equal('common.delete.host');
+        expect(this.args[0]).exists;
       });
       it('1st request is done with valid hostName', function () {
-        expect(App.ajax.send.getCall(0).args[0].data.hostName).to.be.equal('host1');
+        expect(this.args[0].data.hostName).to.be.equal('host1');
       });
     });
 
@@ -3070,10 +3208,12 @@ describe('App.MainHostDetailsController', function () {
         expect(controller.get('fromDeleteHost')).to.be.true;
       });
       it('1st request is to delete host', function () {
-        expect(App.ajax.send.getCall(0).args[0].name).to.be.equal('common.delete.host');
+        var args = testHelpers.findAjaxRequest('name', 'common.delete.host');
+        expect(args[0]).exists;
       });
       it('1st request is done with valid hostName', function () {
-        expect(App.ajax.send.getCall(0).args[0].data.hostName).to.be.equal('host1');
+        var args = testHelpers.findAjaxRequest('name', 'common.delete.host');
+        expect(args[0].data.hostName).to.be.equal('host1');
       });
 
     });
@@ -3176,14 +3316,12 @@ describe('App.MainHostDetailsController', function () {
     it("call App.ajax.send", function () {
       controller.set('content.hostName', 'host1');
       controller.installVersion({context: {}});
-      expect(App.ajax.send.getCall(0).args[0]).to.eql({
-        name: 'host.stack_versions.install',
-        sender: controller,
-        data: {
-          hostName: 'host1',
-          version: {}
-        },
-        success: 'installVersionSuccessCallback'
+      var args = testHelpers.findAjaxRequest('name', 'host.stack_versions.install');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].data).to.be.eql({
+        hostName: 'host1',
+        version: {}
       });
     });
   });
@@ -3439,7 +3577,7 @@ describe('App.MainHostDetailsController', function () {
   describe("#removeHostComponentModel()", function () {
 
     beforeEach(function () {
-      App.cache['services'] = [
+      App.cache.services = [
         {
           ServiceInfo: {
             service_name: 'S1'
@@ -3465,7 +3603,7 @@ describe('App.MainHostDetailsController', function () {
       App.serviceMapper.deleteRecord.restore();
     });
     it("App.cache is updated", function () {
-      expect(App.cache['services'][0].host_components).to.be.empty;
+      expect(App.cache.services[0].host_components).to.be.empty;
     });
     it('Record is deleted', function () {
       expect(App.serviceMapper.deleteRecord.calledOnce).to.be.true;
@@ -3684,8 +3822,8 @@ describe('App.MainHostDetailsController', function () {
 
     var makeHostComponentModel = function(componentName, hostNames) {
       if (Em.isArray(componentName)) {
-        return componentName.map(function(componentName, index) {
-          return makeHostComponentModel(componentName, hostNames[index]);
+        return componentName.map(function(cName, index) {
+          return makeHostComponentModel(cName, hostNames[index]);
         }).reduce(function(p,c) { return p.concat(c); }, []);
       }
       return hostNames.map(function(hostName) {
@@ -3734,15 +3872,13 @@ describe('App.MainHostDetailsController', function () {
               ['hive.metastore.uris', 'thrift://host1:9090']
             ]),
             makeFileNameProps('hive-env', [
-              ['hive_user', 'hive_user_val'],
-              ['webhcat_user', 'webhcat_user_val']
+              ['hive_user', 'hive_user_val']
             ]),
             makeFileNameProps('webhcat-site', [
               ['templeton.hive.properties', 'hive.metastore.local=false,hive.metastore.uris=thrift://host1:9083,hive.metastore.sasl.enabled=false']
             ]),
             makeFileNameProps('core-site', [
-              ['hadoop.proxyuser.hive_user_val.hosts', 'host1'],
-              ['hadoop.proxyuser.webhcat_user_val.hosts', 'host1']
+              ['hadoop.proxyuser.hive_user_val.hosts', 'host1']
             ])
           ]
         },
@@ -3758,8 +3894,7 @@ describe('App.MainHostDetailsController', function () {
                   ['templeton.hive.properties', 'hive.metastore.local=false,hive.metastore.uris=thrift://host1:9090,hive.metastore.sasl.enabled=false']
                 ]).properties,
                 "hive-env": makeFileNameProps('hive-env', [
-                  ['hive_user', 'hive_user_val'],
-                  ['webhcat_user', 'webhcat_user_val']
+                  ['hive_user', 'hive_user_val']
                 ]).properties
               },
               "properties_attributes": makeEmptyPropAttrs("hive-site", "webhcat-site", "hive-env")
@@ -3767,8 +3902,7 @@ describe('App.MainHostDetailsController', function () {
             {
               "properties": {
                 "core-site": makeFileNameProps('core-site', [
-                  ['hadoop.proxyuser.hive_user_val.hosts', 'host1,host2'],
-                  ['hadoop.proxyuser.webhcat_user_val.hosts', 'host1,host2']
+                  ['hadoop.proxyuser.hive_user_val.hosts', 'host1,host2']
                 ]).properties
               },
               "properties_attributes": makeEmptyPropAttrs("core-site")
@@ -3787,15 +3921,13 @@ describe('App.MainHostDetailsController', function () {
               ['hive.metastore.uris', 'thrift://host1']
             ]),
             makeFileNameProps('hive-env', [
-              ['hive_user', 'hive_user_val'],
-              ['webhcat_user', 'webhcat_user_val']
+              ['hive_user', 'hive_user_val']
             ]),
             makeFileNameProps('webhcat-site', [
               ['templeton.hive.properties', 'hive.metastore.local=false,hive.metastore.uris=thrift://host1:9083,hive.metastore.sasl.enabled=false']
             ]),
             makeFileNameProps('core-site', [
-              ['hadoop.proxyuser.hive_user_val.hosts', 'host1'],
-              ['hadoop.proxyuser.webhcat_user_val.hosts', 'host1']
+              ['hadoop.proxyuser.hive_user_val.hosts', 'host1']
             ])
           ]
         },
@@ -3811,8 +3943,7 @@ describe('App.MainHostDetailsController', function () {
                   ['templeton.hive.properties', 'hive.metastore.local=false,hive.metastore.uris=thrift://host1:9083\\,thrift://host2:9083\\,thrift://host3:9083,hive.metastore.sasl.enabled=false']
                 ]).properties,
                 "hive-env": makeFileNameProps('hive-env', [
-                  ['hive_user', 'hive_user_val'],
-                  ['webhcat_user', 'webhcat_user_val']
+                  ['hive_user', 'hive_user_val']
                 ]).properties
               },
               "properties_attributes": makeEmptyPropAttrs("hive-site", "webhcat-site", "hive-env")
@@ -3820,8 +3951,7 @@ describe('App.MainHostDetailsController', function () {
             {
               "properties": {
                 "core-site": makeFileNameProps('core-site', [
-                  ['hadoop.proxyuser.hive_user_val.hosts', 'host1,host2,host3'],
-                  ['hadoop.proxyuser.webhcat_user_val.hosts', 'host1,host2,host3']
+                  ['hadoop.proxyuser.hive_user_val.hosts', 'host1,host2,host3']
                 ]).properties
               },
               "properties_attributes": makeEmptyPropAttrs("core-site")
@@ -3841,15 +3971,13 @@ describe('App.MainHostDetailsController', function () {
               ['hive.metastore.uris', 'thrift://host1:1111']
             ]),
             makeFileNameProps('hive-env', [
-              ['hive_user', 'hive_user_val'],
-              ['webhcat_user', 'webhcat_user_val']
+              ['hive_user', 'hive_user_val']
             ]),
             makeFileNameProps('webhcat-site', [
               ['templeton.hive.properties', 'hive.metastore.local=false,hive.metastore.uris=thrift://host1:9083,hive.metastore.sasl.enabled=false']
             ]),
             makeFileNameProps('core-site', [
-              ['hadoop.proxyuser.hive_user_val.hosts', 'host1'],
-              ['hadoop.proxyuser.webhcat_user_val.hosts', 'host1']
+              ['hadoop.proxyuser.hive_user_val.hosts', 'host1']
             ])
           ]
         },
@@ -3865,7 +3993,59 @@ describe('App.MainHostDetailsController', function () {
                   ['templeton.hive.properties', 'hive.metastore.local=false,hive.metastore.uris=thrift://host1:1111\\,thrift://host2:1111\\,thrift://host3:1111,hive.metastore.sasl.enabled=false']
                 ]).properties,
                 "hive-env": makeFileNameProps('hive-env', [
-                  ['hive_user', 'hive_user_val'],
+                  ['hive_user', 'hive_user_val']
+                ]).properties
+              },
+              "properties_attributes": makeEmptyPropAttrs("hive-site", "webhcat-site", "hive-env")
+            },
+            {
+              "properties": {
+                "core-site": makeFileNameProps('core-site', [
+                  ['hadoop.proxyuser.hive_user_val.hosts', 'host1,host2,host3']
+                ]).properties
+              },
+              "properties_attributes": makeEmptyPropAttrs("core-site")
+            },
+          ]
+        }
+      },
+      {
+        hostComponentModel: makeHostComponentModel(['HIVE_SERVER', 'HIVE_METASTORE', 'WEBHCAT_SERVER'], [['host1', 'host2'], ['host1','host2'], ['host1', 'host3']]),
+        ctrlStubs: {
+          fromDeleteHost: true,
+          'content.hostName': 'host2',
+          webhcatServerHost: '',
+          hiveMetastoreHost: ''
+        },
+        webHCat: true,
+        configs: {
+          items: [
+            makeFileNameProps('hive-site', [
+              ['hive.metastore.uris', 'thrift://host1:1111']
+            ]),
+            makeFileNameProps('hive-env', [
+              ['webhcat_user', 'webhcat_user_val']
+            ]),
+            makeFileNameProps('webhcat-site', [
+              ['templeton.hive.properties', 'hive.metastore.local=false,hive.metastore.uris=thrift://host1:9083,hive.metastore.sasl.enabled=false']
+            ]),
+            makeFileNameProps('core-site', [
+              ['hadoop.proxyuser.webhcat_user_val.hosts', 'host1']
+            ])
+          ]
+        },
+        m: 'Change WebHCat proxyuser',
+        e: {
+          configs: [
+            {
+              "properties": {
+                "hive-site": makeFileNameProps('hive-site', [
+                  ['hive.metastore.uris', 'thrift://host1:1111,thrift://host3:1111']
+                ]).properties,
+                "webhcat-site": makeFileNameProps('webhcat-site', [
+                  ['templeton.hive.properties', 'hive.metastore.local=false,hive.metastore.uris=thrift://host1:1111\\,thrift://host3:1111,hive.metastore.sasl.enabled=false']
+                ]).properties,
+                "hive-env": makeFileNameProps('hive-env', [
                   ['webhcat_user', 'webhcat_user_val']
                 ]).properties
               },
@@ -3874,8 +4054,7 @@ describe('App.MainHostDetailsController', function () {
             {
               "properties": {
                 "core-site": makeFileNameProps('core-site', [
-                  ['hadoop.proxyuser.hive_user_val.hosts', 'host1,host2,host3'],
-                  ['hadoop.proxyuser.webhcat_user_val.hosts', 'host1,host2,host3']
+                  ['hadoop.proxyuser.webhcat_user_val.hosts', 'host1,host3']
                 ]).properties
               },
               "properties_attributes": makeEmptyPropAttrs("core-site")
@@ -3897,15 +4076,13 @@ describe('App.MainHostDetailsController', function () {
               ['hive.metastore.uris', 'thrift://host1:1111']
             ]),
             makeFileNameProps('hive-env', [
-              ['hive_user', 'hive_user_val'],
-              ['webhcat_user', 'webhcat_user_val']
+              ['hive_user', 'hive_user_val']
             ]),
             makeFileNameProps('webhcat-site', [
               ['templeton.hive.properties', 'hive.metastore.local=false,hive.metastore.uris=thrift://host1:9083,hive.metastore.sasl.enabled=false']
             ]),
             makeFileNameProps('core-site', [
-              ['hadoop.proxyuser.hive_user_val.hosts', 'host1'],
-              ['hadoop.proxyuser.webhcat_user_val.hosts', 'host1']
+              ['hadoop.proxyuser.hive_user_val.hosts', 'host1']
             ])
           ]
         },
@@ -3921,8 +4098,7 @@ describe('App.MainHostDetailsController', function () {
                   ['templeton.hive.properties', 'hive.metastore.local=false,hive.metastore.uris=thrift://host1:1111\\,thrift://host3:1111,hive.metastore.sasl.enabled=false']
                 ]).properties,
                 "hive-env": makeFileNameProps('hive-env', [
-                  ['hive_user', 'hive_user_val'],
-                  ['webhcat_user', 'webhcat_user_val']
+                  ['hive_user', 'hive_user_val']
                 ]).properties
               },
               "properties_attributes": makeEmptyPropAttrs("hive-site", "webhcat-site", "hive-env")
@@ -3930,12 +4106,11 @@ describe('App.MainHostDetailsController', function () {
             {
               "properties": {
                 "core-site": makeFileNameProps('core-site', [
-                  ['hadoop.proxyuser.hive_user_val.hosts', 'host1,host3'],
-                  ['hadoop.proxyuser.webhcat_user_val.hosts', 'host1,host3']
+                  ['hadoop.proxyuser.hive_user_val.hosts', 'host1,host3']
                 ]).properties
               },
               "properties_attributes": makeEmptyPropAttrs("core-site")
-            },
+            }
           ]
         }
       }
@@ -3970,7 +4145,7 @@ describe('App.MainHostDetailsController', function () {
         });
 
         it('saveConfigsBatch is called with correct configs', function () {
-          controller.onLoadHiveConfigs(test.configs);
+          controller.onLoadHiveConfigs(test.configs, null, {webHCat: test.webHCat});
           var configs = controller.saveConfigsBatch.args[0];
           var properties = configs[0];
           expect(properties).to.be.eql(test.e.configs);

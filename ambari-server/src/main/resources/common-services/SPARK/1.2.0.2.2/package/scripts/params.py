@@ -25,12 +25,13 @@ from setup_spark import *
 
 import resource_management.libraries.functions
 from resource_management.libraries.functions import conf_select
-from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions import stack_select
 from resource_management.libraries.functions import format
-from resource_management.libraries.functions.get_hdp_version import get_hdp_version
-from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions.get_stack_version import get_stack_version
+from resource_management.libraries.functions.version import format_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions import get_kinit_path
+from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
 
 from resource_management.libraries.script.script import Script
 
@@ -49,7 +50,7 @@ tmp_dir = Script.get_tmp_dir()
 
 stack_name = default("/hostLevelParams/stack_name", None)
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+stack_version_formatted = format_stack_version(stack_version_unformatted)
 host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 
 # New Cluster Stack Version that is defined during the RESTART of a Stack Upgrade
@@ -58,16 +59,16 @@ version = default("/commandParams/version", None)
 # TODO! FIXME! Version check is not working as of today :
 #   $ yum list installed | grep hdp-select
 #   hdp-select.noarch                            2.2.1.0-2340.el6           @HDP-2.2
-# And hdp_stack_version returned from hostLevelParams/stack_version is : 2.2.0.0
+# And stack_version_formatted returned from hostLevelParams/stack_version is : 2.2.0.0
 # Commenting out for time being
-#stack_is_hdp22_or_further = hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.2.1.0') >= 0
+#stack_is_hdp22_or_further = stack_version_formatted != "" and compare_versions(stack_version_formatted, '2.2.1.0') >= 0
 
 spark_conf = '/etc/spark/conf'
 hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
-hadoop_bin_dir = hdp_select.get_hadoop_dir("bin")
+hadoop_bin_dir = stack_select.get_hadoop_dir("bin")
 
-if Script.is_hdp_stack_greater_or_equal("2.2"):
-  hadoop_home = hdp_select.get_hadoop_dir("home")
+if Script.is_stack_greater_or_equal("2.2"):
+  hadoop_home = stack_select.get_hadoop_dir("home")
   spark_conf = format("/usr/hdp/current/{component_directory}/conf")
   spark_log_dir = config['configurations']['spark-env']['spark_log_dir']
   spark_pid_dir = status_params.spark_pid_dir
@@ -79,12 +80,15 @@ java_home = config['hostLevelParams']['java_home']
 hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name']
 hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
+user_group = config['configurations']['cluster-env']['user_group']
 
 spark_user = status_params.spark_user
 hive_user = status_params.hive_user
 spark_group = status_params.spark_group
 user_group = status_params.user_group
 spark_hdfs_user_dir = format("/user/{spark_user}")
+spark_history_dir = default('/configurations/spark-defaults/spark.history.fs.logDirectory', "hdfs:///spark-history")
+
 spark_history_server_pid_file = status_params.spark_history_server_pid_file
 spark_thrift_server_pid_file = status_params.spark_thrift_server_pid_file
 
@@ -93,6 +97,7 @@ spark_history_server_stop = format("{spark_home}/sbin/stop-history-server.sh")
 
 spark_thrift_server_start = format("{spark_home}/sbin/start-thriftserver.sh")
 spark_thrift_server_stop = format("{spark_home}/sbin/stop-thriftserver.sh")
+spark_logs_dir = format("{spark_home}/logs")
 
 spark_submit_cmd = format("{spark_home}/bin/spark-submit")
 spark_smoke_example = "org.apache.spark.examples.SparkPi"
@@ -153,6 +158,12 @@ if security_enabled:
 # thrift server support - available on HDP 2.3 or higher
 spark_thrift_sparkconf = None
 spark_thrift_cmd_opts_properties = ''
+spark_thrift_fairscheduler_content = None
+spark_thrift_master = "yarn-client"
+if 'nm_hosts' in config['clusterHostInfo'] and len(config['clusterHostInfo']['nm_hosts']) == 1:
+  # use local mode when there's only one nodemanager
+  spark_thrift_master = "local[4]"
+
 if has_spark_thriftserver and 'spark-thrift-sparkconf' in config['configurations']:
   spark_thrift_sparkconf = config['configurations']['spark-thrift-sparkconf']
   spark_thrift_cmd_opts_properties = config['configurations']['spark-env']['spark_thrift_cmd_opts']
@@ -163,6 +174,9 @@ if has_spark_thriftserver and 'spark-thrift-sparkconf' in config['configurations
       'hive.metastore.client.socket.timeout' : config['configurations']['hive-site']['hive.metastore.client.socket.timeout']
     })
     spark_hive_properties.update(config['configurations']['spark-hive-site-override'])
+
+  if 'spark-thrift-fairscheduler' in config['configurations'] and 'fairscheduler_content' in config['configurations']['spark-thrift-fairscheduler']:
+    spark_thrift_fairscheduler_content = config['configurations']['spark-thrift-fairscheduler']['fairscheduler_content']
 
 default_fs = config['configurations']['core-site']['fs.defaultFS']
 hdfs_site = config['configurations']['hdfs-site']
@@ -175,6 +189,7 @@ import functools
 HdfsResource = functools.partial(
   HdfsResource,
   user=hdfs_user,
+  hdfs_resource_ignore_file = "/var/lib/ambari-agent/data/.hdfs_resource_ignore",
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,
@@ -183,5 +198,6 @@ HdfsResource = functools.partial(
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
   default_fs = default_fs,
+  immutable_paths = get_not_managed_resources(),
   dfs_type = dfs_type
  )

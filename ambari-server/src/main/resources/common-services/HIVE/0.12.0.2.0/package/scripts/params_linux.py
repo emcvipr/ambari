@@ -22,16 +22,20 @@ import status_params
 import ambari_simplejson as json # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 import os
 
+from urlparse import urlparse
+
 from ambari_commons.constants import AMBARI_SUDO_BINARY
 from ambari_commons.os_check import OSCheck
+from ambari_commons.str_utils import cbool, cint
 
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.functions.is_empty import is_empty
-from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions.version import format_stack_version
 from resource_management.libraries.functions.copy_tarball import STACK_VERSION_PATTERN
 from resource_management.libraries.functions import get_kinit_path
+from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
 from resource_management.libraries.script.script import Script
 from resource_management.libraries.functions.get_port_from_url import get_port_from_url
 from resource_management.libraries import functions
@@ -42,17 +46,19 @@ tmp_dir = Script.get_tmp_dir()
 sudo = AMBARI_SUDO_BINARY
 
 stack_name = default("/hostLevelParams/stack_name", None)
+agent_stack_retry_on_unavailability = cbool(config["hostLevelParams"]["agent_stack_retry_on_unavailability"])
+agent_stack_retry_count = cint(config["hostLevelParams"]["agent_stack_retry_count"])
 
 # node hostname
 hostname = config["hostname"]
 
 # This is expected to be of the form #.#.#.#
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version_major = format_hdp_stack_version(stack_version_unformatted)
-stack_is_hdp21 = Script.is_hdp_stack_less_than("2.2")
+stack_version_formatted_major = format_stack_version(stack_version_unformatted)
+stack_is_hdp21 = Script.is_stack_less_than("2.2")
 
 # this is not available on INSTALL action because hdp-select is not available
-hdp_stack_version = functions.get_hdp_version('hive-server2')
+stack_version_formatted = functions.get_stack_version('hive-server2')
 
 # New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade.
 # It cannot be used during the initial Cluser Install because the version is not yet known.
@@ -74,6 +80,11 @@ hive_bin = '/usr/lib/hive/bin'
 hive_lib = '/usr/lib/hive/lib/'
 hive_var_lib = '/var/lib/hive'
 
+# Hive Interactive related paths
+hive_interactive_bin = '/usr/lib/hive2/bin'
+hive_interactive_lib = '/usr/lib/hive2/lib/'
+hive_interactive_var_lib = '/var/lib/hive2'
+
 # These tar folders were used in HDP 2.1
 hadoop_streaming_jars = '/usr/lib/hadoop-mapreduce/hadoop-streaming-*.jar'
 pig_tar_file = '/usr/share/HDP-webhcat/pig.tar.gz'
@@ -82,6 +93,7 @@ sqoop_tar_file = '/usr/share/HDP-webhcat/sqoop*.tar.gz'
 
 hive_specific_configs_supported = False
 hive_etc_dir_prefix = "/etc/hive"
+hive_interactive_etc_dir_prefix = "/etc/hive2"
 limits_conf_dir = "/etc/security/limits.d"
 
 hive_user_nofile_limit = default("/configurations/hive-env/hive_user_nofile_limit", "32000")
@@ -96,6 +108,7 @@ hive_conf_dir = status_params.hive_conf_dir
 hive_config_dir = status_params.hive_config_dir
 hive_client_conf_dir = status_params.hive_client_conf_dir
 hive_server_conf_dir = status_params.hive_server_conf_dir
+hive_interactive_conf_dir = status_params.hive_server_interactive_conf_dir
 
 hcat_conf_dir = '/etc/hive-hcatalog/conf'
 config_dir = '/etc/hive-webhcat/conf'
@@ -104,7 +117,7 @@ webhcat_bin_dir = '/usr/lib/hive-hcatalog/sbin'
 
 # Starting from HDP2.3 drop should be executed with purge suffix
 purge_tables = "false"
-if Script.is_hdp_stack_greater_or_equal("2.3"):
+if Script.is_stack_greater_or_equal("2.3"):
   purge_tables = 'true'
 
   # this is NOT a typo.  HDP-2.3 configs for hcatalog/webhcat point to a
@@ -112,18 +125,21 @@ if Script.is_hdp_stack_greater_or_equal("2.3"):
   hcat_conf_dir = '/usr/hdp/current/hive-webhcat/etc/hcatalog'
   config_dir = '/usr/hdp/current/hive-webhcat/etc/webhcat'
 
-if Script.is_hdp_stack_greater_or_equal("2.2"):
+if Script.is_stack_greater_or_equal("2.2"):
   hive_specific_configs_supported = True
 
   component_directory = status_params.component_directory
+  component_directory_interactive = status_params.component_directory_interactive
   hadoop_home = '/usr/hdp/current/hadoop-client'
   hive_bin = format('/usr/hdp/current/{component_directory}/bin')
+  hive_interactive_bin = format('/usr/hdp/current/{component_directory_interactive}/bin')
   hive_lib = format('/usr/hdp/current/{component_directory}/lib')
+  hive_interactive_lib = format('/usr/hdp/current/{component_directory_interactive}/lib')
 
   # there are no client versions of these, use server versions directly
   hcat_lib = '/usr/hdp/current/hive-webhcat/share/hcatalog'
   webhcat_bin_dir = '/usr/hdp/current/hive-webhcat/sbin'
-  
+
   # --- Tarballs ---
   # DON'T CHANGE THESE VARIABLE NAMES
   # Values don't change from those in copy_tarball.py
@@ -171,31 +187,50 @@ if hive_metastore_db_type == "mssql":
 hive_user = config['configurations']['hive-env']['hive_user']
 #JDBC driver jar name
 hive_jdbc_driver = config['configurations']['hive-site']['javax.jdo.option.ConnectionDriverName']
+jdk_location = config['hostLevelParams']['jdk_location']
+java_share_dir = '/usr/share/java'
+hive_database_name = config['configurations']['hive-env']['hive_database_name']
+hive_database = config['configurations']['hive-env']['hive_database']
+hive_use_existing_db = hive_database.startswith('Existing')
 # NOT SURE THAT IT'S A GOOD IDEA TO USE PATH TO CLASS IN DRIVER, MAYBE IT WILL BE BETTER TO USE DB TYPE.
 # BECAUSE PATH TO CLASSES COULD BE CHANGED
 sqla_db_used = False
+target = None
 if hive_jdbc_driver == "com.microsoft.sqlserver.jdbc.SQLServerDriver":
-  jdbc_jar_name = "sqljdbc4.jar"
-  jdbc_symlink_name = "mssql-jdbc-driver.jar"
+  jdbc_jar_name = default("/hostLevelParams/custom_mssql_jdbc_name", None)
 elif hive_jdbc_driver == "com.mysql.jdbc.Driver":
-  jdbc_jar_name = "mysql-connector-java.jar"
-  jdbc_symlink_name = "mysql-jdbc-driver.jar"
+  jdbc_jar_name = default("/hostLevelParams/custom_mysql_jdbc_name", None)
 elif hive_jdbc_driver == "org.postgresql.Driver":
-  jdbc_jar_name = "postgresql-jdbc.jar"
-  jdbc_symlink_name = "postgres-jdbc-driver.jar"
+  jdbc_jar_name = default("/hostLevelParams/custom_postgres_jdbc_name", None)
 elif hive_jdbc_driver == "oracle.jdbc.driver.OracleDriver":
-  jdbc_jar_name = "ojdbc.jar"
-  jdbc_symlink_name = "oracle-jdbc-driver.jar"
+  jdbc_jar_name = default("/hostLevelParams/custom_oracle_jdbc_name", None)
 elif hive_jdbc_driver == "sap.jdbc4.sqlanywhere.IDriver":
-  jdbc_jar_name = "sajdbc4.jar"
-  jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
+  jdbc_jar_name = default("/hostLevelParams/custom_sqlanywhere_jdbc_name", None)
   sqla_db_used = True
+
+default_mysql_jar_name = "mysql-connector-java.jar"
+default_mysql_target = format("{hive_lib}/{default_mysql_jar_name}")
+if not hive_use_existing_db:
+  jdbc_jar_name = default_mysql_jar_name
+
+
+downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
+target = format("{hive_lib}/{jdbc_jar_name}")
+driver_curl_source = format("{jdk_location}/{jdbc_jar_name}")
+
+if Script.is_stack_less_than("2.2"):
+  source_jdbc_file = target
+else:
+  # normally, the JDBC driver would be referenced by /usr/hdp/current/.../foo.jar
+  # but in RU if hdp-select is called and the restart fails, then this means that current pointer
+  # is now pointing to the upgraded version location; that's bad for the cp command
+  source_jdbc_file = format("/usr/hdp/{current_version}/hive/lib/{jdbc_jar_name}")
 
 check_db_connection_jar_name = "DBConnectionVerification.jar"
 check_db_connection_jar = format("/usr/lib/ambari-agent/{check_db_connection_jar_name}")
 hive_jdbc_drivers_list = ["com.microsoft.sqlserver.jdbc.SQLServerDriver","com.mysql.jdbc.Driver",
                           "org.postgresql.Driver","oracle.jdbc.driver.OracleDriver","sap.jdbc4.sqlanywhere.IDriver"]
-downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
+
 prepackaged_ojdbc_symlink = format("{hive_lib}/ojdbc6.jar")
 templeton_port = config['configurations']['webhcat-site']['templeton.port']
 
@@ -251,6 +286,7 @@ hive_server2_keytab = config['configurations']['hive-site']['hive.server2.authen
 hive_log_dir = config['configurations']['hive-env']['hive_log_dir']
 hive_pid_dir = status_params.hive_pid_dir
 hive_pid = status_params.hive_pid
+hive_interactive_pid = status_params.hive_interactive_pid
 
 #Default conf dir for client
 hive_conf_dirs_list = [hive_client_conf_dir]
@@ -258,9 +294,6 @@ hive_conf_dirs_list = [hive_client_conf_dir]
 if hostname in hive_metastore_hosts or hostname in hive_server_hosts:
   hive_conf_dirs_list.append(hive_server_conf_dir)
 
-#hive-site
-hive_database_name = config['configurations']['hive-env']['hive_database_name']
-hive_database = config['configurations']['hive-env']['hive_database']
 
 #Starting hiveserver2
 start_hiveserver2_script = 'startHiveserver2.sh.j2'
@@ -268,8 +301,6 @@ start_hiveserver2_script = 'startHiveserver2.sh.j2'
 ##Starting metastore
 start_metastore_script = 'startMetastore.sh'
 hive_metastore_pid = status_params.hive_metastore_pid
-java_share_dir = '/usr/share/java'
-driver_curl_target = format("{java_share_dir}/{jdbc_jar_name}")
 
 hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 yarn_user = config['configurations']['yarn-env']['yarn_user']
@@ -279,19 +310,8 @@ artifact_dir = format("{tmp_dir}/AMBARI-artifacts/")
 yarn_log_dir_prefix = config['configurations']['yarn-env']['yarn_log_dir_prefix']
 
 target = format("{hive_lib}/{jdbc_jar_name}")
+target_interactive = format("{hive_interactive_lib}/{jdbc_jar_name}")
 jars_in_hive_lib = format("{hive_lib}/*.jar")
-
-
-if Script.is_hdp_stack_less_than("2.2"):
-  source_jdbc_file = target
-else:
-  # normally, the JDBC driver would be referenced by /usr/hdp/current/.../foo.jar
-  # but in RU if hdp-select is called and the restart fails, then this means that current pointer
-  # is now pointing to the upgraded version location; that's bad for the cp command
-  source_jdbc_file = format("/usr/hdp/{current_version}/hive/lib/{jdbc_jar_name}")
-
-jdk_location = config['hostLevelParams']['jdk_location']
-driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
 
 start_hiveserver2_path = format("{tmp_dir}/start_hiveserver2_script")
 start_metastore_path = format("{tmp_dir}/start_metastore_script")
@@ -299,7 +319,7 @@ start_metastore_path = format("{tmp_dir}/start_metastore_script")
 hadoop_heapsize = config['configurations']['hadoop-env']['hadoop_heapsize']
 
 if 'role' in config and config['role'] in ["HIVE_SERVER", "HIVE_METASTORE"]:
-  if Script.is_hdp_stack_less_than("2.2"):
+  if Script.is_stack_less_than("2.2"):
     hive_heapsize = config['configurations']['hive-site']['hive.heapsize']
   else:
     hive_heapsize = config['configurations']['hive-env']['hive.heapsize']
@@ -357,6 +377,7 @@ hive_env_sh_template = config['configurations']['hive-env']['content']
 hive_hdfs_user_dir = format("/user/{hive_user}")
 hive_hdfs_user_mode = 0755
 hive_apps_whs_dir = config['configurations']['hive-site']["hive.metastore.warehouse.dir"]
+whs_dir_protocol = urlparse(hive_apps_whs_dir).scheme
 hive_exec_scratchdir = config['configurations']['hive-site']["hive.exec.scratchdir"]
 #for create_hdfs_directory
 hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
@@ -383,23 +404,14 @@ mysql_user = 'mysql'
 hive_authorization_enabled = config['configurations']['hive-site']['hive.security.authorization.enabled']
 
 mysql_jdbc_driver_jar = "/usr/share/java/mysql-connector-java.jar"
-hive_use_existing_db = hive_database.startswith('Existing')
-hive_exclude_packages = []
-
-# There are other packages that contain /usr/share/java/mysql-connector-java.jar (like libmysql-java),
-# trying to install mysql-connector-java upon them can cause packages to conflict.
-if hive_use_existing_db:
-  hive_exclude_packages = ['mysql-connector-java', 'mysql', 'mysql-server',
-                           'mysql-community-release', 'mysql-community-server']
-else:
-  if 'role' in config and config['role'] != "MYSQL_SERVER":
-    hive_exclude_packages = ['mysql', 'mysql-server', 'mysql-community-release',
-                             'mysql-community-server']
-  if os.path.exists(mysql_jdbc_driver_jar):
-    hive_exclude_packages.append('mysql-connector-java')
-
 
 hive_site_config = dict(config['configurations']['hive-site'])
+
+hive_interactive_hosts = default('/clusterHostInfo/hive-server2-hive2_hosts', [])
+has_hive_interactive = len(hive_interactive_hosts) > 0
+if has_hive_interactive:
+  hive_interactive_site_config = dict(config['configurations']['hive-interactive-site'])
+
 ########################################################
 ############# Atlas related params #####################
 ########################################################
@@ -410,10 +422,9 @@ classpath_addition = ""
 atlas_plugin_package = "atlas-metadata*-hive-plugin"
 atlas_ubuntu_plugin_package = "atlas-metadata.*-hive-plugin"
 
-if not has_atlas:
-  hive_exclude_packages.append(atlas_plugin_package)
-  hive_exclude_packages.append(atlas_ubuntu_plugin_package)
-else:
+if has_atlas:
+  atlas_home_dir = os.environ['METADATA_HOME_DIR'] if 'METADATA_HOME_DIR' in os.environ else '/usr/hdp/current/atlas-server'
+  atlas_conf_dir = os.environ['METADATA_CONF'] if 'METADATA_CONF' in os.environ else '/etc/atlas/conf'
   # client.properties
   atlas_client_props = {}
   auth_enabled = config['configurations']['application-properties'].get(
@@ -457,6 +468,7 @@ import functools
 HdfsResource = functools.partial(
  HdfsResource,
   user = hdfs_user,
+  hdfs_resource_ignore_file = "/var/lib/ambari-agent/data/.hdfs_resource_ignore",
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,
@@ -465,6 +477,7 @@ HdfsResource = functools.partial(
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
   default_fs = default_fs,
+  immutable_paths = get_not_managed_resources(),
   dfs_type = dfs_type
  )
 

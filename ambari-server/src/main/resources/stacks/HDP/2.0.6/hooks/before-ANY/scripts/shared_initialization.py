@@ -29,8 +29,9 @@ def setup_users():
   Creates users before cluster installation
   """
   import params
+  should_create_users_and_groups = not params.host_sys_prepped and not params.ignore_groupsusers_create
 
-  if not params.host_sys_prepped and not params.ignore_groupsusers_create:
+  if should_create_users_and_groups:
     for group in params.group_list:
       Group(group,
       )
@@ -39,6 +40,7 @@ def setup_users():
       User(user,
           gid = params.user_to_gid_dict[user],
           groups = params.user_to_groups_dict[user],
+          fetch_nonlocal_groups = params.fetch_nonlocal_groups
       )
 
     if params.override_uid == "true":
@@ -65,8 +67,10 @@ def setup_users():
 
   if not params.host_sys_prepped:
     if params.has_namenode:
-      create_dfs_cluster_admins()
-    if params.has_tez and params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.3') >= 0:
+      if should_create_users_and_groups:
+        create_dfs_cluster_admins()
+    if params.has_tez and params.stack_version_formatted != "" and compare_versions(params.stack_version_formatted, '2.3') >= 0:
+      if should_create_users_and_groups:
         create_tez_am_view_acls()
   else:
     Logger.info('Skipping setting dfs cluster admin and tez view acls as host is sys prepped')
@@ -81,7 +85,7 @@ def create_dfs_cluster_admins():
 
   User(params.hdfs_user,
     groups = params.user_to_groups_dict[params.hdfs_user] + groups_list,
-    ignore_failures = params.ignore_groupsusers_create
+          fetch_nonlocal_groups = params.fetch_nonlocal_groups
   )
 
 def create_tez_am_view_acls():
@@ -107,12 +111,11 @@ def create_users_and_groups(user_and_groups):
 
   if users_list:
     User(users_list,
-         ignore_failures = params.ignore_groupsusers_create
+          fetch_nonlocal_groups = params.fetch_nonlocal_groups
     )
 
   if groups_list:
     Group(copy(groups_list),
-          ignore_failures = params.ignore_groupsusers_create
     )
   return groups_list
     
@@ -143,7 +146,7 @@ def setup_hadoop_env():
     Directory(params.hadoop_dir, mode=0755)
 
     # HDP < 2.2 used a conf -> conf.empty symlink for /etc/hadoop/
-    if Script.is_hdp_stack_less_than("2.2"):
+    if Script.is_stack_less_than("2.2"):
       Directory(params.hadoop_conf_empty_dir, create_parents = True, owner="root",
         group=params.user_group )
 

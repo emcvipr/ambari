@@ -17,12 +17,22 @@
  */
 
 var App = require('app');
+var testHelpers = require('test/helpers');
 
 describe('App.WidgetMixin', function () {
   var mixinClass = Em.Object.extend(App.WidgetMixin, {metrics: [], content: {}});
+  var mixinObject;
+
+  beforeEach(function () {
+    mixinObject = mixinClass.create();
+  });
+
+  afterEach(function () {
+    clearTimeout(mixinObject.get('timeoutId'));
+    mixinObject.destroy();
+  });
 
   describe('#loadMetrics()', function () {
-    var mixinObject = mixinClass.create();
     beforeEach(function () {
       this.mock = sinon.stub(mixinObject, 'getRequestData');
       sinon.stub(App.WidgetLoadAggregator, 'add');
@@ -48,7 +58,6 @@ describe('App.WidgetMixin', function () {
   });
 
   describe("#extractExpressions()", function () {
-    var mixinObject = mixinClass.create();
     var testCases = [
       {
         data: '',
@@ -118,7 +127,7 @@ describe('App.WidgetMixin', function () {
     });
 
     it('HBASE_HBASE_REGIONSERVER', function () {
-      var HBASE_HBASE_REGIONSERVER = {
+      var hbaseRegionServer = {
         "name": "regionserver.Server.percentFilesLocal",
         "service_name": "HBASE",
         "component_name": "HBASE_REGIONSERVER",
@@ -137,11 +146,11 @@ describe('App.WidgetMixin', function () {
             }
           ]
         };
-      expect(JSON.stringify(this.requestData['HBASE_HBASE_REGIONSERVER'])).to.equal(JSON.stringify(HBASE_HBASE_REGIONSERVER));
+      expect(JSON.stringify(this.requestData.HBASE_HBASE_REGIONSERVER)).to.equal(JSON.stringify(hbaseRegionServer));
     });
 
     it('HBASE_HBASE_REGIONSERVER_c1', function () {
-      var HBASE_HBASE_REGIONSERVER_c1 = {
+      var hbaseRegionServerC1 = {
         "name": "regionserver.Server.percentFilesLocal",
         "service_name": "HBASE",
         "component_name": "HBASE_REGIONSERVER",
@@ -155,11 +164,11 @@ describe('App.WidgetMixin', function () {
           }
         ]
       };
-      expect(JSON.stringify(this.requestData['HBASE_HBASE_REGIONSERVER_c1'])).to.equal(JSON.stringify(HBASE_HBASE_REGIONSERVER_c1));
+      expect(JSON.stringify(this.requestData.HBASE_HBASE_REGIONSERVER_c1)).to.equal(JSON.stringify(hbaseRegionServerC1));
     });
 
     it('HDFS_DATANODE_c1', function () {
-      var HDFS_DATANODE_c1 = {
+      var hdfsDataNodeC1 = {
         "name": "regionserver.Server.percentFilesLocal",
         "service_name": "HDFS",
         "component_name": "DATANODE",
@@ -173,19 +182,13 @@ describe('App.WidgetMixin', function () {
           }
         ]
       };
-      expect(JSON.stringify(this.requestData['HDFS_DATANODE_c1'])).to.equal(JSON.stringify(HDFS_DATANODE_c1));
+      expect(JSON.stringify(this.requestData.HDFS_DATANODE_c1)).to.equal(JSON.stringify(hdfsDataNodeC1));
     });
 
   });
 
   describe("#getServiceComponentMetrics()", function () {
-    var mixinObject = mixinClass.create();
-    before(function () {
-      sinon.stub(App.ajax, 'send');
-    });
-    after(function () {
-      App.ajax.send.restore();
-    });
+
     it("valid request is sent", function () {
       var request = {
         service_name: 'S1',
@@ -206,20 +209,18 @@ describe('App.WidgetMixin', function () {
         ]
       };
       mixinObject.getServiceComponentMetrics(request);
-      expect(App.ajax.send.getCall(0).args[0]).to.eql({
-        name: 'widgets.serviceComponent.metrics.get',
-        sender: mixinObject,
-        data: {
-          serviceName: 'S1',
-          componentName: 'C1',
-          metricPaths: 'w1,w2'
-        }
-      })
+      var args = testHelpers.findAjaxRequest('name', 'widgets.serviceComponent.metrics.get');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(mixinObject);
+      expect(args[0].data).to.be.eql({
+        serviceName: 'S1',
+        componentName: 'C1',
+        metricPaths: 'w1,w2'
+      });
     });
   });
 
   describe("#getMetricsSuccessCallback()", function () {
-    var mixinObject = mixinClass.create();
     it("metric is mapped from provided path", function () {
       var data = {
         metrics: {
@@ -243,13 +244,10 @@ describe('App.WidgetMixin', function () {
   });
 
   describe("#getHostComponentMetrics()", function () {
-    var mixinObject = mixinClass.create();
-    before(function () {
-      sinon.stub(App.ajax, 'send');
+    beforeEach(function () {
       sinon.stub(mixinObject, 'computeHostComponentCriteria').returns('criteria')
     });
-    after(function () {
-      App.ajax.send.restore();
+    afterEach(function () {
       mixinObject.computeHostComponentCriteria.restore();
     });
     it("valid request is sent", function () {
@@ -272,20 +270,18 @@ describe('App.WidgetMixin', function () {
         host_component_criteria: 'c1'
       };
       mixinObject.getHostComponentMetrics(request);
-      expect(App.ajax.send.getCall(0).args[0]).to.eql({
-        name: 'widgets.hostComponent.metrics.get',
-        sender: mixinObject,
-        data: {
-          componentName: 'C1',
-          metricPaths: 'w1,w2',
-          hostComponentCriteria: 'criteria'
-        }
-      })
+      var args = testHelpers.findAjaxRequest('name', 'widgets.hostComponent.metrics.get');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(mixinObject);
+      expect(args[0].data).to.be.eql({
+        componentName: 'C1',
+        metricPaths: 'w1,w2',
+        hostComponentCriteria: 'criteria'
+      });
     });
   });
 
   describe("#calculateValues()", function () {
-    var mixinObject = mixinClass.create();
 
     beforeEach(function () {
       sinon.stub(mixinObject, 'extractExpressions');
@@ -322,8 +318,6 @@ describe('App.WidgetMixin', function () {
   });
 
   describe("#computeExpression()", function () {
-    var mixinObject = mixinClass.create();
-
     it("expression missing metrics", function () {
       var expressions = ['e.m1'];
       var metrics = [];
@@ -354,14 +348,13 @@ describe('App.WidgetMixin', function () {
   });
 
   describe("#cloneWidget()", function () {
-    var mixinObject = mixinClass.create();
     var popup;
-    before(function () {
+    beforeEach(function () {
       sinon.spy(App, 'showConfirmationPopup');
       sinon.stub(mixinObject, 'postWidgetDefinition', Em.K);
       popup = mixinObject.cloneWidget();
     });
-    after(function () {
+    afterEach(function () {
       App.showConfirmationPopup.restore();
       mixinObject.postWidgetDefinition.restore();
     });
@@ -375,27 +368,179 @@ describe('App.WidgetMixin', function () {
   });
 
   describe("#postWidgetDefinition()", function () {
-    var mixinObject = mixinClass.create();
-
-    before(function () {
-      sinon.spy(App.ajax, 'send');
+    beforeEach(function () {
       sinon.stub(mixinObject, 'collectWidgetData').returns({});
     });
-    after(function () {
-      App.ajax.send.restore();
+    afterEach(function () {
       mixinObject.collectWidgetData.restore();
     });
     it("valid request is sent", function () {
       mixinObject.postWidgetDefinition();
-      expect(App.ajax.send.getCall(0).args[0]).to.eql({
-        name: 'widgets.wizard.add',
-        sender: mixinObject,
-        data: {
-          data: {}
-        },
-        success: 'postWidgetDefinitionSuccessCallback'
+      var args = testHelpers.findAjaxRequest('name', 'widgets.wizard.add');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(mixinObject);
+      expect(args[0].data).to.be.eql({
+        data: {}
       });
     });
+  });
+
+  describe('#getMetricsErrorCallback()', function () {
+
+    var obj,
+      view = Em.Object.create({
+        _showMessage: Em.K
+      }),
+      metrics = [
+        {
+          name: 'n0'
+        },
+        {
+          name: 'n1'
+        }
+      ],
+      cases = [
+        {
+          graphView: null,
+          isForcedAbort: false,
+          metrics: metrics,
+          showMessageCallCount: 0,
+          isExportButtonHidden: false,
+          title: 'no graph view'
+        },
+        {
+          graphView: {},
+          isForcedAbort: false,
+          metrics: metrics,
+          showMessageCallCount: 0,
+          isExportButtonHidden: false,
+          title: 'no childViews property'
+        },
+        {
+          graphView: {},
+          childViews: [],
+          isForcedAbort: false,
+          metrics: metrics,
+          showMessageCallCount: 0,
+          isExportButtonHidden: false,
+          title: 'no child views'
+        },
+        {
+          graphView: {},
+          childViews: [Em.Object.create({})],
+          isForcedAbort: false,
+          metrics: metrics,
+          showMessageCallCount: 0,
+          isExportButtonHidden: false,
+          title: 'no view with _showMessage method'
+        },
+        {
+          graphView: {},
+          childViews: [Em.Object.create({}), view],
+          isForcedAbort: false,
+          metrics: [
+            {
+              name: 'n1'
+            }
+          ],
+          showMessageCallCount: 1,
+          isExportButtonHidden: true,
+          title: 'graph view is available'
+        },
+        {
+          graphView: {},
+          childViews: [Em.Object.create({}), view],
+          isForcedAbort: true,
+          metrics: metrics,
+          showMessageCallCount: 0,
+          isExportButtonHidden: false,
+          title: 'request is aborted'
+        }
+      ],
+      messageCases = [
+        {
+          readyState: 2,
+          status: 0,
+          textStatus: 'error',
+          title: 'incomplete request'
+        },
+        {
+          readyState: 4,
+          status: 0,
+          textStatus: 'error',
+          title: 'no status code'
+        },
+        {
+          readyState: 4,
+          status: 404,
+          textStatus: '404 error',
+          title: 'status code available'
+        }
+      ];
+
+    beforeEach(function () {
+      sinon.spy(view, '_showMessage');
+    });
+
+    afterEach(function () {
+      view._showMessage.restore();
+    });
+
+    cases.forEach(function (item) {
+
+      describe(item.title, function () {
+
+        beforeEach(function () {
+          obj = Em.Object.create(App.WidgetMixin, {
+            metrics: metrics,
+            content: {
+              metrics: [
+                {
+                  name: 'n0'
+                }
+              ]
+            },
+            isExportButtonHidden: false,
+            graphView: item.graphView,
+            childViews: item.childViews
+          });
+          obj.getMetricsErrorCallback({
+            isForcedAbort: item.isForcedAbort
+          });
+        });
+
+        it('metrics array', function () {
+          expect(obj.get('metrics')).to.eql(item.metrics);
+        });
+
+        it('error message', function () {
+          expect(view._showMessage.callCount).to.equal(item.showMessageCallCount);
+        });
+
+        it('export button display', function () {
+          expect(obj.get('isExportButtonHidden')).to.equal(item.isExportButtonHidden);
+        });
+
+      });
+
+    });
+
+    messageCases.forEach(function (item) {
+
+      it(item.title, function () {
+        obj = Em.Object.create(App.WidgetMixin, {
+          graphView: Em.Object.create({}),
+          childViews: [view]
+        });
+        obj.getMetricsErrorCallback({
+          readyState: item.readyState,
+          status: item.status
+        }, 'error', 'Not Found');
+        expect(view._showMessage.firstCall.args).to.eql(['warn', Em.I18n.t('graphs.error.title'), Em.I18n.t('graphs.error.message').format(item.textStatus, 'Not Found')]);
+      });
+
+    });
+
   });
 });
 
@@ -484,29 +629,29 @@ describe('App.WidgetLoadAggregator', function () {
       result = aggregator.groupRequests(requests);
     });
 
-    it("result['n1_C1'].subRequests.length", function () {
-      expect(result['n1_C1'].subRequests.length).to.equal(1);
+    it("result.n1_C1.subRequests.length", function () {
+      expect(result.n1_C1.subRequests.length).to.equal(1);
     });
-    it("result['n1_C1'].data.metric_paths.length", function () {
-      expect(result['n1_C1'].data.metric_paths.length).to.equal(1);
+    it("result.n1_C1.data.metric_paths.length", function () {
+      expect(result.n1_C1.data.metric_paths.length).to.equal(1);
     });
-    it("result['n1_C1_graph'].subRequests.length", function () {
-      expect(result['n1_C1_graph'].subRequests.length).to.equal(1);
+    it("result.n1_C1_graph.subRequests.length", function () {
+      expect(result.n1_C1_graph.subRequests.length).to.equal(1);
     });
-    it("result['n1_C1_graph'].data.metric_paths.length", function () {
-      expect(result['n1_C1_graph'].data.metric_paths.length).to.equal(1);
+    it("result.n1_C1_graph.data.metric_paths.length", function () {
+      expect(result.n1_C1_graph.data.metric_paths.length).to.equal(1);
     });
-    it("result['n2_C1'].subRequests.length", function () {
-      expect(result['n2_C1'].subRequests.length).to.equal(1);
+    it("result.n2_C1.subRequests.length", function () {
+      expect(result.n2_C1.subRequests.length).to.equal(1);
     });
-    it("result['n2_C1'].data.metric_paths.length", function () {
-      expect(result['n2_C1'].data.metric_paths.length).to.equal(1);
+    it("result.n2_C1.data.metric_paths.length", function () {
+      expect(result.n2_C1.data.metric_paths.length).to.equal(1);
     });
-    it("result['n1_C2'].subRequests.length", function () {
-      expect(result['n1_C2'].subRequests.length).to.equal(1);
+    it("result.n1_C2.subRequests.length", function () {
+      expect(result.n1_C2.subRequests.length).to.equal(1);
     });
-    it("result['n1_C2'].data.metric_paths.length", function () {
-      expect(result['n1_C2'].data.metric_paths.length).to.equal(1);
+    it("result.n1_C2.data.metric_paths.length", function () {
+      expect(result.n1_C2.data.metric_paths.length).to.equal(1);
     });
   });
 
@@ -515,7 +660,8 @@ describe('App.WidgetLoadAggregator', function () {
       f1: function () {
         return {
           done: Em.K,
-          complete: Em.K
+          fail: Em.K,
+          always: Em.K
         }
       },
       state: 'inDOM'
@@ -541,9 +687,9 @@ describe('App.WidgetLoadAggregator', function () {
         }
       };
       aggregator.runRequests(requests);
-      expect(mock.f1.calledWith(requests['r1'].data)).to.be.true;
+      expect(mock.f1.calledWith(requests.r1.data)).to.be.true;
     });
-    it("view destroyed", function () {
+    it.skip("view destroyed", function () {
       var requests = {
         'r1': {
           data: {

@@ -17,14 +17,19 @@
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.IntegrationTestingUtility;
+import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.AggregatorUtils;
-import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.ConnectionProvider;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixConnectionProvider;
 import org.apache.hadoop.yarn.util.timeline.TimelineUtils;
+import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
 import org.apache.phoenix.hbase.index.write.IndexWriterUtils;
 import org.apache.phoenix.query.BaseTest;
 import org.apache.phoenix.query.QueryServices;
@@ -32,6 +37,7 @@ import org.apache.phoenix.util.PropertiesUtil;
 import org.apache.phoenix.util.ReadOnlyProps;
 import org.junit.After;
 import org.junit.AfterClass;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -48,7 +54,6 @@ import java.util.Map;
 import java.util.Properties;
 
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.OUT_OFF_BAND_DATA_TIME_ALLOWANCE;
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.LOG;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_RECORD_TABLE_NAME;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.UPSERT_METRICS_SQL;
 import static org.apache.phoenix.util.TestUtil.TEST_PROPERTIES;
@@ -57,6 +62,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractMiniHBaseClusterTest extends BaseTest {
 
   protected static final long BATCH_SIZE = 3;
+  protected Connection conn;
+  protected PhoenixHBaseAccessor hdb;
+
+  public final Log LOG;
+
+  public AbstractMiniHBaseClusterTest() {
+    LOG = LogFactory.getLog(this.getClass());
+  }
 
   @BeforeClass
   public static void doSetup() throws Exception {
@@ -73,6 +86,48 @@ public abstract class AbstractMiniHBaseClusterTest extends BaseTest {
   @AfterClass
   public static void doTeardown() throws Exception {
     dropNonSystemTables();
+    tearDownMiniCluster();
+  }
+
+  @Before
+  public void setUp() throws Exception {
+    Logger.getLogger("org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline").setLevel(Level.DEBUG);
+    hdb = createTestableHBaseAccessor();
+    // inits connection, starts mini cluster
+    conn = getConnection(getUrl());
+
+    hdb.initMetricSchema();
+  }
+
+  @After
+  public void tearDown() throws Exception {
+    Connection conn = null;
+    Statement stmt = null;
+    try {
+      conn = getConnection(getUrl());
+      stmt = conn.createStatement();
+
+      stmt.execute("delete from METRIC_AGGREGATE");
+      stmt.execute("delete from METRIC_AGGREGATE_MINUTE");
+      stmt.execute("delete from METRIC_AGGREGATE_HOURLY");
+      stmt.execute("delete from METRIC_AGGREGATE_DAILY");
+      stmt.execute("delete from METRIC_RECORD");
+      stmt.execute("delete from METRIC_RECORD_MINUTE");
+      stmt.execute("delete from METRIC_RECORD_HOURLY");
+      stmt.execute("delete from METRIC_RECORD_DAILY");
+      stmt.execute("delete from METRICS_METADATA");
+      stmt.execute("delete from HOSTED_APPS_METADATA");
+
+      conn.commit();
+    } finally {
+      if (stmt != null) {
+        stmt.close();
+      }
+
+      if (conn != null) {
+        conn.close();
+      }
+    }
   }
 
   @After
@@ -132,21 +187,32 @@ public abstract class AbstractMiniHBaseClusterTest extends BaseTest {
     metricsConf.setLong(OUT_OFF_BAND_DATA_TIME_ALLOWANCE, 600000);
 
     return
-        new PhoenixHBaseAccessor(
-            new Configuration(),
-            metricsConf,
-            new ConnectionProvider() {
-              @Override
-              public Connection getConnection() {
-                Connection connection = null;
-                try {
-                  connection = DriverManager.getConnection(getUrl());
-                } catch (SQLException e) {
-                  LOG.warn("Unable to connect to HBase store using Phoenix.", e);
-                }
-                return connection;
-              }
-            });
+      new PhoenixHBaseAccessor(
+        new Configuration(),
+        metricsConf,
+        new PhoenixConnectionProvider() {
+
+          @Override
+          public HBaseAdmin getHBaseAdmin() throws IOException {
+            try {
+              return driver.getConnectionQueryServices(null, null).getAdmin();
+            } catch (SQLException e) {
+              LOG.error(e);
+            }
+            return null;
+          }
+
+          @Override
+          public Connection getConnection() {
+            Connection connection = null;
+            try {
+              connection = DriverManager.getConnection(getUrl());
+            } catch (SQLException e) {
+              LOG.warn("Unable to connect to HBase store using Phoenix.", e);
+            }
+            return connection;
+          }
+        });
   }
 
   protected void insertMetricRecords(Connection conn, TimelineMetrics metrics, long currentTime)

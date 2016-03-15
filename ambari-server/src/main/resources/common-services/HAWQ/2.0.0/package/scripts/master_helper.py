@@ -16,11 +16,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 import os
+import sys
 from resource_management.core.resources.system import File, Execute
-from resource_management.core.source import Template
+from resource_management.core.source import InlineTemplate
 from resource_management.core.exceptions import Fail
 from resource_management.core.logger import Logger
 from resource_management.libraries.functions.format import format
+from resource_management.libraries.functions.default import default
 
 import utils
 import common
@@ -32,14 +34,14 @@ def __setup_master_specific_conf_files():
   """
   import params
 
-  File(hawq_constants.hawq_check_file, content=params.gpcheck_content, owner=hawq_constants.hawq_user, group=hawq_constants.hawq_group,
-      mode=0644)
+  params.File(hawq_constants.hawq_check_file,
+              content=params.hawq_check_content)
 
-  File(hawq_constants.hawq_slaves_file, content=Template("slaves.j2"), owner=hawq_constants.hawq_user, group=hawq_constants.hawq_group,
-       mode=0644)
+  params.File(hawq_constants.hawq_slaves_file,
+              content=InlineTemplate("{% for host in hawqsegment_hosts %}{{host}}\n{% endfor %}"))
 
-  File(hawq_constants.hawq_hosts_file, content=Template("hawq-hosts.j2"), owner=hawq_constants.hawq_user, group=hawq_constants.hawq_group,
-       mode=0644)
+  params.File(hawq_constants.hawq_hosts_file,
+              content=InlineTemplate("{% for host in hawq_all_hosts %}{{host}}\n{% endfor %}"))
 
 
 def __setup_passwordless_ssh():
@@ -49,17 +51,6 @@ def __setup_passwordless_ssh():
   import params
   utils.exec_hawq_operation("ssh-exkeys", format('-f {hawq_hosts_file} -p {hawq_password!p}', hawq_hosts_file=hawq_constants.hawq_hosts_file, hawq_password=params.hawq_password))
 
-  File(hawq_constants.hawq_hosts_file, action='delete')
-
-
-def __setup_hawq_user_profile():
-  """
-  Sets up the ENV variables for hawq_user as a convenience for the command line users
-  """
-  hawq_profile_file = os.path.join(os.path.expanduser("~{0}".format(hawq_constants.hawq_user)), ".hawq-profile.sh")
-  File(hawq_profile_file, content=Template("hawq-profile.sh.j2"), owner=hawq_constants.hawq_user, group=hawq_constants.hawq_group)
-  common.update_bashrc(hawq_profile_file, hawq_constants.hawq_user_bashrc_file)
-
 
 def configure_master():
   """
@@ -68,13 +59,12 @@ def configure_master():
   common.setup_user()
   common.setup_common_configurations()
   __setup_master_specific_conf_files()
-  __setup_hawq_user_profile()
   __create_local_dirs()
 
 
 def __create_local_dirs():
   """
-  Creates the required local directories for HAWQ 
+  Creates the required local directories for HAWQ
   """
   import params
   # Create Master directories
@@ -107,15 +97,19 @@ def __init_active():
   """
   Initializes the active master
   """
+  import params
   __setup_hdfs_dirs()
   utils.exec_hawq_operation(hawq_constants.INIT, "{0} -a -v".format(hawq_constants.MASTER))
+  Logger.info("Active master {0} initialized".format(params.hostname))
 
 
 def __init_standby():
   """
   Initializes the HAWQ Standby Master
   """
+  import params
   utils.exec_hawq_operation(hawq_constants.INIT, "{0} -a -v".format(hawq_constants.STANDBY))
+  Logger.info("Standby host {0} initialized".format(params.hostname))
 
 
 def __get_component_name():
@@ -135,11 +129,12 @@ def __start_local_master():
   __setup_hdfs_dirs()
 
   utils.exec_hawq_operation(
-        hawq_constants.START, 
+        hawq_constants.START,
         "{0} -a -v".format(component_name),
         not_if=utils.chk_hawq_process_status_cmd(params.hawq_master_address_port, component_name))
+  Logger.info("Master {0} started".format(params.hostname))
 
-  
+
 def __is_local_initialized():
   """
   Checks if the local node has been initialized
@@ -156,15 +151,42 @@ def __get_standby_host():
   return None if standby_host is None or standby_host.lower() == 'none' else standby_host
 
 
-def __is_standby_initialized():
+def __is_active_master():
   """
-  Returns True if HAWQ Standby Master is initialized, False otherwise
+  Finds if this node is the active master
   """
   import params
-  
-  file_path = os.path.join(params.hawq_master_dir, hawq_constants.postmaster_opts_filename)
-  (retcode, _, _) = utils.exec_ssh_cmd(__get_standby_host(), "[ -f {0} ]".format(file_path))
-  return retcode == 0
+  return params.hostname == common.get_local_hawq_site_property("hawq_master_address_host")
+
+
+def __is_standby_host():
+  """
+  Finds if this node is the standby host
+  """
+  import params
+  return params.hostname == common.get_local_hawq_site_property("hawq_standby_address_host")
+
+
+def __check_dfs_truncate_enforced():
+  """
+  If enforce_hdfs_truncate is set to True:
+    throw an ERROR, HAWQMASTER or HAWQSTANDBY start should fail
+  Else:
+    throw a WARNING,
+  """
+  import custom_params
+
+  DFS_ALLOW_TRUNCATE_EXCEPTION_MESSAGE = "dfs.allow.truncate property in hdfs-site.xml configuration file should be set to True. Please review HAWQ installation guide for more information."
+
+  # Check if dfs.allow.truncate exists in hdfs-site.xml and throw appropriate exception if not set to True
+  dfs_allow_truncate = default('/configurations/hdfs-site/dfs.allow.truncate', None)
+
+  if dfs_allow_truncate is None or str(dfs_allow_truncate).lower() != 'true':
+    if custom_params.enforce_hdfs_truncate:
+      Logger.error("**ERROR**: {0}".format(DFS_ALLOW_TRUNCATE_EXCEPTION_MESSAGE))
+      sys.exit(1)
+    else:
+      Logger.warning("**WARNING**: {0}".format(DFS_ALLOW_TRUNCATE_EXCEPTION_MESSAGE))
 
 
 def start_master():
@@ -176,18 +198,18 @@ def start_master():
   if not params.hostname in [params.hawqmaster_host, params.hawqstandby_host]:
     Fail("Host should be either active Hawq master or Hawq standby.")
 
+  __check_dfs_truncate_enforced()
+
   is_active_master = __is_active_master()
-  # Exchange ssh keys from active hawq master before starting.
-  if is_active_master:
-    __setup_passwordless_ssh()
+  __setup_passwordless_ssh()
 
   if __is_local_initialized():
     __start_local_master()
+    return
 
-  elif is_active_master:
+  if is_active_master:
     __init_active()
-
-  if is_active_master and __get_standby_host() is not None and not __is_standby_initialized():
+  elif __is_standby_host():
     __init_standby()
 
 
@@ -201,11 +223,3 @@ def stop(mode=hawq_constants.FAST, component=None):
                 hawq_constants.STOP,
                 "{0} -M {1} -a -v".format(component_name, mode),
                 only_if=utils.chk_hawq_process_status_cmd(params.hawq_master_address_port, component_name))
-
-
-def __is_active_master():
-  """
-  Finds if this node is the active master
-  """
-  import params
-  return params.hostname == common.get_local_hawq_site_property("hawq_master_address_host")

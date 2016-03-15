@@ -17,9 +17,9 @@
  */
 
 var App = require('app');
-var numberUtils = require('utils/number_utils');
 require('mixins/common/localStorage');
 require('controllers/wizard/step7_controller');
+var testHelpers = require('test/helpers');
 
 var installerStep7Controller,
   issuesFilterCases = [
@@ -109,13 +109,13 @@ function getController() {
 describe('App.InstallerStep7Controller', function () {
 
   beforeEach(function () {
-    sinon.stub(App.ajax, 'send', Em.K);
     sinon.stub(App.config, 'setPreDefinedServiceConfigs', Em.K);
     installerStep7Controller = getController();
+    App.router.nextBtnClickInProgress = false;
   });
 
   afterEach(function() {
-    App.ajax.send.restore();
+    App.router.nextBtnClickInProgress = false;
     App.config.setPreDefinedServiceConfigs.restore();
     installerStep7Controller.destroy();
   });
@@ -263,7 +263,7 @@ describe('App.InstallerStep7Controller', function () {
 
   describe('#_createSiteToTagMap', function () {
     it('should return filtered map', function () {
-      var desired_configs = {
+      var desiredConfigs = {
         site1: {
           tag: "tag1"
         },
@@ -278,7 +278,7 @@ describe('App.InstallerStep7Controller', function () {
         site1: true,
         site3: true
       };
-      var siteToTagMap = installerStep7Controller._createSiteToTagMap(desired_configs,sites);
+      var siteToTagMap = installerStep7Controller._createSiteToTagMap(desiredConfigs,sites);
       expect(siteToTagMap).to.eql({
         site1: "tag1",
         site3: "tag3"
@@ -334,6 +334,14 @@ describe('App.InstallerStep7Controller', function () {
       installerStep7Controller.submit();
       expect(installerStep7Controller.get('submitButtonClicked')).to.be.false;
     });
+    it('if Next button is clicked multiple times before the next step renders, it must not be processed',function(){
+      installerStep7Controller.submit();
+      expect(App.router.send.calledWith('next')).to.equal(true);
+
+      App.router.send.reset();
+      installerStep7Controller.submit();
+      expect(App.router.send.calledWith('next')).to.equal(false);
+    });
   });
 
   describe('#getConfigTagsSuccess', function () {
@@ -364,7 +372,7 @@ describe('App.InstallerStep7Controller', function () {
     });
 
     it('should return serviceConfigTags', function () {
-      var desired_configs = {
+      var desiredConfigs = {
         site1: {
           tag: "tag1"
         },
@@ -377,10 +385,10 @@ describe('App.InstallerStep7Controller', function () {
       };
       var data = {
         Clusters: {
-          desired_configs: desired_configs
+          desired_configs: desiredConfigs
         }
       };
-      var siteToTagMap = installerStep7Controller.getConfigTagsSuccess(data);
+      installerStep7Controller.getConfigTagsSuccess(data);
       expect(installerStep7Controller.get('serviceConfigTags')).to.eql([
         {
           "siteName": "site1",
@@ -431,14 +439,16 @@ describe('App.InstallerStep7Controller', function () {
     it('should do ajax request for each received service name', function () {
       var serviceNames = ['s1', 's2', 's3'];
       installerStep7Controller.loadInstalledServicesConfigGroups(serviceNames);
-      expect(App.ajax.send.callCount).to.equal(serviceNames.length);
+      var args = testHelpers.filterAjaxRequests('name', 'config.tags_and_groups');
+      expect(args).to.have.property('length').equal(serviceNames.length);
     });
   });
 
   describe('#getConfigTags', function () {
     it('should do ajax-request', function () {
       installerStep7Controller.getConfigTags();
-      expect(App.ajax.send.calledOnce).to.equal(true);
+      var args = testHelpers.findAjaxRequest('name', 'config.tags');
+      expect(args).exists;
     });
   });
 
@@ -472,7 +482,8 @@ describe('App.InstallerStep7Controller', function () {
   describe('#checkMySQLHost', function () {
     it('should send query', function () {
       installerStep7Controller.checkMySQLHost();
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'ambari.service');
+      expect(args).exists;
     });
   });
 
@@ -542,8 +553,7 @@ describe('App.InstallerStep7Controller', function () {
           {isDefault: false, n: 'n1'},
           defaultGroup,
           {n: 'n3'}
-        ],
-        selectedConfigGroup = {};
+        ];
       installerStep7Controller.reopen({selectedService: {serviceName: 's1', configGroups: configGroups}});
       installerStep7Controller.selectedServiceObserver();
       expect(installerStep7Controller.get('configGroups').mapProperty('n')).to.eql(['n2', 'n1', 'n3']);
@@ -1061,7 +1071,6 @@ describe('App.InstallerStep7Controller', function () {
           stackConfigsLoaded: true
         })
       });
-      sinon.stub(App.config, 'fileConfigsIntoTextarea', Em.K);
       sinon.stub(installerStep7Controller, 'clearStep', Em.K);
       sinon.stub(installerStep7Controller, 'getConfigTags', Em.K);
       sinon.stub(installerStep7Controller, 'setInstalledServiceConfigs', Em.K);
@@ -1071,7 +1080,6 @@ describe('App.InstallerStep7Controller', function () {
       sinon.stub(App.router, 'send', Em.K);
     });
     afterEach(function () {
-      App.config.fileConfigsIntoTextarea.restore();
       installerStep7Controller.clearStep.restore();
       installerStep7Controller.getConfigTags.restore();
       installerStep7Controller.setInstalledServiceConfigs.restore();
@@ -1101,11 +1109,8 @@ describe('App.InstallerStep7Controller', function () {
       installerStep7Controller.reopen({
         allSelectedServiceNames: []
       });
-      sinon.stub(App.config, 'fileConfigsIntoTextarea', function(configs) {
-        return configs;
-      });
-      sinon.stub(installerStep7Controller, 'loadServerSideConfigsRecommendations', function() {
-        return $.Deferred().resolve();
+      sinon.stub(installerStep7Controller, 'loadConfigRecommendations', function(c, callback) {
+        return callback();
       });
       sinon.stub(installerStep7Controller, 'checkHostOverrideInstaller', Em.K);
       sinon.stub(installerStep7Controller, 'selectProperService', Em.K);
@@ -1127,16 +1132,15 @@ describe('App.InstallerStep7Controller', function () {
     });
 
     afterEach(function () {
-      App.config.fileConfigsIntoTextarea.restore();
-      installerStep7Controller.loadServerSideConfigsRecommendations.restore();
+      installerStep7Controller.loadConfigRecommendations.restore();
       installerStep7Controller.checkHostOverrideInstaller.restore();
       installerStep7Controller.selectProperService.restore();
       App.router.send.restore();
       App.StackService.find.restore();
     });
 
-    it('loadServerSideConfigsRecommendations is called once' , function () {
-     expect(installerStep7Controller.loadServerSideConfigsRecommendations.calledOnce).to.equal(true);
+    it('loadConfigRecommendations is called once' , function () {
+     expect(installerStep7Controller.loadConfigRecommendations.calledOnce).to.equal(true);
     });
     it('isRecommendedLoaded is true' , function () {
      expect(installerStep7Controller.get('isRecommendedLoaded')).to.equal(true);
@@ -1148,25 +1152,42 @@ describe('App.InstallerStep7Controller', function () {
      expect(installerStep7Controller.selectProperService.calledOnce).to.equal(true);
     });
 
-    Em.A([
-      {
-        allSelectedServiceNames: ['YARN'],
-        fileConfigsIntoTextarea: true,
-        m: 'should run fileConfigsIntoTextarea'
-      }
-    ]).forEach(function(t) {
-      it(t.m, function () {
-        installerStep7Controller.reopen({
-          allSelectedServiceNames: t.allSelectedServiceNames
-        });
-        installerStep7Controller.applyServicesConfigs([{name: 'configs'}]);
-        if (t.fileConfigsIntoTextarea) {
-          expect(App.config.fileConfigsIntoTextarea.calledWith([{name: 'configs'}], 'capacity-scheduler.xml')).to.equal(true);
-        } else {
-          expect(App.config.fileConfigsIntoTextarea.calledOnce).to.equal(false);
-        }
-      });
+  });
+
+  describe('#removeHawqStandbyHostAddressConfig', function() {
+    installerStep7Controller = App.WizardStep7Controller.create({
+      content: Em.Object.create({}),
     });
+    var testHawqSiteConfigs = [
+      {
+        name: 'hawq_standby_address_host',
+        value: 'h2'
+      },
+      {
+        name: 'hawq_master_address_host',
+        value: 'h1'
+      }
+    ];
+    var oldHawqSiteLength = testHawqSiteConfigs.length;
+
+    it('hawq_standby_address_host should be removed on single node cluster', function() {
+      var hawqSiteConfigs = testHawqSiteConfigs.slice();
+      installerStep7Controller.set('content.hosts', {'hostname': 'h1'});
+      var updatedHawqSiteConfigs = installerStep7Controller.updateHawqConfigs(hawqSiteConfigs);
+      expect(updatedHawqSiteConfigs.length).to.be.equal(oldHawqSiteLength-1);
+      expect(updatedHawqSiteConfigs.findProperty('name', 'hawq_standby_address_host')).to.not.exist;
+      expect(updatedHawqSiteConfigs.findProperty('name', 'hawq_master_address_host').value).to.be.equal('h1');
+    });
+
+    it('hawq_standby_address_host should not be removed on multi node clusters', function() {
+      var hawqSiteConfigs = testHawqSiteConfigs.slice();
+      installerStep7Controller.set('content.hosts', Em.A([{'hostname': 'h1'}, {'hostname': 'h2'}]));
+      var updatedHawqSiteConfigs = installerStep7Controller.updateHawqConfigs(hawqSiteConfigs);
+      expect(updatedHawqSiteConfigs.length).to.be.equal(oldHawqSiteLength);
+      expect(updatedHawqSiteConfigs.findProperty('name', 'hawq_standby_address_host').value).to.be.equal('h2');
+      expect(updatedHawqSiteConfigs.findProperty('name', 'hawq_master_address_host').value).to.be.equal('h1');
+    });
+
   });
 
   describe('#_updateIsEditableFlagForConfig', function () {
@@ -1374,8 +1395,9 @@ describe('App.InstallerStep7Controller', function () {
             serviceName: 'HIVE',
             configs: [
               {
-                name: 'hive_hostname',
-                value: 'h0'
+                name: 'javax.jdo.option.ConnectionURL',
+                value: 'jdbc:mysql://h0/db_name?createDatabaseIfNotExist=true',
+                filename: 'hive-site.xml'
               }
             ]
           }
@@ -1394,8 +1416,25 @@ describe('App.InstallerStep7Controller', function () {
             hostComponents: [
               {
                 RootServiceHostComponents: {
+                  host_name: 'h0',
                   properties: {
-                    'server.jdbc.url': 'jdbc:mysql://h0/db0?createDatabaseIfNotExist=true'
+                    'server.jdbc.database': 'postgres'
+                  }
+                }
+              }
+            ]
+          },
+          mySQLServerConflict: false,
+          title: 'Ambari MySQL Server and Hive Server are on the same host but different database types'
+        },
+        {
+          data: {
+            hostComponents: [
+              {
+                RootServiceHostComponents: {
+                  host_name: 'h0',
+                  properties: {
+                    'server.jdbc.database': 'mysql'
                   }
                 }
               }
@@ -1409,8 +1448,9 @@ describe('App.InstallerStep7Controller', function () {
             hostComponents: [
               {
                 RootServiceHostComponents: {
+                  host_name: 'h1',
                   properties: {
-                    'server.jdbc.url': 'jdbc:mysql://h1/db1?createDatabaseIfNotExist=true'
+                    'server.jdbc.database': 'mysql'
                   }
                 }
               }
@@ -1518,7 +1558,7 @@ describe('App.InstallerStep7Controller', function () {
       });
       installerStep7Controller.set('wizardController', wizardController);
       installerStep7Controller.set('stepConfigs', Em.A([Em.Object.create({serviceName: 'OOZIE', configs: Em.A([]) })]));
-      var desired_configs = {
+      var desiredConfigs = {
         site1: {
           tag: "tag1"
         },
@@ -1544,7 +1584,7 @@ describe('App.InstallerStep7Controller', function () {
           })
         })]),
         Clusters: {
-          desired_configs: desired_configs
+          desired_configs: desiredConfigs
         }
       };
       installerStep7Controller.loadServiceTagsSuccess(data, {}, params);
@@ -1688,17 +1728,69 @@ describe('App.InstallerStep7Controller', function () {
         recommendedValue: 'c6402.ambari.apache.org:50070'
       }
     ];
+    var oldConfigs = configs.slice();
 
     it('should copy properties from hdfs-site to hdfs-client for HAWQ', function() {
-      var oldConfigs = configs.slice();
       installerStep7Controller.addHawqConfigsOnNnHa(configs);
-      oldConfigs.forEach(function(property){
-        // find the same property in hdfs-client for HAWQ and see if attribute value matches with the corresponding property's attribute value in hdfs-site
-        expect(configs.findProperty('id', property.name + '__hdfs-client').description).to.be.eql(property.description);
-        expect(configs.findProperty('id', property.name + '__hdfs-client').displayName).to.be.eql(property.displayName);
-        expect(configs.findProperty('id', property.name + '__hdfs-client').value).to.be.eql(property.value);
-        expect(configs.findProperty('id', property.name + '__hdfs-client').recommendedValue).to.be.eql(property.recommendedValue);
+      // ensure 6 new configs were added
+      expect(configs.length).to.be.equal(oldConfigs.length + 6);
+    });
+
+    describe('find the same property in hdfs-client for HAWQ and see if attribute value matches with the corresponding property\'s attribute value in hdfs-site', function () {
+      oldConfigs.forEach(function(property) {
+        var id = property.name + '__hdfs-client';
+        it(id, function () {
+          expect(configs.findProperty('id', id).description).to.be.equal(property.description);
+          expect(configs.findProperty('id', id).displayName).to.be.equal(property.displayName);
+          expect(configs.findProperty('id', id).value).to.be.equal(property.value);
+          expect(configs.findProperty('id', id).recommendedValue).to.be.equal(property.recommendedValue);
+        });
       });
+    });
+  });
+
+  describe('#addHawqConfigsOnRMHa', function () {
+    var configs = [
+      {
+        id: 'yarn.resourcemanager.hostname.rm1__yarn-site',
+        name: 'yarn.resourcemanager.hostname.rm1',
+        value: 'c6401.ambari.apache.org',
+        recommendedValue: 'c6401.ambari.apache.org'
+      },
+      {
+        id: 'yarn.resourcemanager.hostname.rm2__yarn-site',
+        name: 'yarn.resourcemanager.hostname.rm2',
+        value: 'c6402.ambari.apache.org',
+        recommendedValue: 'c6402.ambari.apache.org'
+      }
+    ];
+
+    beforeEach(function () {
+      this.inputConfigsCount = configs.length;
+      installerStep7Controller.addHawqConfigsOnRMHa(configs);
+      this.yarnRmDetails = configs.findProperty('id', 'yarn.resourcemanager.ha__yarn-client');
+      this.yarnRmSchedulerDetails = configs.findProperty('id', 'yarn.resourcemanager.scheduler.ha__yarn-client');
+    });
+
+    it('should update properties in yarn-client for HAWQ if yarn ha is enabled', function() {
+      var noOfConfigsAdded = 2;
+      expect(configs.length).to.be.equal(this.inputConfigsCount + noOfConfigsAdded);
+    });
+
+    it('yarn.resourcemanager.ha__yarn-client', function() {
+      var expectedYarnRmHaValue = 'c6401.ambari.apache.org:8032,c6402.ambari.apache.org:8032';
+      expect(this.yarnRmDetails.value).to.be.equal(expectedYarnRmHaValue);
+      expect(this.yarnRmDetails.recommendedValue).to.be.equal(expectedYarnRmHaValue);
+      expect(this.yarnRmDetails.displayName).to.be.equal('yarn.resourcemanager.ha');
+      expect(this.yarnRmDetails.description).to.be.equal('Comma separated yarn resourcemanager host addresses with port');
+    });
+
+    it('yarn.resourcemanager.scheduler.ha__yarn-client', function() {
+      var expectedYarnRmSchedulerValue = 'c6401.ambari.apache.org:8030,c6402.ambari.apache.org:8030';
+      expect(this.yarnRmSchedulerDetails.value).to.be.equal(expectedYarnRmSchedulerValue);
+      expect(this.yarnRmSchedulerDetails.recommendedValue).to.be.equal(expectedYarnRmSchedulerValue);
+      expect(this.yarnRmSchedulerDetails.displayName).to.be.equal('yarn.resourcemanager.scheduler.ha');
+      expect(this.yarnRmSchedulerDetails.description).to.be.equal('Comma separated yarn resourcemanager scheduler addresses with port');
     });
   });
 
@@ -1954,6 +2046,435 @@ describe('App.InstallerStep7Controller', function () {
       installerStep7Controller.set('content.controllerName', 'addServiceController');
       installerStep7Controller.mySQLWarningHandler().onSecondary().onPrimary();
       expect(App.router.get('addSeviceController').gotoStep.calledWith(2, true)).to.be.true;
+    });
+
+  });
+
+  describe('#supportsPreInstallChecks', function () {
+
+    beforeEach(function () {
+      this.stub = sinon.stub(App, 'get');
+    });
+
+    afterEach(function () {
+      this.stub.restore();
+    });
+
+    Em.A([
+      {preInstallChecks: true, controllerName: 'installerController', e: true},
+      {preInstallChecks: true, controllerName: '', e: false},
+      {preInstallChecks: false, controllerName: 'installerController', e: false},
+      {preInstallChecks: false, controllerName: '', e: false}
+    ]).forEach(function (test) {
+
+      it(JSON.stringify(test), function () {
+        this.stub.withArgs('supports.preInstallChecks').returns(test.preInstallChecks);
+        installerStep7Controller.set('content', {controllerName: test.controllerName});
+        installerStep7Controller.propertyDidChange('supportsPreInstallChecks');
+
+        expect(installerStep7Controller.get('supportsPreInstallChecks')).to.be.equal(test.e);
+      });
+
+    });
+
+  });
+
+  describe('#getHash', function () {
+
+    var stepConfigs = [
+      {
+        configs: [
+          Em.Object.create({name: 's1c1', isFinal: true, value: 'v11'}),
+          Em.Object.create({name: 's1c2', isFinal: false, value: 'v12', overrides: []}),
+          Em.Object.create({name: 's1c3', isFinal: true, value: 'v13', overrides: [
+            Em.Object.create({value: 'v131'})
+          ]})
+        ]
+      },
+      {
+        configs: [
+          Em.Object.create({name: 's2c1', isFinal: true, value: 'v21'}),
+          Em.Object.create({name: 's2c2', isFinal: false, value: 'v22', overrides: []}),
+          Em.Object.create({name: 's2c3', isFinal: true, value: 'v23', overrides: [
+            Em.Object.create({value: 'v231'})
+          ]})
+        ]
+      }
+    ];
+
+    beforeEach(function () {
+      installerStep7Controller.set('stepConfigs', stepConfigs);
+      this.hash = installerStep7Controller.getHash();
+    });
+
+    it('should map value, isFinal and overrides values', function () {
+      var expected = JSON.stringify({
+        s1c1: {
+          value: 'v11',
+          overrides: [],
+          isFinal: true
+        },
+        s1c2: {
+          value: 'v12',
+          overrides: [],
+          isFinal: false
+        },
+        s1c3: {
+          value: 'v13',
+          overrides: ['v131'],
+          isFinal: true
+        },
+        s2c1: {
+          value: 'v21',
+          overrides: [],
+          isFinal: true
+        },
+        s2c2: {
+          value: 'v22',
+          overrides: [],
+          isFinal: false
+        },
+        s2c3: {
+          value: 'v23',
+          overrides: ['v231'],
+          isFinal: true
+        }
+      });
+      expect(this.hash).to.be.equal(expected);
+    });
+
+  });
+
+  describe('#loadServiceConfigGroupOverrides', function () {
+
+    var serviceConfigs = [
+      {filename: 'f1', name: 'n1'}
+    ];
+
+    var configGroups = [
+      {
+        "name": "Default",
+        "description": "desc",
+        "isDefault": true,
+        "hosts": ['h1', 'h2', 'h3'],
+        "parentConfigGroup": null,
+        "service": {"id": "YARN"},
+        "serviceName": "YARN",
+        "configSiteTags": [],
+        "clusterHosts": []
+      }
+    ];
+
+    var loadedGroupToOverrideSiteToTagMap = {
+      Default: {
+        type1: 'tag1',
+        type2: 'tag2',
+        type3: 'tag3'
+      }
+    };
+
+    beforeEach(function () {
+      installerStep7Controller.loadServiceConfigGroupOverrides(serviceConfigs, loadedGroupToOverrideSiteToTagMap, configGroups);
+      this.args = testHelpers.findAjaxRequest('name', 'config.host_overrides')[0].data;
+    });
+
+    it('url params are valid', function () {
+      expect(this.args.params).to.be.equal('(type=type1&tag=tag1)|(type=type2&tag=tag2)|(type=type3&tag=tag3)');
+    });
+
+    it('configKeyToConfigMap is valid', function () {
+      var expected = {
+        "f1": {
+          "n1": {
+            "filename": "f1",
+            "name": "n1"
+          }
+        }
+      };
+      expect(this.args.configKeyToConfigMap).to.be.eql(expected);
+    });
+
+    describe('typeTagToGroupMap is valid', function () {
+
+      it('type1///tag1', function () {
+        var expected = {
+          "name": "Default",
+          "description": "desc",
+          "isDefault": true,
+          "hosts": [
+            "h1",
+            "h2",
+            "h3"
+          ],
+          "parentConfigGroup": null,
+          "service": {
+            "id": "YARN"
+          },
+          "serviceName": "YARN",
+          "configSiteTags": [],
+          "clusterHosts": []
+        };
+
+        expect(this.args.typeTagToGroupMap['type1///tag1']).to.be.eql(expected);
+
+      });
+
+      it('type2///tag2', function () {
+        var expected = {
+          "name": "Default",
+          "description": "desc",
+          "isDefault": true,
+          "hosts": [
+            "h1",
+            "h2",
+            "h3"
+          ],
+          "parentConfigGroup": null,
+          "service": {
+            "id": "YARN"
+          },
+          "serviceName": "YARN",
+          "configSiteTags": [],
+          "clusterHosts": []
+        };
+
+        expect(this.args.typeTagToGroupMap['type2///tag2']).to.be.eql(expected);
+
+      });
+
+      it('type3///tag3', function () {
+        var expected = {
+          "name": "Default",
+          "description": "desc",
+          "isDefault": true,
+          "hosts": [
+            "h1",
+            "h2",
+            "h3"
+          ],
+          "parentConfigGroup": null,
+          "service": {
+            "id": "YARN"
+          },
+          "serviceName": "YARN",
+          "configSiteTags": [],
+          "clusterHosts": []
+        };
+
+        expect(this.args.typeTagToGroupMap['type3///tag3']).to.be.eql(expected);
+
+      });
+
+    });
+
+    it('serviceConfigs is valid', function () {
+
+      var expected = [
+        {
+          "filename": "f1",
+          "name": "n1"
+        }
+      ];
+
+      expect(this.args.serviceConfigs).to.be.eql(expected);
+
+    });
+
+  });
+
+  describe('#updateHostOverrides', function () {
+
+    var configProperty;
+    var storedConfigProperty;
+
+    beforeEach(function () {
+      configProperty = Em.Object.create({});
+      storedConfigProperty = {
+        overrides: [
+          {value: 'v1'}
+        ]
+      };
+      installerStep7Controller.updateHostOverrides(configProperty, storedConfigProperty);
+    });
+
+    it('override is valid', function () {
+      var override = configProperty.get('overrides.0');
+      expect(override.get('value')).to.be.equal('v1');
+      expect(override.get('isOriginalSCP')).to.be.false;
+      expect(override.get('parentSCP')).to.be.eql(configProperty);
+    });
+
+  });
+
+  describe('#allowUpdateProperty', function () {
+
+    it('true if it is installer', function () {
+      installerStep7Controller.set('wizardController', {name: 'installerController'});
+      expect(installerStep7Controller.allowUpdateProperty([], '', '')).to.be.true;
+    });
+
+    it('true if it is parentProperties are not empty', function () {
+      installerStep7Controller.set('wizardController', {name: 'some'});
+      expect(installerStep7Controller.allowUpdateProperty([{}], '', '')).to.be.true;
+    });
+
+    describe('#addServiceController', function () {
+
+      beforeEach(function () {
+        installerStep7Controller.set('wizardController', {name: 'addServiceController'});
+        this.stub = sinon.stub(App.configsCollection, 'getConfigByName');
+        sinon.stub(App.config, 'get').withArgs('serviceByConfigTypeMap').returns({
+          't1': Em.Object.create({serviceName: 's1'}),
+          't2': Em.Object.create({serviceName: 's2'})
+        })
+      });
+
+      afterEach(function () {
+        App.configsCollection.getConfigByName.restore();
+        App.config.get.restore();
+      });
+
+      it('stackProperty does not exist', function () {
+        this.stub.returns(null);
+        expect(installerStep7Controller.allowUpdateProperty([], '', '')).to.be.true;
+      });
+
+      it('installedServices does not contain stackProperty.serviceName', function () {
+        this.stub.returns({serviceName: 's1'});
+        installerStep7Controller.set('installedServices', {});
+        expect(installerStep7Controller.allowUpdateProperty([], '', '')).to.be.true;
+      });
+
+      it('stackProperty.propertyDependsOn is empty', function () {
+        installerStep7Controller.reopen({installedServices: {s1: true}});
+        this.stub.returns({serviceName: 's1', propertyDependsOn: []});
+
+        expect(installerStep7Controller.allowUpdateProperty([], '', '')).to.be.false;
+      });
+
+      it('stackProperty.propertyDependsOn is not empty', function () {
+        installerStep7Controller.reopen({installedServices: {s1: true}});
+        this.stub.returns({serviceName: 's1', propertyDependsOn: [
+          {type: 't1'},
+          {type: 't2'}
+        ]});
+
+        expect(installerStep7Controller.allowUpdateProperty([], '', '')).to.be.true;
+      });
+
+      it('stackProperty.propertyDependsOn is not empty (2)', function () {
+        installerStep7Controller.reopen({installedServices: {s1: true}});
+        this.stub.returns({serviceName: 's1', propertyDependsOn: [
+          {type: 't1'},
+          {type: 't1'}
+        ]});
+
+        expect(installerStep7Controller.allowUpdateProperty([], '', '')).to.be.false;
+      });
+
+    });
+
+    it('true if it is not installer or addService', function () {
+      installerStep7Controller.set('wizardController', {name: 'some'});
+      expect(installerStep7Controller.allowUpdateProperty([], '', '')).to.be.true;
+    });
+
+  });
+
+  describe('#loadServiceConfigGroupOverridesSuccess', function () {
+
+    var data = {
+      items: [
+        {
+          type: 'type1',
+          tag: 'tag1',
+          properties: {
+            p1: 'v1',
+            p3: 'v3'
+          },
+          properties_attributes: {
+            final: {
+              p1: true,
+              p3: true
+            }
+          }
+        },
+        {
+          type: 'type2',
+          tag: 'tag1',
+          properties: {
+            p2: 'v2',
+            p4: 'v4'
+          },
+          properties_attributes: {}
+        }
+      ]
+    };
+
+    var params;
+
+    beforeEach(function () {
+      params = {
+        serviceConfigs: [],
+        typeTagToGroupMap: {
+          'type1///tag1': Em.Object.create({
+            name: 't1t1'
+          }),
+          'type2///tag1': Em.Object.create({
+            name: 't2t1'
+          })
+        },
+        configKeyToConfigMap: {
+          type1: {},
+          type2: {
+            p4: {}
+          }
+        }
+      };
+      sinon.stub(installerStep7Controller, 'onLoadOverrides', Em.K);
+      sinon.stub(App.config, 'getOriginalFileName', function (type) {return type;});
+      sinon.stub(App.config, 'formatPropertyValue', function (serviceConfigProperty, originalValue) {
+        return Em.isNone(originalValue) ? Em.get(serviceConfigProperty, 'value') : originalValue;
+      });
+      installerStep7Controller.loadServiceConfigGroupOverridesSuccess(data, {}, params);
+      this.serviceConfigs = installerStep7Controller.onLoadOverrides.args[0][0];
+    });
+
+    afterEach(function () {
+      installerStep7Controller.onLoadOverrides.restore();
+      App.config.getOriginalFileName.restore();
+      App.config.formatPropertyValue.restore();
+    });
+
+    it('type2/p4 is mapped to the params.configKeyToConfigMap', function () {
+      expect(params).to.have.deep.property('configKeyToConfigMap.type2.p4').that.is.an('object').with.deep.property('overrides');
+    });
+
+    it('type2/p4 has 1 override', function () {
+      expect(params.configKeyToConfigMap.type2.p4.overrides).to.have.property('length').equal(1);
+    });
+
+    it('type2/p4 override is valid', function () {
+      var override = params.configKeyToConfigMap.type2.p4.overrides[0];
+      expect(override.value).to.be.equal('v4');
+      expect(override.group.name).to.be.equal('t2t1');
+      expect(override.isFinal).to.be.false;
+    });
+
+    it('onLoadOverrides is called for 3 configs', function () {
+      expect(this.serviceConfigs).to.have.property('length').equal(3);
+    });
+
+    it('serviceConfigs ids are valid', function () {
+      expect(this.serviceConfigs.mapProperty('id')).to.be.eql(['p1__type1', 'p3__type1', 'p2__type2']);
+    });
+
+    it('serviceConfigs groups are valid', function () {
+      expect(this.serviceConfigs.mapProperty('group.name')).to.be.eql(['t1t1', 't1t1', 't2t1']);
+    });
+
+    it('serviceConfigs filenames are valid', function () {
+      expect(this.serviceConfigs.mapProperty('filename')).to.be.eql(['type1', 'type1', 'type2']);
     });
 
   });

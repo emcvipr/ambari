@@ -17,10 +17,11 @@ limitations under the License.
 
 """
 
-from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions.version import format_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions.get_kinit_path import get_kinit_path
 from resource_management.libraries.script import Script
+import os
 
 # a map of the Ambari role to the component name
 # for use with /usr/hdp/current/<component>
@@ -31,12 +32,15 @@ SERVER_ROLE_DIRECTORY_MAP = {
 component_directory = Script.get_component_from_role(SERVER_ROLE_DIRECTORY_MAP, "SQOOP")
 
 config = Script.get_config()
+
+cluster_name = config['clusterName']
+
 ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 
 stack_name = default("/hostLevelParams/stack_name", None)
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+stack_version_formatted = format_stack_version(stack_version_unformatted)
 
 # New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade
 version = default("/commandParams/version", None)
@@ -51,7 +55,7 @@ sqoop_bin_dir = "/usr/bin"
 zoo_conf_dir = "/etc/zookeeper"
 
 # HDP 2.2+ params
-if Script.is_hdp_stack_greater_or_equal("2.2"):
+if Script.is_stack_greater_or_equal("2.2"):
   sqoop_conf_dir = '/usr/hdp/current/sqoop-client/conf'
   sqoop_lib = '/usr/hdp/current/sqoop-client/lib'
   hadoop_home = '/usr/hdp/current/hbase-client'
@@ -71,7 +75,7 @@ sqoop_user = config['configurations']['sqoop-env']['sqoop_user']
 smoke_user_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
 kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
 #JDBC driver jar name
-sqoop_jdbc_drivers_dict = {}
+sqoop_jdbc_drivers_dict = []
 sqoop_jdbc_drivers_name_dict = {}
 if "jdbc_drivers" in config['configurations']['sqoop-env']:
   sqoop_jdbc_drivers = config['configurations']['sqoop-env']['jdbc_drivers'].split(',')
@@ -80,27 +84,36 @@ if "jdbc_drivers" in config['configurations']['sqoop-env']:
     driver_name = driver_name.strip()
     if driver_name and not driver_name == '':
       if driver_name == "com.microsoft.sqlserver.jdbc.SQLServerDriver":
-        jdbc_jar_name = "sqljdbc4.jar"
-        jdbc_symlink_name = "mssql-jdbc-driver.jar"
+        jdbc_name = default("/hostLevelParams/custom_mssql_jdbc_name", None)
         jdbc_driver_name = "mssql"
       elif driver_name == "com.mysql.jdbc.Driver":
-        jdbc_jar_name = "mysql-connector-java.jar"
-        jdbc_symlink_name = "mysql-jdbc-driver.jar"
+        jdbc_name = default("/hostLevelParams/custom_mysql_jdbc_name", None)
         jdbc_driver_name = "mysql"
       elif driver_name == "org.postgresql.Driver":
-        jdbc_jar_name = "postgresql-jdbc.jar"
-        jdbc_symlink_name = "postgres-jdbc-driver.jar"
+        jdbc_name = default("/hostLevelParams/custom_postgres_jdbc_name", None)
         jdbc_driver_name = "postgres"
       elif driver_name == "oracle.jdbc.driver.OracleDriver":
-        jdbc_jar_name = "ojdbc.jar"
-        jdbc_symlink_name = "oracle-jdbc-driver.jar"
+        jdbc_name = default("/hostLevelParams/custom_oracle_jdbc_name", None)
         jdbc_driver_name = "oracle"
       elif driver_name == "org.hsqldb.jdbc.JDBCDriver":
-        jdbc_jar_name = "hsqldb.jar"
-        jdbc_symlink_name = "hsqldb-jdbc-driver.jar"
+        jdbc_name = default("/hostLevelParams/custom_hsqldb_jdbc_name", None)
         jdbc_driver_name = "hsqldb"
     else:
       continue
-    sqoop_jdbc_drivers_dict[jdbc_jar_name] = jdbc_symlink_name
-    sqoop_jdbc_drivers_name_dict[jdbc_jar_name] = jdbc_driver_name
+    sqoop_jdbc_drivers_dict.append(jdbc_name)
+    sqoop_jdbc_drivers_name_dict[jdbc_name] = jdbc_driver_name
 jdk_location = config['hostLevelParams']['jdk_location']
+
+job_data_publish_class = ''
+
+########################################################
+############# Atlas related params #####################
+########################################################
+
+atlas_hosts = default('/clusterHostInfo/atlas_server_hosts', [])
+has_atlas = len(atlas_hosts) > 0
+
+if has_atlas:
+  atlas_home_dir = os.environ['METADATA_HOME_DIR'] if 'METADATA_HOME_DIR' in os.environ else '/usr/hdp/current/atlas-server'
+  atlas_conf_dir = os.environ['METADATA_CONF'] if 'METADATA_CONF' in os.environ else '/etc/atlas/conf'
+  job_data_publish_class = 'org.apache.atlas.sqoop.hook.SqoopHook'

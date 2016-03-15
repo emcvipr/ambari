@@ -31,7 +31,7 @@ describe('App.MainAlertDefinitionsView', function () {
   beforeEach(function () {
     view = getView();
     sinon.stub(App.db, 'setFilterConditions', Em.K);
-    sinon.stub(App.db, 'getFilterConditions', Em.K);
+    sinon.stub(App.db, 'getFilterConditions').returns([]);
     sinon.stub(App.db, 'getDisplayLength', Em.K);
     sinon.stub(App.db, 'setStartIndex', Em.K);
     sinon.stub(view, 'initFilters', Em.K);
@@ -51,8 +51,8 @@ describe('App.MainAlertDefinitionsView', function () {
     it('Add Ambari service to filters', function () {
       var serviceFilterClass = view.serviceFilterView;
       var content = serviceFilterClass.create({}).get('content');
-      expect(content[0].label==Em.I18n.t('common.all'));
-      expect(content[content.length-1].label==Em.I18n.t('app.name'));
+      expect(content[0].label).to.be.equal(Em.I18n.t('common.all'));
+      expect(content[content.length - 1].label).to.be.equal(Em.I18n.t('app.name'));
     });
   });
 

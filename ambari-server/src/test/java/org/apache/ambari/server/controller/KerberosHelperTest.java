@@ -30,6 +30,9 @@ import org.apache.ambari.server.actionmanager.RequestFactory;
 import org.apache.ambari.server.actionmanager.Stage;
 import org.apache.ambari.server.actionmanager.StageFactory;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.api.services.stackadvisor.StackAdvisorHelper;
+import org.apache.ambari.server.api.services.stackadvisor.StackAdvisorRequest;
+import org.apache.ambari.server.api.services.stackadvisor.recommendations.RecommendationResponse;
 import org.apache.ambari.server.controller.internal.ArtifactResourceProvider;
 import org.apache.ambari.server.controller.internal.RequestStageContainer;
 import org.apache.ambari.server.controller.spi.ClusterController;
@@ -39,6 +42,7 @@ import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.ResourceProvider;
 import org.apache.ambari.server.metadata.RoleCommandOrder;
 import org.apache.ambari.server.orm.DBAccessor;
+import org.apache.ambari.server.orm.dao.HostRoleCommandDAO;
 import org.apache.ambari.server.security.SecurityHelper;
 import org.apache.ambari.server.security.credential.PrincipalKeyCredential;
 import org.apache.ambari.server.security.encryption.CredentialStoreService;
@@ -211,6 +215,8 @@ public class KerberosHelperTest extends EasyMockSupport {
         bind(CredentialStoreService.class).to(CredentialStoreServiceImpl.class);
         bind(CreatePrincipalsServerAction.class).toInstance(createMock(CreatePrincipalsServerAction.class));
         bind(CreateKeytabFilesServerAction.class).toInstance(createMock(CreateKeytabFilesServerAction.class));
+        bind(StackAdvisorHelper.class).toInstance(createMock(StackAdvisorHelper.class));
+        bind(HostRoleCommandDAO.class).toInstance(createNiceMock(HostRoleCommandDAO.class));
       }
     });
 
@@ -218,7 +224,7 @@ public class KerberosHelperTest extends EasyMockSupport {
     setClusterController();
     //todo: StageUtils shouldn't be called for this test
     StageUtils.setTopologyManager(topologyManager);
-    expect(topologyManager.getProjectedTopology()).andReturn(
+    expect(topologyManager.getPendingHostComponents()).andReturn(
         Collections.<String, Collection<String>>emptyMap()).anyTimes();
 
     CredentialStoreService credentialStoreService = injector.getInstance(CredentialStoreService.class);
@@ -416,7 +422,7 @@ public class KerberosHelperTest extends EasyMockSupport {
     final Cluster cluster = createNiceMock(Cluster.class);
 
     kerberosHelper.executeCustomOperations(cluster,
-        Collections.singletonMap("regenerate_keytabs", "false"), null, true);
+        Collections.singletonMap(KerberosHelper.DIRECTIVE_REGENERATE_KEYTABS, "false"), null, true);
     Assert.fail("AmbariException should have failed");
   }
 
@@ -1747,7 +1753,7 @@ public class KerberosHelperTest extends EasyMockSupport {
     credentialStoreService.setCredential(cluster.getClusterName(), KerberosHelper.KDC_ADMINISTRATOR_CREDENTIAL_ALIAS,
         PrincipalKeyCredential, CredentialStoreType.TEMPORARY);
 
-    Assert.assertNotNull(kerberosHelper.executeCustomOperations(cluster, Collections.singletonMap("regenerate_keytabs", "true"), requestStageContainer, true));
+    Assert.assertNotNull(kerberosHelper.executeCustomOperations(cluster, Collections.singletonMap(KerberosHelper.DIRECTIVE_REGENERATE_KEYTABS, "true"), requestStageContainer, true));
 
     verifyAll();
   }
@@ -1833,6 +1839,68 @@ public class KerberosHelperTest extends EasyMockSupport {
         new HashMap<String, String>() {
           {
             put(KerberosHelper.DIRECTIVE_MANAGE_KERBEROS_IDENTITIES, "false");
+            put("some_directive_0", "false");
+            put("some_directive_1", null);
+          }
+        }
+    ));
+  }
+
+  @Test
+  public void testGetForceToggleKerberosDirective_NotSet() throws Exception {
+    KerberosHelper kerberosHelper = injector.getInstance(KerberosHelper.class);
+
+    assertEquals(false, kerberosHelper.getForceToggleKerberosDirective(null));
+    assertEquals(false, kerberosHelper.getForceToggleKerberosDirective(Collections.<String, String>emptyMap()));
+
+    assertEquals(false, kerberosHelper.getForceToggleKerberosDirective(
+        new HashMap<String, String>() {
+          {
+            put(KerberosHelper.DIRECTIVE_FORCE_TOGGLE_KERBEROS, null);
+            put("some_directive_0", "false");
+            put("some_directive_1", null);
+          }
+        }
+    ));
+
+    assertEquals(false, kerberosHelper.getForceToggleKerberosDirective(
+        new HashMap<String, String>() {
+          {
+            put("some_directive_0", "false");
+            put("some_directive_1", null);
+          }
+        }
+    ));
+  }
+
+  @Test
+  public void testGetForceToggleKerberosDirective_True() throws Exception {
+    KerberosHelper kerberosHelper = injector.getInstance(KerberosHelper.class);
+
+    assertEquals(true, kerberosHelper.getForceToggleKerberosDirective(Collections.singletonMap(KerberosHelper.DIRECTIVE_FORCE_TOGGLE_KERBEROS, "true")));
+    assertEquals(false, kerberosHelper.getForceToggleKerberosDirective(Collections.singletonMap(KerberosHelper.DIRECTIVE_FORCE_TOGGLE_KERBEROS, "not_true")));
+
+    assertEquals(true, kerberosHelper.getForceToggleKerberosDirective(
+        new HashMap<String, String>() {
+          {
+            put(KerberosHelper.DIRECTIVE_FORCE_TOGGLE_KERBEROS, "true");
+            put("some_directive_0", "false");
+            put("some_directive_1", null);
+          }
+        }
+    ));
+  }
+
+  @Test
+  public void testGetForceToggleKerberosDirective_False() throws Exception {
+    KerberosHelper kerberosHelper = injector.getInstance(KerberosHelper.class);
+
+    assertEquals(false, kerberosHelper.getForceToggleKerberosDirective(Collections.singletonMap(KerberosHelper.DIRECTIVE_FORCE_TOGGLE_KERBEROS, "false")));
+
+    assertEquals(false, kerberosHelper.getForceToggleKerberosDirective(
+        new HashMap<String, String>() {
+          {
+            put(KerberosHelper.DIRECTIVE_FORCE_TOGGLE_KERBEROS, "false");
             put("some_directive_0", "false");
             put("some_directive_1", null);
           }
@@ -2168,6 +2236,37 @@ public class KerberosHelperTest extends EasyMockSupport {
     expect(metaInfo.getKerberosDescriptor("HDP", "2.2")).andReturn(kerberosDescriptor).atLeastOnce();
     expect(clusterController.ensureResourceProvider(Resource.Type.Artifact)).andReturn(artifactResourceProvider).atLeastOnce();
 
+    RecommendationResponse.BlueprintConfigurations coreSiteRecommendation = createMock(RecommendationResponse.BlueprintConfigurations.class);
+    expect(coreSiteRecommendation.getProperties()).andReturn(Collections.singletonMap("newPropertyRecommendation", "newPropertyRecommendation"));
+
+    RecommendationResponse.BlueprintConfigurations newTypeRecommendation = createMock(RecommendationResponse.BlueprintConfigurations.class);
+    expect(newTypeRecommendation.getProperties()).andReturn(Collections.singletonMap("newTypeRecommendation", "newTypeRecommendation"));
+
+    RecommendationResponse.BlueprintConfigurations type1Recommendation = createMock(RecommendationResponse.BlueprintConfigurations.class);
+    expect(type1Recommendation.getProperties()).andReturn(Collections.singletonMap("replacement1", "not replaced"));
+
+    RecommendationResponse.BlueprintConfigurations service1SiteRecommendation = createMock(RecommendationResponse.BlueprintConfigurations.class);
+    expect(service1SiteRecommendation.getProperties()).andReturn(Collections.singletonMap("component1b.property", "replaced value"));
+
+    Map<String, RecommendationResponse.BlueprintConfigurations> configurations = new HashMap<String, RecommendationResponse.BlueprintConfigurations>();
+    configurations.put("core-site", coreSiteRecommendation);
+    configurations.put("new-type", newTypeRecommendation);
+    configurations.put("type1", type1Recommendation);
+    configurations.put("service1-site", service1SiteRecommendation);
+
+    RecommendationResponse.Blueprint blueprint = createMock(RecommendationResponse.Blueprint.class);
+    expect(blueprint.getConfigurations()).andReturn(configurations).once();
+
+    RecommendationResponse.Recommendation recommendations = createMock(RecommendationResponse.Recommendation.class);
+    expect(recommendations.getBlueprint()).andReturn(blueprint).once();
+
+    RecommendationResponse recommendationResponse = createMock(RecommendationResponse.class);
+    expect(recommendationResponse.getRecommendations()).andReturn(recommendations).once();
+
+    StackAdvisorHelper stackAdvisorHelper = injector.getInstance(StackAdvisorHelper.class);
+    expect(stackAdvisorHelper.recommend(anyObject(StackAdvisorRequest.class))).andReturn(null).once();
+    expect(stackAdvisorHelper.recommend(anyObject(StackAdvisorRequest.class))).andReturn(recommendationResponse).once();
+
     final Service service1 = createMockService("SERVICE1",
         new HashMap<String, ServiceComponent>() {
           {
@@ -2267,10 +2366,10 @@ public class KerberosHelperTest extends EasyMockSupport {
     injector.getInstance(AmbariMetaInfo.class).init();
 
     Map<String, Map<String, String>> updates1 = kerberosHelper.getServiceConfigurationUpdates(
-        cluster, existingConfigurations, new HashSet<String>(Arrays.asList("SERVICE1", "SERVICE2", "SERVICE3")), false);
+        cluster, existingConfigurations, new HashSet<String>(Arrays.asList("SERVICE1", "SERVICE2", "SERVICE3")), false, true, true);
 
     Map<String, Map<String, String>> updates2 = kerberosHelper.getServiceConfigurationUpdates(
-        cluster, existingConfigurations, new HashSet<String>(Arrays.asList("SERVICE1", "SERVICE3")), false);
+        cluster, existingConfigurations, new HashSet<String>(Arrays.asList("SERVICE1", "SERVICE3")), false, true, true);
 
     verifyAll();
 
@@ -2322,6 +2421,13 @@ public class KerberosHelperTest extends EasyMockSupport {
     assertEquals(expectedUpdates, updates1);
 
     expectedUpdates.remove("service2-site");
+    expectedUpdates.get("core-site").put("newPropertyRecommendation", "newPropertyRecommendation");
+    expectedUpdates.get("service1-site").put("component1b.property", "replaced value");
+    expectedUpdates.put("new-type", new HashMap<String, String>() {
+      {
+        put("newTypeRecommendation", "newTypeRecommendation");
+      }
+    });
 
     assertEquals(expectedUpdates, updates2);
 

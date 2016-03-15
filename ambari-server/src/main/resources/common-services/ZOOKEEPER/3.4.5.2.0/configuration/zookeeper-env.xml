@@ -29,6 +29,7 @@
     <description>ZooKeeper User.</description>
     <value-attributes>
       <type>user</type>
+      <overridable>false</overridable>
     </value-attributes>
   </property>
   <property>
@@ -49,7 +50,6 @@
     <description>ZooKeeper Pid Dir</description>
     <value-attributes>
       <type>directory</type>
-      <editable-only-at-install>true</editable-only-at-install>
       <overridable>false</overridable>
     </value-attributes>
   </property>

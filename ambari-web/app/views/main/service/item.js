@@ -35,58 +35,65 @@ App.MainServiceItemView = Em.View.extend({
     'RESOURCEMANAGER': ['DECOMMISSION', 'REFRESHQUEUES'],
     'HBASE_MASTER': ['DECOMMISSION'],
     'KNOX_GATEWAY': ['STARTDEMOLDAP','STOPDEMOLDAP'],
-    'HAWQMASTER': ['IMMEDIATE_STOP_CLUSTER'],
-    'HAWQSEGMENT': ['IMMEDIATE_STOP']
+    'HAWQMASTER': ['IMMEDIATE_STOP_HAWQ_SERVICE', 'RUN_HAWQ_CHECK', 'HAWQ_CLEAR_CACHE', 'REMOVE_HAWQ_STANDBY'],
+    'HAWQSEGMENT': ['IMMEDIATE_STOP_HAWQ_SEGMENT'],
+    'HAWQSTANDBY' : ['RESYNC_HAWQ_STANDBY','ACTIVATE_HAWQ_STANDBY']
   },
 
    addActionMap: function() {
      return [
-      {
-        cssClass: 'icon-plus',
-        'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.hbase.masterServer')),
-        service: 'HBASE',
-        component: 'HBASE_MASTER'
-      },
-      {
-       cssClass: 'icon-plus',
-       'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.hive.metastore')),
-       service: 'HIVE',
-       component: 'HIVE_METASTORE',
-       isHidden: !App.get('isHadoop22Stack')
-      },
-      {
-       cssClass: 'icon-plus',
-       'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.hive.server2')),
-       service: 'HIVE',
-       component: 'HIVE_SERVER',
-       isHidden: !App.get('isHadoop22Stack')
-      },
-      {
-        cssClass: 'icon-plus',
-        'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.zookeeper.server')),
-        service: 'ZOOKEEPER',
-        component: 'ZOOKEEPER_SERVER'
-      },
-      {
-        cssClass: 'icon-plus',
-        'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.flume.agentLabel')),
-        service: 'FLUME',
-        component: 'FLUME_HANDLER'
-      },
-      {
-        cssClass: 'icon-plus',
-        'label': '{0} {1}'.format(Em.I18n.t('add'), App.format.role('RANGER_KMS_SERVER')),
-        service: 'RANGER_KMS',
-        component: 'RANGER_KMS_SERVER'
-      },
-      {
-        cssClass: 'icon-plus',
-        'label': '{0} {1}'.format(Em.I18n.t('add'), App.format.role('NIMBUS')),
-        service: 'STORM',
-        component: 'NIMBUS'
-      }
-    ]
-  },
+       {
+         cssClass: 'icon-plus',
+         'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.hbase.masterServer')),
+         service: 'HBASE',
+         component: 'HBASE_MASTER'
+       },
+       {
+         cssClass: 'icon-plus',
+         'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.hive.metastore')),
+         service: 'HIVE',
+         component: 'HIVE_METASTORE',
+         isHidden: !App.get('isHadoop22Stack')
+       },
+       {
+         cssClass: 'icon-plus',
+         'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.hive.server2')),
+         service: 'HIVE',
+         component: 'HIVE_SERVER',
+         isHidden: !App.get('isHadoop22Stack')
+       },
+       {
+         cssClass: 'icon-plus',
+         'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.zookeeper.server')),
+         service: 'ZOOKEEPER',
+         component: 'ZOOKEEPER_SERVER'
+       },
+       {
+         cssClass: 'icon-plus',
+         'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.flume.agentLabel')),
+         service: 'FLUME',
+         component: 'FLUME_HANDLER'
+       },
+       {
+         cssClass: 'icon-plus',
+         'label': '{0} {1}'.format(Em.I18n.t('add'), App.format.role('RANGER_KMS_SERVER', false)),
+         service: 'RANGER_KMS',
+         component: 'RANGER_KMS_SERVER'
+       },
+       {
+         cssClass: 'icon-plus',
+         'label': '{0} {1}'.format(Em.I18n.t('add'), App.format.role('NIMBUS', false)),
+         service: 'STORM',
+         component: 'NIMBUS'
+       },
+       {
+         cssClass: 'icon-plus',
+         'label': '{0} {1}'.format(Em.I18n.t('add'), App.format.role('OOZIE_SERVER', false)),
+         service: 'OOZIE',
+         component: 'OOZIE_SERVER'
+       }
+     ]
+   },
   /**
    * Create option for MOVE_COMPONENT or ROLLING_RESTART task.
    *
@@ -103,7 +110,7 @@ App.MainServiceItemView = Em.View.extend({
   isMaintenanceSet: false,
 
   observeMaintenance: function() {
-    if (!this.get('isMaintenanceSet') && this.get('controller.isServicesInfoLoaded')) {
+    if (!this.get('isMaintenanceSet') && this.get('controller.isServicesInfoLoaded') && this.get('controller.isServiceConfigsLoaded')) {
       this.observeMaintenanceOnce();
     }
     Em.run.once(this, 'clearIsMaintenanceSet');
@@ -140,7 +147,7 @@ App.MainServiceItemView = Em.View.extend({
       }).forEach(function(_component) {
         options.push(self.createOption(actionMap.ROLLING_RESTART, {
           context: _component,
-          label: actionMap.ROLLING_RESTART.label.format(App.format.role(_component))
+          label: actionMap.ROLLING_RESTART.label.format(App.format.role(_component, false))
         }));
       });
       allMasters.filter(function(master) {
@@ -148,7 +155,7 @@ App.MainServiceItemView = Em.View.extend({
       }).forEach(function(master) {
         options.push(self.createOption(actionMap.MOVE_COMPONENT, {
           context: master,
-          label: actionMap.MOVE_COMPONENT.label.format(App.format.role(master)),
+          label: actionMap.MOVE_COMPONENT.label.format(App.format.role(master, false)),
           disabled: App.allHostNames.length === App.HostComponent.find().filterProperty('componentName', master).mapProperty('hostName').length
         }));
       });
@@ -162,6 +169,9 @@ App.MainServiceItemView = Em.View.extend({
             break;
           case 'RANGER':
             options.push(actionMap.TOGGLE_RA_HA);
+            break;
+          case 'HAWQ':
+            options.push(actionMap.TOGGLE_ADD_HAWQ_STANDBY);
             break;
         }
       }
@@ -187,27 +197,41 @@ App.MainServiceItemView = Em.View.extend({
         });
       }
 
-      var hawqMasterComponent = App.StackServiceComponent.find().findProperty('componentName','HAWQMASTER');
-      if (serviceName === 'HAWQ' && hawqMasterComponent) {
-        var hawqMasterCustomCommands = hawqMasterComponent.get('customCommands');
-        customCommandToStopCluster = 'IMMEDIATE_STOP_CLUSTER';
-        if (hawqMasterCustomCommands && hawqMasterCustomCommands.contains(customCommandToStopCluster)) {
-        options.push(self.createOption(actionMap.IMMEDIATE_STOP_CLUSTER, {
-          label: Em.I18n.t('services.service.actions.run.immediateStopHawqCluster.context'),
-          context: {
-            label: Em.I18n.t('services.service.actions.run.immediateStopHawqCluster.context'),
-            service: hawqMasterComponent.get('serviceName'),
-            component: hawqMasterComponent.get('componentName'),
-            command: customCommandToStopCluster
-          }
-        })) };
+      /**
+       * Display all custom commands of Master and StandBy on Service page.
+       **/
+      if(serviceName === 'HAWQ') {
+        var hawqMasterComponent = App.StackServiceComponent.find().findProperty('componentName','HAWQMASTER');
+        var hawqStandByComponent = App.StackServiceComponent.find().findProperty('componentName','HAWQSTANDBY');
+        components = [hawqMasterComponent,hawqStandByComponent]
+        components.forEach(function(component){
+          component.get('customCommands').forEach(function(command){
+            options.push(self.createOption(actionMap[command], {
+              context: {
+                label: actionMap[command].context,
+                service: component.get('serviceName'),
+                component: component.get('componentName'),
+                command: command
+              }
+            }));
+          });
+        });
       }
 
       self.addActionMap().filterProperty('service', serviceName).forEach(function(item) {
         if (App.get('components.addableToHost').contains(item.component)) {
-          item.action = 'add' + item.component;
-          item.disabled = self.get('controller.isAddDisabled-' + item.component);
-          item.tooltip = self.get('controller.addDisabledTooltip' + item.component);
+
+          var isEnabled = App.HostComponent.find().filterProperty('componentName', item.component).length < App.get('allHostNames.length');
+
+          if (item.component === 'OOZIE_SERVER') {
+            isEnabled = isEnabled && !(Em.isEmpty(self.get('controller.configs.oozie-env.oozie_database')) || self.get('controller.configs.oozie-env.oozie_database') === 'New Derby Database');
+          }
+
+          item.action = 'addComponent';
+          item.disabled = isEnabled ? '' : 'disabled';
+          item.tooltip = isEnabled ? '' : Em.I18n.t('services.summary.allHostsAlreadyRunComponent').format(item.component);
+          item.context = item.component;
+
           options.push(item);
         }
       });
@@ -242,6 +266,8 @@ App.MainServiceItemView = Em.View.extend({
       options.push(actionMap.DOWNLOAD_CLIENT_CONFIGS);
     }
 
+    options.push(actionMap.DELETE_SERVICE);
+
     if (this.get('maintenance.length')) {
       this.get('maintenance').forEach(function(option, index) {
         if (JSON.stringify(option) != JSON.stringify(options[index])) {
@@ -268,7 +294,7 @@ App.MainServiceItemView = Em.View.extend({
   }.property('maintenance'),
 
   hasConfigTab: function() {
-    return App.isAuthorized('CLUSTER.VIEW_CONFIGS') && !App.get('services.noConfigTypes').contains(this.get('controller.content.serviceName'));
+    return App.isAuthorized('CLUSTER.VIEW_CONFIGS', {ignoreWizard: true}) && !App.get('services.noConfigTypes').contains(this.get('controller.content.serviceName'));
   }.property('controller.content.serviceName','App.services.noConfigTypes'),
 
   hasHeatmapTab: function() {
@@ -279,10 +305,11 @@ App.MainServiceItemView = Em.View.extend({
     this.get('controller').setStartStopState();
   },
 
-  maintenanceObsFields: ['isStopDisabled', 'isClientsOnlyService', 'content.isRestartRequired', 'isServicesInfoLoaded'],
+  maintenanceObsFields: ['isStopDisabled', 'isClientsOnlyService', 'content.isRestartRequired', 'isServicesInfoLoaded', 'isServiceConfigsLoaded'],
 
   willInsertElement: function () {
     var self = this;
+    this.get('controller').loadConfigs();
     this.get('maintenanceObsFields').forEach(function (field) {
       self.addObserver('controller.' + field, self, 'observeMaintenance');
     });

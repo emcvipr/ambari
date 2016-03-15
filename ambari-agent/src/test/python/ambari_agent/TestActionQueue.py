@@ -29,7 +29,6 @@ from threading import Thread
 import copy
 
 from mock.mock import patch, MagicMock, call
-from ambari_agent.StackVersionsFileHandler import StackVersionsFileHandler
 from ambari_agent.CustomServiceOrchestrator import CustomServiceOrchestrator
 from ambari_agent.PythonExecutor import PythonExecutor
 from ambari_agent.ActualConfigHandler import ActualConfigHandler
@@ -338,7 +337,7 @@ class TestActionQueue(TestCase):
     config.set('agent', 'tolerate_download_failures', "true")
     dummy_controller = MagicMock()
     dummy_controller.recovery_manager = RecoveryManager(tempfile.mktemp())
-    dummy_controller.recovery_manager.update_config(5, 5, 1, 11, True, False, "", "")
+    dummy_controller.recovery_manager.update_config(5, 5, 1, 11, True, False, "")
 
     actionQueue = ActionQueue(config, dummy_controller)
     unfreeze_flag = threading.Event()
@@ -649,7 +648,6 @@ class TestActionQueue(TestCase):
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(ActionQueue, "status_update_callback")
-  @patch.object(StackVersionsFileHandler, "read_stack_version")
   @patch.object(CustomServiceOrchestrator, "requestComponentStatus")
   @patch.object(CustomServiceOrchestrator, "requestComponentSecurityState")
   @patch.object(ActionQueue, "execute_command")
@@ -657,7 +655,7 @@ class TestActionQueue(TestCase):
   @patch.object(CustomServiceOrchestrator, "__init__")
   def test_execute_status_command(self, CustomServiceOrchestrator_mock,
                                   build_mock, execute_command_mock, requestComponentSecurityState_mock,
-                                  requestComponentStatus_mock, read_stack_version_mock,
+                                  requestComponentStatus_mock,
                                   status_update_callback):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
@@ -682,9 +680,66 @@ class TestActionQueue(TestCase):
     self.assertEqual(report['componentStatus'][0], expected)
     self.assertTrue(requestComponentStatus_mock.called)
 
+  @patch.object(RecoveryManager, "command_exists")
+  @patch.object(RecoveryManager, "requires_recovery")
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(ActionQueue, "status_update_callback")
-  @patch.object(StackVersionsFileHandler, "read_stack_version")
+  @patch.object(CustomServiceOrchestrator, "requestComponentStatus")
+  @patch.object(CustomServiceOrchestrator, "requestComponentSecurityState")
+  @patch.object(ActionQueue, "execute_command")
+  @patch.object(LiveStatus, "build")
+  @patch.object(CustomServiceOrchestrator, "__init__")
+  def test_execute_status_command_recovery(self, CustomServiceOrchestrator_mock,
+                                  build_mock, execute_command_mock, requestComponentSecurityState_mock,
+                                  requestComponentStatus_mock,
+                                  status_update_callback, requires_recovery_mock,
+                                  command_exists_mock):
+    CustomServiceOrchestrator_mock.return_value = None
+    dummy_controller = MagicMock()
+    actionQueue = ActionQueue(AmbariConfig(), dummy_controller)
+
+    build_mock.return_value = {'dummy report': '' }
+    requires_recovery_mock.return_value = True
+    command_exists_mock.return_value = False
+
+    dummy_controller.recovery_manager = RecoveryManager(tempfile.mktemp(), True, False)
+
+    requestComponentStatus_mock.reset_mock()
+    requestComponentStatus_mock.return_value = {'exitcode': 0 }
+
+    requestComponentSecurityState_mock.reset_mock()
+    requestComponentSecurityState_mock.return_value = 'UNKNOWN'
+
+    actionQueue.execute_status_command(self.status_command)
+    report = actionQueue.result()
+    expected = {'dummy report': '',
+                'securityState' : 'UNKNOWN',
+                'sendExecCmdDet': 'True'}
+
+    self.assertEqual(len(report['componentStatus']), 1)
+    self.assertEqual(report['componentStatus'][0], expected)
+    self.assertTrue(requestComponentStatus_mock.called)
+
+    requires_recovery_mock.return_value = True
+    command_exists_mock.return_value = True
+    requestComponentStatus_mock.reset_mock()
+    requestComponentStatus_mock.return_value = {'exitcode': 0 }
+
+    requestComponentSecurityState_mock.reset_mock()
+    requestComponentSecurityState_mock.return_value = 'UNKNOWN'
+
+    actionQueue.execute_status_command(self.status_command)
+    report = actionQueue.result()
+    expected = {'dummy report': '',
+                'securityState' : 'UNKNOWN',
+                'sendExecCmdDet': 'False'}
+
+    self.assertEqual(len(report['componentStatus']), 1)
+    self.assertEqual(report['componentStatus'][0], expected)
+    self.assertTrue(requestComponentStatus_mock.called)
+
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch.object(ActionQueue, "status_update_callback")
   @patch.object(CustomServiceOrchestrator, "requestComponentStatus")
   @patch.object(CustomServiceOrchestrator, "requestComponentSecurityState")
   @patch.object(ActionQueue, "execute_command")
@@ -693,7 +748,7 @@ class TestActionQueue(TestCase):
   def test_execute_status_command_with_alerts(self, CustomServiceOrchestrator_mock,
                                               requestComponentSecurityState_mock,
                                   build_mock, execute_command_mock,
-                                  requestComponentStatus_mock, read_stack_version_mock,
+                                  requestComponentStatus_mock,
                                   status_update_callback):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
@@ -786,12 +841,12 @@ class TestActionQueue(TestCase):
     process_command_mock.assert_any_calls([call(self.datanode_install_command), call(self.hbase_install_command)])
 
 
+  @not_for_platform(PLATFORM_LINUX)
   @patch("time.sleep")
   @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
-  @patch.object(StackVersionsFileHandler, "read_stack_version")
   @patch.object(CustomServiceOrchestrator, "__init__")
   def test_execute_retryable_command(self, CustomServiceOrchestrator_mock,
-                                     read_stack_version_mock, sleep_mock
+                                     sleep_mock
   ):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
@@ -829,10 +884,9 @@ class TestActionQueue(TestCase):
   @patch("time.time")
   @patch("time.sleep")
   @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
-  @patch.object(StackVersionsFileHandler, "read_stack_version")
   @patch.object(CustomServiceOrchestrator, "__init__")
   def test_execute_retryable_command_with_time_lapse(self, CustomServiceOrchestrator_mock,
-                                     read_stack_version_mock, sleep_mock, time_mock
+                                     sleep_mock, time_mock
   ):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
@@ -873,10 +927,9 @@ class TestActionQueue(TestCase):
   @not_for_platform(PLATFORM_LINUX)
   @patch("time.sleep")
   @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
-  @patch.object(StackVersionsFileHandler, "read_stack_version")
   @patch.object(CustomServiceOrchestrator, "__init__")
   def test_execute_retryable_command_fail_and_succeed(self, CustomServiceOrchestrator_mock,
-                                                      read_stack_version_mock, sleep_mock
+                                                      sleep_mock
   ):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
@@ -910,10 +963,9 @@ class TestActionQueue(TestCase):
   @not_for_platform(PLATFORM_LINUX)
   @patch("time.sleep")
   @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
-  @patch.object(StackVersionsFileHandler, "read_stack_version")
   @patch.object(CustomServiceOrchestrator, "__init__")
   def test_execute_retryable_command_succeed(self, CustomServiceOrchestrator_mock,
-                                             read_stack_version_mock, sleep_mock
+                                             sleep_mock
   ):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
@@ -937,11 +989,10 @@ class TestActionQueue(TestCase):
     self.assertEqual(1, runCommand_mock.call_count)
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
-  @patch.object(StackVersionsFileHandler, "read_stack_version")
   @patch.object(CustomServiceOrchestrator, "runCommand")
   @patch.object(CustomServiceOrchestrator, "__init__")
   def test_execute_background_command(self, CustomServiceOrchestrator_mock,
-                                  runCommand_mock, read_stack_version_mock
+                                  runCommand_mock,
                                   ):
     CustomServiceOrchestrator_mock.return_value = None
     CustomServiceOrchestrator.runCommand.return_value = {'exitcode' : 0,
@@ -967,8 +1018,7 @@ class TestActionQueue(TestCase):
 
   @patch.object(CustomServiceOrchestrator, "get_py_executor")
   @patch.object(CustomServiceOrchestrator, "resolve_script_path")
-  @patch.object(StackVersionsFileHandler, "read_stack_version")
-  def test_execute_python_executor(self, read_stack_version_mock, resolve_script_path_mock,
+  def test_execute_python_executor(self, resolve_script_path_mock,
                                    get_py_executor_mock):
     
     dummy_controller = MagicMock()

@@ -601,7 +601,7 @@ computed.ltProperties = function (dependentKey1, dependentKey2) {
  * <pre>
  * var o = Em.Object.create({
  *  p1: 'abc',
- *  p2: Em.computed.lteProperties('p1', /^a/)
+ *  p2: Em.computed.match('p1', /^a/)
  * });
  * console.log(o.get('p2')); // true
  * o.set('p1', 'bc');
@@ -876,7 +876,7 @@ computed.percents = function (dependentKey1, dependentKey2, accuracy) {
  * <pre>
  * var o = Em.Object.create({
  *  p1: 'SECONDARY_NAMENODE',
- *  p3: Em.computed.formatRole('p1')
+ *  p3: Em.computed.formatRole('p1', false)
  * });
  * console.log(o.get('p2')); // 'SNameNode'
  * o.set('p1', 'FLUME_HANDLER);
@@ -885,12 +885,13 @@ computed.percents = function (dependentKey1, dependentKey2, accuracy) {
  *
  * @method formatRole
  * @param {string} dependentKey
+ * @param {boolean} isServiceRole
  * @returns {Ember.ComputedProperty}
  */
-computed.formatRole = function (dependentKey) {
+computed.formatRole = function (dependentKey, isServiceRole) {
   return computed(dependentKey, function () {
     var value = get(this, dependentKey);
-    return App.format.role(value);
+    return App.format.role(value, isServiceRole);
   });
 };
 

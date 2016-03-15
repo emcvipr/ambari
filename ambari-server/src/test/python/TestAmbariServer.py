@@ -15,15 +15,20 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 '''
+import os
+from mock.mock import patch, MagicMock, create_autospec, call
+import sys
+
+with patch.object(os, "geteuid", new=MagicMock(return_value=0)):
+  from resource_management.core import sudo
+  reload(sudo)
+
 from stacks.utils.RMFTestCase import *
 
-import sys
 import traceback
-import os
 import datetime
 import errno
 import json
-from mock.mock import patch, MagicMock, create_autospec, call
 import operator
 from optparse import OptionParser
 import platform
@@ -34,6 +39,7 @@ import stat
 import StringIO
 import tempfile
 from unittest import TestCase
+os.environ["ROOT"] = ""
 
 from only_for_platform import get_platform, not_for_platform, only_for_platform, os_distro_value, PLATFORM_LINUX, PLATFORM_WINDOWS
 
@@ -76,7 +82,9 @@ with patch("platform.linux_distribution", return_value = os_distro_value):
           SSL_TRUSTSTORE_PASSWORD_PROPERTY, SECURITY_IS_ENCRYPTION_ENABLED, SSL_TRUSTSTORE_PASSWORD_ALIAS, \
           SECURITY_MASTER_KEY_LOCATION, SECURITY_KEYS_DIR, LDAP_PRIMARY_URL_PROPERTY, store_password_file, \
           get_pass_file_path, GET_FQDN_SERVICE_URL, JDBC_USE_INTEGRATED_AUTH_PROPERTY, SECURITY_KEY_ENV_VAR_NAME, \
-          JAVA_HOME_PROPERTY, JDK_NAME_PROPERTY, JCE_NAME_PROPERTY
+          JAVA_HOME_PROPERTY, JDK_NAME_PROPERTY, JCE_NAME_PROPERTY, STACK_LOCATION_KEY, SERVER_VERSION_FILE_PATH, \
+          COMMON_SERVICES_PATH_PROPERTY, WEBAPP_DIR_PROPERTY, SHARED_RESOURCES_DIR, BOOTSTRAP_SCRIPT, \
+          CUSTOM_ACTION_DEFINITIONS, BOOTSTRAP_SETUP_AGENT_SCRIPT, STACKADVISOR_SCRIPT, BOOTSTRAP_DIR_PROPERTY
         from ambari_server.serverUtils import is_server_runing, refresh_stack_hash
         from ambari_server.serverSetup import check_selinux, check_ambari_user, proceedJDBCProperties, SE_STATUS_DISABLED, SE_MODE_ENFORCING, configure_os_settings, \
           download_and_install_jdk, prompt_db_properties, setup, \
@@ -95,6 +103,7 @@ with patch("platform.linux_distribution", return_value = os_distro_value):
         from ambari_server_main import get_ulimit_open_files, ULIMIT_OPEN_FILES_KEY, ULIMIT_OPEN_FILES_DEFAULT
         from ambari_server.serverClassPath import ServerClassPath
         from ambari_server.hostUpdate import update_host_names
+        from ambari_server.checkDatabase import check_database
 
 CURR_AMBARI_VERSION = "2.0.0"
 
@@ -945,6 +954,8 @@ class TestAmbariServer(TestCase):
     del args.database_name
     del args.database_username
     del args.database_password
+    del args.init_script_file
+    del args.drop_script_file
 
     properties = Properties()
     properties.process_pair(JDBC_PASSWORD_PROPERTY, get_alias_string("mypwdalias"))
@@ -974,6 +985,8 @@ class TestAmbariServer(TestCase):
     del args.database_name
     del args.database_username
     del args.database_password
+    del args.init_script_file
+    del args.drop_script_file
 
     properties = Properties()
 
@@ -1002,6 +1015,8 @@ class TestAmbariServer(TestCase):
     del args.database_name
     del args.database_username
     del args.database_password
+    del args.init_script_file
+    del args.drop_script_file
 
     properties = Properties()
 
@@ -1198,7 +1213,6 @@ class TestAmbariServer(TestCase):
     get_resources_location_mock.return_value = "dummy_resources_dir"
     exists_mock.return_value = False
     adjust_directory_permissions("user")
-    self.assertEquals(rmtree_mock.call_args_list[0][0][0], os.path.join(os.getcwd(), "dummy_bootstrap_dir"))
     self.assertTrue(mkdir_mock.called)
 
     set_file_permissions_mock.reset_mock()
@@ -1878,11 +1892,11 @@ class TestAmbariServer(TestCase):
     get_os_family_mock.return_value = OSConst.SUSE_FAMILY
 
     firewall_obj = Firewall().getFirewallObject()
-    p.communicate.return_value = ("### iptables", "err")
+    p.communicate.return_value = ("running", "err")
     p.returncode = 0
     self.assertEqual("SuseFirewallChecks", firewall_obj.__class__.__name__)
     self.assertTrue(firewall_obj.check_firewall())
-    p.communicate.return_value = ("SuSEfirewall2 not active", "err")
+    p.communicate.return_value = ("unused", "err")
     p.returncode = 0
     self.assertFalse(firewall_obj.check_firewall())
     self.assertEqual("err", firewall_obj.stderrdata)
@@ -2097,16 +2111,6 @@ class TestAmbariServer(TestCase):
     args = MagicMock()
     open_Mock.return_value = file
     p = get_ambari_properties_mock.return_value
-
-    # Testing call under non-root
-    is_root_mock.return_value = False
-    try:
-      setup_https(args)
-      self.fail("Should throw exception")
-    except FatalException as fe:
-      # Expected
-      self.assertTrue("root-level" in fe.reason)
-      pass
 
     # Testing call under root
     is_root_mock.return_value = True
@@ -3664,6 +3668,8 @@ class TestAmbariServer(TestCase):
       del args.persistence_type
       del args.sid_or_sname
       del args.jdbc_url
+      del args.init_script_file
+      del args.drop_script_file
 
       args.jdbc_driver= None
       args.jdbc_db = None
@@ -4207,6 +4213,8 @@ class TestAmbariServer(TestCase):
     del args.database_username
     del args.database_password
     del args.persistence_type
+    del args.init_script_file
+    del args.drop_script_file
 
     set_silent(True)
 
@@ -4348,6 +4356,7 @@ class TestAmbariServer(TestCase):
       del args.jdbc_url
       del args.debug
       del args.suspend_start
+      args.skip_properties_validation = False
 
       return args
 
@@ -4368,6 +4377,27 @@ class TestAmbariServer(TestCase):
 
     p = Properties()
     p.process_pair(SECURITY_IS_ENCRYPTION_ENABLED, 'False')
+    p.process_pair(JDBC_DATABASE_NAME_PROPERTY, 'some_value')
+    p.process_pair(NR_USER_PROPERTY, 'some_value')
+    p.process_pair(STACK_LOCATION_KEY, 'some_value')
+    p.process_pair(SERVER_VERSION_FILE_PATH, 'some_value')
+    p.process_pair(OS_TYPE_PROPERTY, 'some_value')
+    p.process_pair(JAVA_HOME_PROPERTY, 'some_value')
+    p.process_pair(JDK_NAME_PROPERTY, 'some_value')
+    p.process_pair(JCE_NAME_PROPERTY, 'some_value')
+    p.process_pair(COMMON_SERVICES_PATH_PROPERTY, 'some_value')
+    p.process_pair(JDBC_PASSWORD_PROPERTY, 'some_value')
+    p.process_pair(WEBAPP_DIR_PROPERTY, 'some_value')
+    p.process_pair(SHARED_RESOURCES_DIR, 'some_value')
+    p.process_pair(SECURITY_KEYS_DIR, 'some_value')
+    p.process_pair(JDBC_USER_NAME_PROPERTY, 'some_value')
+    p.process_pair(BOOTSTRAP_SCRIPT, 'some_value')
+    p.process_pair(OS_FAMILY_PROPERTY, 'some_value')
+    p.process_pair(RESOURCES_DIR_PROPERTY, 'some_value')
+    p.process_pair(CUSTOM_ACTION_DEFINITIONS, 'some_value')
+    p.process_pair(BOOTSTRAP_SETUP_AGENT_SCRIPT, 'some_value')
+    p.process_pair(STACKADVISOR_SCRIPT, 'some_value')
+    p.process_pair(BOOTSTRAP_DIR_PROPERTY, 'some_value')
 
     get_ambari_properties_5_mock.return_value = get_ambari_properties_4_mock.return_value = \
       get_ambari_properties_3_mock.return_value = get_ambari_properties_2_mock.return_value = \
@@ -4682,7 +4712,17 @@ class TestAmbariServer(TestCase):
     self.assertTrue(save_master_key_method.called)
     popen_arg = popenMock.call_args[1]['env']
     self.assertEquals(os_environ_mock.copy.return_value, popen_arg)
-    pass
+
+    # Checking situation when required properties not set up
+    args = reset_mocks()
+    p.removeProp(JAVA_HOME_PROPERTY)
+    get_ambari_properties_mock.return_value = p
+    try:
+      _ambari_server_.start(args)
+      self.fail("Should fail with 'Required properties are not found:'")
+    except FatalException as e:
+      # Expected
+      self.assertTrue('Required properties are not found:' in e.reason)
 
 
   @not_for_platform(PLATFORM_WINDOWS)
@@ -6587,7 +6627,6 @@ class TestAmbariServer(TestCase):
     dbms = OracleConfig(args, properties, "local")
 
     self.assertTrue(decrypt_password_for_alias_method.called)
-    self.assertFalse(path_isabs_method.called)
     self.assertEquals("fakeuser", dbms.database_username)
     self.assertEquals("falepasswd", dbms.database_password)
 
@@ -6779,16 +6818,6 @@ class TestAmbariServer(TestCase):
                                       read_ambari_user_method, exists_mock,
                                       remove_password_file_method, read_master_key_method):
 
-    # Testing call under non-root
-    is_root_method.return_value = False
-    try:
-      setup_master_key(MagicMock())
-      self.fail("Should throw exception")
-    except FatalException as fe:
-      # Expected
-      self.assertTrue("root-level" in fe.reason)
-      pass
-
     # Testing call under root
     is_root_method.return_value = True
 
@@ -6835,6 +6864,40 @@ class TestAmbariServer(TestCase):
     self.assertEquals(sorted_x, sorted_y)
     pass
 
+  @patch.object(ServerClassPath, "get_full_ambari_classpath_escaped_for_shell", new = MagicMock(return_value = 'test' + os.pathsep + 'path12'))
+  @patch("ambari_server.serverUtils.is_server_runing")
+  @patch("ambari_commons.os_utils.run_os_command")
+  @patch("ambari_server.setupSecurity.generate_env")
+  @patch("ambari_server.setupSecurity.ensure_can_start_under_current_user")
+  @patch("ambari_server.serverConfiguration.read_ambari_user")
+  @patch("ambari_server.dbConfiguration.ensure_jdbc_driver_is_installed")
+  @patch("ambari_server.serverConfiguration.parse_properties_file")
+  @patch("ambari_server.serverConfiguration.get_ambari_properties")
+  @patch("ambari_server.serverConfiguration.get_java_exe_path")
+  def test_check_database(self, getJavaExePathMock,
+                             getAmbariPropertiesMock, parsePropertiesFileMock, ensureDriverInstalledMock, readAmbariUserMock,
+                             ensureCanStartUnderCurrentUserMock, generateEnvMock, runOSCommandMock, isServerRunningMock):
+    properties = Properties()
+    properties.process_pair("server.jdbc.database", "embedded")
+
+    getJavaExePathMock.return_value = "/path/to/java"
+    getAmbariPropertiesMock.return_value = properties
+    readAmbariUserMock.return_value = "test_user"
+    ensureCanStartUnderCurrentUserMock.return_value = "test_user"
+    generateEnvMock.return_value = {}
+    runOSCommandMock.return_value = (0, "", "")
+    isServerRunningMock.return_value = (False, 1)
+
+    check_database(properties)
+
+    self.assertTrue(getJavaExePathMock.called)
+    self.assertTrue(readAmbariUserMock.called)
+    self.assertTrue(ensureCanStartUnderCurrentUserMock.called)
+    self.assertTrue(generateEnvMock.called)
+
+    self.assertEquals(runOSCommandMock.call_args[0][0], '/path/to/java -cp test:path12 org.apache.ambari.server.checks.CheckDatabaseHelper')
+
+    pass
 
   @patch("ambari_server.setupSecurity.get_is_persisted")
   @patch("ambari_server.setupSecurity.get_is_secure")

@@ -126,6 +126,7 @@ public class ComponentResourceProviderTest {
     ServiceComponentFactory serviceComponentFactory = createNiceMock(ServiceComponentFactory.class);
     ServiceComponent serviceComponent = createNiceMock(ServiceComponent.class);
     StackId stackId = createNiceMock(StackId.class);
+    ComponentInfo componentInfo = createNiceMock(ComponentInfo.class);
 
     expect(managementController.getClusters()).andReturn(clusters);
     expect(managementController.getAmbariMetaInfo()).andReturn(ambariMetaInfo);
@@ -142,6 +143,9 @@ public class ComponentResourceProviderTest {
     expect(stackId.getStackVersion()).andReturn("99").anyTimes();
 
     expect(ambariMetaInfo.isValidServiceComponent("HDP", "99", "Service100", "Component100")).andReturn(true).anyTimes();
+
+    expect(componentInfo.isRecoveryEnabled()).andReturn(true).anyTimes();
+    expect(ambariMetaInfo.getComponent("HDP", "99", "Service100", "Component100")).andReturn(componentInfo).anyTimes();
 
     expect(serviceComponentFactory.createNew(service, "Component100")).andReturn(serviceComponent);
 
@@ -225,11 +229,14 @@ public class ComponentResourceProviderTest {
     expect(service.getServiceComponents()).andReturn(serviceComponentMap).anyTimes();
 
     expect(serviceComponent1.convertToResponse()).andReturn(
-      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component100", null, "", 1, 1, 0));
+      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component100", null, "", 1, 1, 0,
+              true /* recovery enabled */, "Component100 Client"));
     expect(serviceComponent2.convertToResponse()).andReturn(
-      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component101", null, "", 1, 1, 0));
+      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component101", null, "", 1, 1, 0,
+              false /* recovery not enabled */, "Component101 Client"));
     expect(serviceComponent3.convertToResponse()).andReturn(
-      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component102", null, "", 1, 1, 0));
+      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component102", null, "", 1, 1, 0,
+              true /* recovery enabled */, "Component102 Client"));
 
     expect(ambariMetaInfo.getComponent((String) anyObject(),
         (String) anyObject(), (String) anyObject(), (String) anyObject()))
@@ -258,6 +265,7 @@ public class ComponentResourceProviderTest {
     propertyIds.add(ComponentResourceProvider.COMPONENT_TOTAL_COUNT_PROPERTY_ID);
     propertyIds.add(ComponentResourceProvider.COMPONENT_STARTED_COUNT_PROPERTY_ID);
     propertyIds.add(ComponentResourceProvider.COMPONENT_INSTALLED_COUNT_PROPERTY_ID);
+    propertyIds.add(ComponentResourceProvider.COMPONENT_RECOVERY_ENABLED_ID);
 
     Predicate predicate = new PredicateBuilder()
       .property(ComponentResourceProvider.COMPONENT_CLUSTER_NAME_PROPERTY_ID)
@@ -282,6 +290,8 @@ public class ComponentResourceProviderTest {
         ComponentResourceProvider.COMPONENT_STARTED_COUNT_PROPERTY_ID));
       Assert.assertEquals(0, resource.getPropertyValue(
         ComponentResourceProvider.COMPONENT_INSTALLED_COUNT_PROPERTY_ID));
+      Assert.assertEquals(String.valueOf(true), resource.getPropertyValue(
+        ComponentResourceProvider.COMPONENT_RECOVERY_ENABLED_ID));
     }
 
     // verify
@@ -364,11 +374,14 @@ public class ComponentResourceProviderTest {
     expect(component3Info.getCategory()).andReturn(null);
 
     expect(serviceComponent1.convertToResponse()).andReturn(
-      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component101", null, "", 1, 0, 1));
+      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component101", null, "", 1, 0, 1,
+              false /* recovery not enabled */, "Component101 Client"));
     expect(serviceComponent2.convertToResponse()).andReturn(
-      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component102", null, "", 1, 0, 1));
+      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component102", null, "", 1, 0, 1,
+              false /* recovery not enabled */, "Component102 Client"));
     expect(serviceComponent3.convertToResponse()).andReturn(
-      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component103", null, "", 1, 0, 1));
+      new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component103", null, "", 1, 0, 1,
+              false /* recovery not enabled */, "Component103 Client"));
     expect(serviceComponent1.getDesiredState()).andReturn(State.INSTALLED).anyTimes();
     expect(serviceComponent2.getDesiredState()).andReturn(State.INSTALLED).anyTimes();
     expect(serviceComponent3.getDesiredState()).andReturn(State.INSTALLED).anyTimes();
@@ -412,6 +425,7 @@ public class ComponentResourceProviderTest {
 
     Map<String, Object> properties = new LinkedHashMap<String, Object>();
 
+    properties.put(ComponentResourceProvider.COMPONENT_RECOVERY_ENABLED_ID, String.valueOf(true) /* recovery enabled */);
     properties.put(ComponentResourceProvider.COMPONENT_STATE_PROPERTY_ID, "STARTED");
     properties.put(ComponentResourceProvider.COMPONENT_CLUSTER_NAME_PROPERTY_ID, "Cluster100");
 
@@ -590,6 +604,136 @@ public class ComponentResourceProviderTest {
     verify(managementController);
   }
 
+  @Test
+  public void testUpdateAutoStartAsAdministrator() throws Exception {
+    testUpdateAutoStart(TestAuthenticationFactory.createAdministrator());
+  }
+
+  @Test
+  public void testUpdateAutoStartAsClusterAdministrator() throws Exception {
+    testUpdateAutoStart(TestAuthenticationFactory.createClusterAdministrator());
+  }
+
+  @Test
+  public void testUpdateAutoStartAsServiceAdministrator() throws Exception {
+    testUpdateAutoStart(TestAuthenticationFactory.createServiceAdministrator());
+  }
+
+  @Test(expected = AuthorizationException.class)
+  public void testUpdateAutoStartAsClusterUser() throws Exception {
+    testUpdateAutoStart(TestAuthenticationFactory.createClusterUser());
+  }
+
+  /**
+   * Perform steps to test updating the Auto-Start property (ServiceComponentInfo/recovery_enabled)
+   * of a service.
+   *
+   * @param authentication the authentication and authorization details of the acting user
+   * @throws Exception
+   */
+  private void testUpdateAutoStart(Authentication authentication) throws Exception {
+    Resource.Type type = Resource.Type.Component;
+
+    MaintenanceStateHelper maintenanceStateHelper = createMock(MaintenanceStateHelper.class);
+    AmbariManagementController managementController = createMock(AmbariManagementController.class);
+    Clusters clusters = createMock(Clusters.class);
+    Cluster cluster = createMock(Cluster.class);
+    AmbariMetaInfo ambariMetaInfo = createMock(AmbariMetaInfo.class);
+    Service service = createMock(Service.class);
+    ComponentInfo component1Info = createMock(ComponentInfo.class);
+
+    ServiceComponent serviceComponent1 = createMock(ServiceComponent.class);
+    ServiceComponentHost serviceComponentHost = createMock(ServiceComponentHost.class);
+    RequestStatusResponse requestStatusResponse = createNiceMock(RequestStatusResponse.class);
+    StackId stackId = createMock(StackId.class);
+
+    Map<String, ServiceComponent> serviceComponentMap = new HashMap<String, ServiceComponent>();
+    serviceComponentMap.put("Component101", serviceComponent1);
+
+    // set expectations
+    expect(managementController.getClusters()).andReturn(clusters).anyTimes();
+    expect(managementController.getAmbariMetaInfo()).andReturn(ambariMetaInfo).anyTimes();
+    expect(managementController.getEffectiveMaintenanceState(
+        capture(EasyMock.<ServiceComponentHost>newCapture()))).andReturn(MaintenanceState.OFF).anyTimes();
+
+    expect(stackId.getStackName()).andReturn("stackName").anyTimes();
+    expect(stackId.getStackVersion()).andReturn("1").anyTimes();
+
+    expect(clusters.getCluster("Cluster100")).andReturn(cluster).anyTimes();
+
+    expect(cluster.getDesiredStackVersion()).andReturn(stackId);
+    expect(cluster.getResourceId()).andReturn(4l).atLeastOnce();
+    expect(cluster.getServices()).andReturn(Collections.singletonMap("Service100", service)).anyTimes();
+    expect(cluster.getClusterId()).andReturn(2L).anyTimes();
+
+    expect(cluster.getService("Service100")).andReturn(service).anyTimes();
+    expect(service.getName()).andReturn("Service100").anyTimes();
+    expect(service.getServiceComponent("Component101")).andReturn(serviceComponent1).anyTimes();
+
+    expect(serviceComponent1.getName()).andReturn("Component101").atLeastOnce();
+    expect(serviceComponent1.isRecoveryEnabled()).andReturn(false).atLeastOnce();
+    serviceComponent1.setRecoveryEnabled(true);
+    expectLastCall().once();
+
+    expect(service.getServiceComponents()).andReturn(serviceComponentMap).anyTimes();
+
+    expect(ambariMetaInfo.getComponent("stackName", "1", "Service100", "Component101")).andReturn(component1Info).atLeastOnce();
+    expect(component1Info.getCategory()).andReturn(null);
+
+    expect(serviceComponent1.convertToResponse()).andReturn(
+        new ServiceComponentResponse(100L, "Cluster100", "Service100", "Component101", null, "", 1, 0, 1,
+            false /* recovery not enabled */, "Component101 Client"));
+    expect(serviceComponent1.getDesiredState()).andReturn(State.INSTALLED).anyTimes();
+
+    expect(serviceComponentHost.getState()).andReturn(State.INSTALLED).anyTimes();
+
+    Map<String, ServiceComponentHost> serviceComponentHosts = Collections.singletonMap("Host100", serviceComponentHost);
+
+    expect(serviceComponent1.getServiceComponentHosts()).andReturn(serviceComponentHosts).anyTimes();
+
+    expect(maintenanceStateHelper.isOperationAllowed(anyObject(Resource.Type.class), anyObject(Service.class))).andReturn(true).anyTimes();
+
+    Capture<Map<String, String>> requestPropertiesCapture = EasyMock.newCapture();
+    Capture<Map<State, List<Service>>> changedServicesCapture = EasyMock.newCapture();
+    Capture<Map<State, List<ServiceComponent>>> changedCompsCapture = EasyMock.newCapture();
+    Capture<Map<String, Map<State, List<ServiceComponentHost>>>> changedScHostsCapture = EasyMock.newCapture();
+    Capture<Map<String, String>> requestParametersCapture = EasyMock.newCapture();
+    Capture<Collection<ServiceComponentHost>> ignoredScHostsCapture = EasyMock.newCapture();
+    Capture<Cluster> clusterCapture = EasyMock.newCapture();
+
+    expect(managementController.createAndPersistStages(capture(clusterCapture), capture(requestPropertiesCapture), capture(requestParametersCapture), capture(changedServicesCapture), capture(changedCompsCapture), capture(changedScHostsCapture), capture(ignoredScHostsCapture), anyBoolean(), anyBoolean()
+    )).andReturn(requestStatusResponse);
+
+    Map<String, String> mapRequestProps = new HashMap<String, String>();
+    mapRequestProps.put("context", "Called from a test");
+
+    // replay
+    replay(managementController, clusters, cluster, ambariMetaInfo, service, component1Info,
+        serviceComponent1, serviceComponentHost, requestStatusResponse, stackId, maintenanceStateHelper);
+
+    SecurityContextHolder.getContext().setAuthentication(authentication);
+
+    ResourceProvider provider = new ComponentResourceProvider(
+        PropertyHelper.getPropertyIds(type),
+        PropertyHelper.getKeyPropertyIds(type),
+        managementController, maintenanceStateHelper);
+
+    Map<String, Object> properties = new LinkedHashMap<String, Object>();
+
+    properties.put(ComponentResourceProvider.COMPONENT_RECOVERY_ENABLED_ID, String.valueOf(true) /* recovery enabled */);
+
+    // create the request
+    Request request = PropertyHelper.getUpdateRequest(properties, mapRequestProps);
+
+    // update the cluster named Cluster100
+    Predicate predicate = new PredicateBuilder().property(ComponentResourceProvider.COMPONENT_CLUSTER_NAME_PROPERTY_ID).
+        equals("Cluster100").toPredicate();
+    provider.updateResources(request, predicate);
+
+    // verify
+    verify(managementController, clusters, cluster, ambariMetaInfo, service, component1Info,
+        serviceComponent1, serviceComponentHost, requestStatusResponse, stackId, maintenanceStateHelper);
+  }
 
   @Test
   public void testGetComponents() throws Exception {
@@ -607,7 +751,7 @@ public class ComponentResourceProviderTest {
 
     // requests
     ServiceComponentRequest request1 = new ServiceComponentRequest("cluster1", "service1", "component1",
-        null);
+        null, String.valueOf(true /* recovery enabled */));
 
     Set<ServiceComponentRequest> setRequests = new HashSet<ServiceComponentRequest>();
     setRequests.add(request1);
@@ -667,14 +811,15 @@ public class ComponentResourceProviderTest {
 
     // requests
     ServiceComponentRequest request1 = new ServiceComponentRequest("cluster1", "service1", "component1",
-        null);
+        null, String.valueOf(true /* recovery enabled */));
     ServiceComponentRequest request2 = new ServiceComponentRequest("cluster1", "service1", "component2",
-        null);
+        null, String.valueOf(true /* recovery enabled */));
     ServiceComponentRequest request3 = new ServiceComponentRequest("cluster1", "service1", "component3",
-        null);
+        null, String.valueOf(true /* recovery enabled */));
     ServiceComponentRequest request4 = new ServiceComponentRequest("cluster1", "service1", "component4",
-        null);
-    ServiceComponentRequest request5 = new ServiceComponentRequest("cluster1", "service2", null, null);
+        null, String.valueOf(true /* recovery enabled */));
+    ServiceComponentRequest request5 = new ServiceComponentRequest("cluster1", "service2", null, null,
+              String.valueOf(true /* recovery enabled */));
 
     Set<ServiceComponentRequest> setRequests = new HashSet<ServiceComponentRequest>();
     setRequests.add(request1);
@@ -758,7 +903,7 @@ public class ComponentResourceProviderTest {
 
     // requests
     ServiceComponentRequest request1 = new ServiceComponentRequest("cluster1", "service1", "component1",
-        null);
+        null, String.valueOf(true /* recovery enabled */));
 
     Set<ServiceComponentRequest> setRequests = new HashSet<ServiceComponentRequest>();
     setRequests.add(request1);

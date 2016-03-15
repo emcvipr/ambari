@@ -152,6 +152,13 @@ public enum CheckDescription {
             "The following Services must be reinstalled: {{fails}}. Try to reinstall the service components in INSTALL_FAILED state.");
       }}),
 
+  PREVIOUS_UPGRADE_COMPLETED(PrereqCheckType.CLUSTER,
+      "A previous upgrade did not complete.",
+      new HashMap<String, String>() {{
+        put(AbstractCheckDescriptor.DEFAULT,
+            "The last upgrade attempt did not complete. {{fails}}");
+      }}),
+
   INSTALL_PACKAGES_CHECK(PrereqCheckType.CLUSTER,
       "Install packages must be re-run",
       new HashMap<String, String>() {{
@@ -207,6 +214,21 @@ public enum CheckDescription {
       new HashMap<String, String>() {{
         put(AbstractCheckDescriptor.DEFAULT,
           "The following config types will have values overwritten: %s");
+      }}),
+
+  HARDCODED_STACK_VERSION_PROPERTIES_CHECK(PrereqCheckType.CLUSTER,
+    "Found hardcoded hdp stack version in property value.",
+    new HashMap<String, String>() {{
+      put(AbstractCheckDescriptor.DEFAULT,
+        "Some properties seem to contain hardcoded hdp version string \"%s\"." +
+          " That is a potential problem when doing stack update.");
+      }}),
+
+  VERSION_MISMATCH(PrereqCheckType.HOST,
+      "All components must be reporting the expected version",
+      new HashMap<String, String>() {{
+        put(AbstractCheckDescriptor.DEFAULT,
+            "There are components which are not reporting the expected stack version: \n%s");
       }}),
 
   SERVICES_RANGER_PASSWORD_VERIFY(PrereqCheckType.SERVICE,

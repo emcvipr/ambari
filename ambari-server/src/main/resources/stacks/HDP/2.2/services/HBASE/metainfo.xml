@@ -25,13 +25,14 @@
 
       <osSpecifics>
         <osSpecific>
-          <osFamily>redhat7,redhat6,suse11</osFamily>
+          <osFamily>redhat7,amazon2015,redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>hbase_${stack_version}</name>
             </package>
             <package>
               <name>phoenix_${stack_version}</name>
+              <condition>should_install_phoenix</condition>
             </package>
           </packages>
         </osSpecific>
@@ -43,6 +44,7 @@
             </package>
             <package>
               <name>phoenix-${stack_version}</name>
+              <condition>should_install_phoenix</condition>
             </package>
           </packages>
         </osSpecific>

@@ -82,12 +82,13 @@ module.exports = App.WizardRoute.extend({
                   break;
                 case 'ADD_SERVICES_INSTALLING_3' :
                 case 'SERVICE_STARTING_3' :
-                  addServiceController.setCurrentStep('6');
-                  break;
                 case 'ADD_SERVICES_INSTALLED_4' :
                   addServiceController.setCurrentStep('7');
                   break;
                 default:
+                  if(App.db.data.AddService.currentStep != undefined) {
+                    addServiceController.setCurrentStep(App.db.data.AddService.currentStep);
+                  }
                   break;
               }
             }
@@ -200,6 +201,7 @@ module.exports = App.WizardRoute.extend({
           });
           router.get('wizardStep7Controller').set('recommendationsConfigs', null);
           router.get('wizardStep7Controller').clearAllRecommendations();
+          addServiceController.setDBProperty('serviceConfigGroups', undefined);
           router.transitionTo('step4');
         });
       });
@@ -286,8 +288,6 @@ module.exports = App.WizardRoute.extend({
       if (App.Cluster.find().objectAt(0).get('isKerberosEnabled')) {
         if (router.get('mainAdminKerberosController.isManualKerberos')) {
           router.get('wizardStep8Controller').updateKerberosDescriptor(true);
-        } else {
-          router.get('kerberosWizardStep2Controller').createKerberosAdminSession(router.get('kerberosWizardStep4Controller.stepConfigs')[0].get('configs'));
         }
         router.get('addServiceController').cacheStepConfigValues(router.get('kerberosWizardStep4Controller'));
       }

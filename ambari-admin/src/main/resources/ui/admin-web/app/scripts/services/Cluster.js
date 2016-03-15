@@ -22,6 +22,16 @@ angular.module('ambariAdminConsole')
   return {
     repoStatusCache : {},
 
+    orderedRoles : [
+      'CLUSTER.ADMINISTRATOR',
+      'CLUSTER.OPERATOR',
+      'SERVICE.ADMINISTRATOR',
+      'SERVICE.OPERATOR',
+      'CLUSTER.USER'
+    ],
+
+    ineditableRoles : ['VIEW.USER', 'AMBARI.ADMINISTRATOR'],
+
     getAllClusters: function() {
       var deferred = $q.defer();
       $http.get(Settings.baseUrl + '/clusters', {mock: 'cluster/clusters.json'})
@@ -60,9 +70,22 @@ angular.module('ambariAdminConsole')
 
       return deferred.promise;
     },
+    getClusterOS: function() {
+      var deferred = $q.defer();
+
+      $http.get(Settings.baseUrl + '/services/AMBARI/components/AMBARI_SERVER?fields=RootServiceComponents/properties/server.os_family&minimal_response=true', {mock: 'redhat6'})
+      .then(function(data) {
+        deferred.resolve(data.data.RootServiceComponents.properties['server.os_family']);
+      })
+      .catch(function(data) {
+        deferred.reject(data);
+      });
+
+      return deferred.promise;
+    },
     getAmbariTimeout: function() {
       var deferred = $q.defer();
-      var url = '/services/AMBARI/components/AMBARI_SERVER?fields=RootServiceComponents/properties/user.inactivity.timeout.default'
+      var url = '/services/AMBARI/components/AMBARI_SERVER?fields=RootServiceComponents/properties/user.inactivity.timeout.default';
       $http.get(Settings.baseUrl + url)
       .then(function(data) {
         var properties = data.data.RootServiceComponents.properties;
@@ -116,17 +139,19 @@ angular.module('ambariAdminConsole')
     },
     getPrivilegesWithFilters: function(params) {
       var deferred = $q.defer();
-
+      var isUser = params.typeFilter.value == 'USER';
+      var endpoint = isUser? '/users' : '/groups';
+      var nameURL = isUser? '&Users/user_name.matches(.*' : '&Groups/group_name.matches(.*';
+      var nameFilter = params.nameFilter? nameURL + params.nameFilter + '.*)' : '';
+      var roleFilter = params.roleFilter.value? '&privileges/PrivilegeInfo/permission_name.matches(.*' + params.roleFilter.value + '.*)' : '';
       $http({
         method: 'GET',
-        url: Settings.baseUrl + '/clusters/'+ params.clusterId + '/privileges?'
-        + 'fields=PrivilegeInfo/*'
-        + '&PrivilegeInfo/principal_name.matches(.*' + params.nameFilter + '.*)'
-        + '&PrivilegeInfo/principal_type.matches(.*' + params.typeFilter.value + '.*)'
-        + '&PrivilegeInfo/permission_name.matches(.*' + params.roleFilter.value + '.*)'
+        url: Settings.baseUrl + endpoint + '?'
+        + 'fields=privileges/PrivilegeInfo/*'
+        + nameFilter
+        + roleFilter
         + '&from=' + (params.currentPage - 1) * params.usersPerPage
         + '&page_size=' + params.usersPerPage
-        + '&sortBy=PrivilegeInfo/principal_name'
       })
       .success(function(data) {
         deferred.resolve(data);

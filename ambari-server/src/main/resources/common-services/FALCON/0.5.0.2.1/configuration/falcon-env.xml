@@ -27,6 +27,7 @@
     <description>Falcon user.</description>
     <value-attributes>
       <type>user</type>
+      <overridable>false</overridable>
     </value-attributes>
   </property>
   <property>
@@ -45,7 +46,6 @@
     <description>Falcon log directory.</description>
     <value-attributes>
       <type>directory</type>
-      <editable-only-at-install>true</editable-only-at-install>
       <overridable>false</overridable>
     </value-attributes>
   </property>
@@ -101,7 +101,19 @@
       <overridable>false</overridable>
     </value-attributes>
   </property>
-  
+  <property>
+    <name>falcon_apps_hdfs_dir</name>
+    <value>/apps/falcon</value>
+    <description>Falcon Apps HDFS Dir</description>
+    <display-name>Falcon Apps HDFS Dir</display-name>
+    <property-type>NOT_MANAGED_HDFS_PATH</property-type>
+    <value-attributes>
+      <read-only>true</read-only>
+      <overridable>false</overridable>
+      <visible>false</visible>
+    </value-attributes>
+  </property>
+
   <!-- falcon-env.sh -->
   <property>
     <name>content</name>

@@ -30,11 +30,6 @@ describe('App.ManageAlertNotificationsController', function () {
 
   beforeEach(function () {
     controller = getController();
-    sinon.stub($, 'ajax', Em.K);
-  });
-
-  afterEach(function () {
-    $.ajax.restore();
   });
 
   describe('#alertNotifications', function () {
@@ -107,45 +102,48 @@ describe('App.ManageAlertNotificationsController', function () {
 
   describe('#addAlertNotification()', function () {
 
+    var inputFields = Em.Object.create({
+      a: {
+        value: '',
+        defaultValue: 'a'
+      },
+      b: {
+        value: '',
+        defaultValue: 'b'
+      },
+      c: {
+        value: '',
+        defaultValue: 'c'
+      },
+      severityFilter: {
+        value: [],
+        defaultValue: ['OK', 'WARNING', 'CRITICAL', 'UNKNOWN']
+      },
+      global: {
+        value: false
+      },
+      allGroups: Em.Object.create({
+        value: 'custom'
+      })
+    });
+
     beforeEach(function () {
       sinon.stub(controller, 'showCreateEditPopup');
+      controller.set('inputFields', inputFields);
+      controller.addAlertNotification();
     });
 
     afterEach(function () {
       controller.showCreateEditPopup.restore();
     });
 
-    it("should set value for inputFields and call showCreateEditPopup", function () {
-
-      controller.set('inputFields', Em.Object.create({
-        a: {
-          value: '',
-          defaultValue: 'a'
-        },
-        b: {
-          value: '',
-          defaultValue: 'b'
-        },
-        c: {
-          value: '',
-          defaultValue: 'c'
-        },
-        severityFilter: {
-          value: [],
-          defaultValue: ['OK', 'WARNING', 'CRITICAL', 'UNKNOWN']
-        },
-        global: {
-          value: false
-        },
-        allGroups: Em.Object.create({
-          value: 'custom'
-        })
-      }));
-      controller.addAlertNotification();
-
-      Em.keys(controller.get('inputFields')).forEach(function (key) {
-        expect(controller.get('inputFields.' + key + '.value')).to.eql(controller.get('inputFields.' + key + '.defaultValue'));
+    Object.keys(inputFields).forEach(function (key) {
+      it(key, function () {
+        expect(controller.get('inputFields.' + key + '.value')).to.be.eql(controller.get('inputFields.' + key + '.defaultValue'));
       });
+    });
+
+    it("should call showCreateEditPopup", function () {
       expect(controller.showCreateEditPopup.calledOnce).to.be.true;
     });
 
@@ -669,16 +667,26 @@ describe('App.ManageAlertNotificationsController', function () {
         });
 
         cases.forEach(function (item) {
-          it(item.method, function () {
-            item.errors.forEach(function (errorName) {
-              view.set(errorName, true);
+          describe(item.method, function () {
+
+            beforeEach(function () {
+              item.errors.forEach(function (errorName) {
+                view.set(errorName, true);
+              });
+              view.set('controller.inputFields.method.value', item.method);
             });
-            view.set('controller.inputFields.method.value', item.method);
+
             item.errors.forEach(function (errorName) {
-              expect(view.get(errorName)).to.be.false;
+              it(errorName + ' is false', function () {
+                expect(view.get(errorName)).to.be.false;
+              });
+
             });
             validators.forEach(function (validatorName) {
-              expect(view.get(validatorName).calledOnce).to.equal(item.validators.contains(validatorName));
+              var called = item.validators.contains(validatorName);
+              it(validatorName + ' ' + (called ? '' : 'not') + ' called', function () {
+                expect(view.get(validatorName).calledOnce).to.equal(called);
+              });
             });
           });
         });
@@ -795,8 +803,8 @@ describe('App.ManageAlertNotificationsController', function () {
     it("should send ajax request", function () {
 
       controller.createAlertNotification();
-      expect($.ajax.calledOnce).to.be.true;
-      expect($.ajax.args[0][0].url.contains('overwrite_existing=true')).to.be.false;
+      var args = helpers.findAjaxRequest('name', 'alerts.create_alert_notification');
+      expect(args[0]).to.exists;
     });
 
   });
@@ -831,7 +839,8 @@ describe('App.ManageAlertNotificationsController', function () {
     it("should send ajax request", function () {
 
       controller.updateAlertNotification();
-      expect($.ajax.calledOnce).to.be.true;
+      var args = helpers.findAjaxRequest('name', 'alerts.update_alert_notification');
+      expect(args[0]).to.exists;
     });
 
   });
@@ -877,7 +886,8 @@ describe('App.ManageAlertNotificationsController', function () {
 
       expect(App.showConfirmationPopup.calledOnce).to.be.true;
       popup.onPrimary();
-      expect($.ajax.calledOnce).to.be.true;
+      var args = helpers.findAjaxRequest('name', 'alerts.delete_alert_notification');
+      expect(args[0]).to.exists;
     });
 
   });
@@ -942,13 +952,13 @@ describe('App.ManageAlertNotificationsController', function () {
       controller.set('inputFields.customProperties', []);
     });
 
+    /*eslint-disable mocha-cleanup/asserts-limit */
     it('should add custom Property to customProperties', function () {
-
       controller.set('newCustomProperty', {name: 'n1', value: 'v1'});
       controller.addCustomProperty();
       helpers.nestedExpect([{name: 'n1', value: 'v1', defaultValue: 'v1'}], controller.get('inputFields.customProperties'));
-
     });
+    /*eslint-enable mocha-cleanup/asserts-limit */
 
   });
 
@@ -964,8 +974,8 @@ describe('App.ManageAlertNotificationsController', function () {
       ]);
     });
 
+    /*eslint-disable mocha-cleanup/asserts-limit */
     it('should remove selected custom property', function () {
-
       controller.removeCustomPropertyHandler({context: c});
       helpers.nestedExpect(
         [
@@ -974,8 +984,8 @@ describe('App.ManageAlertNotificationsController', function () {
         ],
         controller.get('inputFields.customProperties')
       );
-
     });
+    /*eslint-enable mocha-cleanup/asserts-limit */
 
   });
 
@@ -1010,23 +1020,19 @@ describe('App.ManageAlertNotificationsController', function () {
       describe('#errorHandler', function () {
 
         it('should fire invalid name', function () {
-
           view.set('controller.newCustomProperty.name', '!!');
           view.errorsHandler();
           expect(view.get('isError')).to.be.true;
           expect(view.get('parentView.disablePrimary')).to.be.true;
-          expect(view.get('errorMessage.length') > 0).to.be.true;
-
+          expect(view.get('errorMessage.length')).to.be.above(0);
         });
 
         it('should fire existing property name', function () {
-
           view.set('controller.newCustomProperty.name', 'n1');
           view.errorsHandler();
           expect(view.get('isError')).to.be.true;
           expect(view.get('parentView.disablePrimary')).to.be.true;
-          expect(view.get('errorMessage.length') > 0).to.be.true;
-
+          expect(view.get('errorMessage.length')).to.be.above(0);
         });
 
       });

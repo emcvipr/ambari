@@ -22,7 +22,7 @@ require('utils/config');
 
 App.Service = DS.Model.extend({
   serviceName: DS.attr('string'),
-  displayName: Em.computed.formatRole('serviceName'),
+  displayName: Em.computed.formatRole('serviceName', true),
   passiveState: DS.attr('string'),
   workStatus: DS.attr('string'),
   rand: DS.attr('string'),
@@ -86,7 +86,8 @@ App.Service = DS.Model.extend({
       GANGLIA: ['MONITORING'],
       HDFS: ['HA_MODE'],
       YARN: ['HA_MODE'],
-      RANGER: ['HA_MODE']
+      RANGER: ['HA_MODE'],
+      HAWQ: ['HA_MODE']
     };
     return typeServiceMap[this.get('serviceName')] || [];
   }.property('serviceName'),
@@ -157,6 +158,49 @@ App.Service = DS.Model.extend({
 
 });
 
+/**
+ * Map of all service states
+ *
+ * @type {Object}
+ */
+App.Service.statesMap = {
+  init: 'INIT',
+  installing: 'INSTALLING',
+  install_failed: 'INSTALL_FAILED',
+  stopped: 'INSTALLED',
+  starting: 'STARTING',
+  started: 'STARTED',
+  stopping: 'STOPPING',
+  uninstalling: 'UNINSTALLING',
+  uninstalled: 'UNINSTALLED',
+  wiping_out: 'WIPING_OUT',
+  upgrading: 'UPGRADING',
+  maintenance: 'MAINTENANCE',
+  unknown: 'UNKNOWN'
+};
+
+/**
+ * @type {String[]}
+ */
+App.Service.inProgressStates = [
+  App.Service.statesMap.installing,
+  App.Service.statesMap.starting,
+  App.Service.statesMap.stopping,
+  App.Service.statesMap.uninstalling,
+  App.Service.statesMap.upgrading,
+  App.Service.statesMap.wiping_out
+];
+
+/**
+ * @type {String[]}
+ */
+App.Service.allowUninstallStates = [
+  App.Service.statesMap.init,
+  App.Service.statesMap.install_failed,
+  App.Service.statesMap.stopped,
+  App.Service.statesMap.unknown
+];
+
 App.Service.Health = {
   live: "LIVE",
   dead: "DEAD-RED",
@@ -185,7 +229,7 @@ App.Service.Health = {
  * association between service and extended model name
  * @type {Object}
  */
-  App.Service.extendedModel = {
+App.Service.extendedModel = {
   'HDFS': 'HDFSService',
   'HBASE': 'HBaseService',
   'YARN': 'YARNService',

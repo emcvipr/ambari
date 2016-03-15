@@ -19,18 +19,18 @@ limitations under the License.
 """
 from resource_management.libraries.functions import format
 from resource_management.libraries.script.script import Script
-from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from resource_management.libraries.functions.version import format_stack_version, compare_versions
 from resource_management.libraries.functions.default import default
 from utils import get_bare_principal
-from resource_management.libraries.functions.get_hdp_version import get_hdp_version
+from resource_management.libraries.functions.get_stack_version import get_stack_version
 from resource_management.libraries.functions.is_empty import is_empty
 import status_params
 from resource_management.core.logger import Logger
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
-from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions import stack_select
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import get_kinit_path
-
+from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
 
 # server configurations
 config = Script.get_config()
@@ -47,7 +47,7 @@ current_version = default("/hostLevelParams/current_version", None)
 host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+stack_version_formatted = format_stack_version(stack_version_unformatted)
 upgrade_direction = default("/commandParams/upgrade_direction", None)
 
 # When downgrading the 'version' and 'current_version' are both pointing to the downgrade-target version
@@ -69,7 +69,7 @@ kafka_user_nofile_limit = config['configurations']['kafka-env']['kafka_user_nofi
 kafka_user_nproc_limit = config['configurations']['kafka-env']['kafka_user_nproc_limit']
 
 # parameters for 2.2+
-if Script.is_hdp_stack_greater_or_equal("2.2"):
+if Script.is_stack_greater_or_equal("2.2"):
   kafka_home = '/usr/hdp/current/kafka-broker/'
   kafka_bin = kafka_home+'bin/kafka'
   conf_dir = "/usr/hdp/current/kafka-broker/config"
@@ -106,6 +106,10 @@ else:
 
 metric_collector_host = ""
 metric_collector_port = ""
+metric_collector_protocol = ""
+metric_truststore_path= default("/configurations/ams-ssl-client/ssl.client.truststore.location", "")
+metric_truststore_type= default("/configurations/ams-ssl-client/ssl.client.truststore.type", "")
+metric_truststore_password= default("/configurations/ams-ssl-client/ssl.client.truststore.password", "")
 
 ams_collector_hosts = default("/clusterHostInfo/metrics_collector_hosts", [])
 has_metric_collector = not len(ams_collector_hosts) == 0
@@ -125,13 +129,17 @@ if has_metric_collector:
       metric_collector_port = metric_collector_web_address.split(':')[1]
     else:
       metric_collector_port = '6188'
+  if default("/configurations/ams-site/timeline.metrics.service.http.policy", "HTTP_ONLY") == "HTTPS_ONLY":
+    metric_collector_protocol = 'https'
+  else:
+    metric_collector_protocol = 'http'
   pass
 # Security-related params
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 kafka_kerberos_enabled = ('security.inter.broker.protocol' in config['configurations']['kafka-broker'] and
                           config['configurations']['kafka-broker']['security.inter.broker.protocol'] == "PLAINTEXTSASL")
 
-if security_enabled and hdp_stack_version != "" and 'kafka_principal_name' in config['configurations']['kafka-env'] and compare_versions(hdp_stack_version, '2.3') >= 0:
+if security_enabled and stack_version_formatted != "" and 'kafka_principal_name' in config['configurations']['kafka-env'] and compare_versions(stack_version_formatted, '2.3') >= 0:
     _hostname_lowercase = config['hostname'].lower()
     _kafka_principal_name = config['configurations']['kafka-env']['kafka_principal_name']
     kafka_jaas_principal = _kafka_principal_name.replace('_HOST',_hostname_lowercase)
@@ -240,8 +248,8 @@ if has_ranger_admin and is_supported_kafka_ranger:
   ssl_truststore_password = unicode(config['configurations']['ranger-kafka-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password']) if xml_configurations_supported else None
   credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None
 
-  hdp_version = get_hdp_version('kafka-broker')
-  setup_ranger_env_sh_source = format('/usr/hdp/{hdp_version}/ranger-kafka-plugin/install/conf.templates/enable/kafka-ranger-env.sh')
+  stack_version = get_stack_version('kafka-broker')
+  setup_ranger_env_sh_source = format('/usr/hdp/{stack_version}/ranger-kafka-plugin/install/conf.templates/enable/kafka-ranger-env.sh')
   setup_ranger_env_sh_target = format("{conf_dir}/kafka-ranger-env.sh")
 
   #For SQLA explicitly disable audit to DB for Ranger
@@ -256,7 +264,7 @@ hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab'] if
 hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name'] if has_namenode else None
 hdfs_site = config['configurations']['hdfs-site'] if has_namenode else None
 default_fs = config['configurations']['core-site']['fs.defaultFS'] if has_namenode else None
-hadoop_bin_dir = hdp_select.get_hadoop_dir("bin") if has_namenode else None
+hadoop_bin_dir = stack_select.get_hadoop_dir("bin") if has_namenode else None
 hadoop_conf_dir = conf_select.get_hadoop_conf_dir() if has_namenode else None
 kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
 
@@ -266,6 +274,7 @@ import functools
 HdfsResource = functools.partial(
   HdfsResource,
   user=hdfs_user,
+  hdfs_resource_ignore_file = "/var/lib/ambari-agent/data/.hdfs_resource_ignore",
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,
@@ -273,5 +282,6 @@ HdfsResource = functools.partial(
   hadoop_conf_dir = hadoop_conf_dir,
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
-  default_fs = default_fs
+  default_fs = default_fs,
+  immutable_paths = get_not_managed_resources()
 )

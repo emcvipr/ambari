@@ -30,8 +30,8 @@ from resource_management.core.resources.system import File
 from resource_management.libraries.functions import Direction
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions import compare_versions
-from resource_management.libraries.functions import hdp_select
-from resource_management.libraries.functions import format_hdp_stack_version
+from resource_management.libraries.functions import stack_select
+from resource_management.libraries.functions import format_stack_version
 from resource_management.libraries.functions import tar_archive
 from resource_management.libraries.script.script import Script
 
@@ -108,7 +108,7 @@ class OozieUpgrade(Script):
 
     # some versions of HDP don't need the lzo compression libraries
     target_version_needs_compression_libraries = compare_versions(
-      format_hdp_stack_version(params.version), '2.2.1.0') >= 0
+      format_stack_version(params.version), '2.2.1.0') >= 0
 
     # ensure the directory exists
     Directory(params.oozie_libext_dir, mode = 0777)
@@ -162,7 +162,7 @@ class OozieUpgrade(Script):
     oozie.download_database_library_if_needed()
 
     # get the upgrade version in the event that it's needed
-    upgrade_stack = hdp_select._get_upgrade_stack()
+    upgrade_stack = stack_select._get_upgrade_stack()
     if upgrade_stack is None or len(upgrade_stack) < 2 or upgrade_stack[1] is None:
       raise Fail("Unable to determine the stack that is being upgraded to or downgraded to.")
 
@@ -199,23 +199,7 @@ class OozieUpgrade(Script):
       command = format("{kinit_path_local} -kt {oozie_keytab} {oozie_principal_with_host}")
       Execute(command, user=params.oozie_user, logoutput=True)
 
-    # setup environment
-    environment = { "CATALINA_BASE" : "/usr/hdp/current/oozie-server/oozie-server",
-      "OOZIE_HOME" : "/usr/hdp/current/oozie-server" }
-
-    # prepare the oozie WAR
-    command = format("{oozie_setup_sh} prepare-war {oozie_secure} -d {oozie_libext_dir}")
-    return_code, oozie_output = shell.call(command, user=params.oozie_user,
-      logoutput=False, quiet=False, env=environment)
-
-    # set it to "" in to prevent a possible iteration issue
-    if oozie_output is None:
-      oozie_output = ""
-
-    if return_code != 0 or "New Oozie WAR file with added".lower() not in oozie_output.lower():
-      message = "Unexpected Oozie WAR preparation output {0}".format(oozie_output)
-      Logger.error(message)
-      raise Fail(message)
+    oozie.prepare_war()
 
 
   def upgrade_oozie_database_and_sharelib(self, env):
@@ -234,20 +218,22 @@ class OozieUpgrade(Script):
     import params
     env.set_params(params)
 
+    Logger.info("Will upgrade the Oozie database")
+
     # get the kerberos token if necessary to execute commands as oozie
     if params.security_enabled:
       oozie_principal_with_host = params.oozie_principal.replace("_HOST", params.hostname)
       command = format("{kinit_path_local} -kt {oozie_keytab} {oozie_principal_with_host}")
       Execute(command, user=params.oozie_user, logoutput=True)
 
-    upgrade_stack = hdp_select._get_upgrade_stack()
+    upgrade_stack = stack_select._get_upgrade_stack()
     if upgrade_stack is None or len(upgrade_stack) < 2 or upgrade_stack[1] is None:
       raise Fail("Unable to determine the stack that is being upgraded to or downgraded to.")
 
     stack_version = upgrade_stack[1]
 
     # upgrade oozie DB
-    Logger.info('Upgrading the Oozie database...')
+    Logger.info(format('Upgrading the Oozie database, using version {stack_version}'))
 
     # the database upgrade requires the db driver JAR, but since we have
     # not yet run hdp-select to upgrade the current points, we have to use
@@ -292,7 +278,7 @@ class OozieUpgrade(Script):
 
     params.HdfsResource(None, action = "execute")
 
-    upgrade_stack = hdp_select._get_upgrade_stack()
+    upgrade_stack = stack_select._get_upgrade_stack()
     if upgrade_stack is None or upgrade_stack[1] is None:
       raise Fail("Unable to determine the stack that is being upgraded to or downgraded to.")
 

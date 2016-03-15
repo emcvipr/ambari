@@ -18,6 +18,7 @@
 
 var App = require('app');
 require('views/common/quick_view_link_view');
+var testHelpers = require('test/helpers');
 
 describe('App.QuickViewLinks', function () {
 
@@ -111,20 +112,12 @@ describe('App.QuickViewLinks', function () {
   });
 
   describe("#loadTags()", function () {
-    beforeEach(function () {
-      sinon.stub(App.ajax, 'send');
-    });
-    afterEach(function () {
-      App.ajax.send.restore();
-    });
+
     it("call $.ajax", function () {
       quickViewLinks.loadTags();
-      expect(App.ajax.send.calledWith({
-        name: 'config.tags',
-        sender: quickViewLinks,
-        success: 'loadTagsSuccess',
-        error: 'loadTagsError'
-      })).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'config.tags');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(quickViewLinks);
     });
   });
 
@@ -132,9 +125,7 @@ describe('App.QuickViewLinks', function () {
     beforeEach(function () {
       sinon.stub(quickViewLinks, 'setConfigProperties', function () {
         return {
-          done: function (callback) {
-            callback();
-          }
+          done: Em.clb
         }
       });
       sinon.stub(quickViewLinks, 'getQuickLinksHosts');
@@ -180,9 +171,59 @@ describe('App.QuickViewLinks', function () {
     });
   });
 
+  describe("#loadQuickLinksConfigSuccessCallback()", function () {
+    var mock;
+
+    beforeEach(function () {
+      sinon.stub(App.store, 'commit', Em.K);
+      mock = sinon.stub(quickViewLinks, 'getQuickLinksConfiguration');
+    });
+    afterEach(function () {
+      App.store.commit.restore();
+      mock.restore();
+    });
+    it("requiredSites consistent", function () {
+      var quickLinksConfigHBASE = {
+        protocol: {
+          type: "http"
+        },
+        links: [
+          {
+            port: {
+              site: "hbase-site"
+            }
+          }
+        ]
+      };
+      var quickLinksConfigYARN = {
+        protocol: {
+          checks: [
+            {
+              site: "yarn-site"
+            }
+          ],
+          type: "https"
+        },
+        links: [
+          {
+            port: {
+              site: "yarn-site"
+            }
+          }
+        ]
+      };
+      quickViewLinks.set('content.serviceName', 'HBASE');
+      mock.returns(quickLinksConfigHBASE);
+      quickViewLinks.loadQuickLinksConfigSuccessCallback({items: []});
+      quickViewLinks.set('content.serviceName', 'YARN');
+      mock.returns(quickLinksConfigYARN);
+      quickViewLinks.loadQuickLinksConfigSuccessCallback({items: []});
+      expect(quickViewLinks.get('requiredSiteNames')).to.be.eql(["core-site", "hdfs-site", "hbase-site", "yarn-site"]);
+    });
+  });
+
   describe("#getQuickLinksHosts()", function () {
     beforeEach(function () {
-      sinon.stub(App.ajax, 'send');
       sinon.stub(App.HostComponent, 'find').returns([
         Em.Object.create({
           isMaster: true,
@@ -191,35 +232,30 @@ describe('App.QuickViewLinks', function () {
       ]);
     });
     afterEach(function () {
-      App.ajax.send.restore();
       App.HostComponent.find.restore();
     });
     it("call $.ajax", function () {
       quickViewLinks.getQuickLinksHosts();
-      expect(App.ajax.send.calledWith({
-        name: 'hosts.for_quick_links',
-        sender: quickViewLinks,
-        data: {
-          clusterName: App.get('clusterName'),
-          masterHosts: 'host1',
-          urlParams: ''
-        },
-        success: 'setQuickLinksSuccessCallback'
-      })).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'hosts.for_quick_links');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(quickViewLinks);
+      expect(args[0].data).to.be.eql({
+        clusterName: App.get('clusterName'),
+        masterHosts: 'host1',
+        urlParams: ''
+      });
     });
     it("call $.ajax, HBASE service", function () {
       quickViewLinks.set('content.serviceName', 'HBASE');
       quickViewLinks.getQuickLinksHosts();
-      expect(App.ajax.send.calledWith({
-        name: 'hosts.for_quick_links',
-        sender: quickViewLinks,
-        data: {
-          clusterName: App.get('clusterName'),
-          masterHosts: 'host1',
-          urlParams: ',host_components/metrics/hbase/master/IsActiveMaster'
-        },
-        success: 'setQuickLinksSuccessCallback'
-      })).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'hosts.for_quick_links');
+      expect(args[0]).exists;
+      expect(args[0].sender).to.be.eql(quickViewLinks);
+      expect(args[0].data).to.be.eql({
+        clusterName: App.get('clusterName'),
+        masterHosts: 'host1',
+        urlParams: ',host_components/metrics/hbase/master/IsActiveMaster'
+      });
     });
   });
 
@@ -298,8 +334,7 @@ describe('App.QuickViewLinks', function () {
     it("empty links are set", function () {
       quickViewLinks.setEmptyLinks();
       expect(quickViewLinks.get('quickLinks')).to.eql([{
-        label: quickViewLinks.t('quick.links.error.label'),
-        url: 'javascript:alert("' + quickViewLinks.t('contact.administrator') + '");return false;'
+        label: quickViewLinks.get('quickLinksErrorMessage'),
       }]);
       expect(quickViewLinks.get('isLoaded')).to.be.true;
     });
@@ -315,6 +350,16 @@ describe('App.QuickViewLinks', function () {
       var host = {hostName: 'host1'};
       quickViewLinks.processOozieHosts([host]);
       expect(host.status).to.equal(Em.I18n.t('quick.links.label.active'));
+    });
+    it("host status is invalid", function () {
+      quickViewLinks.set('content.hostComponents', [Em.Object.create({
+        componentName: 'OOZIE_SERVER',
+        workStatus: 'INSTALLED',
+        hostName: 'host1'
+      })]);
+      var host = {hostName: 'host1'};
+      quickViewLinks.processOozieHosts([host]);
+      expect(quickViewLinks.get('quickLinksErrorMessage')).to.equal(Em.I18n.t('quick.links.error.oozie.label'));
     });
   });
 
@@ -817,7 +862,7 @@ describe('App.QuickViewLinks', function () {
             {
               'type': 'yarn-site',
               'properties': {'yarn.timeline-service.webapp.https.address': 'c6401.ambari.apache.org:8090'}
-            },
+            }
           ],
         'result': '8090'
       })
@@ -833,6 +878,108 @@ describe('App.QuickViewLinks', function () {
         expect(quickViewLinks.setPort(item.port, item.protocol, item.configProperties)).to.equal(item.result);
       })
     }, this);
+  });
+
+  describe("#getHosts()", function() {
+
+    beforeEach(function() {
+      sinon.stub(quickViewLinks, 'processOozieHosts').returns(['oozieHost']);
+      sinon.stub(quickViewLinks, 'processHdfsHosts').returns(['hdfsHost']);
+      sinon.stub(quickViewLinks, 'processHbaseHosts').returns(['hbaseHost']);
+      sinon.stub(quickViewLinks, 'processYarnHosts').returns(['yarnHost']);
+      sinon.stub(quickViewLinks, 'findHosts').returns(['host1']);
+      App.set('singleNodeInstall', false);
+      quickViewLinks.set('content', Em.Object.create({
+        hostComponents: []
+      }));
+    });
+    afterEach(function() {
+      quickViewLinks.processOozieHosts.restore();
+      quickViewLinks.processHdfsHosts.restore();
+      quickViewLinks.processHbaseHosts.restore();
+      quickViewLinks.findHosts.restore();
+      quickViewLinks.processYarnHosts.restore();
+    });
+
+    it("singleNodeInstall is true", function() {
+      App.set('singleNodeInstall', true);
+      App.set('singleNodeAlias', 'host1');
+      expect(quickViewLinks.getHosts({}, 'S1')).to.eql([{
+        hostName: 'host1',
+        publicHostName: 'host1'
+      }])
+    });
+
+    it("content is null", function() {
+      quickViewLinks.set('content', null);
+      expect(quickViewLinks.getHosts({}, 'S1')).to.be.empty;
+    });
+
+    it("OOZIE service", function() {
+      expect(quickViewLinks.getHosts({}, 'OOZIE')).to.eql(['oozieHost']);
+      expect(quickViewLinks.findHosts.calledWith('OOZIE_SERVER', {})).to.be.true;
+      expect(quickViewLinks.processOozieHosts.calledOnce).to.be.true;
+    });
+
+    it("HDFS service", function() {
+      expect(quickViewLinks.getHosts({}, 'HDFS')).to.eql(['hdfsHost']);
+      expect(quickViewLinks.findHosts.calledWith('NAMENODE', {})).to.be.true;
+      expect(quickViewLinks.processHdfsHosts.calledOnce).to.be.true;
+    });
+
+    it("HBASE service", function() {
+      expect(quickViewLinks.getHosts({}, 'HBASE')).to.eql(['hbaseHost']);
+      expect(quickViewLinks.findHosts.calledWith('HBASE_MASTER', {})).to.be.true;
+      expect(quickViewLinks.processHbaseHosts.calledOnce).to.be.true;
+    });
+
+    it("YARN service", function() {
+      expect(quickViewLinks.getHosts({}, 'YARN')).to.eql(['yarnHost']);
+      expect(quickViewLinks.findHosts.calledWith('RESOURCEMANAGER', {})).to.be.true;
+      expect(quickViewLinks.processYarnHosts.calledOnce).to.be.true;
+    });
+
+    it("STORM service", function() {
+      expect(quickViewLinks.getHosts({}, 'STORM')).to.eql(['host1']);
+      expect(quickViewLinks.findHosts.calledWith('STORM_UI_SERVER', {})).to.be.true;
+    });
+
+    it("ACCUMULO service", function() {
+      expect(quickViewLinks.getHosts({}, 'ACCUMULO')).to.eql(['host1']);
+      expect(quickViewLinks.findHosts.calledWith('ACCUMULO_MONITOR', {})).to.be.true;
+    });
+
+    it("ATLAS service", function() {
+      expect(quickViewLinks.getHosts({}, 'ATLAS')).to.eql(['host1']);
+      expect(quickViewLinks.findHosts.calledWith('ATLAS_SERVER', {})).to.be.true;
+    });
+
+    it("MAPREDUCE2 service", function() {
+      expect(quickViewLinks.getHosts({}, 'MAPREDUCE2')).to.eql(['host1']);
+      expect(quickViewLinks.findHosts.calledWith('HISTORYSERVER', {})).to.be.true;
+    });
+
+    it("AMBARI_METRICS service", function() {
+      expect(quickViewLinks.getHosts({}, 'AMBARI_METRICS')).to.eql(['host1']);
+      expect(quickViewLinks.findHosts.calledWith('METRICS_GRAFANA', {})).to.be.true;
+    });
+
+    it("custom service without master", function() {
+      expect(quickViewLinks.getHosts({}, 'S1')).to.be.empty;
+    });
+
+    it("custom service with master", function() {
+      quickViewLinks.set('content', Em.Object.create({
+        hostComponents: [
+          Em.Object.create({
+            isMaster: true,
+            componentName: 'C1'
+          })
+        ]
+      }));
+      expect(quickViewLinks.getHosts({}, 'S1')).to.eql(['host1']);
+      expect(quickViewLinks.findHosts.calledWith('C1', {})).to.be.true;
+    });
   });
 
 });

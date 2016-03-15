@@ -20,6 +20,7 @@
 var App = require('app');
 require('controllers/main/admin/stack_and_upgrade_controller');
 require('utils/string_utils');
+var testHelpers = require('test/helpers');
 
 describe('App.MainAdminStackAndUpgradeController', function() {
 
@@ -48,7 +49,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
     });
     it("should be valid", function() {
       controller.propertyDidChange('realRepoUrl');
-      expect(controller.get('realRepoUrl')).to.equal('apiPrefixstackVersionURL/compatible_repository_versions?fields=*,operating_systems/*,operating_systems/repositories/*');
+      expect(controller.get('realRepoUrl')).to.equal('apiPrefixstackVersionURL/repository_versions?fields=*,RepositoryVersions/*,operating_systems/*,operating_systems/repositories/*');
     });
   });
 
@@ -139,43 +140,34 @@ describe('App.MainAdminStackAndUpgradeController', function() {
   });
 
   describe("#loadUpgradeData()", function() {
-    beforeEach(function () {
-      sinon.stub(App.ajax, 'send').returns({
-        then: Em.K,
-        complete: Em.K
-      });
-    });
-    afterEach(function () {
-      App.ajax.send.restore();
-    });
+
     it("get entire data", function() {
       controller.set('upgradeId', 1);
       controller.loadUpgradeData();
-      expect(App.ajax.send.getCall(0).args[0]).to.eql({
-        name: 'admin.upgrade.data',
-        sender: controller,
-        data: {
-          id: 1
-        },
-        success: 'loadUpgradeDataSuccessCallback'
-      })
+      var args = testHelpers.findAjaxRequest('name', 'admin.upgrade.data');
+      expect(args[0]).to.exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].data).to.be.eql({
+        id: 1
+      });
     });
     it("get only state", function() {
       controller.set('upgradeId', 1);
       controller.loadUpgradeData(true);
-      expect(App.ajax.send.getCall(0).args[0]).to.eql({
-        name: 'admin.upgrade.state',
-        sender: controller,
-        data: {
-          id: 1
-        },
-        success: 'loadUpgradeDataSuccessCallback'
-      })
+      var args = testHelpers.findAjaxRequest('name', 'admin.upgrade.state');
+      expect(args[0]).to.exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].data).to.be.eql({
+        id: 1
+      });
     });
     it("upgrade id is null", function() {
       controller.set('upgradeId', null);
       controller.loadUpgradeData();
-      expect(App.ajax.send.called).to.be.false;
+      var args = testHelpers.findAjaxRequest('name', 'admin.upgrade.state');
+      var args2 = testHelpers.findAjaxRequest('name', 'admin.upgrade.data');
+      expect(args).to.not.exists;
+      expect(args2).to.not.exists;
     });
   });
 
@@ -263,12 +255,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
   });
 
   describe("#getUpgradeItem()", function() {
-    beforeEach(function () {
-      sinon.stub(App.ajax, 'send', Em.K);
-    });
-    afterEach(function () {
-      App.ajax.send.restore();
-    });
+
     it("default callback", function() {
       var item = Em.Object.create({
         request_id: 1,
@@ -276,15 +263,14 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         stage_id: 3
       });
       controller.getUpgradeItem(item);
-      expect(App.ajax.send.getCall(0).args[0]).to.eql({
-        name: 'admin.upgrade.upgrade_item',
-        sender: controller,
-        data: {
-          upgradeId: 1,
-          groupId: 2,
-          stageId: 3
-        },
-        success: 'getUpgradeItemSuccessCallback'
+      var args = testHelpers.findAjaxRequest('name', 'admin.upgrade.upgrade_item');
+      expect(args[0]).to.exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].success).to.be.equal('getUpgradeItemSuccessCallback');
+      expect(args[0].data).to.be.eql({
+        upgradeId: 1,
+        groupId: 2,
+        stageId: 3
       });
     });
     it("custom callback", function() {
@@ -294,15 +280,14 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         stage_id: 3
       });
       controller.getUpgradeItem(item, 'customCallback');
-      expect(App.ajax.send.getCall(0).args[0]).to.eql({
-        name: 'admin.upgrade.upgrade_item',
-        sender: controller,
-        data: {
-          upgradeId: 1,
-          groupId: 2,
-          stageId: 3
-        },
-        success: 'customCallback'
+      var args = testHelpers.findAjaxRequest('name', 'admin.upgrade.upgrade_item');
+      expect(args[0]).to.exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].success).to.be.equal('customCallback');
+      expect(args[0].data).to.be.eql({
+        upgradeId: 1,
+        groupId: 2,
+        stageId: 3
       });
     });
   });
@@ -321,12 +306,6 @@ describe('App.MainAdminStackAndUpgradeController', function() {
   });
 
   describe("#runPreUpgradeCheck()", function() {
-    before(function () {
-      sinon.stub(App.ajax, 'send', Em.K);
-    });
-    after(function () {
-      App.ajax.send.restore();
-    });
     it("make ajax call", function() {
       controller.runPreUpgradeCheck(Em.Object.create({
         repositoryVersion: '2.2',
@@ -335,18 +314,15 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         skipComponentFailures: false,
         skipSCFailures: false
       }));
-      expect(App.ajax.send.getCall(0).args[0]).to.eql({
-        name: "admin.upgrade.pre_upgrade_check",
-        sender: controller,
-        data: {
-          value: '2.2',
-          label: 'HDP-2.2',
-          type: 'ROLLING',
-          skipComponentFailures: 'false',
-          skipSCFailures: 'false'
-        },
-        success: "runPreUpgradeCheckSuccess",
-        error: "runPreUpgradeCheckError"
+      var args = testHelpers.findAjaxRequest('name', 'admin.upgrade.pre_upgrade_check');
+      expect(args[0]).to.exists;
+      expect(args[0].sender).to.be.eql(controller);
+      expect(args[0].data).to.be.eql({
+        value: '2.2',
+        label: 'HDP-2.2',
+        type: 'ROLLING',
+        skipComponentFailures: 'false',
+        skipSCFailures: 'false'
       });
     });
   });
@@ -466,7 +442,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         );
         expect(controller.upgrade.callCount).to.equal(item.upgradeCalledCount);
         expect(App.showClusterCheckPopup.callCount).to.equal(item.showClusterCheckPopupCalledCount);
-        if (item.check.id == 'CONFIG_MERGE') {
+        if (item.check.id === 'CONFIG_MERGE') {
           expect(App.showClusterCheckPopup.firstCall.args[2]).to.eql(item.configs);
         }
       });
@@ -526,7 +502,6 @@ describe('App.MainAdminStackAndUpgradeController', function() {
     var callArgs;
 
     beforeEach(function () {
-      sinon.stub(App.ajax, 'send', Em.K);
       sinon.stub(controller, 'setDBProperty', Em.K);
       controller.set('currentVersion', {
         repository_version: '2.2'
@@ -535,11 +510,10 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         value: '2.2',
         label: 'HDP-2.2'
       });
-      callArgs = App.ajax.send.getCall(0).args[0];
+      callArgs = testHelpers.findAjaxRequest('name', 'admin.upgrade.start')[0];
     });
 
     afterEach(function () {
-      App.ajax.send.restore();
       controller.setDBProperty.restore();
     });
 
@@ -661,6 +635,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
               UpgradeGroup: {
                 group_id: 1,
                 status: 'COMPLETED',
+                display_status: 'COMPLETED',
                 progress_percent: 100,
                 completed_task_count: 3
               },
@@ -669,6 +644,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
                   UpgradeItem: {
                     stage_id: 1,
                     status: 'COMPLETED',
+                    display_status: 'COMPLETED',
                     progress_percent: 100
                   }
                 }
@@ -678,6 +654,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
               UpgradeGroup: {
                 group_id: 2,
                 status: 'ABORTED',
+                display_status: 'ABORTED',
                 progress_percent: 50,
                 completed_task_count: 1
               },
@@ -686,6 +663,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
                   UpgradeItem: {
                     stage_id: 2,
                     status: 'ABORTED',
+                    display_status: 'ABORTED',
                     progress_percent: 99
                   }
                 },
@@ -693,6 +671,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
                   UpgradeItem: {
                     stage_id: 3,
                     status: 'PENDING',
+                    display_status: 'PENDING',
                     progress_percent: 0
                   }
                 }
@@ -709,6 +688,9 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         it('status is COMPLETED', function () {
           expect(groups[0].get('status')).to.equal('COMPLETED');
         });
+        it('display_status is COMPLETED', function () {
+          expect(groups[0].get('display_status')).to.equal('COMPLETED');
+        });
         it('progress_percent is 100', function () {
           expect(groups[0].get('progress_percent')).to.equal(100);
         });
@@ -717,6 +699,9 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         });
         it('upgradeItems.0.status is COMPLETED', function () {
           expect(groups[0].get('upgradeItems')[0].get('status')).to.equal('COMPLETED');
+        });
+        it('upgradeItems.0.display_status is COMPLETED', function () {
+          expect(groups[0].get('upgradeItems')[0].get('display_status')).to.equal('COMPLETED');
         });
         it('upgradeItems.0.progress_percent is 100', function () {
           expect(groups[0].get('upgradeItems')[0].get('progress_percent')).to.equal(100);
@@ -730,6 +715,9 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         it('status is ABORTED', function () {
           expect(groups[1].get('status')).to.equal('ABORTED');
         });
+        it('display_status is ABORTED', function () {
+          expect(groups[1].get('display_status')).to.equal('ABORTED');
+        });
         it('progress_percent is 50', function () {
           expect(groups[1].get('progress_percent')).to.equal(50);
         });
@@ -738,6 +726,9 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         });
         it('upgradeItems.[].status = ["ABORTED", "PENDING"]', function () {
           expect(groups[1].get('upgradeItems').mapProperty('status')).to.eql(['ABORTED', 'PENDING']);
+        });
+        it('upgradeItems.[].display_status = ["ABORTED", "PENDING"]', function () {
+          expect(groups[1].get('upgradeItems').mapProperty('display_status')).to.eql(['ABORTED', 'PENDING']);
         });
         it('upgradeItems.[].progress_percent = [99, 0]', function () {
           expect(groups[1].get('upgradeItems').mapProperty('progress_percent')).to.eql([99, 0]);
@@ -991,7 +982,6 @@ describe('App.MainAdminStackAndUpgradeController', function() {
 
   describe("#downgrade()", function() {
     beforeEach(function () {
-      sinon.stub(App.ajax, 'send', Em.K);
       sinon.stub(controller, 'abortUpgrade');
       sinon.stub(App.RepositoryVersion, 'find').returns([
         Em.Object.create({
@@ -1005,11 +995,10 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         repository_version: '2.2',
         repository_name: 'HDP-2.2'
       }), {context: 'context'});
-      this.callArgs = App.ajax.send.getCall(0).args[0];
+      this.callArgs = testHelpers.findAjaxRequest('name', 'admin.downgrade.start')[0];
     });
 
     afterEach(function () {
-      App.ajax.send.restore();
       controller.abortUpgrade.restore();
       App.RepositoryVersion.find.restore();
     });
@@ -1018,7 +1007,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
       expect(controller.abortUpgrade.calledOnce).to.be.true;
     });
     it('request-data is valid', function () {
-      expect(App.ajax.send.getCall(0).args[0].data).to.eql({
+      expect(this.callArgs.data).to.eql({
         from: '2.3',
         value: '2.2',
         label: 'HDP-2.2',
@@ -1027,13 +1016,13 @@ describe('App.MainAdminStackAndUpgradeController', function() {
       });
     });
     it('request-name is valid', function () {
-      expect(this.callArgs.name).to.eql('admin.downgrade.start');
+      expect(this.callArgs.name).to.be.equal('admin.downgrade.start');
     });
     it('request-sender is valid', function () {
-      expect(this.callArgs.sender).to.eql(controller);
+      expect(this.callArgs.sender).to.be.eql(controller);
     });
     it('callback is valid', function () {
-      expect(this.callArgs.success).to.eql('upgradeSuccessCallback');
+      expect(this.callArgs.success).to.be.equal('upgradeSuccessCallback');
     });
     it('callback is called', function () {
       expect(this.callArgs.callback).to.be.called;
@@ -1056,12 +1045,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
   });
 
   describe("#installRepoVersion()", function () {
-    before(function () {
-      sinon.stub(App.ajax, 'send', Em.K);
-    });
-    after(function () {
-      App.ajax.send.restore();
-    });
+
     it("make ajax call", function () {
       var repo = Em.Object.create({
         stackVersionType: 'HDP',
@@ -1070,7 +1054,8 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         repoId: 1
       });
       controller.installRepoVersion(repo);
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'admin.stack_version.install.repo_version');
+      expect(args).to.exists;
     });
   });
 
@@ -1109,32 +1094,23 @@ describe('App.MainAdminStackAndUpgradeController', function() {
   describe("#setUpgradeItemStatus()", function () {
     var item;
     beforeEach(function () {
-      sinon.stub(App.ajax, 'send', function () {
-        return {
-          done: Em.clb
-        }
-      });
       item = Em.Object.create({
         request_id: 1,
         stage_id: 1,
         group_id: 1
       });
       controller.setUpgradeItemStatus(item, 'PENDING');
-      this.callArgs = App.ajax.send.getCall(0).args[0];
-    });
-
-    afterEach(function () {
-      App.ajax.send.restore();
+      this.callArgs = testHelpers.findAjaxRequest('name', 'admin.upgrade.upgradeItem.setState')[0];
     });
 
     it('request-data is valid', function () {
-      expect(this.callArgs.data).to.eql({upgradeId: 1, itemId: 1, groupId: 1, status: 'PENDING'});
+      expect(this.callArgs.data).to.be.eql({upgradeId: 1, itemId: 1, groupId: 1, status: 'PENDING'});
     });
     it('request-name is valid', function () {
-      expect(this.callArgs.name).to.eql('admin.upgrade.upgradeItem.setState');
+      expect(this.callArgs.name).to.be.equal('admin.upgrade.upgradeItem.setState');
     });
     it('request-sendeer is valid', function () {
-      expect(this.callArgs.sender).to.eql(controller);
+      expect(this.callArgs.sender).to.be.eql(controller);
     });
     it('callback is called', function () {
       expect(this.callArgs.callback).to.be.called;
@@ -1222,42 +1198,57 @@ describe('App.MainAdminStackAndUpgradeController', function() {
     before(function(){
       this.mock = sinon.stub(controller, 'validateRepoVersions');
       sinon.stub(controller, 'prepareRepoForSaving', Em.K);
-      sinon.stub(App.ajax, 'send').returns({success: Em.K});
     });
     after(function(){
       this.mock.restore();
       controller.prepareRepoForSaving.restore();
-      App.ajax.send.restore();
     });
-    it("validation errors present", function() {
-      this.mock.returns({
-        done: function(callback) {callback([1]);}
+    describe("validation errors present", function() {
+
+      beforeEach(function () {
+        this.mock.returns({
+          done: function(callback) {callback([1]);}
+        });
+        controller.saveRepoOS(Em.Object.create({repoVersionId: 1}), true);
+        this.args = testHelpers.findAjaxRequest('name', 'admin.stack_versions.edit.repo');
       });
-      controller.saveRepoOS(Em.Object.create({repoVersionId: 1}), true);
-      expect(controller.validateRepoVersions.calledWith(Em.Object.create({repoVersionId: 1}), true)).to.be.true;
-      expect(controller.prepareRepoForSaving.called).to.be.false;
-      expect(App.ajax.send.called).to.be.false;
+
+      it('validateRepoVersions is called with valid arguments', function () {
+        expect(controller.validateRepoVersions.calledWith(Em.Object.create({repoVersionId: 1}), true)).to.be.true;
+      });
+
+      it('prepareRepoForSaving is not called', function () {
+        expect(controller.prepareRepoForSaving.called).to.be.false;
+      });
+
+      it('no requests are sent', function () {
+        expect(this.args).to.not.exists;
+      });
     });
-    it("no validation errors", function() {
-      this.mock.returns({
-        done: function(callback) {callback([]);}
+
+    describe("no validation errors", function() {
+
+      beforeEach(function () {
+        this.mock.returns({
+          done: function(callback) {callback([]);}
+        });
+        controller.saveRepoOS(Em.Object.create({repoVersionId: 1}), true);
       });
-      controller.saveRepoOS(Em.Object.create({repoVersionId: 1}), true);
-      expect(controller.validateRepoVersions.calledWith(Em.Object.create({repoVersionId: 1}), true)).to.be.true;
-      expect(controller.prepareRepoForSaving.calledWith(Em.Object.create({repoVersionId: 1}))).to.be.true;
+      it('validateRepoVersions is called with valid arguments', function () {
+        expect(controller.validateRepoVersions.calledWith(Em.Object.create({repoVersionId: 1}), true)).to.be.true;
+      });
+      it('prepareRepoForSaving is called with valid arguments', function () {
+        expect(controller.prepareRepoForSaving.calledWith(Em.Object.create({repoVersionId: 1}))).to.be.true;
+      });
     });
   });
 
   describe("#validateRepoVersions()", function () {
-    before(function () {
-      sinon.stub(App.ajax, 'send').returns({success: Em.K, error: Em.K});
-    });
-    after(function () {
-      App.ajax.send.restore();
-    });
+
     it("skip validation", function () {
       controller.validateRepoVersions(Em.Object.create({repoVersionId: 1}), true);
-      expect(App.ajax.send.called).to.be.false;
+      var args = testHelpers.findAjaxRequest('name', 'admin.stack_versions.validate.repo');
+      expect(args).to.not.exists;
     });
     it("do validation", function () {
       var repo = Em.Object.create({
@@ -1272,7 +1263,8 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         ]
       });
       controller.validateRepoVersions(repo, false);
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'admin.stack_versions.validate.repo');
+      expect(args[0]).to.exists;
     });
   });
 
@@ -1284,6 +1276,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         realUpdateUrl: 'realUpdateUrl'
       });
     });
+
     it("full load is true, stack is null", function() {
       expect(controller.getUrl(null, true)).to.equal('realRepoUrl');
     });
@@ -1381,13 +1374,11 @@ describe('App.MainAdminStackAndUpgradeController', function() {
   describe('#updateFinalize', function () {
 
     beforeEach(function() {
-      sinon.stub($, 'ajax', Em.K);
       controller.set('isFinalizeItem', true);
       this.stub = sinon.stub(App, 'get');
     });
 
     afterEach(function () {
-      $.ajax.restore();
       this.stub.restore();
     });
 
@@ -1396,10 +1387,11 @@ describe('App.MainAdminStackAndUpgradeController', function() {
       beforeEach(function () {
         this.stub.withArgs('upgradeState').returns('HOLDING');
         controller.updateFinalize();
+        this.args = testHelpers.findAjaxRequest('name', 'admin.upgrade.finalizeContext');
       });
 
       it('request is sent', function () {
-        expect($.ajax.calledOnce).to.be.true;
+        expect(this.args[0]).to.exists;
       });
 
     });
@@ -1409,10 +1401,11 @@ describe('App.MainAdminStackAndUpgradeController', function() {
       beforeEach(function () {
         this.stub.withArgs('upgradeState').returns('HOLDING_TIMEDOUT');
         controller.updateFinalize();
+        this.args = testHelpers.findAjaxRequest('name', 'admin.upgrade.finalizeContext');
       });
 
       it('request is not sent', function () {
-        expect($.ajax.called).to.be.false;
+        expect(this.args).to.not.exists;
       });
 
       it('isFinalizeItem is false', function () {
@@ -2032,12 +2025,12 @@ describe('App.MainAdminStackAndUpgradeController', function() {
           action: 'a'
         });
       });
+      App.ajax.send.restore();
       sinon.stub(App.ajax, 'send').returns({});
     });
 
     afterEach(function () {
       appGetMock.restore();
-      App.ajax.send.restore();
     });
 
     cases.forEach(function (item) {
@@ -2049,6 +2042,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
           controller.runPreUpgradeCheckOnly({
             type: item.type
           });
+          this.ajaxCalls = testHelpers.filterAjaxRequests('name', 'admin.upgrade.pre_upgrade_check');
         });
 
         it('ROLLING properties', function () {
@@ -2060,7 +2054,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         });
 
         it(item.ajaxCallCount + ' requests sent', function () {
-          expect(App.ajax.send.callCount).to.equal(item.ajaxCallCount);
+          expect(this.ajaxCalls.length).to.be.equal(item.ajaxCallCount);
         });
 
         it('runningCheckRequests length is ' + item.runningCheckRequestsLength, function () {
@@ -2125,6 +2119,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
     });
 
     it('new window content is valid', function () {
+      /*eslint-disable no-useless-concat */
       expect(mock.document.write.calledWith('<table style="text-align: left;"><thead><tr>' +
         '<th>' + Em.I18n.t('popup.clusterCheck.Upgrade.configsMerge.configType') + '</th>' +
         '<th>' + Em.I18n.t('popup.clusterCheck.Upgrade.configsMerge.propertyName') + '</th>' +
@@ -2146,6 +2141,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
         '<td>' + 'recommendedValue2' + '</td>' +
         '<td>' + 'resultingValue2' + '</td>' +
         '</tr></tbody></table>')).to.be.true;
+      /*eslint-enable no-useless-concat */
     });
 
     it('document.focus is called once', function () {

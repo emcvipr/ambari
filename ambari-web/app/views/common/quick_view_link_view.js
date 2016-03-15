@@ -25,6 +25,8 @@ App.QuickViewLinks = Em.View.extend({
 
   hasQuickLinksConfiged: false,
 
+  quickLinksErrorMessage: '',
+
   /**
    * service which has blank target of link
    * @type {Array}
@@ -40,7 +42,8 @@ App.QuickViewLinks = Em.View.extend({
     'FALCON',
     'ACCUMULO',
     'ATLAS',
-    'RANGER'
+    'RANGER',
+    'AMBARI_METRICS'
   ],
 
   /**
@@ -163,7 +166,7 @@ App.QuickViewLinks = Em.View.extend({
       var sites = ['core-site', 'hdfs-site'];
       if(checks){
         checks.forEach(function(check){
-          var protocolConfigSiteProp = Em.get(check, 'site')
+          var protocolConfigSiteProp = Em.get(check, 'site');
           if (sites.indexOf(protocolConfigSiteProp) < 0){
             sites.push(protocolConfigSiteProp);
           }
@@ -181,8 +184,7 @@ App.QuickViewLinks = Em.View.extend({
             }
           }
         }, this);
-
-        this.set('requiredSiteNames', sites);
+        this.set('requiredSiteNames', this.get('requiredSiteNames').pushObjects(sites).uniq());
         this.setQuickLinks();
       }
     }
@@ -277,8 +279,8 @@ App.QuickViewLinks = Em.View.extend({
 
   toAddLink: function(link){
     var linkRemoved = Em.get(link, 'removed');
-    var template = Em.get(link, 'template');
-    return (template && !linkRemoved);
+    var url = Em.get(link, 'url');
+    return (url && !linkRemoved);
   },
 
   getHostLink: function(link, host, protocol, configProperties, response){
@@ -301,7 +303,7 @@ App.QuickViewLinks = Em.View.extend({
     if (this.toAddLink(link)) {
       var newItem = {};
       var requiresUserName = Em.get(link, 'requires_user_name');
-      var template = Em.get(link, 'template');
+      var template = Em.get(link, 'url');
         if('true' === requiresUserName){
           newItem.url = template.fmt(protocol, host, linkPort, App.router.get('loginName'));
         } else {
@@ -318,9 +320,9 @@ App.QuickViewLinks = Em.View.extend({
    * set empty links
    */
   setEmptyLinks: function () {
+    //display an error message
     var quickLinks = [{
-      label: this.t('quick.links.error.label'),
-      url: 'javascript:alert("' + this.t('contact.administrator') + '");return false;'
+      label: this.get('quickLinksErrorMessage')
     }];
     this.set('quickLinks', quickLinks);
     this.set('isLoaded', true);
@@ -376,8 +378,8 @@ App.QuickViewLinks = Em.View.extend({
       var links = Em.get(quickLinksConfig, 'links');
       links.forEach(function(link){
         var linkRemoved = Em.get(link, 'removed');
-        var template = Em.get(link, 'template');
-        if (template && !linkRemoved) {
+        var url = Em.get(link, 'url');
+        if (url && !linkRemoved) {
           var port;
           var hostNameRegExp = new RegExp('([\\w\\W]*):\\d+');
           if (serviceName === 'HDFS') {
@@ -433,10 +435,14 @@ App.QuickViewLinks = Em.View.extend({
       .filterProperty('workStatus', 'STARTED')
       .mapProperty('hostName');
 
-    return hosts.filter(function (host) {
+    var oozieHostsArray = hosts.filter(function (host) {
       host.status = Em.I18n.t('quick.links.label.active');
       return activeOozieServers.contains(host.hostName);
     }, this);
+
+    if (oozieHostsArray.length == 0)
+      this.set('quickLinksErrorMessage', Em.I18n.t('quick.links.error.oozie.label'));
+    return oozieHostsArray;
   },
 
   /**
@@ -507,11 +513,16 @@ App.QuickViewLinks = Em.View.extend({
    * @method getHosts
    */
   getHosts: function (response, serviceName) {
+    //The default error message when we cannot obtain the host information for the given service
+    this.set('quickLinksErrorMessage', Em.I18n.t('quick.links.error.nohosts.label').format(serviceName));
     if (App.get('singleNodeInstall')) {
       return [{
         hostName: App.get('singleNodeAlias'),
         publicHostName: App.get('singleNodeAlias')
       }];
+    }
+    if (Em.isNone(this.get('content.hostComponents'))) {
+      return [];
     }
     var hosts = [];
     switch (serviceName) {
@@ -535,6 +546,12 @@ App.QuickViewLinks = Em.View.extend({
         break;
       case "ATLAS":
         hosts = this.findHosts('ATLAS_SERVER', response);
+        break;
+      case "MAPREDUCE2":
+        hosts = this.findHosts('HISTORYSERVER', response);
+        break;
+      case "AMBARI_METRICS":
+        hosts = this.findHosts('METRICS_GRAFANA', response);
         break;
       default:
         if (this.getWithDefault('content.hostComponents', []).someProperty('isMaster')) {

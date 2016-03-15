@@ -84,7 +84,7 @@ class PigServiceCheckLinux(PigServiceCheck):
       bin_dir = params.hadoop_bin_dir
     )
 
-    if params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.2') >= 0:
+    if params.stack_version_formatted != "" and compare_versions(params.stack_version_formatted, '2.2') >= 0:
       # cleanup results from previous test
       params.HdfsResource(output_dir,
                           type="directory",
@@ -125,7 +125,7 @@ class PigServiceCheckWindows(PigServiceCheck):
   def service_check(self, env):
     import params
     env.set_params(params)
-    smoke_cmd = os.path.join(params.hdp_root,"Run-SmokeTests.cmd")
+    smoke_cmd = os.path.join(params.stack_root,"Run-SmokeTests.cmd")
     service = "PIG"
     Execute(format("cmd /C {smoke_cmd} {service}", smoke_cmd=smoke_cmd, service=service), logoutput=True, user=params.pig_user, timeout=300)
 

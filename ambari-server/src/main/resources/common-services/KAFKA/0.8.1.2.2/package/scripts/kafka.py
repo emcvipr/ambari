@@ -20,7 +20,7 @@ limitations under the License.
 import collections
 import os
 
-from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
+from resource_management.libraries.functions.version import format_stack_version, compare_versions
 from resource_management.libraries.resources.properties_file import PropertiesFile
 from resource_management.libraries.resources.template_config import TemplateConfig
 from resource_management.core.resources.system import Directory, Execute, File, Link
@@ -39,7 +39,7 @@ def kafka(upgrade_type=None):
     # This still has an issue of hostnames being alphabetically out-of-order for broker.id in HDP-2.2.
     # Starting in HDP 2.3, Kafka handles the generation of broker.id so Ambari doesn't have to.
 
-    effective_version = params.hdp_stack_version if upgrade_type is None else format_hdp_stack_version(params.version)
+    effective_version = params.stack_version_formatted if upgrade_type is None else format_stack_version(params.version)
     Logger.info(format("Effective stack version: {effective_version}"))
 
     if effective_version is not None and effective_version != "" and compare_versions(effective_version, '2.2.0.0') >= 0 and compare_versions(effective_version, '2.3.0.0') < 0:
@@ -74,6 +74,10 @@ def kafka(upgrade_type=None):
     if params.has_metric_collector:
       kafka_server_config['kafka.timeline.metrics.host'] = params.metric_collector_host
       kafka_server_config['kafka.timeline.metrics.port'] = params.metric_collector_port
+      kafka_server_config['kafka.timeline.metrics.protocol'] = params.metric_collector_protocol
+      kafka_server_config['kafka.timeline.metrics.truststore.path'] = params.metric_truststore_path
+      kafka_server_config['kafka.timeline.metrics.truststore.type'] = params.metric_truststore_type
+      kafka_server_config['kafka.timeline.metrics.truststore.password'] = params.metric_truststore_password
 
     kafka_data_dir = kafka_server_config['log.dirs']
     kafka_data_dirs = filter(None, kafka_data_dir.split(","))
@@ -126,6 +130,13 @@ def kafka(upgrade_type=None):
          mode=0644,
          content=Template("kafka.conf.j2")
     )
+
+    File(os.path.join(params.conf_dir, 'tools-log4j.properties'),
+         owner='root',
+         group='root',
+         mode=0644,
+         content=Template("tools-log4j.properties.j2")
+         )
 
     setup_symlink(params.kafka_managed_pid_dir, params.kafka_pid_dir)
     setup_symlink(params.kafka_managed_log_dir, params.kafka_log_dir)

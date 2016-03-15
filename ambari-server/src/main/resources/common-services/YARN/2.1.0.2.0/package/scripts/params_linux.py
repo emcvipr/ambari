@@ -23,10 +23,11 @@ import os
 from resource_management.libraries.script.script import Script
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
 from resource_management.libraries.functions import conf_select
-from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions import stack_select
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions import get_kinit_path
-from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
+from resource_management.libraries.functions.version import format_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries import functions
 
@@ -54,8 +55,8 @@ stack_name = default("/hostLevelParams/stack_name", None)
 
 # This is expected to be of the form #.#.#.#
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version_major = format_hdp_stack_version(stack_version_unformatted)
-hdp_stack_version = functions.get_hdp_version('hadoop-yarn-resourcemanager')
+stack_version_formatted_major = format_stack_version(stack_version_unformatted)
+stack_version_formatted = functions.get_stack_version('hadoop-yarn-resourcemanager')
 
 # New Cluster Stack Version that is defined during the RESTART of a Stack Upgrade.
 # It cannot be used during the initial Cluser Install because the version is not yet known.
@@ -64,9 +65,9 @@ version = default("/commandParams/version", None)
 hostname = config['hostname']
 
 # hadoop default parameters
-hadoop_libexec_dir = hdp_select.get_hadoop_dir("libexec")
-hadoop_bin = hdp_select.get_hadoop_dir("sbin")
-hadoop_bin_dir = hdp_select.get_hadoop_dir("bin")
+hadoop_libexec_dir = stack_select.get_hadoop_dir("libexec")
+hadoop_bin = stack_select.get_hadoop_dir("sbin")
+hadoop_bin_dir = stack_select.get_hadoop_dir("bin")
 hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
 hadoop_yarn_home = '/usr/lib/hadoop-yarn'
 hadoop_mapred2_jar_location = "/usr/lib/hadoop-mapreduce"
@@ -76,7 +77,7 @@ yarn_container_bin = "/usr/lib/hadoop-yarn/bin"
 hadoop_java_io_tmpdir = os.path.join(tmp_dir, "hadoop_java_io_tmpdir")
 
 # hadoop parameters for 2.2+
-if Script.is_hdp_stack_greater_or_equal("2.2"):
+if Script.is_stack_greater_or_equal("2.2"):
   # MapR directory root
   mapred_role_root = "hadoop-mapreduce-client"
   command_role = default("/role", "")
@@ -258,6 +259,10 @@ hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_nam
 
 hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
+is_webhdfs_enabled = hdfs_site['dfs.webhdfs.enabled']
+
+# Path to file that contains list of HDFS resources to be skipped during processing
+hdfs_resource_ignore_file = "/var/lib/ambari-agent/data/.hdfs_resource_ignore"
 
 dfs_type = default("/commandParams/dfs_type", "")
 
@@ -268,6 +273,7 @@ import functools
 HdfsResource = functools.partial(
   HdfsResource,
   user=hdfs_user,
+  hdfs_resource_ignore_file = hdfs_resource_ignore_file,
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,
@@ -276,6 +282,7 @@ HdfsResource = functools.partial(
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
   default_fs = default_fs,
+  immutable_paths = get_not_managed_resources(),
   dfs_type = dfs_type
  )
 update_exclude_file_only = default("/commandParams/update_exclude_file_only",False)
@@ -314,6 +321,23 @@ yarn_https_on = (yarn_http_policy.upper() == 'HTTPS_ONLY')
 scheme = 'http' if not yarn_https_on else 'https'
 yarn_rm_address = config['configurations']['yarn-site']['yarn.resourcemanager.webapp.address'] if not yarn_https_on else config['configurations']['yarn-site']['yarn.resourcemanager.webapp.https.address']
 rm_active_port = rm_https_port if yarn_https_on else rm_port
+
+rm_ha_enabled = False
+rm_ha_ids_list = []
+rm_webapp_addresses_list = [yarn_rm_address]
+rm_ha_ids = default("/configurations/yarn-site/yarn.resourcemanager.ha.rm-ids", None)
+
+if rm_ha_ids:
+  rm_ha_ids_list = rm_ha_ids.split(",")
+  if len(rm_ha_ids_list) > 1:
+    rm_ha_enabled = True
+
+if rm_ha_enabled:
+  rm_webapp_addresses_list = []
+  for rm_id in rm_ha_ids_list:
+    rm_webapp_address_property = format('yarn.resourcemanager.webapp.address.{rm_id}') if not yarn_https_on else format('yarn.resourcemanager.webapp.https.address.{rm_id}')
+    rm_webapp_address = config['configurations']['yarn-site'][rm_webapp_address_property]
+    rm_webapp_addresses_list.append(rm_webapp_address)
 
 #ranger yarn properties
 if has_ranger_admin:

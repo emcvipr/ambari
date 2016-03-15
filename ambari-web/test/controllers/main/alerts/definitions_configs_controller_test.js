@@ -17,7 +17,7 @@
  */
 
 var App = require('app');
-
+var testHelpers = require('test/helpers');
 var controller;
 
 function getController() {
@@ -219,7 +219,8 @@ describe('App.MainAlertDefinitionConfigsController', function () {
           "https": "{{mapred-site/mapreduce.jobhistory.webapp.https.address}}",
           "https_property": "{{mapred-site/mapreduce.jobhistory.http.policy}}",
           "https_property_value": "HTTPS_ONLY",
-          "default_port": 0.0
+          "default_port": 0.0,
+          "connection_timeout": 123
         }
       }));
     });
@@ -227,13 +228,13 @@ describe('App.MainAlertDefinitionConfigsController', function () {
     it('isWizard = true', function () {
       controller.set('isWizard', true);
       var result = controller.renderWebConfigs();
-      expect(result.length).to.equal(11);
+      expect(result.length).to.equal(12);
     });
 
     it('isWizard = false', function () {
       controller.set('isWizard', false);
       var result = controller.renderWebConfigs();
-      expect(result.length).to.equal(5);
+      expect(result.length).to.equal(6);
     });
 
   });
@@ -248,6 +249,10 @@ describe('App.MainAlertDefinitionConfigsController', function () {
         scope: 'HOST',
         description: 'alertDefinitionDescription',
         interval: 60,
+        parameters: [
+          Em.Object.create({}),
+          Em.Object.create({}),
+        ],
         reporting: [
           Em.Object.create({
             type: 'warning',
@@ -269,13 +274,13 @@ describe('App.MainAlertDefinitionConfigsController', function () {
     it('isWizard = true', function () {
       controller.set('isWizard', true);
       var result = controller.renderScriptConfigs();
-      expect(result.length).to.equal(8);
+      expect(result.length).to.equal(10);
     });
 
     it('isWizard = false', function () {
       controller.set('isWizard', false);
       var result = controller.renderScriptConfigs();
-      expect(result.length).to.equal(2);
+      expect(result.length).to.equal(4);
     });
 
   });
@@ -362,7 +367,6 @@ describe('App.MainAlertDefinitionConfigsController', function () {
   describe('#saveConfigs()', function () {
 
     beforeEach(function () {
-      sinon.spy(App.ajax, 'send');
       controller.set('configs', [
         Em.Object.create({isDisabled: true}),
         Em.Object.create({isDisabled: true}),
@@ -372,10 +376,6 @@ describe('App.MainAlertDefinitionConfigsController', function () {
       controller.saveConfigs();
     });
 
-    afterEach(function () {
-      App.ajax.send.restore();
-    });
-
     it('should set isDisabled for each config', function () {
       expect(controller.get('configs').someProperty('isDisabled', false)).to.be.false;
     });
@@ -383,7 +383,8 @@ describe('App.MainAlertDefinitionConfigsController', function () {
       expect(controller.get('canEdit')).to.be.false;
     });
     it('should sent 1 request', function () {
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'alerts.update_alert_definition');
+      expect(args[0]).to.exists;
     });
 
   });
@@ -480,6 +481,68 @@ describe('App.MainAlertDefinitionConfigsController', function () {
         expect(result).to.eql(testCase.result);
       });
     });
+
+    describe('Some fields should be removed', function () {
+
+      beforeEach(function () {
+        controller.set('content', Em.Object.create({
+          rawSourceData: {
+            uri: {
+              id: 123
+            }
+          }
+        }));
+        controller.set('configs', [
+          Em.Object.create({
+            apiProperty: 'source.uri.connection_timeout',
+            apiFormattedValue: 123,
+            wasChanged: true
+          })
+        ]);
+        this.result = controller.getPropertiesToUpdate();
+      });
+
+      it('`AlertDefinition/source.uri.id`', function () {
+        expect(this.result).to.not.have.deep.property('AlertDefinition/source.uri.id');
+      });
+
+    });
+
+    describe('`source/parameters` for SCRIPT configs', function () {
+
+      beforeEach(function () {
+        controller.set('content', Em.Object.create({
+          parameters: [
+            Em.Object.create({name: 'p1', value: 'v1'}),
+            Em.Object.create({name: 'p2', value: 'v2'}),
+            Em.Object.create({name: 'p3', value: 'v3'}),
+            Em.Object.create({name: 'p4', value: 'v4'})
+          ],
+          rawSourceData: {
+            parameters: [
+              {name: 'p1', value: 'v1'},
+              {name: 'p2', value: 'v2'},
+              {name: 'p3', value: 'v3'},
+              {name: 'p4', value: 'v4'}
+            ]
+          }
+        }));
+        controller.set('configs', [
+          Em.Object.create({apiProperty:'p1', apiFormattedValue: 'v11', wasChanged: true, name: 'parameter'}),
+          Em.Object.create({apiProperty:'p2', apiFormattedValue: 'v21', wasChanged: true, name: 'parameter'}),
+          Em.Object.create({apiProperty:'p3', apiFormattedValue: 'v31', wasChanged: true, name: 'parameter'}),
+          Em.Object.create({apiProperty:'p4', apiFormattedValue: 'v41', wasChanged: true, name: 'parameter'})
+        ]);
+        this.result = controller.getPropertiesToUpdate();
+      });
+
+      it('should update parameters', function () {
+        expect(this.result['AlertDefinition/source'].parameters).to.have.property('length').equal(4);
+        expect(this.result['AlertDefinition/source'].parameters.mapProperty('value')).to.be.eql(['v11', 'v21', 'v31', 'v41']);
+      });
+
+    });
+
   });
 
   describe('#changeType()', function () {

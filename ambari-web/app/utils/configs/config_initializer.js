@@ -77,8 +77,6 @@ App.ConfigInitializer = App.ConfigInitializerClass.create(App.MountPointsBasedIn
       'mapred.job.tracker': this.getSimpleComponentConfig('JOBTRACKER'),
       'mapred.job.tracker.http.address': this.getSimpleComponentConfig('JOBTRACKER'),
       'mapreduce.history.server.http.address': this.getSimpleComponentConfig('HISTORYSERVER'),
-      'hive_hostname': this.getSimpleComponentConfig('HIVE_SERVER', false),
-      'oozie_hostname': this.getSimpleComponentConfig('OOZIE_SERVER', false),
       'oozie.base.url': this.getComponentConfigWithAffixes('OOZIE_SERVER', '://'),
       'hawq_dfs_url': this.getSimpleComponentConfig('NAMENODE'),
       'hawq_rm_yarn_address': this.getSimpleComponentConfig('RESOURCEMANAGER'),
@@ -137,7 +135,6 @@ App.ConfigInitializer = App.ConfigInitializerClass.create(App.MountPointsBasedIn
   }.property(''),
 
   uniqueInitializers: {
-    'hadoop.registry.rm.enabled': '_setYarnSliderDependency',
     'ranger_admin_password': '_setRangerAdminPassword',
     'hive_database': '_initHiveDatabaseValue',
     'templeton.hive.properties': '_initTempletonHiveProperties',
@@ -164,24 +161,6 @@ App.ConfigInitializer = App.ConfigInitializerClass.create(App.MountPointsBasedIn
     var value = 'P1!q' + stringUtils.getRandomString(12);
     Em.setProperties(configProperty, {'value': value, 'recommendedValue': value, 'retypedPassword': value});
     return configProperty;
-  },
-
-
-  /**
-   * Set specific config for YARN that depends on SLIDER.
-   * TODO DELETE as soon as <code>hadoop.registry.rm.enabled</code> will be fetched from stack adviser!
-   *
-   * @param configProperty
-   * @param localDb
-   * @param dependencies
-   * @private
-   */
-  _setYarnSliderDependency: function(configProperty, localDb, dependencies) {
-    var res = (!!dependencies.sliderSelected).toString();
-    if (Em.get(configProperty, 'value') !== res) {
-      Em.set(configProperty, 'recommendedValue', res);
-      Em.set(configProperty, 'value', res);
-    }
   },
 
   /**

@@ -27,7 +27,7 @@ describe('App.KerberosWizardStep2Controller', function() {
 
   App.TestAliases.testAsComputedAlias(getController(), 'isBackBtnDisabled', 'testConnectionInProgress', 'boolean');
 
-  App.TestAliases.testAsComputedAlias(getController(), 'hostNames', 'App.allHostNames');
+  App.TestAliases.testAsComputedAlias(getController(), 'hostNames', 'App.allHostNames', 'array');
 
   App.TestAliases.testAsComputedAlias(getController(), 'isConfigsLoaded', 'wizardController.stackConfigsLoaded', 'boolean');
 
@@ -54,11 +54,10 @@ describe('App.KerberosWizardStep2Controller', function() {
           $.extend(true, {}, preDefProp, {
             value: value, filename: 'some-site.xml',
             'displayType': displayType,
-            isRequiredByAgent: preDefProp.isRequiredByAgent == undefined ? true : preDefProp.isRequiredByAgent
+            isRequiredByAgent: preDefProp.isRequiredByAgent === undefined ? true : preDefProp.isRequiredByAgent
           }));
-      } else {
-        return App.ServiceConfigProperty.create({name: name, value: value, isRequiredByAgent: true, filename: 'some-site.xml'});
       }
+      return App.ServiceConfigProperty.create({name: name, value: value, isRequiredByAgent: true, filename: 'some-site.xml'});
     };
 
     var tests = [

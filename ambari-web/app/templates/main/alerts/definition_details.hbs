@@ -107,6 +107,8 @@
                     {{view.enabledDisplay}}
                   </span>
                 </a>
+              {{else}}
+                {{view.enabledDisplay}}
               {{/isAuthorized}}
             {{else}}
               {{#isAuthorized "SERVICE.TOGGLE_ALERTS"}}
@@ -116,6 +118,8 @@
                     {{view.disabledDisplay}}
                   </span>
                 </a>
+              {{else}}
+                {{view.disabledDisplay}}
               {{/isAuthorized}}
             {{/if}}
           </div>
@@ -171,11 +175,19 @@
 
         <table class="table advanced-header-table table-bordered table-striped alerts-table" id="alert-instances-table">
           <thead>
-          <tr>
-            <th class="first">{{t alerts.definition.details.serviceHost}}</th>
-            <th>{{t common.status}}</th>
+          {{#view view.sortView classNames="label-row" contentBinding="view.filteredContent"}}
+            {{view view.parentView.serviceSort class="first service-sorting"}}
+            {{view view.parentView.hostNameSort class="host-sorting"}}
+            {{view view.parentView.stateSort class="state-sorting"}}
             <th>{{t alerts.definition.details.24-hour}}</th>
             <th>{{t alerts.table.header.check.response}}</th>
+          {{/view}}
+          <tr class="filter-row">
+            <th class="first">{{view view.serviceFilterView}}</th>
+            <th>{{view view.hostNameFilterView}}</th>
+            <th>{{view view.stateFilterView }}</th>
+            <th>{{!}}</th>
+            <th>{{!}}</th>
           </tr>
           </thead>
           <tbody>
@@ -183,7 +195,21 @@
             {{#each instance in view.pageContent}}
               {{#view view.instanceTableRow}}
                 <td class="first">
-                  {{view App.AlertInstanceServiceHostView instanceBinding="instance"}}
+                  {{#if instance.serviceDisplayName}}
+                    {{#if instance.service.isLoaded}}
+                      <a {{action goToService instance.service target="view"}}
+                        href="#">{{instance.serviceDisplayName}}</a>
+                    {{else}}
+                      {{instance.serviceDisplayName}}
+                    {{/if}}
+                  {{/if}}
+                </td>
+                <td>
+                  {{#if instance.hostName}}
+                    <a {{action goToHostAlerts instance.host target="view"}} href="#">
+                      {{instance.hostName}}
+                    </a>
+                  {{/if}}
                 </td>
                 <td>{{{instance.status}}}
                   <time class="timeago"
@@ -193,7 +219,9 @@
                 </td>
                 <td>{{view view.parentView.lastDayCount hostNameBinding="instance.hostName"}}</td>
                 <td>
-                  <span class="alert-text" {{bindAttr data-original-title="instance.text"}}>{{instance.text}}</span>
+                  <a href="#" class="alert-text" {{action openFullResponse instance target="view"}} {{bindAttr data-original-title="instance.text"}}>
+                    {{instance.text}}
+                  </a>
                 </td>
               {{/view}}
             {{/each}}
@@ -208,6 +236,12 @@
         </table>
 
         <div class="page-bar">
+          <div class="filtered-info span4">
+            {{#if view.showFilteredContent}}
+              <label>{{view.filteredContentInfo}} - <a {{action clearFilters target="view"}}
+                href="#">{{t tableView.filters.clearAllFilters}}</a></label>
+            {{/if}}
+          </div>
           <div class="items-on-page">
             <label>{{t common.show}}: {{view view.rowsPerPageSelectView selectionBinding="view.displayLength"}}</label>
           </div>
@@ -221,7 +255,7 @@
         </div>
 
       {{else}}
-        <div class="spinner"></div>
+        {{view App.SpinnerView}}
       {{/if}}
 
     </div>
@@ -230,5 +264,5 @@
 
   </div>
 {{else}}
-  <div class="spinner"></div>
+  {{view App.SpinnerView}}
 {{/if}}

@@ -29,7 +29,6 @@
     <value-attributes>
       <type>directory</type>
       <overridable>false</overridable>
-      <editable-only-at-install>true</editable-only-at-install>
     </value-attributes>
   </property>
   <property>
@@ -182,6 +181,19 @@
     <description>User to run HDFS as</description>
     <value-attributes>
       <type>user</type>
+      <overridable>false</overridable>
+    </value-attributes>
+  </property>
+  <property>
+    <name>hdfs_tmp_dir</name>
+    <value>/tmp</value>
+    <description>HDFS tmp Dir</description>
+    <display-name>HDFS tmp Dir</display-name>
+    <property-type>NOT_MANAGED_HDFS_PATH</property-type>
+    <value-attributes>
+      <read-only>true</read-only>
+      <overridable>false</overridable>
+      <visible>false</visible>
     </value-attributes>
   </property>
   <property>

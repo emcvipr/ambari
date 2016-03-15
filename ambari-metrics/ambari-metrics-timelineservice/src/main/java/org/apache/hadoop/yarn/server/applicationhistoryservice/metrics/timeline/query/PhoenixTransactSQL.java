@@ -19,13 +19,16 @@ package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 import org.apache.hadoop.metrics2.sink.timeline.PrecisionLimitExceededException;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixHBaseAccessor;
-import org.apache.hadoop.metrics2.sink.timeline.Precision;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -102,6 +105,23 @@ public class PhoenixTransactSQL {
       "SERVER_TIME)) DATA_BLOCK_ENCODING='%s', IMMUTABLE_ROWS=true, " +
       "TTL=%s, COMPRESSION='%s'";
 
+  public static final String CREATE_METRICS_METADATA_TABLE_SQL =
+    "CREATE TABLE IF NOT EXISTS METRICS_METADATA " +
+      "(METRIC_NAME VARCHAR, " +
+      "APP_ID VARCHAR, " +
+      "UNITS CHAR(20), " +
+      "TYPE CHAR(20), " +
+      "START_TIME UNSIGNED_LONG, " +
+      "SUPPORTS_AGGREGATION BOOLEAN " +
+      "CONSTRAINT pk PRIMARY KEY (METRIC_NAME, APP_ID)) " +
+      "DATA_BLOCK_ENCODING='%s', COMPRESSION='%s'";
+
+  public static final String CREATE_HOSTED_APPS_METADATA_TABLE_SQL =
+    "CREATE TABLE IF NOT EXISTS HOSTED_APPS_METADATA " +
+      "(HOSTNAME VARCHAR, APP_IDS VARCHAR, " +
+      "CONSTRAINT pk PRIMARY KEY (HOSTNAME))" +
+      "DATA_BLOCK_ENCODING='%s', COMPRESSION='%s'";
+
   /**
    * ALTER table to set new options
    */
@@ -147,6 +167,14 @@ public class PhoenixTransactSQL {
     "METRIC_MIN," +
     "METRIC_COUNT) " +
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+  public static final String UPSERT_METADATA_SQL =
+    "UPSERT INTO METRICS_METADATA (METRIC_NAME, APP_ID, UNITS, TYPE, " +
+      "START_TIME, SUPPORTS_AGGREGATION) " +
+      "VALUES (?, ?, ?, ?, ?, ?)";
+
+  public static final String UPSERT_HOSTED_APPS_METADATA_SQL =
+    "UPSERT INTO HOSTED_APPS_METADATA (HOSTNAME, APP_IDS) VALUES (?, ?)";
 
   /**
    * Retrieve a set of rows from metrics records table.
@@ -217,6 +245,13 @@ public class PhoenixTransactSQL {
     "METRIC_MIN " +
     "FROM %s";
 
+  public static final String GET_METRIC_METADATA_SQL = "SELECT " +
+    "METRIC_NAME, APP_ID, UNITS, TYPE, START_TIME, " +
+    "SUPPORTS_AGGREGATION FROM METRICS_METADATA";
+
+  public static final String GET_HOSTED_APPS_METADATA_SQL = "SELECT " +
+    "HOSTNAME, APP_IDS FROM HOSTED_APPS_METADATA";
+
   /**
    * Aggregate host metrics using a GROUP BY clause to take advantage of
    * N - way parallel scan where N = number of regions.
@@ -224,7 +259,7 @@ public class PhoenixTransactSQL {
   public static final String GET_AGGREGATED_HOST_METRIC_GROUPBY_SQL = "UPSERT %s " +
     "INTO %s (METRIC_NAME, HOSTNAME, APP_ID, INSTANCE_ID, SERVER_TIME, UNITS, " +
     "METRIC_SUM, METRIC_COUNT, METRIC_MAX, METRIC_MIN) " +
-    "SELECT METRIC_NAME, HOSTNAME, APP_ID, INSTANCE_ID, MAX(SERVER_TIME), UNITS, " +
+    "SELECT METRIC_NAME, HOSTNAME, APP_ID, INSTANCE_ID, %s AS SERVER_TIME, UNITS, " +
     "SUM(METRIC_SUM), SUM(METRIC_COUNT), MAX(METRIC_MAX), MIN(METRIC_MIN) " +
     "FROM %s WHERE SERVER_TIME >= %s AND SERVER_TIME < %s " +
     "GROUP BY METRIC_NAME, HOSTNAME, APP_ID, INSTANCE_ID, UNITS";
@@ -236,7 +271,7 @@ public class PhoenixTransactSQL {
   public static final String GET_AGGREGATED_APP_METRIC_GROUPBY_SQL = "UPSERT %s " +
     "INTO %s (METRIC_NAME, APP_ID, INSTANCE_ID, SERVER_TIME, UNITS, " +
     "METRIC_SUM, METRIC_COUNT, METRIC_MAX, METRIC_MIN) SELECT METRIC_NAME, APP_ID, " +
-    "INSTANCE_ID, MAX(SERVER_TIME), UNITS, SUM(METRIC_SUM), SUM(%s), " +
+    "INSTANCE_ID, %s AS SERVER_TIME, UNITS, SUM(METRIC_SUM), SUM(%s), " +
     "MAX(METRIC_MAX), MIN(METRIC_MIN) FROM %s WHERE SERVER_TIME >= %s AND " +
     "SERVER_TIME < %s GROUP BY METRIC_NAME, APP_ID, INSTANCE_ID, UNITS";
 
@@ -255,6 +290,18 @@ public class PhoenixTransactSQL {
     "METRIC_AGGREGATE_HOURLY";
   public static final String METRICS_CLUSTER_AGGREGATE_DAILY_TABLE_NAME =
     "METRIC_AGGREGATE_DAILY";
+
+  public static final String[] PHOENIX_TABLES = {
+    METRICS_RECORD_TABLE_NAME,
+    METRICS_AGGREGATE_MINUTE_TABLE_NAME,
+    METRICS_AGGREGATE_HOURLY_TABLE_NAME,
+    METRICS_AGGREGATE_DAILY_TABLE_NAME,
+    METRICS_CLUSTER_AGGREGATE_TABLE_NAME,
+    METRICS_CLUSTER_AGGREGATE_MINUTE_TABLE_NAME,
+    METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_NAME,
+    METRICS_CLUSTER_AGGREGATE_DAILY_TABLE_NAME
+  };
+
   public static final String DEFAULT_TABLE_COMPRESSION = "SNAPPY";
   public static final String DEFAULT_ENCODING = "FAST_DIFF";
   public static final long NATIVE_TIME_RANGE_DELTA = 120000; // 2 minutes
@@ -298,7 +345,6 @@ public class PhoenixTransactSQL {
     if (condition.getStatement() != null) {
       stmtStr = condition.getStatement();
     } else {
-
       String metricsTable;
       String query;
       if (condition.getPrecision() == null) {
@@ -492,8 +538,7 @@ public class PhoenixTransactSQL {
   }
 
   private static PreparedStatement setQueryParameters(PreparedStatement stmt,
-                                                      Condition condition)
-    throws SQLException {
+                                                      Condition condition) throws SQLException {
     int pos = 1;
     //For GET_LATEST_METRIC_SQL_SINGLE_HOST parameters should be set 2 times
     do {

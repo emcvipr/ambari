@@ -419,7 +419,7 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
       this.loadConfigs('loadHiveConfigs');
     } else if (data.componentName == 'WEBHCAT_SERVER') {
       this.set('deleteWebHCatServer', true);
-      this.loadConfigs('loadHiveConfigs');
+      this.loadConfigs('loadWebHCatConfigs');
     } else if (data.componentName == 'HIVE_SERVER') {
       this.set('deleteHiveServer', true);
       this.loadConfigs('loadHiveConfigs');
@@ -578,7 +578,7 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
       case 'WEBHCAT_SERVER':
         returnFunc = App.showConfirmationPopup(function () {
           self.set('webhcatServerHost', hostName);
-          self.loadConfigs("loadHiveConfigs");
+          self.loadConfigs("loadWebHCatConfigs");
         }, Em.I18n.t('hosts.host.addComponent.' + componentName) + manualKerberosWarning);
         break;
       case 'NIMBUS':
@@ -643,7 +643,7 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
     if (subComponentNames && subComponentNames.length > 0) {
       var dns = [];
       subComponentNames.forEach(function (scn) {
-        dns.push(App.format.role(scn));
+        dns.push(App.format.role(scn, false));
       });
       displayName += " (" + dns.join(", ") + ")";
     }
@@ -851,6 +851,28 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
    * @param {object} data
    * @method loadHiveConfigs
    */
+  loadWebHCatConfigs: function (data) {
+    return App.ajax.send({
+      name: 'admin.get.all_configurations',
+      sender: this,
+      data: {
+        webHCat: true,
+        urlParams: [
+          '(type=hive-site&tag=' + data.Clusters.desired_configs['hive-site'].tag + ')',
+          '(type=webhcat-site&tag=' + data.Clusters.desired_configs['webhcat-site'].tag + ')',
+          '(type=hive-env&tag=' + data.Clusters.desired_configs['hive-env'].tag + ')',
+          '(type=core-site&tag=' + data.Clusters.desired_configs['core-site'].tag + ')'
+        ].join('|')
+      },
+      success: 'onLoadHiveConfigs'
+    });
+  },
+
+  /**
+   * Success callback for load configs request
+   * @param {object} data
+   * @method loadHiveConfigs
+   */
   loadHiveConfigs: function (data) {
     return App.ajax.send({
       name: 'admin.get.all_configurations',
@@ -870,21 +892,24 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
   /**
    * update and save Hive related configs to server
    * @param {object} data
+   * @param {object} opt
+   * @param {object} params
    * @method onLoadHiveConfigs
    */
-  onLoadHiveConfigs: function (data) {
+  onLoadHiveConfigs: function (data, opt, params) {
     var hiveMetastoreHost = this.get('hiveMetastoreHost');
     var webhcatServerHost = this.get('webhcatServerHost');
     var port = "";
     var configs = {};
     var attributes = {};
+    var userSetup = {};
     var localDB = {
       masterComponentHosts: this.getHiveHosts()
     };
     var dependencies = {
       hiveMetastorePort: ""
     };
-    var initializer = App.AddHiveComponentsInitializer;
+    var initializer = params.webHCat ? App.AddWebHCatComponentsInitializer : App.AddHiveComponentsInitializer;
     data.items.forEach(function (item) {
       configs[item.type] = item.properties;
       attributes[item.type] = item.properties_attributes || {};
@@ -896,10 +921,13 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
 
     dependencies.hiveMetastorePort = port;
 
-    initializer.setup({
-      hiveUser: configs['hive-env']['hive_user'],
-      webhcatUser: configs['hive-env']['webhcat_user']
-    });
+    if (params.webHCat) {
+      userSetup.webhcatUser = configs['hive-env']['webhcat_user'];
+    } else {
+      userSetup.hiveUser = configs['hive-env']['hive_user'];
+    }
+
+    initializer.setup(userSetup);
 
     ['hive-site', 'webhcat-site', 'hive-env', 'core-site'].forEach(function(fileName) {
       if (configs[fileName]) {
@@ -965,7 +993,7 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
           "tag": tag,
           "properties": properties[site],
           "properties_attributes": group.properties_attributes[site],
-          "service_config_version_note": Em.I18n.t('hosts.host.configs.save.note').format(App.format.role(componentName))
+          "service_config_version_note": Em.I18n.t('hosts.host.configs.save.note').format(App.format.role(componentName, false))
         });
       }
       if (desiredConfigs.length > 0) {
@@ -1296,6 +1324,9 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
     if (services.someProperty('serviceName', 'ACCUMULO')) {
       urlParams.push('(type=accumulo-site&tag=' + data.Clusters.desired_configs['accumulo-site'].tag + ')');
     }
+    if (services.someProperty('serviceName', 'KAFKA')) {
+      urlParams.push('(type=kafka-broker&tag=' + data.Clusters.desired_configs['kafka-broker'].tag + ')');
+    }
     return urlParams;
   },
 
@@ -1313,7 +1344,6 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
     }, this);
 
     this.updateZkConfigs(configs);
-
     var groups = [
       {
         properties: {
@@ -1326,7 +1356,8 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
         }
       }
     ];
-    if ((App.Service.find().someProperty('serviceName', 'YARN') && App.get('isHadoop22Stack')) || App.get('isRMHaEnabled')) {
+    var installedServiceNames = App.Service.find().mapProperty('serviceName');
+    if (installedServiceNames.contains('YARN') && App.get('isHadoop22Stack') || App.get('isRMHaEnabled')) {
       groups.push(
         {
           properties: {
@@ -1338,7 +1369,7 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
         }
       );
     }
-    if (App.Service.find().someProperty('serviceName', 'HBASE')) {
+    if (installedServiceNames.contains('HBASE')) {
       groups.push(
         {
           properties: {
@@ -1350,7 +1381,7 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
         }
       );
     }
-    if (App.Service.find().someProperty('serviceName', 'ACCUMULO')) {
+    if (installedServiceNames.contains('ACCUMULO')) {
       groups.push(
         {
           properties: {
@@ -1358,6 +1389,18 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
           },
           properties_attributes: {
             'accumulo-site': attributes['accumulo-site']
+          }
+        }
+      );
+    }
+    if (installedServiceNames.contains('KAFKA')) {
+      groups.push(
+        {
+          properties: {
+            'kafka-broker': configs['kafka-broker']
+          },
+          properties_attributes: {
+            'kafka-broker': attributes['kafka-broker']
           }
         }
       );
@@ -1396,23 +1439,28 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
         templateName: require('templates/main/host/details/installComponentPopup')
       }),
       onPrimary: function () {
-        this.hide();
+        var _this = this;
+        App.get('router.mainAdminKerberosController').getSecurityType(function () {
+          App.get('router.mainAdminKerberosController').getKDCSessionState(function () {
+            _this.hide();
 
-        App.ajax.send({
-          name: 'common.host.host_component.update',
-          sender: self,
-          data: {
-            hostName: self.get('content.hostName'),
-            serviceName: component.get('service.serviceName'),
-            componentName: componentName,
-            component: component,
-            context: Em.I18n.t('requestInfo.installHostComponent') + " " + displayName,
-            HostRoles: {
-              state: 'INSTALLED'
-            }
-          },
-          success: 'installComponentSuccessCallback',
-          error: 'ajaxErrorCallback'
+            App.ajax.send({
+              name: 'common.host.host_component.update',
+              sender: self,
+              data: {
+                hostName: self.get('content.hostName'),
+                serviceName: component.get('service.serviceName'),
+                componentName: componentName,
+                component: component,
+                context: Em.I18n.t('requestInfo.installHostComponent') + " " + displayName,
+                HostRoles: {
+                  state: 'INSTALLED'
+                }
+              },
+              success: 'installComponentSuccessCallback',
+              error: 'ajaxErrorCallback'
+            });
+          })
         });
       }
     });
@@ -2110,7 +2158,7 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
       componentsBody: Em.computed.i18nFormat('hosts.cant.do.popup.' + type + '.body', 'components.length'),
       componentsBodyEnd: function () {
         if (this.get('showBodyEnd')) {
-          return Em.I18n.t('hosts.cant.do.popup.' + type + '.body.end').format(App.get('components.decommissionAllowed').map(function(c){return App.format.role(c)}).join(", "));
+          return Em.I18n.t('hosts.cant.do.popup.' + type + '.body.end').format(App.get('components.decommissionAllowed').map(function(c){return App.format.role(c, false)}).join(", "));
         }
         return '';
       }.property(),
@@ -2292,9 +2340,10 @@ App.MainHostDetailsController = Em.Controller.extend(App.SupportClientConfigsDow
   },
 
   toggleMaintenanceMode: function (event) {
-    var self = this;
-    var state = event.context.get('passiveState') === "ON" ? "OFF" : "ON";
-    var message = Em.I18n.t('passiveState.turn' + state.toCapital() + 'For').format(event.context.get('displayName'));
+    var state, message, self = this;
+    if (event.context.get('isImpliedState')) return null;
+    state = event.context.get('passiveState') === "ON" ? "OFF" : "ON";
+    message = Em.I18n.t('passiveState.turn' + state.toCapital() + 'For').format(event.context.get('displayName'));
     return App.showConfirmationPopup(function () {
       self.updateComponentPassiveState(event.context, state, message);
     });

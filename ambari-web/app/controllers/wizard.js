@@ -59,6 +59,8 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingM
 
   connectOutlet:function(name, context) {
     if (name !== 'loading') this.set('isStepDisabled.isLocked', false);
+    App.get('router').set('transitionInProgress', false);
+    App.get('router').set('nextBtnClickInProgress', false);
     return this._super.apply(this,arguments);
   },
 
@@ -117,7 +119,7 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingM
       dbHosts[hostName].hostComponents.forEach(function (componentName) {
         hostComponents.push(Em.Object.create({
           componentName: componentName,
-          displayName: App.format.role(componentName)
+          displayName: App.format.role(componentName, false)
         }));
       });
       dbHosts[hostName].disk_info.forEach(function (disk) {
@@ -887,14 +889,15 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingM
     var installedServiceNames = stepController.get('installedServiceNames') || [];
     var installedServiceNamesMap = installedServiceNames.toWickMap();
     stepController.get('stepConfigs').forEach(function (_content) {
-
       if (_content.serviceName === 'YARN') {
         _content.set('configs', App.config.textareaIntoFileConfigs(_content.get('configs'), 'capacity-scheduler.xml'));
       }
       _content.get('configs').forEach(function (_configProperties) {
+        if (!Em.isNone(_configProperties.get('group'))) {
+          return false;
+        }
         var configProperty = App.config.createDefaultConfig(
           _configProperties.get('name'),
-          _configProperties.get('serviceName'),
           _configProperties.get('filename'),
           _configProperties.get('isUserProperty'),
           {value: _configProperties.get('value')}
@@ -1030,7 +1033,7 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingM
       var name = (componentName === 'HDFS_CLIENT') ? 'CLIENT' : componentName;
       var component = {
         componentName: name,
-        displayName: App.format.role(name),
+        displayName: App.format.role(name, false),
         hosts: [],
         isInstalled: true
       };
@@ -1049,7 +1052,7 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingM
       hosts.setEach('isInstalled', false);
       result.push({
         componentName: component.get('componentName'),
-        displayName: App.format.role(component.get('componentName')),
+        displayName: App.format.role(component.get('componentName'), false),
         hosts: hosts,
         isInstalled: false
       })

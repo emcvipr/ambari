@@ -89,7 +89,7 @@ App.UpdateController = Em.Controller.extend({
   },
 
   getUrl: function (testUrl, url) {
-    return (App.get('testMode')) ? testUrl : App.apiPrefix + '/clusters/' + this.get('clusterName') + url;
+    return App.get('testMode') ? testUrl : App.apiPrefix + '/clusters/' + this.get('clusterName') + url;
   },
 
   /**
@@ -105,7 +105,7 @@ App.UpdateController = Em.Controller.extend({
     if (queryParams) {
       params = this.computeParameters(queryParams);
     }
-    params = (params.length > 0) ? params + "&" : params;
+    params = params.length > 0 ? params + "&" : params;
     return prefix + realUrl.replace('<parameters>', params);
   },
 
@@ -118,9 +118,15 @@ App.UpdateController = Em.Controller.extend({
     var params = '';
 
     queryParams.forEach(function (param) {
+      var customKey = param.key;
+
       switch (param.type) {
         case 'EQUAL':
-          params += param.key + '=' + param.value;
+          if (Em.isArray(param.value)) {
+            params += param.key + '.in(' + param.value.join(',') + ')';
+          } else {
+            params += param.key + '=' + param.value;
+          }
           break;
         case 'LESS':
           params += param.key + '<' + param.value;
@@ -129,7 +135,13 @@ App.UpdateController = Em.Controller.extend({
           params += param.key + '>' + param.value;
           break;
         case 'MATCH':
-          params += param.key + '.matches(' + param.value + ')';
+          if (Em.isArray(param.value)) {
+            params += '(' + param.value.map(function(v) {
+              return param.key + '.matches(' + v + ')';
+            }).join('|') + ')';
+          } else {
+            params += param.key + '.matches(' + param.value + ')';
+          }
           break;
         case 'MULTIPLE':
           params += param.key + '.in(' + param.value.join(',') + ')';
@@ -138,10 +150,13 @@ App.UpdateController = Em.Controller.extend({
           params += 'sortBy=' + param.key + '.' + param.value;
           break;
         case 'CUSTOM':
-          param.value.forEach(function(item, index){
-            param.key = param.key.replace('{' + index + '}', item);
+          param.value.forEach(function (item, index) {
+            customKey = customKey.replace('{' + index + '}', item);
           }, this);
-          params += param.key;
+          params += customKey;
+          break;
+        case 'COMBO':
+          params += App.router.get('mainHostComboSearchBoxController').generateQueryParam(param);
           break;
       }
       params += '&';
@@ -176,7 +191,7 @@ App.UpdateController = Em.Controller.extend({
    * Start polling, when <code>isWorking</code> become true
    */
   updateAll: function () {
-    if (this.get('isWorking')) {
+    if (this.get('isWorking') && !App.get('isOnlyViewUser')) {
       App.updater.run(this, 'updateServices', 'isWorking');
       App.updater.run(this, 'updateHost', 'isWorking');
       App.updater.run(this, 'updateServiceMetric', 'isWorking', App.componentsUpdateInterval, '\/main\/(dashboard|services).*');
@@ -207,7 +222,7 @@ App.UpdateController = Em.Controller.extend({
         hostDetailsFilter = '',
         realUrl = '/hosts?fields=Hosts/rack_info,Hosts/host_name,Hosts/maintenance_state,Hosts/public_host_name,Hosts/cpu_count,Hosts/ph_cpu_count,' +
             'alerts_summary,Hosts/host_status,Hosts/last_heartbeat_time,Hosts/ip,host_components/HostRoles/state,host_components/HostRoles/maintenance_state,' +
-            'host_components/HostRoles/stale_configs,host_components/HostRoles/service_name,host_components/HostRoles/desired_admin_state,' +
+            'host_components/HostRoles/stale_configs,host_components/HostRoles/service_name,host_components/HostRoles/display_name,host_components/HostRoles/desired_admin_state,' +
             '<metrics>Hosts/total_mem<hostDetailsParams><stackVersions>&minimal_response=true',
         hostDetailsParams = ',Hosts/os_arch,Hosts/os_type,metrics/cpu/cpu_system,metrics/cpu/cpu_user,metrics/memory/mem_total,metrics/memory/mem_free',
         stackVersionInfo = ',stack_versions/HostStackVersions,' +
@@ -217,13 +232,13 @@ App.UpdateController = Em.Controller.extend({
         sortProperties = mainHostController.getSortProps(),
         isHostsLoaded = false;
     this.get('queryParams').set('Hosts', mainHostController.getQueryParameters(true));
-    if (App.router.get('currentState.parentState.name') == 'hosts') {
+    if (App.router.get('currentState.parentState.name') === 'hosts') {
       App.updater.updateInterval('updateHost', App.get('contentUpdateInterval'));
       hostDetailsParams = '';
     }
     else {
-      if (App.router.get('currentState.parentState.name') == 'hostDetails') {
-        hostDetailsFilter = App.router.get('location.lastSetURL').match(/\/hosts\/(.*)\/(summary|configs|alerts|stackVersions)/)[1];
+      if (App.router.get('currentState.parentState.name') === 'hostDetails') {
+        hostDetailsFilter = App.router.get('location.lastSetURL').match(/\/hosts\/(.*)\/(summary|configs|alerts|stackVersions|logs)/)[1];
         App.updater.updateInterval('updateHost', App.get('componentsUpdateInterval'));
         //if host details page opened then request info only of one displayed host
         this.get('queryParams').set('Hosts', [
@@ -245,8 +260,8 @@ App.UpdateController = Em.Controller.extend({
       }
     }
 
-    realUrl = realUrl.replace("<stackVersions>", (App.get('supports.stackUpgrade') ? stackVersionInfo : ""));
-    realUrl = realUrl.replace("<metrics>", (lazyLoadMetrics ? "" : "metrics/disk,metrics/load/load_one,"));
+    realUrl = realUrl.replace("<stackVersions>", stackVersionInfo);
+    realUrl = realUrl.replace("<metrics>", lazyLoadMetrics ? "" : "metrics/disk,metrics/load/load_one,");
     realUrl = realUrl.replace('<hostDetailsParams>', hostDetailsParams);
 
     var clientCallback = function (skipCall, queryParams) {
@@ -268,7 +283,7 @@ App.UpdateController = Em.Controller.extend({
         if (App.get('testMode')) {
           realUrl = testUrl;
         } else {
-          realUrl = self.addParamsToHostsUrl.call(self, queryParams, sortProperties, realUrl);
+          realUrl = self.addParamsToHostsUrl(queryParams, sortProperties, realUrl);
         }
 
         App.HttpClient.get(realUrl, App.hostsMapper, {
@@ -294,7 +309,7 @@ App.UpdateController = Em.Controller.extend({
    */
   addParamsToHostsUrl: function (queryParams, sortProperties, realUrl) {
     var paginationProps = this.computeParameters(queryParams.filter(function (param) {
-      return (this.get('paginationKeys').contains(param.key));
+      return this.get('paginationKeys').contains(param.key);
     }, this));
     var sortProps = this.computeParameters(sortProperties);
 
@@ -344,7 +359,7 @@ App.UpdateController = Em.Controller.extend({
     var preLoadKeys = this.get('hostsPreLoadKeys');
 
     if (this.get('queryParams.Hosts').length > 0 && this.get('queryParams.Hosts').filter(function (param) {
-      return (preLoadKeys.contains(param.key));
+      return preLoadKeys.contains(param.key);
     }, this).length > 0) {
       this.getHostByHostComponents(callback);
       return true;
@@ -376,7 +391,7 @@ App.UpdateController = Em.Controller.extend({
     var hostNames = data.items.mapProperty('Hosts.host_name');
     var skipCall = hostNames.length === 0;
 
-    var itemTotal = parseInt(data.itemTotal);
+    var itemTotal = parseInt(data.itemTotal, 10);
     if (!isNaN(itemTotal)) {
       App.router.set('mainHostController.filteredCount', itemTotal);
     }
@@ -385,7 +400,7 @@ App.UpdateController = Em.Controller.extend({
       params.callback(skipCall);
     } else {
       queryParams = queryParams.filter(function (param) {
-        return !(preLoadKeys.contains(param.key));
+        return !preLoadKeys.contains(param.key);
       });
 
       queryParams.push({
@@ -432,14 +447,15 @@ App.UpdateController = Em.Controller.extend({
       requestsRunningStatus = this.get('requestsRunningStatus'),
       conditionalFieldsString = conditionalFields.length > 0 ? ',' + conditionalFields.join(',') : '',
       testUrl = '/data/dashboard/HDP2/master_components.json',
-      isFlumeInstalled = App.cache['services'].mapProperty('ServiceInfo.service_name').contains('FLUME'),
-      isATSInstalled = App.cache['services'].mapProperty('ServiceInfo.service_name').contains('YARN') && isATSPresent,
+      isFlumeInstalled = App.cache.services.mapProperty('ServiceInfo.service_name').contains('FLUME'),
+      isATSInstalled = App.cache.services.mapProperty('ServiceInfo.service_name').contains('YARN') && isATSPresent,
       flumeHandlerParam = isFlumeInstalled ? 'ServiceComponentInfo/component_name=FLUME_HANDLER|' : '',
       atsHandlerParam = isATSInstalled ? 'ServiceComponentInfo/component_name=APP_TIMELINE_SERVER|' : '',
       haComponents = App.get('isHaEnabled') ? 'ServiceComponentInfo/component_name=JOURNALNODE|ServiceComponentInfo/component_name=ZKFC|' : '',
       realUrl = '/components/?' + flumeHandlerParam + atsHandlerParam + haComponents +
         'ServiceComponentInfo/category=MASTER&fields=' +
         'ServiceComponentInfo/service_name,' +
+        'host_components/HostRoles/display_name,' +
         'host_components/HostRoles/host_name,' +
         'host_components/HostRoles/state,' +
         'host_components/HostRoles/maintenance_state,' +
@@ -454,12 +470,12 @@ App.UpdateController = Em.Controller.extend({
       self.set('isUpdated', true);
     };
 
-    if (!requestsRunningStatus["updateServiceMetric"]) {
-      requestsRunningStatus["updateServiceMetric"] = true;
+    if (!requestsRunningStatus.updateServiceMetric) {
+      requestsRunningStatus.updateServiceMetric = true;
       App.HttpClient.get(servicesUrl, App.serviceMetricsMapper, {
         complete: function () {
           App.set('router.mainServiceItemController.isServicesInfoLoaded', App.get('router.clusterController.isLoaded'));
-          requestsRunningStatus["updateServiceMetric"] = false;
+          requestsRunningStatus.updateServiceMetric = false;
           callback();
         }
       });
@@ -477,12 +493,12 @@ App.UpdateController = Em.Controller.extend({
     var metricsKey = 'metrics/';
 
     if (/^2.1/.test(App.get('currentStackVersionNumber'))) {
-      serviceSpecificParams['STORM'] = 'metrics/api/cluster/summary';
+      serviceSpecificParams.STORM = 'metrics/api/cluster/summary';
     } else if (/^2.2/.test(App.get('currentStackVersionNumber'))) {
-      serviceSpecificParams['STORM'] = 'metrics/api/v1/cluster/summary,metrics/api/v1/topology/summary';
+      serviceSpecificParams.STORM = 'metrics/api/v1/cluster/summary,metrics/api/v1/topology/summary';
     }
 
-    App.cache['services'].forEach(function (service) {
+    App.cache.services.forEach(function (service) {
       var urlParams = serviceSpecificParams[service.ServiceInfo.service_name];
       if (urlParams) {
         conditionalFields.push(urlParams);
@@ -492,7 +508,7 @@ App.UpdateController = Em.Controller.extend({
     //first load shouldn't contain metrics in order to make call lighter
     if (!App.get('router.clusterController.isServiceMetricsLoaded')) {
       return conditionalFields.filter(function (condition) {
-        return (condition.indexOf(metricsKey) === -1);
+        return condition.indexOf(metricsKey) === -1;
       });
     }
 
@@ -517,7 +533,7 @@ App.UpdateController = Em.Controller.extend({
   updateComponentsState: function (callback) {
     var testUrl = '/data/services/HDP2/components_state.json';
     var realUrl = '/components/?fields=ServiceComponentInfo/service_name,' +
-      'ServiceComponentInfo/category,ServiceComponentInfo/installed_count,ServiceComponentInfo/started_count,ServiceComponentInfo/total_count,host_components/HostRoles/host_name&minimal_response=true';
+      'ServiceComponentInfo/category,ServiceComponentInfo/installed_count,ServiceComponentInfo/started_count,ServiceComponentInfo/total_count,ServiceComponentInfo/display_name,host_components/HostRoles/host_name&minimal_response=true';
     var url = this.getUrl(testUrl, realUrl);
 
     App.HttpClient.get(url, App.componentsStateMapper, {
@@ -579,7 +595,7 @@ App.UpdateController = Em.Controller.extend({
       complete: callback
     });
   },
-  
+
   updateUpgradeState: function (callback) {
     var currentStateName = App.get('router.currentState.name'),
       parentStateName = App.get('router.currentState.parentState.name'),

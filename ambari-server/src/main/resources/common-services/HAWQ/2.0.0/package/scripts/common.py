@@ -20,9 +20,7 @@ import os
 import time
 import crypt
 import filecmp
-from resource_management.libraries.resources.xml_config import XmlConfig
 from resource_management.core.resources.system import Execute, Directory, File
-from resource_management.libraries.script.config_dictionary import ConfigDictionary
 from resource_management.core.logger import Logger
 from resource_management.core.system import System
 from resource_management.core.exceptions import Fail
@@ -31,17 +29,6 @@ import xml.etree.ElementTree as ET
 
 import utils
 import hawq_constants
-
-
-def update_bashrc(source_file, target_file):
-  """
-  Updates the hawq_user's .bashrc file with HAWQ env variables like
-  MASTER_DATA_DIRECTORY, PGHOST, PGPORT and PGUSER. 
-  And sources the greenplum_path file.
-  """
-  append_src_cmd = "echo 'source {0}' >> {1}".format(source_file, target_file)
-  src_cmd_exists = "grep 'source {0}' {1}".format(source_file, target_file)
-  Execute(append_src_cmd, user=hawq_constants.hawq_user, timeout=hawq_constants.default_exec_timeout, not_if=src_cmd_exists)
 
 
 def setup_user():
@@ -78,109 +65,20 @@ def setup_common_configurations():
   """
   Sets up the config files common to master, standby and segment nodes.
   """
-  __update_hdfs_client()
-  __update_yarn_client()
-  __update_hawq_site()
+  import params
+
+  params.XmlConfig("hdfs-client.xml",
+                   configurations=params.hdfs_client,
+                   configuration_attributes=params.config_attrs['hdfs-client'])
+
+  params.XmlConfig("yarn-client.xml",
+                   configurations=params.yarn_client,
+                   configuration_attributes=params.config_attrs['yarn-client'])
+
+  params.XmlConfig("hawq-site.xml",
+                   configurations=params.hawq_site,
+                   configuration_attributes=params.config_attrs['hawq-site'])
   __set_osparams()
-
-def __update_hdfs_client():
-  """
-  Writes hdfs-client.xml on the local filesystem on hawq nodes.
-  If hdfs ha is enabled, appends related parameters to hdfs-client.xml
-  """
-  import params
-
-  hdfs_client_dict = params.hdfs_client.copy()
-  
-  # security
-  if params.security_enabled:
-    hdfs_client_dict["hadoop.security.authentication"] = "kerberos"
-  else:
-    hdfs_client_dict.pop("hadoop.security.authentication", None) # remove the entry
-
-  XmlConfig("hdfs-client.xml",
-            conf_dir=hawq_constants.hawq_config_dir,
-            configurations=ConfigDictionary(hdfs_client_dict),
-            configuration_attributes=params.config['configuration_attributes']['hdfs-client'],
-            owner=hawq_constants.hawq_user,
-            group=hawq_constants.hawq_group,
-            mode=0644)
-
-
-def __update_yarn_client():
-  """
-  Writes yarn-client.xml on the local filesystem on hawq nodes.
-  If yarn ha is enabled, appends related parameters to yarn-client.xml
-  """
-  import params
-
-  yarn_client_dict = params.yarn_client.copy()
-  if params.yarn_ha_enabled:
-    # Temporary logic, this logic will be moved in ambari-web to expose these parameters on UI once Yarn HA is enabled
-    rm_ids = [rm_id.strip() for rm_id in params.config['configurations']['yarn-site']['yarn.resourcemanager.ha.rm-ids'].split(',')]
-    rm_id1 = rm_ids[0]
-    rm_id2 = rm_ids[1]
-    # Identify the hostname for yarn resource managers
-    rm_host1= params.config['configurations']['yarn-site']['yarn.resourcemanager.hostname.{0}'.format(rm_id1)]
-    rm_host2= params.config['configurations']['yarn-site']['yarn.resourcemanager.hostname.{0}'.format(rm_id2)]
-    # Ambari does not update yarn.resourcemanager.address.${rm_id} and yarn.resourcemanager.scheduler.address.${rm_id}
-    # property as its derived automatically at yarn.
-    # Hawq uses these properties to use yarn ha. If these properties are defined at Ambari use them, else derive them.
-    # Use port 8032 to derive hawq.resourcemanager.address.${rm_id}:port value if needed
-    rm_default_port = 8032
-    # Use port 8030 to derive hawq.resourcemanager.scheduler.address.${rm_id}:port value if needed
-    rm_scheduler_default_port = 8030
-
-    rm_address_host1 = params.config['configurations']['yarn-site'].get('yarn.resourcemanager.address.{0}'.format(rm_id1))
-    if rm_address_host1 is None:
-      rm_address_host1 = "{0}:{1}".format(rm_host1, rm_default_port)
-
-    rm_address_host2 = params.config['configurations']['yarn-site'].get('yarn.resourcemanager.address.{0}'.format(rm_id2))
-    if rm_address_host2 is None:
-      rm_address_host2 = "{0}:{1}".format(rm_host2, rm_default_port)
-
-    rm_scheduler_address_host1 = params.config['configurations']['yarn-site'].get('yarn.resourcemanager.scheduler.address.{0}'.format(rm_id1))
-    if rm_scheduler_address_host1 is None:
-      rm_scheduler_address_host1 = "{0}:{1}".format(rm_host1, rm_scheduler_default_port)
-
-    rm_scheduler_address_host2 = params.config['configurations']['yarn-site'].get('yarn.resourcemanager.scheduler.address.{0}'.format(rm_id2))
-    if rm_scheduler_address_host2 is None:
-      rm_scheduler_address_host2 = "{0}:{1}".format(rm_host2, rm_scheduler_default_port)
-
-    yarn_client_dict['yarn.resourcemanager.ha'] = "{0},{1}".format(rm_address_host1, rm_address_host2)
-    yarn_client_dict['yarn.resourcemanager.scheduler.ha'] = "{0},{1}".format(rm_scheduler_address_host1, rm_scheduler_address_host2)
-
-  XmlConfig("yarn-client.xml",
-            conf_dir=hawq_constants.hawq_config_dir,
-            configurations=ConfigDictionary(yarn_client_dict),
-            configuration_attributes=params.config['configuration_attributes']['yarn-client'],
-            owner=hawq_constants.hawq_user,
-            group=hawq_constants.hawq_group,
-            mode=0644)
-
-
-def __update_hawq_site():
-  """
-  Sets up hawq-site.xml
-  """
-  import params
-  
-  hawq_site_modifiable = dict(params.hawq_site)
-
-  if params.security_enabled:
-    hawq_site_modifiable["enable_secure_filesystem"] = "ON"
-    hawq_site_modifiable["krb_server_keyfile"] = hawq_constants.hawq_keytab_file
-  else:
-    hawq_site_modifiable.pop("enable_secure_filesystem", None) # remove the entry
-    hawq_site_modifiable.pop("krb_server_keyfile", None) # remove the entry
-
-  XmlConfig("hawq-site.xml",
-            conf_dir=hawq_constants.hawq_config_dir,
-            configurations=ConfigDictionary(hawq_site_modifiable),
-            configuration_attributes=params.config['configuration_attributes']['hawq-site'],
-            owner=hawq_constants.hawq_user,
-            group=hawq_constants.hawq_group,
-            mode=0644)
 
 
 def __set_osparams():

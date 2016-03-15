@@ -43,6 +43,9 @@ var InitialData = {
   },
   'HighAvailabilityWizard': {},
   'RMHighAvailabilityWizard': {},
+  'AddHawqStandbyWizard': {},
+  'RemoveHawqStandbyWizard': {},
+  'ActivateHawqStandbyWizard': {},
   'RAHighAvailabilityWizard': {},
   'RollbackHighAvailabilityWizard': {},
   'MainAdminStackAndUpgrade': {},
@@ -200,6 +203,10 @@ App.db.setAuthenticated = function (authenticated) {
 
 App.db.setFilterConditions = function (name, filterConditions) {
   App.db.set('app.tables.filterConditions', name, filterConditions);
+};
+
+App.db.setComboSearchQuery = function (name, query) {
+  App.db.set('app.tables.comboSearchQuery', name, query);
 };
 
 App.db.setDisplayLength = function (name, displayLength) {
@@ -364,6 +371,10 @@ App.db.getAuthenticated = function () {
 
 App.db.getFilterConditions = function (name) {
   return name ? App.db.get('app.tables.filterConditions', name) : null;
+};
+
+App.db.getComboSearchQuery = function (name) {
+  return name ? App.db.get('app.tables.comboSearchQuery', name) : null;
 };
 
 App.db.getDisplayLength = function (name) {

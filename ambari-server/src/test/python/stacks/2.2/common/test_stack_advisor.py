@@ -977,7 +977,7 @@ class TestHDP22StackAdvisor(TestCase):
     expected["yarn-site"]["property_attributes"]["yarn.scheduler.maximum-allocation-vcores"]["maximum"] = '5'
     self.stackAdvisor.recommendYARNConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
-    
+
     # Test - with no 'changed-configurations', we should get updated 'maximum's.
     services.pop("changed-configurations", None)
     services.pop("configurations", None)
@@ -1019,7 +1019,6 @@ class TestHDP22StackAdvisor(TestCase):
       },
       'hive-env': {
         'properties': {
-          'cost_based_optimizer': 'On',
           'hive_exec_orc_storage_strategy': 'SPEED',
           'hive_security_authorization': 'None',
           'hive_timeline_logging_enabled': 'true',
@@ -1029,11 +1028,10 @@ class TestHDP22StackAdvisor(TestCase):
       'hive-site': {
         'properties': {
           'hive.server2.enable.doAs': 'true',
-          'hive.server2.tez.default.queues': "default",
+          'hive.server2.tez.default.queues': "queue1,queue2",
           'hive.server2.tez.initialize.default.sessions': 'false',
           'hive.server2.tez.sessions.per.default.queue': '1',
           'hive.auto.convert.join.noconditionaltask.size': '268435456',
-          'hive.cbo.enable': 'true',
           'hive.compactor.initiator.on': 'false',
           'hive.compactor.worker.threads': '0',
           'hive.compute.query.using.stats': 'true',
@@ -1069,13 +1067,22 @@ class TestHDP22StackAdvisor(TestCase):
         },
        'property_attributes': {
          'hive.auto.convert.join.noconditionaltask.size': {'maximum': '805306368'},
-         'hive.server2.authentication.pam.services': {'delete': 'true'}, 
-         'hive.server2.custom.authentication.class': {'delete': 'true'}, 
+         'hive.server2.authentication.pam.services': {'delete': 'true'},
+         'hive.server2.custom.authentication.class': {'delete': 'true'},
          'hive.server2.authentication.kerberos.principal': {'delete': 'true'},
-         'hive.server2.authentication.kerberos.keytab': {'delete': 'true'}, 
+         'hive.server2.authentication.kerberos.keytab': {'delete': 'true'},
          'hive.server2.authentication.ldap.url': {'delete': 'true'},
          'hive.server2.tez.default.queues': {
-           'entries': [{'value': 'default', 'label': 'default queue'}]
+           "entries": [
+             {
+               "value": "queue1",
+               "label": "queue1 queue"
+             },
+             {
+               "value": "queue2",
+               "label": "queue2 queue"
+             }
+           ]
           }
         }
       },
@@ -1176,7 +1183,8 @@ class TestHDP22StackAdvisor(TestCase):
             "hive.server2.authentication.kerberos.keytab": "",
             "hive.server2.authentication.kerberos.principal": "",
             "hive.server2.authentication.pam.services": "",
-            "hive.server2.custom.authentication.class": ""
+            "hive.server2.custom.authentication.class": "",
+            "hive.cbo.enable": "true"
           }
         },
         "hiveserver2-site": {
@@ -1251,7 +1259,8 @@ class TestHDP22StackAdvisor(TestCase):
             "hive.server2.authentication.kerberos.keytab": "",
             "hive.server2.authentication.kerberos.principal": "",
             "hive.server2.authentication.pam.services": "",
-            "hive.server2.custom.authentication.class": ""
+            "hive.server2.custom.authentication.class": "",
+            "hive.cbo.enable": "true"
           }
         },
         "hiveserver2-site": {
@@ -1315,10 +1324,8 @@ class TestHDP22StackAdvisor(TestCase):
     #test recommendations
     services["configurations"]["hive-site"]["properties"]["hive.cbo.enable"] = "false"
     services["configurations"]["hive-env"]["properties"]["hive_security_authorization"] = "sqlstdauth"
-    services["changed-configurations"] = [{"type": "hive-site", "name": "hive.cbo.enable"},
-                                          {"type": "hive-env", "name": "hive_security_authorization"}]
+    services["changed-configurations"] = [{"type": "hive-env", "name": "hive_security_authorization"}]
     expected["hive-env"]["properties"]["hive_security_authorization"] = "sqlstdauth"
-    expected["hive-site"]["properties"]["hive.cbo.enable"] = "false"
     expected["hive-site"]["properties"]["hive.stats.fetch.partition.stats"]="false"
     expected["hive-site"]["properties"]["hive.stats.fetch.column.stats"]="false"
     expected["hive-site"]["properties"]["hive.security.authorization.enabled"]="true"
@@ -1395,9 +1402,9 @@ class TestHDP22StackAdvisor(TestCase):
                                    "yarn.scheduler.capacity.root.default.user-limit-factor=1\n"
                                    "yarn.scheduler.capacity.root.queues=default"}
 
-    expected['hive-site']['properties']['hive.server2.tez.default.queues'] = 'default.a.a1,default.a.a2,default.b'
+    expected['hive-site']['properties']['hive.server2.tez.default.queues'] = 'a1,a2,b'
     expected['hive-site']['property_attributes']['hive.server2.tez.default.queues'] = {
-           'entries': [{'value': 'default.a.a1', 'label': 'default.a.a1 queue'}, {'value': 'default.a.a2', 'label': 'default.a.a2 queue'}, {'value': 'default.b', 'label': 'default.b queue'}]
+           'entries': [{'value': 'a1', 'label': 'a1 queue'}, {'value': 'a2', 'label': 'a2 queue'}, {'value': 'b', 'label': 'b queue'}]
           }
     self.stackAdvisor.recommendHIVEConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations['hive-site']['property_attributes']['hive.server2.tez.default.queues'], expected['hive-site']['property_attributes']['hive.server2.tez.default.queues'])
@@ -2026,8 +2033,16 @@ class TestHDP22StackAdvisor(TestCase):
     expected = {
       "ams-hbase-env": {
         "properties": {
-          "hbase_master_xmn_size": "128",
-          "hbase_master_heapsize": "512"
+          "hbase_master_xmn_size": "192",
+          "hbase_master_heapsize": "512",
+          "hbase_regionserver_heapsize": "768"
+        }
+      },
+      "ams-grafana-env": {
+        "property_attributes": {
+          "metrics_grafana_password": {
+            "visible": "false"
+          }
         }
       },
       "ams-env": {
@@ -2042,15 +2057,19 @@ class TestHDP22StackAdvisor(TestCase):
           "hbase.regionserver.global.memstore.upperLimit": "0.35",
           "hbase.hregion.memstore.flush.size": "134217728",
           "hfile.block.cache.size": "0.3",
+          "hbase.cluster.distributed": "false",
           "hbase.rootdir": "file:///var/lib/ambari-metrics-collector/hbase",
           "hbase.tmp.dir": "/var/lib/ambari-metrics-collector/hbase-tmp",
+          "hbase.zookeeper.property.clientPort": "61181",
         }
       },
       "ams-site": {
         "properties": {
           "timeline.metrics.cluster.aggregate.splitpoints": " ",
           "timeline.metrics.host.aggregate.splitpoints": " ",
-          "timeline.metrics.host.aggregator.ttl": "86400"
+          "timeline.metrics.host.aggregator.ttl": "86400",
+          "timeline.metrics.service.handler.thread.count": "20",
+          'timeline.metrics.service.watcher.disabled': 'false'
         }
       }
     }
@@ -2155,7 +2174,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     ]
     expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '2432'
-    expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '448'
+    expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '512'
     expected["ams-env"]['properties']['metrics_collector_heapsize'] = '640'
 
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
@@ -2171,6 +2190,8 @@ class TestHDP22StackAdvisor(TestCase):
     ]
 
     services['configurations'] = {
+      'core-site': {'properties': {}},
+      'ams-site': {'properties': {}},
       'ams-hbase-site': {'properties': {}},
       'ams-hbase-env': {'properties': {}}
     }
@@ -2211,12 +2232,12 @@ class TestHDP22StackAdvisor(TestCase):
         "old_value": "512"
       }
     ]
-    services["configurations"]['ams-hbase-site']['properties']['hbase.rootdir'] = 'hdfs://host1/amshbase'
-    services["configurations"]['ams-hbase-site']['properties']['hbase.cluster.distributed'] = 'true'
-    expected['ams-hbase-site']['properties']['hbase.rootdir'] = 'hdfs://host1/amshbase'
+    services["configurations"]['ams-site']['properties']['timeline.metrics.service.operation.mode'] = 'distributed'
+    services["configurations"]["core-site"]["properties"]["fs.defaultFS"] = 'hdfs://host1:8020'
+    expected['ams-hbase-site']['properties']['hbase.cluster.distributed'] = 'true'
+    expected['ams-hbase-site']['properties']['hbase.rootdir'] = 'hdfs://host1:8020/user/ams/hbase'
     expected['ams-hbase-site']['properties']['hbase.zookeeper.property.clientPort'] = '2181'
     expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '512'
-    # services["configurations"]['ams-hbase-site']['properties']['dfs.client.read.shortcircuit'] = 'true'
     expected['ams-hbase-site']['properties']['dfs.client.read.shortcircuit'] = 'true'
 
     # Distributed mode, low memory, no splitpoints recommended
@@ -2226,6 +2247,8 @@ class TestHDP22StackAdvisor(TestCase):
     expected['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '512'
     expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '102'
     expected['ams-hbase-env']['properties']['regionserver_xmn_size'] = '384'
+    expected['ams-site']['properties']['timeline.metrics.host.aggregator.ttl'] = '604800'
+    expected['ams-site']['properties']['timeline.metrics.service.watcher.disabled'] = 'true'
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
 
@@ -3012,7 +3035,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # Test 4 - KMS empty test from previous call
     self.assertTrue("dfs.encryption.key.provider.uri" not in configurations["hdfs-site"]["properties"])
-    
+
     # Test 5 - Calculated from hosts install location
     services["services"].append(
                     {"StackServices":

@@ -107,7 +107,7 @@ def hive(name=None):
 
   if name == 'hiveserver2':
     # HDP 2.1.* or lower
-    if params.hdp_stack_version_major != "" and compare_versions(params.hdp_stack_version_major, "2.2.0.0") < 0:
+    if params.stack_version_formatted_major != "" and compare_versions(params.stack_version_formatted_major, "2.2.0.0") < 0:
       params.HdfsResource(params.webhcat_apps_dir,
                             type="directory",
                             action="create_on_execute",
@@ -134,7 +134,7 @@ def hive(name=None):
     # ****** Begin Copy Tarballs ******
     # *********************************
     # HDP 2.2 or higher, copy mapreduce.tar.gz to HDFS
-    if params.hdp_stack_version_major != "" and compare_versions(params.hdp_stack_version_major, '2.2') >= 0:
+    if params.stack_version_formatted_major != "" and compare_versions(params.stack_version_formatted_major, '2.2') >= 0:
       copy_to_hdfs("mapreduce", params.user_group, params.hdfs_user, host_sys_prepped=params.host_sys_prepped)
       copy_to_hdfs("tez", params.user_group, params.hdfs_user, host_sys_prepped=params.host_sys_prepped)
 
@@ -177,14 +177,18 @@ def hive(name=None):
                      host_sys_prepped=params.host_sys_prepped)
     # ******* End Copy Tarballs *******
     # *********************************
-
-    # Create Hive Metastore Warehouse Dir
-    params.HdfsResource(params.hive_apps_whs_dir,
-                         type="directory",
-                          action="create_on_execute",
-                          owner=params.hive_user,
-                          mode=0777
-    )
+    
+    # if warehouse directory is in DFS
+    if not params.whs_dir_protocol or params.whs_dir_protocol == urlparse(params.default_fs).scheme:
+      # Create Hive Metastore Warehouse Dir
+      params.HdfsResource(params.hive_apps_whs_dir,
+                           type="directory",
+                            action="create_on_execute",
+                            owner=params.hive_user,
+                            mode=0777
+      )
+    else:
+      Logger.info(format("Not creating warehouse directory '{hive_apps_whs_dir}', as the location is not in DFS."))
 
     # Create Hive User Dir
     params.HdfsResource(params.hive_hdfs_user_dir,
@@ -252,7 +256,7 @@ def hive(name=None):
        content=Template("hive.conf.j2")
        )
 
-  if (name == 'metastore' or name == 'hiveserver2') and not os.path.exists(params.target):
+  if (name == 'metastore' or name == 'hiveserver2') and params.target != None and not os.path.exists(params.target):
     jdbc_connector()
 
   File(format("/usr/lib/ambari-agent/{check_db_connection_jar_name}"),
@@ -417,7 +421,7 @@ def jdbc_connector():
             path=["/bin", "/usr/bin/"],
             sudo=True
     )
-    
+
   File(params.target,
        mode = 0644,
   )

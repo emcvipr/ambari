@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+var numericUtils = require('utils/number_utils');
+
 App.MainAlertDefinitionConfigsController = Em.Controller.extend({
 
   name: 'mainAlertDefinitionConfigsController',
@@ -288,6 +290,19 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
         showInputForValue: false,
         text: isWizard ? '' : this.getThresholdsProperty('critical', 'text'),
         value: isWizard ? '' : this.getThresholdsProperty('critical', 'value')
+      }),
+      App.AlertConfigProperties.Parameter.create({
+        value: alertDefinition.get('uri.connectionTimeout'),
+        threshold: "CRITICAL",
+        name: 'connection_timeout',
+        label: 'Connection Timeout',
+        displayType: 'parameter',
+        apiProperty: 'source.uri.connection_timeout',
+        units: 'Seconds',
+        isValid: function () {
+          var value = this.get('value');
+          return numericUtils.isPositiveNumber(value);
+        }.property('value')
       })
     ]);
 
@@ -316,6 +331,24 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
         value: isWizard ? '' : alertDefinition.get('interval')
       })
     ]);
+
+    var mixins = {
+      STRING: App.AlertConfigProperties.Parameters.StringMixin,
+      NUMERIC: App.AlertConfigProperties.Parameters.NumericMixin,
+      PERCENT: App.AlertConfigProperties.Parameters.PercentageMixin
+    };
+    alertDefinition.get('parameters').forEach(function (parameter) {
+      var mixin = mixins[parameter.get('type')] || {}; // validation depends on parameter-type
+      result.push(App.AlertConfigProperties.Parameter.create(mixin, {
+        value: isWizard ? '' : parameter.get('value'),
+        apiProperty: parameter.get('name'),
+        description: parameter.get('description'),
+        label: isWizard ? '' : parameter.get('displayName'),
+        threshold: isWizard ? '' : parameter.get('threshold'),
+        units: isWizard ? '' : parameter.get('units'),
+        type: isWizard ? '' : parameter.get('type'),
+      }));
+    });
 
     return result;
   },
@@ -475,13 +508,12 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
   getPropertiesToUpdate: function (onlyChanged) {
     var propertiesToUpdate = {};
     var configs = onlyChanged ? this.get('configs').filterProperty('wasChanged') : this.get('configs');
+    configs = configs.filter(function (c) {
+      return c.get('name') !== 'parameter';
+    });
     configs.forEach(function (property) {
-      var apiProperties = property.get('apiProperty');
-      var apiFormattedValues = property.get('apiFormattedValue');
-      if (!Em.isArray(property.get('apiProperty'))) {
-        apiProperties = [property.get('apiProperty')];
-        apiFormattedValues = [property.get('apiFormattedValue')];
-      }
+      var apiProperties = Em.makeArray(property.get('apiProperty'));
+      var apiFormattedValues = Em.makeArray(property.get('apiFormattedValue'));
       apiProperties.forEach(function (apiProperty, i) {
         if (apiProperty.contains('source.')) {
           if (!propertiesToUpdate['AlertDefinition/source']) {
@@ -508,7 +540,6 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
             }
             Ember.setFullPath(propertiesToUpdate['AlertDefinition/source'], apiProperty.replace('source.', ''), apiFormattedValues[i]);
           }
-
         }
         else {
           if (apiProperty) {
@@ -517,6 +548,19 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
         }
       }, this);
     }, this);
+
+    if (Em.get(propertiesToUpdate, 'AlertDefinition/source.uri.id')) {
+      delete propertiesToUpdate['AlertDefinition/source'].uri.id;
+    }
+
+    // `source.parameters` is an array and should be updated separately from other configs
+    if (this.get('content.parameters.length')) {
+      propertiesToUpdate['AlertDefinition/source'] = this.get('content.rawSourceData');
+      var parameterConfigs = this.get('configs').filterProperty('name', 'parameter');
+      parameterConfigs.forEach(function (parameter) {
+        propertiesToUpdate['AlertDefinition/source'].parameters.findProperty('name', parameter.get('apiProperty')).value = parameter.get('apiFormattedValue');
+      });
+    }
 
     return propertiesToUpdate;
   },
@@ -541,13 +585,14 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
    * @type {Boolean}
    */
   hasThresholdsError: function () {
+    var smallValue, smallValid, largeValue, largeValid;
     if (this.get('configs').findProperty('name', 'warning_threshold')) {
-      var smallValue = Em.get(this.get('configs').findProperty('name', 'warning_threshold'), 'value');
-      var smallValid = Em.get(this.get('configs').findProperty('name', 'warning_threshold'), 'isValid');
+      smallValue = Em.get(this.get('configs').findProperty('name', 'warning_threshold'), 'value');
+      smallValid = Em.get(this.get('configs').findProperty('name', 'warning_threshold'), 'isValid');
     }
     if (this.get('configs').findProperty('name', 'critical_threshold')) {
-      var largeValue = Em.get(this.get('configs').findProperty('name', 'critical_threshold'), 'value');
-      var largeValid = Em.get(this.get('configs').findProperty('name', 'critical_threshold'), 'isValid');
+      largeValue = Em.get(this.get('configs').findProperty('name', 'critical_threshold'), 'value');
+      largeValid = Em.get(this.get('configs').findProperty('name', 'critical_threshold'), 'isValid');
     }
     return smallValid && largeValid ? Number(smallValue) > Number(largeValue) : false;
   }.property('configs.@each.value'),

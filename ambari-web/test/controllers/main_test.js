@@ -16,8 +16,8 @@
  * limitations under the License.
  */
 
-
 var App = require('app');
+var testHelpers = require('test/helpers');
 
 describe('App.MainController', function () {
   var mainController = App.MainController.create();
@@ -111,7 +111,6 @@ describe('App.MainController', function () {
   });
 
   describe('#checkServerClientVersion', function() {
-    var initialize = false;
     beforeEach(function () {
       sinon.stub(mainController, 'getServerVersion').returns({
         done: function(func) {
@@ -133,49 +132,30 @@ describe('App.MainController', function () {
   });
 
   describe('#getServerVersion', function() {
-    var res;
-    beforeEach(function () {
-      sinon.stub(App.ajax, 'send', function(data) {
-        res = JSON.parse(JSON.stringify(data));
-      });
-    });
-    afterEach(function () {
-      App.ajax.send.restore();
-    });
+
     it ('Should send data', function() {
       mainController.getServerVersion();
-      expect(res).to.be.eql({
-        "name": "ambari.service",
-        "sender": {},
-        "data": {
-          "fields": "?fields=RootServiceComponents/component_version,RootServiceComponents/properties/server.os_family&minimal_response=true"
-        },
-        "success": "getServerVersionSuccessCallback",
-        "error": "getServerVersionErrorCallback"
-      });
+      var args = testHelpers.findAjaxRequest('name', 'ambari.service');
+      expect(args[0]).to.exists;
+      expect(args[0].sender).to.be.eql(mainController);
+      expect(args[0].data.fields).to.be.equal('?fields=RootServiceComponents/component_version,RootServiceComponents/properties/server.os_family&minimal_response=true');
     });
   });
 
   describe('#updateTitle', function() {
     beforeEach(function () {
-      sinon.stub(App.router, 'get', function(message){
-        if (message == 'clusterController.clusterName') {
-          return 'c1';
-        } else if (message == 'clusterInstallCompleted') {
-          return true;
-        } else if (message == 'clusterController') {
-          return {
-            get: function() {
-              return true;
-            }
-          };
-        }
-      });
+      sinon.stub(App.router, 'get').withArgs('clusterController.clusterName').returns('c1')
+        .withArgs('clusterInstallCompleted').returns(true)
+        .withArgs('clusterController').returns({
+          get: function() {
+            return true;
+          }
+        });
     });
     afterEach(function () {
       App.router.get.restore();
     });
-    it ('Should update title', function() {
+    it('Should update title', function() {
       $('body').append('<title id="title-id">text</title>');
       mainController.updateTitle();
       expect($('title').text()).to.be.equal('Ambari - c1');

@@ -43,11 +43,11 @@
                       <li><a {{bindAttr href="url"}} {{bindAttr target="view.linkTarget"}}>{{label}}</a></li>
                     {{/each}}
                   {{else}}
-                    <div class="alert alert-danger"><small>{{t quick.links.error.label2}}</small></div>
+                    <div class="alert alert-danger"><small>{{t quick.links.error.quicklinks.unavailable.label}}</small></div>
                   {{/if}}
                 {{/if}}
               {{else}}
-                <div class="spinner"></div>
+                {{view App.SpinnerView}}
               {{/if}}
            </ul>
           </li>
@@ -109,7 +109,7 @@
             </li>
             {{/each}}
           {{else}}
-            <div class="spinner service-button-spinner"></div>
+            {{view App.SpinnerView classNames="service-button-spinner"}}
           {{/if}}
         {{/isAuthorized}}
       </ul>

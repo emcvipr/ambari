@@ -18,11 +18,25 @@
 
 var App = require('app');
 var stringUtils = require('utils/string_utils');
-var dataManipulationUtils = require('utils/data_manipulation');
 
-App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wizardDeployProgressControllerMixin, App.ConfigOverridable, {
+App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wizardDeployProgressControllerMixin, App.ConfigOverridable, App.ConfigsSaverMixin, {
 
   name: 'wizardStep8Controller',
+
+  /**
+   * @type {boolean}
+   */
+  isAddService: Em.computed.equal('content.controllerName', 'addServiceController'),
+
+  /**
+   * @type {boolean}
+   */
+  isAddHost: Em.computed.equal('content.controllerName', 'addHostController'),
+
+  /**
+   * @type {boolean}
+   */
+  isInstaller: Em.computed.equal('content.controllerName', 'installerController'),
 
   /**
    * List of raw data about cluster that should be displayed
@@ -423,22 +437,30 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
       service.get('serviceComponents').forEach(function (component) {
         // show clients for services that have only clients components
         if ((component.get('isClient') || component.get('isRequiredOnAllHosts')) && !service.get('isClientOnlyService')) return;
-        // skip components that was hide on assign master page
-        if (component.get('isMaster') && !component.get('isShownOnInstallerAssignMasterPage')) return;
         // no HA component
         if (component.get('isHAComponentOnly')) return;
+        // skip if component is not allowed on single node cluster
+        if (Object.keys(this.get('content.hosts')).length == 1 && component.get('isNotAllowedOnSingleNodeCluster')) return;
         var displayName;
         if (component.get('isClient')) {
           displayName = Em.I18n.t('common.clients')
         } else {
           // remove service name from component display name
-          displayName = App.format.role(component.get('componentName')).replace(new RegExp('^' + service.get('serviceName') + '\\s', 'i'), '');
+          displayName = App.format.role(component.get('componentName'), false).replace(new RegExp('^' + service.get('serviceName') + '\\s', 'i'), '');
         }
-        serviceObj.get('service_components').pushObject(Em.Object.create({
-          component_name: component.get('isClient') ? Em.I18n.t('common.client').toUpperCase() : component.get('componentName'),
-          display_name: displayName,
-          component_value: this.assignComponentHosts(component)
-        }));
+
+        var componentName = component.get('componentName');
+        var masterComponents = this.get('content.masterComponentHosts');
+        var isMasterComponentSelected = masterComponents.someProperty('component', componentName);
+        var isMaster = component.get('isMaster');
+
+        if (!isMaster || isMasterComponentSelected) {
+          serviceObj.get('service_components').pushObject(Em.Object.create({
+            component_name: component.get('isClient') ? Em.I18n.t('common.client').toUpperCase() : component.get('componentName'),
+            display_name: displayName,
+            component_value: this.assignComponentHosts(component)
+          }));
+        }
       }, this);
       if (service.get('customReviewHandler')) {
         for (var displayName in service.get('customReviewHandler')) {
@@ -620,31 +642,6 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
   },
 
   /**
-   * Update configurations for installed services.
-   * Do separated PUT-request for each siteName for each service
-   *
-   * @param {Array} fileNamesToUpdate - file names that should be updated
-   * @method updateConfigurations
-   */
-  updateConfigurations: function (fileNamesToUpdate) {
-    var configurationController = App.router.get('mainServiceInfoConfigsController');
-    var configs = this.get('configs').slice(0);
-    var configsMap = [];
-    fileNamesToUpdate.forEach(function (fileName) {
-      // TODO - Temporarily commented out before refactoring should clean it more properly
-      // if (!fileName || /^(core)/.test(fileName)) return;
-      var tagName = 'version' + (new Date).getTime();
-      var configsToSave = configs.filterProperty('filename', fileName);
-      configsToSave.forEach(function (item) {
-        item.value = App.config.trimProperty(item, false);
-      });
-      configsMap.push(configurationController.createSiteObj(fileName.replace(".xml", ""), tagName, configsToSave));
-    }, this);
-
-    if (!configsMap.length) return;
-    this.applyConfigurationsToCluster(configsMap);
-  },
-  /**
    * Prepare <code>ajaxQueue</code> and start to execute it
    * @method submitProceed
    */
@@ -824,8 +821,10 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
    */
   updateKerberosDescriptor: function(instant) {
     var kerberosDescriptor = App.db.get('KerberosWizard', 'kerberosDescriptorConfigs');
+    var descriptorExists = this.get('wizardController').getDBProperty('isClusterDescriptorExists') === true;
+
     var ajaxOpts = {
-      name: 'admin.kerberos.cluster.artifact.update',
+      name: descriptorExists ? 'admin.kerberos.cluster.artifact.update' : 'admin.kerberos.cluster.artifact.create',
       data: {
         artifactName: 'kerberos_descriptor',
         data: {
@@ -855,7 +854,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
         }
         var fileNamesToUpdate = this.get('wizardController').getDBProperty('fileNamesToUpdate').uniq();
         if (fileNamesToUpdate && fileNamesToUpdate.length) {
-          this.updateConfigurations(fileNamesToUpdate);
+          this.applyConfigurationsToCluster(this.generateDesiredConfigsJSON(this.get('configs'), fileNamesToUpdate));
         }
       }
       this.createConfigurations();
@@ -1353,74 +1352,48 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
   },
 
   /**
-   * Compare generated config object with current configs that were filled
-   * on "Customize Services" page.
-   *
-   * @param {Object} properties - generated by createSiteObj|createCoreSiteObj
-   * @param {Array} configs - current configs to compare
-   * @return {Boolean}
-   * @method isConfigsChanged
-   **/
-  isConfigsChanged: function (properties, configs) {
-    var isChanged = false;
-    for (var property in properties) {
-      var config = configs.findProperty('name', property);
-      // if config not found then it's looks like a new config
-      if (!config) {
-        isChanged = true;
-      } else {
-        if (!config.hasInitialValue || config.isNotDefaultValue) {
-          isChanged = true;
-        }
-      }
-    }
-    return isChanged;
-  },
-
-  /**
    * Create config objects for cluster and services
    * @method createConfigurations
    */
   createConfigurations: function () {
-    var selectedServices = this.get('selectedServices');
-    var coreSiteObject = this.createCoreSiteObj();
-    var tag = 'version1';
-    var clusterSiteObj = this.createSiteObj('cluster-env', tag);
+    var tag = this.getServiceConfigVersion();
 
-    if (this.get('content.controllerName') == 'installerController') {
-      this.get('serviceConfigTags').pushObject(clusterSiteObj);
+    if (this.get('isInstaller')) {
+      /** add cluster-env **/
+      this.get('serviceConfigTags').pushObject(this.createDesiredConfig('cluster-env', tag, this.get('configs').filterProperty('filename', 'cluster-env.xml')));
     }
 
-    if (this.get('content.controllerName') == 'addServiceController') {
-      tag = 'version' + (new Date).getTime();
-      coreSiteObject.tag = tag;
-      var coreSiteConfigs = this.get('configs').filterProperty('filename', 'core-site.xml');
-      if (this.isConfigsChanged(coreSiteObject.properties, coreSiteConfigs)) {
-        coreSiteObject.service_config_version_note = Em.I18n.t('dashboard.configHistory.table.notes.addService');
-        this.get('serviceConfigTags').pushObject(coreSiteObject);
-      }
-    }
-
-    selectedServices.forEach(function (service) {
+    this.get('selectedServices').forEach(function (service) {
       Object.keys(service.get('configTypes')).forEach(function (type) {
         if (!this.get('serviceConfigTags').someProperty('type', type)) {
-          var serviceVersionNotes = Em.I18n.t('dashboard.configHistory.table.notes.default').format(service.get('displayName'));
-          if (type === 'core-site') {
-            coreSiteObject.service_config_version_note = serviceVersionNotes;
-            this.get('serviceConfigTags').pushObject(coreSiteObject);
-          } else if (type === 'storm-site') {
-            var obj = this.createStormSiteObj(tag);
-            obj.service_config_version_note = serviceVersionNotes;
-            this.get('serviceConfigTags').pushObject(obj);
-          }  else {
-            var obj = this.createSiteObj(type, tag);
-            obj.service_config_version_note = serviceVersionNotes;
-            this.get('serviceConfigTags').pushObject(obj);
-          }
+          var configs = this.get('configs').filterProperty('filename', App.config.getOriginalFileName(type));
+          var serviceConfigNote = this.getServiceConfigNote(type, service.get('displayName'));
+          this.get('serviceConfigTags').pushObject(this.createDesiredConfig(type, tag, configs, serviceConfigNote));
         }
       }, this);
     }, this);
     this.createNotification();
+  },
+
+  /**
+   * Get config version tag
+   *
+   * @returns {string}
+   */
+  getServiceConfigVersion: function() {
+    return 'version' + (this.get('isAddService') ? (new Date).getTime() : '1');
+  },
+
+  /**
+   * Get config version message
+   *
+   * @param type
+   * @param serviceDisplayName
+   * @returns {*}
+   */
+  getServiceConfigNote: function(type, serviceDisplayName) {
+    return (this.get('isAddService') && (type === 'core-site')) ?
+      Em.I18n.t('dashboard.configHistory.table.notes.addService') : Em.I18n.t('dashboard.configHistory.table.notes.default').format(serviceDisplayName);
   },
 
   /**
@@ -1560,7 +1533,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
     });
 
     return sites.map(function (site) {
-      return App.router.get('mainServiceInfoConfigsController').createSiteObj(site.type, site.tag, site.properties);
+      return this.createDesiredConfig(site.type, site.tag, site.properties, null, true);
     }, this);
   },
 
@@ -1604,89 +1577,44 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
   },
 
   /**
-   * Create Core Site object
-   * @returns {{type: string, tag: string, properties: {}}}
-   * @method createCoreSiteObj
+   * Selected and installed services
+   * @override
    */
-  createCoreSiteObj: function () {
-    var installedAndSelectedServices = Em.A([]);
-    installedAndSelectedServices.pushObjects(this.get('installedServices'));
-    installedAndSelectedServices.pushObjects(this.get('selectedServices'));
-    var coreSiteObj = this.get('configs').filterProperty('filename', 'core-site.xml'),
-      coreSiteProperties = this.createSiteObj('core-site', 'version1').properties,
-      isGLUSTERFSSelected = installedAndSelectedServices.someProperty('serviceName', 'GLUSTERFS');
+  currentServices: function() {
+    return this.get('installedServices').concat(this.get('selectedServices'));
+  }.property('installedServices.length', 'selectedServices.length'),
 
-    coreSiteObj.forEach(function (_coreSiteObj) {
-      if (isGLUSTERFSSelected && _coreSiteObj.name == "fs.default.name") {
-        coreSiteProperties[_coreSiteObj.name] =
-          this.get('configs').someProperty('name', 'fs_glusterfs_default_name') ?
+  /**
+   * Add handling GLUSTREFS properties
+   * @param property
+   * @returns {*}
+   * @override
+   */
+  formatValueBeforeSave: function(property) {
+    if (this.formatGLUSTERFSProperties(Em.get(property, 'filename'))) {
+      switch (property.name) {
+        case "fs.default.name":
+          return this.get('configs').someProperty('name', 'fs_glusterfs_default_name') ?
             this.get('configs').findProperty('name', 'fs_glusterfs_default_name').value : null;
-      }
-      if (isGLUSTERFSSelected && _coreSiteObj.name == "fs.defaultFS") {
-        coreSiteProperties[_coreSiteObj.name] =
-          this.get('configs').someProperty('name', 'glusterfs_defaultFS_name') ?
+        case "fs.defaultFS":
+          return this.get('configs').someProperty('name', 'glusterfs_defaultFS_name') ?
             this.get('configs').findProperty('name', 'glusterfs_defaultFS_name').value : null;
       }
-    }, this);
-    var attributes = App.router.get('mainServiceInfoConfigsController').getConfigAttributes(coreSiteObj);
-    var configObj = {"type": "core-site", "tag": "version1", "properties": coreSiteProperties};
-    if (attributes) {
-      configObj['properties_attributes'] = attributes;
     }
-    return  configObj;
+    return this._super(property);
   },
 
   /**
-   * Create siteObj for custom service with it own configs
-   * @param {string} site
-   * @param tag
-   * @returns {{type: string, tag: string, properties: {}}}
-   * @method createSiteObj
+   * Defines if some GLUSTERFS properties should be changed
+   *
+   * @param {String} type
+   * @returns {boolean}
    */
-  createSiteObj: function (site,  tag) {
-    var properties = {};
-    var configs = this.get('configs').filterProperty('filename', site + '.xml');
-    var attributes = App.router.get('mainServiceInfoConfigsController').getConfigAttributes(configs);
-    configs.forEach(function (_configProperty) {
-      var heapsizeExceptions = ['hadoop_heapsize', 'yarn_heapsize', 'nodemanager_heapsize', 'resourcemanager_heapsize', 'apptimelineserver_heapsize',
-        'jobhistory_heapsize', 'nfsgateway_heapsize', 'accumulo_master_heapsize', 'accumulo_tserver_heapsize', 'accumulo_monitor_heapsize', 'accumulo_gc_heapsize',
-        'accumulo_other_heapsize', 'hbase_master_heapsize', 'hbase_regionserver_heapsize', 'metrics_collector_heapsize'];
-        // do not pass any globals whose name ends with _host or _hosts
-        if (_configProperty.isRequiredByAgent !== false) {
-          // append "m" to JVM memory options except for heapsizeExtensions
-          if (/_heapsize|_newsize|_maxnewsize|_permsize|_maxpermsize$/.test(_configProperty.name) && !heapsizeExceptions.contains(_configProperty.name) && !(_configProperty.value).endsWith("m")) {
-            properties[_configProperty.name] = _configProperty.value + "m";
-          } else {
-            properties[_configProperty.name] = _configProperty.value;
-          }
-        }
-    }, this);
-    var configObj = {"type": site, "tag": tag, "properties": properties };
-    if (attributes) {
-      configObj['properties_attributes'] = attributes;
-    }
-    return configObj;
+  formatGLUSTERFSProperties: function(type) {
+    return App.config.getConfigTagFromFileName(type) === 'core-site'
+      && this.get('installedServices').concat(this.get('selectedServices')).someProperty('serviceName', 'GLUSTERFS');
   },
 
-  /**
-   * Create site obj for Storm
-   * Some config-properties should be modified in custom way
-   * @param tag
-   * @returns {{type: string, tag: string, properties: {}}}
-   * @method createStormSiteObj
-   */
-  createStormSiteObj: function (tag) {
-    var configs = this.get('configs').filterProperty('filename', 'storm-site.xml');
-    var stormProperties = {};
-    configs.forEach(function (_configProperty) {
-      if (["nimbus.seeds", "storm.zookeeper.servers"].contains(_configProperty.name)) {
-        stormProperties[_configProperty.name] = JSON.stringify(_configProperty.value).replace(/"/g, "'");
-      } else {
-        stormProperties[_configProperty.name] = _configProperty.value;
-      }
-    }, this);
-    return {type: 'storm-site', tag: tag, properties: stormProperties};
-  },
 
   /**
    * Create one Alert Notification (if user select this on step7)
@@ -1767,6 +1695,7 @@ App.WizardStep8Controller = Em.Controller.extend(App.AddSecurityConfigs, App.wiz
          * @type {string}
          */
         barWidth: '',
+        progressBarClass: 'progress log_popup',
 
         /**
          * Popup-message

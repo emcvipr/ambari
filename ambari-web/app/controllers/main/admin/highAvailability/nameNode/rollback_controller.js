@@ -37,6 +37,7 @@ App.HighAvailabilityRollbackController = App.HighAvailabilityProgressPageControl
     'restoreHawqConfigs',
     'stopFailoverControllers',
     'deleteFailoverControllers',
+    'deletePXF',
     'stopStandbyNameNode',
     'stopNameNode',
     'restoreHDFSConfigs',
@@ -63,12 +64,13 @@ App.HighAvailabilityRollbackController = App.HighAvailabilityProgressPageControl
 
   setCommandsAndTasks: function(tmpTasks) {
     var fTask = this.get('failedTask');
-    var index = [
+    var commandsArray = [
       'deleteSNameNode',
       'startAllServices',
       'reconfigureHBase',
       'reconfigureAccumulo',
       'reconfigureHawq',
+      'installPXF',
       'startZKFC',
       'installZKFC',
       'startSecondNameNode',
@@ -80,9 +82,10 @@ App.HighAvailabilityRollbackController = App.HighAvailabilityProgressPageControl
       'installJournalNodes',
       'installNameNode',
       'stopAllServices'
-    ].indexOf(fTask.command);
+    ];
+    var index = commandsArray.indexOf(fTask.command);
 
-    if(index > 6){
+    if(index > commandsArray.indexOf('startSecondNameNode')){
       --index;
     }
     var newCommands = this.get('commands').splice(index);
@@ -92,6 +95,10 @@ App.HighAvailabilityRollbackController = App.HighAvailabilityProgressPageControl
       newTasks[i].id = i;
     }
     this.set('tasks', newTasks);
+    var pxfTask = this.get('tasks').findProperty('command', 'deletePXF');
+    if (!App.Service.find().someProperty('serviceName', 'PXF') && pxfTask) {
+      this.get('tasks').splice(pxfTask.get('id'), 1);
+    }
     var hbaseTask = this.get('tasks').findProperty('command', 'restoreHBaseConfigs');
     if (!App.Service.find().someProperty('serviceName', 'HBASE') && hbaseTask) {
       this.get('tasks').splice(hbaseTask.get('id'), 1);
@@ -244,17 +251,53 @@ App.HighAvailabilityRollbackController = App.HighAvailabilityProgressPageControl
     });
   },
   restoreHawqConfigs: function(){
-    this.loadConfigTag("hawqSiteTag");
-    var hawqSiteTag = this.get("content.hawqSiteTag");
-    App.ajax.send({
-      name: 'admin.high_availability.load_hawq_configs',
-      sender: this,
-      data: {
-        hawqSiteTag: hawqSiteTag
-      },
-      success: 'onLoadHawqConfigs',
-      error: 'onTaskError'
-    });
+    var tags = ['hawqSiteTag', 'hdfsClientTag'];
+    tags.forEach(function (tagName) {
+      var tag = this.get("content." + tagName);
+      App.ajax.send({
+        name: 'admin.high_availability.load_hawq_configs',
+        sender: this,
+        data: {
+          tagName: tag
+        },
+        success: 'onLoadHawqConfigs',
+        error: 'onTaskError'
+      });
+    }, this);
+  },
+
+  deletePXF: function(){
+    var secondNameNodeHost = this.get('content.masterComponentHosts').filterProperty('component', 'NAMENODE').findProperty('isInstalled', false).mapProperty('hostName');
+    var pxfComponent = this.getSlaveComponentHosts().findProperty('componentName', 'PXF');
+    var dataNodeComponent = this.getSlaveComponentHosts().findProperty('componentName', 'DATANODE');
+
+    var host, i;
+
+    // check if PXF is already installed on the host assigned for additional NameNode
+    var pxfComponentInstalled = false;
+    for(i = 0; i < pxfComponent.hosts.length; i++) {
+      host = pxfComponent.hosts[i];
+      if (host.hostName === secondNameNodeHost) {
+        pxfComponentInstalled = true;
+        break;
+      }
+    }
+
+    // check if DATANODE is already installed on the host assigned for additional NameNode
+    var dataNodeComponentInstalled = false;
+    for(i = 0; i < dataNodeComponent.hosts.length; i++) {
+      host = dataNodeComponent.hosts[i];
+      if (host.hostName === secondNameNodeHost) {
+        dataNodeComponentInstalled = true;
+        break;
+      }
+    }
+
+    // if no DATANODE exists on that host, remove PXF
+    if (!dataNodeComponentInstalled && pxfComponentInstalled) {
+      this.updateComponent('PXF', secondNameNodeHost, "PXF", "Stop");
+      this.checkBeforeDelete('PXF', secondNameNodeHost);
+    }
   },
 
   stopFailoverControllers: function(){
@@ -310,7 +353,7 @@ App.HighAvailabilityRollbackController = App.HighAvailabilityProgressPageControl
   onLoadHbaseConfigs: function (data) {
     var hbaseSiteProperties = data.items.findProperty('type', 'hbase-site').properties;
     App.ajax.send({
-      name: 'admin.high_availability.save_configs',
+      name: 'admin.save_configs',
       sender: this,
       data: {
         siteName: 'hbase-site',
@@ -323,7 +366,7 @@ App.HighAvailabilityRollbackController = App.HighAvailabilityProgressPageControl
   onLoadAccumuloConfigs: function (data) {
     var accumuloSiteProperties = data.items.findProperty('type', 'accumulo-site').properties;
     App.ajax.send({
-      name: 'admin.high_availability.save_configs',
+      name: 'admin.save_configs',
       sender: this,
       data: {
         siteName: 'accumulo-site',
@@ -337,7 +380,7 @@ App.HighAvailabilityRollbackController = App.HighAvailabilityProgressPageControl
   onLoadHawqConfigs: function (data) {
     var hawqSiteProperties = data.items.findProperty('type', 'hawq-site').properties;
     App.ajax.send({
-      name: 'admin.high_availability.save_configs',
+      name: 'admin.save_configs',
       sender: this,
       data: {
         siteName: 'hawq-site',
@@ -374,7 +417,7 @@ App.HighAvailabilityRollbackController = App.HighAvailabilityProgressPageControl
   onLoadConfigs: function (data) {
     this.set('configsSaved', false);
     App.ajax.send({
-      name: 'admin.high_availability.save_configs',
+      name: 'admin.save_configs',
       sender: this,
       data: {
         siteName: 'hdfs-site',
@@ -384,7 +427,7 @@ App.HighAvailabilityRollbackController = App.HighAvailabilityProgressPageControl
       error: 'onTaskError'
     });
     App.ajax.send({
-      name: 'admin.high_availability.save_configs',
+      name: 'admin.save_configs',
       sender: this,
       data: {
         siteName: 'core-site',

@@ -19,12 +19,14 @@ limitations under the License.
 import status_params
 
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
-from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions import stack_select
 from resource_management.libraries.functions import format
-from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions.version import format_stack_version
 from resource_management.libraries.functions.default import default
+from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
 from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.script.script import Script
+import os
 
 config = Script.get_config()
 
@@ -34,14 +36,14 @@ stack_name = default("/hostLevelParams/stack_name", None)
 version = default("/commandParams/version", None)
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+stack_version_formatted = format_stack_version(stack_version_unformatted)
 etc_prefix_dir = "/etc/falcon"
 
 # hadoop params
-hadoop_home_dir = hdp_select.get_hadoop_dir("home")
-hadoop_bin_dir = hdp_select.get_hadoop_dir("bin")
+hadoop_home_dir = stack_select.get_hadoop_dir("home")
+hadoop_bin_dir = stack_select.get_hadoop_dir("bin")
 
-if Script.is_hdp_stack_greater_or_equal("2.2"):
+if Script.is_stack_greater_or_equal("2.2"):
 
   # if this is a server action, then use the server binaries; smoke tests
   # use the client binaries
@@ -58,6 +60,8 @@ if Script.is_hdp_stack_greater_or_equal("2.2"):
 else:
   falcon_webapp_dir = '/var/lib/falcon/webapp'
   falcon_home = '/usr/lib/falcon'
+
+falcon_webinf_lib = falcon_home + "/server/webapp/falcon/WEB-INF/lib"
 
 hadoop_conf_dir = status_params.hadoop_conf_dir
 falcon_conf_dir = status_params.falcon_conf_dir
@@ -92,7 +96,7 @@ falcon_startup_properties = config['configurations']['falcon-startup.properties'
 smokeuser_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
 falcon_env_sh_template = config['configurations']['falcon-env']['content']
 
-flacon_apps_dir = '/apps/falcon'
+falcon_apps_dir = config['configurations']['falcon-env']['falcon_apps_hdfs_dir']
 #for create_hdfs_directory
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 hostname = config["hostname"]
@@ -106,7 +110,31 @@ supports_hive_dr = config['configurations']['falcon-env']['supports_hive_dr']
 local_data_mirroring_dir = "/usr/hdp/current/falcon-server/data-mirroring"
 dfs_data_mirroring_dir = "/apps/data-mirroring"
 
+atlas_hosts = default('/clusterHostInfo/atlas_server_hosts', [])
+has_atlas = len(atlas_hosts) > 0
 
+if has_atlas:
+  atlas_conf_dir = os.environ['METADATA_CONF'] if 'METADATA_CONF' in os.environ else '/etc/atlas/conf'
+  atlas_home_dir = os.environ['METADATA_HOME_DIR'] if 'METADATA_HOME_DIR' in os.environ else '/usr/hdp/current/atlas-server'
+
+  application_services = "org.apache.falcon.security.AuthenticationInitializationService,\
+      org.apache.falcon.workflow.WorkflowJobEndNotificationService, \
+      org.apache.falcon.service.ProcessSubscriberService,\
+      org.apache.falcon.entity.store.ConfigurationStore,\
+      org.apache.falcon.rerun.service.RetryService,\
+      org.apache.falcon.rerun.service.LateRunService,\
+      org.apache.falcon.service.LogCleanupService,\
+      org.apache.falcon.metadata.MetadataMappingService,\
+      org.apache.falcon.atlas.service.AtlasService"
+else:
+  application_services = "org.apache.falcon.security.AuthenticationInitializationService,\
+      org.apache.falcon.workflow.WorkflowJobEndNotificationService, \
+      org.apache.falcon.service.ProcessSubscriberService,\
+      org.apache.falcon.entity.store.ConfigurationStore,\
+      org.apache.falcon.rerun.service.RetryService,\
+      org.apache.falcon.rerun.service.LateRunService,\
+      org.apache.falcon.service.LogCleanupService,\
+      org.apache.falcon.metadata.MetadataMappingService"
 
 hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
@@ -119,6 +147,7 @@ import functools
 HdfsResource = functools.partial(
   HdfsResource,
   user=hdfs_user,
+  hdfs_resource_ignore_file = "/var/lib/ambari-agent/data/.hdfs_resource_ignore",
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,
@@ -127,6 +156,7 @@ HdfsResource = functools.partial(
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
   default_fs = default_fs,
+  immutable_paths = get_not_managed_resources(),
   dfs_type = dfs_type
  )
 

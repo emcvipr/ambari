@@ -218,6 +218,9 @@ footer {
         color: @top-nav-menu-text-color;
         text-align: center;
         white-space: nowrap;
+        &.views-button-container {
+          padding-bottom: 9.23077px;
+        }
       }
       .active > a, .active > a:hover, .active > a:focus {
         color: @top-nav-menu-active-text-color;
@@ -312,6 +315,9 @@ footer {
         line-height: 20px;
         color: @top-nav-menu-dropdown-text-color;
         white-space: nowrap;
+        .icon-health-block > span:before {
+          line-height: 20px;
+        }
       }
       .top-nav-dropdown-menu > li.active > a{
         background-color: #e5e5e5;
@@ -1090,13 +1096,19 @@ h1 {
 .spinner {
   width: @spinner-default-width;
   height: @spinner-default-height;
-  background: url("/img/spinner.gif");
   margin: 0 auto;
+  i {
+    color: #555;
+    font-size: 2.5em;
+  }
 
   &.service-button-spinner {
     width: @spinner-small-width;
     height: @spinner-small-height;
     background-size: cover;
+    i {
+      font-size: 1em;
+    }
   }
 }
 
@@ -1372,6 +1384,9 @@ h1 {
       width: @spinner-small-width;
       height: @spinner-small-height;
       background-size: cover;
+      i {
+        font-size: 1em;
+      }
     }
     .icon-ok-sign, .icon-warning-sign {
       font-size: 27px;
@@ -1852,13 +1867,13 @@ a:focus {
       float: right;
       a {
         cursor: pointer;
-      }
-      .task-detail-copy {
-        margin-right: 12px;
         float: left;
-      }
-      .task-detail-open-dialog {
-        float: right;
+        margin-right: 12px;
+
+        &:last-child {
+          margin-right: 0;
+          float: right;
+        }
       }
     }
   }
@@ -2180,6 +2195,8 @@ a:focus {
     min-height: 420px !important;
     overflow: hidden;
     .corner-icon {
+      position: absolute;
+      right: 15px;
       text-decoration: none;
       .icon-save {
         color: #555;
@@ -2210,8 +2227,19 @@ a:focus {
 
 /*start chart/style graphs*/
 .chart-wrapper {
-  .timezone {
-    font-size: @smaller-font-size;
+  .actions-container {
+    text-align: center;
+    .graph-details-time-range {
+      display: inline-block;
+      .dropdown-menu {
+        text-align: left;
+      }
+    }
+  }
+  .screensaver {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
   }
 }
 .chart-container {
@@ -2228,6 +2256,7 @@ a:focus {
       left: 60px;
       overflow: visible;
       position: relative;
+      text-align: center;
     }
     .chart-y-axis {
       position: absolute;
@@ -2242,6 +2271,10 @@ a:focus {
       .title {
         margin-top: 35px !important;
       }
+    }
+    .alert {
+      display: inline-block;
+      padding-right: 14px;
     }
   }
   position: relative;
@@ -2343,6 +2376,10 @@ a:focus {
     right: -1px;
     bottom: -65px;
   }
+}
+
+.timezone {
+  font-size: @smaller-font-size;
 }
 
 .modal-body {
@@ -2682,6 +2719,11 @@ table.graphs {
     .spinner {
       margin: 55px auto;
     }
+    .chart-container {
+      .spinner {
+        margin: 15px auto 35px;
+      }
+    }
     .row-fluid .span2p4 {
       width: 19.60%;
       *width: 19.60%;
@@ -2780,7 +2822,9 @@ table.graphs {
         height: 105px;
         border: 1px solid silver;
         color: #ffffff;
-        background: url(/img/spinner.gif) no-repeat center center;
+        i {
+          font-size: inherit;
+        }
       }
     }
     .thumbnail .widget-content-isNA{ // for pie chart n\a
@@ -3076,6 +3120,10 @@ table.graphs {
 
     .set-rack-id {
       text-decoration: none;
+    }
+
+    .host-select-all {
+      margin-bottom: -1px ;
     }
   }
 
@@ -3672,9 +3720,13 @@ table.graphs {
         color: #808080;
         cursor: default;
       }
+      .allow-tooltip {
+        pointer-events: auto;
+      }
     }
   }
-  .host-tab-content {
+  .host-tab-content,
+  .logs-tab-content {
     margin-top: 20px;
     .table thead {
       background: none repeat scroll 0 0 #F8F8F8;
@@ -3772,12 +3824,27 @@ table.graphs {
   }
 }
 
+.admin-auto-start {
+  .span6 {
+    margin-left: 0 !important;
+  }
+
+  .bootstrap-switch {
+    margin-left: 20px;
+  }
+
+  .nav i {
+    margin-top: 0;
+    color: @green;
+  }
+}
+
 .admin-user-settings {
   hr {
     margin: 5px 0;
   }
   select {
-    width: auto;
+    width: 100%;
   }
   .setting-wrapper {
     margin-bottom: 20px;
@@ -4645,7 +4712,6 @@ ul.inline li {
   height: 157px;
   border: 1px solid silver;
   margin: 20px 15px 10px 15px;
-  background: url(/img/spinner.gif) no-repeat center center;
 }
 
 /* TIME RANGE WIDGET END */
@@ -4883,14 +4949,6 @@ li.break {
   .config-groups-dropdown-menu {
     overflow: auto;
     max-height: 416px;
-  }
-}
-
-#reload_popup {
-  .spinner {
-    padding: 8px 35px 0 42px;
-    width: auto;
-    background: url(/img/spinner.gif) no-repeat;
   }
 }
 
@@ -5501,6 +5559,32 @@ i.icon-asterisks {
   }
 }
 
+.row-fluid .host-component-block {
+  .health-icon-block {
+    width: 6%;
+    float: left;
+    padding-right: 5px;
+  }
+
+  .refresh-icon-block {
+    width: 6%;
+    float: right;
+  }
+
+  .medkit-icon-block {
+    width: 6%;
+    float: left;
+    padding-left: 3px;
+  }
+
+  .component-name-block {
+    width: 77%;
+    float: left;
+    white-space: normal;
+    word-wrap: break-word;
+  }
+}
+
 .filter-combobox{
   > input{
     width: 170px;
@@ -5621,6 +5705,10 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
 
 .mls {
   margin-left: @space-s;
+}
+
+.mlm {
+  margin-left: @space-m;
 }
 
 .mll {
@@ -6102,4 +6190,8 @@ input[type="radio"].align-checkbox, input[type="checkbox"].align-checkbox {
 
 .view-permission-header th {
   padding-top: 40px;
+}
+
+.enable-all-link {
+  margin-left: -10px;
 }

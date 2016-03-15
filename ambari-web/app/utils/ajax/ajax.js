@@ -624,26 +624,6 @@ var urls = {
       }
     }
   },
-  'service.item.immediateStopHawqCluster': {
-    'real': '/clusters/{clusterName}/requests',
-    'mock': '',
-    'format': function (data) {
-      return {
-        type: 'POST',
-        data: JSON.stringify({
-          RequestInfo: {
-            'context': data.context,
-            'command': data.command
-          },
-          "Requests/resource_filters": [{
-            "service_name": data.serviceName,
-            "component_name": data.componentName,
-            'hosts': data.hosts
-          }]
-        })
-      }
-    }
-  },
   /*************************CONFIG THEME****************************************/
 
   'configs.theme': {
@@ -783,6 +763,10 @@ var urls = {
     'real': '/clusters/{clusterName}?fields=Clusters/desired_configs',
     'mock': '/data/clusters/cluster.json'
   },
+  'config.tags.site': {
+    'real': '/clusters/{clusterName}?fields=Clusters/desired_configs/{site}',
+    'mock': ''
+  },
   'config.tags_and_groups': {
     'real': '/clusters/{clusterName}?fields=Clusters/desired_configs,config_groups/*{urlParams}',
     'mock': '/data/clusters/tags_and_groups.json'
@@ -872,6 +856,17 @@ var urls = {
 
   'host.host_component.add_new_component': {
     'real': '/clusters/{clusterName}/hosts?Hosts/host_name={hostName}',
+    'mock': '/data/wizard/deploy/poll_1.json',
+    'format': function (data) {
+      return {
+        type: 'POST',
+        data: data.data
+      }
+    }
+  },
+
+  'host.host_component.add_new_components': {
+    'real': '/clusters/{clusterName}/hosts',
     'mock': '/data/wizard/deploy/poll_1.json',
     'format': function (data) {
       return {
@@ -1405,7 +1400,7 @@ var urls = {
     'real': '/clusters/{clusterName}/configurations?(type=core-site&tag={coreSiteTag})|(type=hdfs-site&tag={hdfsSiteTag})',
     'mock': ''
   },
-  'admin.high_availability.save_configs': {
+  'admin.save_configs': {
     'real': '/clusters/{clusterName}',
     'mock': '',
     'type': 'PUT',
@@ -1487,6 +1482,21 @@ var urls = {
         data: JSON.stringify({
           Clusters: {
             security_type: "NONE"
+          }
+        })
+      }
+    }
+  },
+
+  'admin.kerberize.cluster.force': {
+    'type': 'PUT',
+    'real': '/clusters/{clusterName}?force_toggle_kerberos=true',
+    'mock': '/data/wizard/kerberos/kerberize_cluster.json',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          Clusters: {
+            security_type: "KERBEROS"
           }
         })
       }
@@ -1593,6 +1603,7 @@ var urls = {
     'Upgrade/progress_percent,Upgrade/request_context,Upgrade/request_status,Upgrade/direction,Upgrade/downgrade_allowed,' +
     'upgrade_groups/UpgradeGroup,' +
     'upgrade_groups/upgrade_items/UpgradeItem/status,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/display_status,' +
     'upgrade_groups/upgrade_items/UpgradeItem/context,' +
     'upgrade_groups/upgrade_items/UpgradeItem/group_id,' +
     'upgrade_groups/upgrade_items/UpgradeItem/progress_percent,' +
@@ -1680,6 +1691,9 @@ var urls = {
     'format': function (data) {
       return {
         data: JSON.stringify({
+          "RequestInfo": {
+            "downgrade": data.isDowngrade
+          },
           "Upgrade": {
             "request_status": "ABORTED"
           }
@@ -2099,6 +2113,10 @@ var urls = {
     'real': '/clusters?fields=Clusters/provisioning_state',
     'mock': '/data/clusters/info.json'
   },
+  'router.login.message': {
+    'real': '/settings/motd',
+    'mock': '/data/settings/motd.json'
+  },
   'router.logoff': {
     'real': '/logout',
     'mock': '',
@@ -2348,6 +2366,25 @@ var urls = {
     'real': '/clusters/{clusterName}/components?fields=host_components/HostRoles/host_name,ServiceComponentInfo/component_name,ServiceComponentInfo/started_count{urlParams}&minimal_response=true',
     'mock': ''
   },
+  'components.get_category': {
+    'real': '/clusters/{clusterName}/components?fields=ServiceComponentInfo/component_name,ServiceComponentInfo/service_name,ServiceComponentInfo/category,ServiceComponentInfo/recovery_enabled,ServiceComponentInfo/total_count&minimal_response=true',
+    'mock': ''
+  },
+  'components.update': {
+    'real': '/clusters/{clusterName}/components?{urlParams}',
+    'mock': '',
+    'type': 'PUT',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          RequestInfo: {
+            query: data.query
+          },
+          ServiceComponentInfo: data.ServiceComponentInfo
+        })
+      }
+    }
+  },
   'hosts.all.install': {
     'real': '/hosts?minimal_response=true',
     'mock': ''
@@ -2371,6 +2408,21 @@ var urls = {
   'hosts.confirmed': {
     'real': '/clusters/{clusterName}/hosts?fields=Hosts/cpu_count,Hosts/disk_info,Hosts/total_mem,Hosts/os_type,Hosts/os_arch,Hosts/ip,host_components/HostRoles/state&minimal_response=true',
     'mock': '/data/hosts/HDP2/hosts.json'
+  },
+  'hosts.with_searchTerm': {
+    'real': '/clusters/{clusterName}/hosts?fields=Hosts/{facet}&minimal_response=true&page_size={page_size}',
+    'mock': '',
+    format: function (data) {
+      return {
+        headers: {
+          'X-Http-Method-Override': 'GET'
+        },
+        type: 'POST',
+        data: JSON.stringify({
+          "RequestInfo": {"query": (data.searchTerm ? "Hosts/"+ data.facet +".matches(.*" + data.searchTerm + ".*)" : "")}
+        })
+      };
+    }
   },
   'host_components.all': {
     'real': '/clusters/{clusterName}/host_components?fields=HostRoles/host_name&minimal_response=true',
@@ -2803,7 +2855,6 @@ var formatRequest = function (data) {
     type: this.type || 'GET',
     timeout: App.timeout,
     dataType: 'json',
-    statusCode: require('data/statusCodes'),
     headers: {}
   };
   if (App.get('testMode')) {
@@ -2818,6 +2869,11 @@ var formatRequest = function (data) {
   if (this.format) {
     jQuery.extend(opt, this.format(data, opt));
   }
+  var statusCode = jQuery.extend({}, require('data/statusCodes'));
+  statusCode['404'] = function () {
+    console.log("Error code 404: URI not found. -> " + opt.url);
+  };
+  opt.statusCode = statusCode;
   return opt;
 };
 
@@ -3007,6 +3063,18 @@ var ajax = Em.Object.extend({
    */
   defaultErrorKDCHandler: function(opt, msg) {
     return App.showInvalidKDCPopup(opt, msg);
+  },
+
+  /**
+   * Abort all requests stored in the certain array
+   * @param requestsArray
+   */
+  abortRequests: function (requestsArray) {
+    requestsArray.forEach(function (xhr) {
+      xhr.isForcedAbort = true;
+      Em.tryInvoke(xhr, 'abort');
+    });
+    requestsArray.clear();
   }
 
 });

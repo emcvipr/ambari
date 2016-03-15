@@ -18,7 +18,7 @@
 'use strict';
 
 angular.module('ambariAdminConsole')
-.controller('NavbarCtrl',['$scope', 'Cluster', '$location', 'Alert', 'ROUTES', 'ConfirmationModal', '$rootScope', 'Stack', '$translate', function($scope, Cluster, $location, Alert, ROUTES, ConfirmationModal, $rootScope, Stack, $translate) {
+.controller('NavbarCtrl',['$scope', 'Cluster', '$location', 'Alert', 'ROUTES', 'ConfirmationModal', '$rootScope', 'Stack', '$translate', 'Settings', function($scope, Cluster, $location, Alert, ROUTES, ConfirmationModal, $rootScope, Stack, $translate, Settings) {
   var $t = $translate.instant;
   $scope.cluster = null;
   $scope.totalRepos = 0;
@@ -26,6 +26,7 @@ angular.module('ambariAdminConsole')
     name        : '',
     editingName : false
   };
+  $scope.settings = Settings;
 
   function loadClusterData() {
     Cluster.getStatus().then(function (cluster) {
@@ -54,6 +55,15 @@ angular.module('ambariAdminConsole')
 
     $scope.editCluster.name         = $scope.cluster.Clusters.cluster_name;
     $scope.editCluster.editingName  = !$scope.editCluster.editingName;
+  };
+
+  $scope.clusterDisplayName = function () {
+    var name="";
+    if($scope.cluster && $scope.cluster.Clusters)
+    {
+       name = $scope.cluster.Clusters.cluster_name;
+    }
+    return name.length > 13 ? name.substr(0, 13) + "..." : name;
   };
 
   $scope.confirmClusterNameChange = function() {

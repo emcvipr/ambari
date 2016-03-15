@@ -101,11 +101,26 @@ class TestMetadataServer(RMFTestCase):
                        classname = "MetadataServer",
                        command = "configure",
                        config_file="default.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
     self.configureResourcesCalled()
+    self.assertNoMoreResources()
+
+  def test_configure_secure(self):
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/metadata_server.py",
+                       classname = "MetadataServer",
+                       command = "configure",
+                       config_file="secure.json",
+                       stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+                       )
+
+    self.configureResourcesCalled()
+    self.assertResourceCalled('TemplateConfig', '/etc/atlas/conf/atlas_jaas.conf',
+                              owner = 'atlas',
+                              )
     self.assertNoMoreResources()
 
   def test_start_default(self):
@@ -113,7 +128,7 @@ class TestMetadataServer(RMFTestCase):
                        classname = "MetadataServer",
                        command = "start",
                        config_file="default.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.configureResourcesCalled()
@@ -127,7 +142,7 @@ class TestMetadataServer(RMFTestCase):
                        classname = "MetadataServer",
                        command = "stop",
                        config_file="default.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('Execute', 'source /etc/atlas/conf/atlas-env.sh; /usr/hdp/current/atlas-server/bin/atlas_stop.py',

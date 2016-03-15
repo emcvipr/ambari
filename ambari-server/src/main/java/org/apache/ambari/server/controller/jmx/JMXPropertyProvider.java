@@ -98,6 +98,8 @@ public class JMXPropertyProvider extends ThreadPoolEnabledPropertyProvider {
 
   private final String statePropertyId;
 
+  private final Map<String, String> clusterComponentPortsMap;
+
   // ----- Constructors ------------------------------------------------------
 
   /**
@@ -129,9 +131,16 @@ public class JMXPropertyProvider extends ThreadPoolEnabledPropertyProvider {
     this.hostNamePropertyId       = hostNamePropertyId;
     this.componentNamePropertyId  = componentNamePropertyId;
     this.statePropertyId          = statePropertyId;
+    this.clusterComponentPortsMap = new HashMap<>();
   }
 
   // ----- helper methods ----------------------------------------------------
+
+  @Override
+  public Set<Resource> populateResources(Set<Resource> resources, Request request, Predicate predicate) throws SystemException {
+    clusterComponentPortsMap.clear();
+    return super.populateResources(resources, request, predicate);
+  }
 
   /**
    * Populate a resource by obtaining the requested JMX properties.
@@ -189,12 +198,6 @@ public class JMXPropertyProvider extends ThreadPoolEnabledPropertyProvider {
       httpsEnabled = true;
     }
 
-    String port = getPort(clusterName, componentName, httpsEnabled);
-    if (port == null) {
-      LOG.warn("Unable to get JMX metrics.  No port value for " + componentName);
-      return resource;
-    }
-
     Set<String> hostNames = getHosts(resource, clusterName, componentName);
     if (hostNames == null || hostNames.isEmpty()) {
       LOG.warn("Unable to get JMX metrics.  No host name for " + componentName);
@@ -207,6 +210,11 @@ public class JMXPropertyProvider extends ThreadPoolEnabledPropertyProvider {
       try {
         for (String hostName : hostNames) {
           try {
+            String port = getPort(clusterName, componentName, hostName, httpsEnabled);
+            if (port == null) {
+              LOG.warn("Unable to get JMX metrics.  No port value for " + componentName);
+              return resource;
+            }
             if (LOG.isDebugEnabled()) {
               LOG.debug("Spec: " + getSpec(protocol, hostName, port, "/jmx"));
             }
@@ -348,9 +356,15 @@ public class JMXPropertyProvider extends ThreadPoolEnabledPropertyProvider {
     }
   }
 
-  private String getPort(String clusterName, String componentName, boolean httpsEnabled) throws SystemException {
-    String port = jmxHostProvider.getPort(clusterName, componentName, httpsEnabled);
-    return port == null ? DEFAULT_JMX_PORTS.get(componentName) : port;
+  private String getPort(String clusterName, String componentName, String hostName, boolean httpsEnabled) throws SystemException {
+    String portMapKey = String.format("%s-%s-%s", clusterName, componentName, httpsEnabled);
+    String port = clusterComponentPortsMap.get(portMapKey);
+    if (port==null) {
+      port = jmxHostProvider.getPort(clusterName, componentName, hostName, httpsEnabled);
+      port = port == null ? DEFAULT_JMX_PORTS.get(componentName) : port;
+      clusterComponentPortsMap.put(portMapKey, port);
+    }
+    return port;
   }
 
   private String getJMXProtocol(String clusterName, String componentName) {

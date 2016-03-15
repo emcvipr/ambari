@@ -134,6 +134,20 @@ App.HostTableMenuView = Em.View.extend({
           })
         ])
       }
+      if (App.isAuthorized("HOST.ADD_DELETE_COMPONENTS")) {
+        menuItems.pushObjects([
+          O.create({
+            label: Em.I18n.t('common.add'),
+            operationData: O.create({
+              action: 'ADD',
+              message: Em.I18n.t('common.add'),
+              componentName: content.componentName,
+              serviceName: content.serviceName,
+              componentNameFormatted: content.componentNameFormatted
+            })
+          })
+        ])
+      }
       if (App.isAuthorized("SERVICE.DECOMMISSION_RECOMMISSION") && App.get('components.decommissionAllowed').contains(content.componentName)) {
         menuItems.pushObjects([
           O.create({
@@ -193,7 +207,7 @@ App.HostTableMenuView = Em.View.extend({
 
       tooltipMsg: function () {
         return (this.get('disabledElement') == 'disabled') ?
-          Em.I18n.t('hosts.decommission.tooltip.warning').format(this.get('content.message'), App.format.role(this.get('content.componentName'))) : '';
+          Em.I18n.t('hosts.decommission.tooltip.warning').format(this.get('content.message'), App.format.role(this.get('content.componentName'), false)) : '';
       }.property('disabledElement', 'content.componentName'),
 
       disabledElement: function () {
@@ -262,6 +276,13 @@ App.HostTableMenuView = Em.View.extend({
             operationData: O.create({
               action: 'RESTART',
               message: Em.I18n.t('hosts.table.menu.l2.restartAllComponents')
+            })
+          }),
+          O.create({
+            label: Em.I18n.t('hosts.table.menu.l2.reinstallFailedComponents'),
+            operationData: O.create({
+              action: 'REINSTALL',
+              message: Em.I18n.t('hosts.table.menu.l2.reinstallFailedComponents')
             })
           })
         ]);

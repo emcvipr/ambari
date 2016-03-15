@@ -32,6 +32,7 @@ import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.HostVersionEntity;
 import org.apache.ambari.server.orm.entities.PrivilegeEntity;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
+import org.apache.ambari.server.orm.entities.UpgradeEntity;
 import org.apache.ambari.server.security.authorization.AuthorizationException;
 import org.apache.ambari.server.state.configgroup.ConfigGroup;
 import org.apache.ambari.server.state.scheduler.RequestExecution;
@@ -194,9 +195,8 @@ public interface Cluster {
    * {@link Cluster#mapHostVersions} is that it affects all hosts (not only
    * missing hosts).
    * <p/>
-   * Hosts that are in maintenance mode will not be included. These hosts have
-   * been explicitely marked as being in maintenance andd are not included in
-   * this operation.
+   * Hosts that are in maintenance mode will be transititioned directly into
+   * {@link RepositoryVersionState#OUT_OF_SYNC} instead.
    *
    * @param sourceClusterVersion
    *          cluster version to be queried for a stack name/version info and
@@ -416,6 +416,13 @@ public interface Cluster {
   Map<String, DesiredConfig> getDesiredConfigs();
 
   /**
+   * Gets the active desired configurations for the cluster.
+   * @param bypassCache don't use cached values
+   * @return a map of type-to-configuration information.
+   */
+  Map<String, DesiredConfig> getDesiredConfigs(boolean bypassCache);
+
+  /**
    * Gets all versions of the desired configurations for the cluster.
    * @return a map of type-to-configuration information.
    */
@@ -631,4 +638,18 @@ public interface Cluster {
    * @return true if the cluster was deployed with a Blueprint otherwise false.
    */
   boolean isBluePrintDeployed();
+
+  /**
+   * @return upgrade that is in progress for a cluster. If no upgrade is going
+   * on, a null is returned.
+   */
+  UpgradeEntity getUpgradeEntity();
+
+  /**
+   * The value is explicitly set on the ClusterEntity when Creating,
+   * Aborting (switching to downgrade), Resuming, or Finalizing an upgrade.
+   * @param upgradeEntity the upgrade entity to set for cluster
+   * @throws AmbariException
+   */
+  void setUpgradeEntity(UpgradeEntity upgradeEntity) throws AmbariException;
 }

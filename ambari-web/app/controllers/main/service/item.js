@@ -18,8 +18,9 @@
 
 var App = require('app');
 var batchUtils = require('utils/batch_scheduled_requests');
+var blueprintUtils = require('utils/blueprint');
 
-App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDownload, App.InstallComponent, {
+App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDownload, App.InstallComponent, App.ConfigsSaverMixin, App.EnhancedConfigsMixin, {
   name: 'mainServiceItemController',
 
   /**
@@ -44,44 +45,37 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
     }
   },
 
+  /**
+   * Map of service names and lists of sites they need to load
+   */
+  serviceConfigsMap: {
+    'OOZIE': ['oozie-env']
+  },
+
+  /**
+   * Configs loaded to use for service actions menu
+   *
+   * format: {config-type: {property-name1: property-value1, property-name2: property-value2, ...}}
+   */
+  configs: {},
+
+  /**
+   * @type {boolean}
+   * @default true
+   */
+  isPending: true,
+
+  /**
+   * @type {boolean}
+   * @default false
+   */
   isServicesInfoLoaded: false,
 
-  initHosts: function() {
-    if (App.get('components.masters').length !== 0) {
-      ['HBASE_MASTER', 'HIVE_METASTORE', 'ZOOKEEPER_SERVER', 'FLUME_HANDLER', 'HIVE_SERVER', 'RANGER_KMS_SERVER', 'NIMBUS'].forEach(function(componentName) {
-        this.loadHostsWithoutComponent(componentName);
-      }, this);
-    }
-  }.observes('App.components.masters', 'content.hostComponents.length'),
-
-  loadHostsWithoutComponent: function (componentName) {
-    var self = this;
-    var hostsWithComponent = App.HostComponent.find().filterProperty('componentName', componentName).mapProperty('hostName');
-
-    var hostsWithoutComponent = App.get('allHostNames').filter(function(hostName) {
-      return !hostsWithComponent.contains(hostName);
-    });
-
-    self.set('add' + componentName, function() {
-      App.get('router.mainAdminKerberosController').getKDCSessionState(function() {
-        self.addComponent(componentName);
-      });
-    });
-
-    Em.defineProperty(self, 'addDisabledTooltip-' + componentName, Em.computed('isAddDisabled-' + componentName, 'addDisabledMsg-' + componentName, function() {
-      if (self.get('isAddDisabled-' + componentName)) {
-        return self.get('addDisabledMsg-' + componentName);
-      }
-    }));
-
-    Em.defineProperty(self, 'isAddDisabled-' + componentName, Em.computed('hostsWithoutComponent-' + componentName, function() {
-      return self.get('hostsWithoutComponent-' + componentName).length === 0 ? 'disabled' : '';
-    }));
-
-    var disabledMsg = Em.I18n.t('services.summary.allHostsAlreadyRunComponent').format(componentName);
-    self.set('hostsWithoutComponent-' + componentName, hostsWithoutComponent);
-    self.set('addDisabledMsg-' + componentName, disabledMsg);
-  },
+  /**
+   * Define whether configs for service actions menu were loaded
+   * @type {Boolean}
+   */
+  isServiceConfigsLoaded: false,
 
   /**
    * flag to control router switch between service summary and configs
@@ -111,6 +105,123 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
     });
     return clientNames;
   }.property('content.serviceName'),
+
+  /**
+   * Returns interdependent services
+   *
+   * @returns {string[]}
+   */
+  interDependentServices: function() {
+    var serviceName = this.get('content.serviceName'), interDependentServices = [];
+    App.StackService.find(serviceName).get('requiredServices').forEach(function(requiredService) {
+      if (App.StackService.find(requiredService).get('requiredServices').contains(serviceName)) {
+        interDependentServices.push(requiredService);
+      }
+    });
+    return interDependentServices;
+  }.property('content.serviceName'),
+
+  /**
+   * collection of serviceConfigs
+   *
+   * @type {Object[]}
+   */
+  stepConfigs: [],
+
+  /**
+   * List of service names that have configs dependent on current service configs
+   *
+   * @type {String[]}
+   */
+  dependentServiceNames: function() {
+    return App.StackService.find(this.get('content.serviceName')).get('dependentServiceNames');
+  }.property('content.serviceName'),
+
+  /**
+   * List of service names that could be deleted
+   * Common case when there is only current service should be removed
+   * But for some services there is <code>interDependentServices<code> services
+   * Like 'YARN' depends on 'MAPREDUCE2' and 'MAPREDUCE2' depends on 'YARN'
+   * So these services can be removed only together
+   *
+   * @type {String[]}
+   */
+  serviceNamesToDelete: function() {
+    return [this.get('content.serviceName')].concat(this.get('interDependentServices'));
+  }.property('content.serviceName'),
+
+  /**
+   * List of config types that should be loaded
+   * Includes
+   * 1. Dependent services config-types
+   * 2. Some special cases from <code>serviceConfigsMap<code>
+   * 3. 'cluster-env'
+   *
+   * @type {String[]}
+   */
+  sitesToLoad: function() {
+    var services = this.get('dependentServiceNames'), configTypeList = [];
+    if (services.length) {
+      var configTypeList = App.StackService.find().filter(function(s) {
+        return services.contains(s.get('serviceName'));
+      }).mapProperty('configTypeList').reduce(function(p, v) {
+        return p.concat(v);
+      });
+    }
+    if (this.get('serviceConfigsMap')[this.get('content.serviceName')]) {
+      configTypeList = configTypeList.concat(this.get('serviceConfigsMap')[this.get('content.serviceName')]);
+    }
+    configTypeList.push('cluster-env');
+    return configTypeList.uniq();
+  }.property('content.serviceName'),
+
+  /**
+   * Load all config tags for loading configs
+   */
+  loadConfigs: function(){
+    this.set('isServiceConfigsLoaded', false);
+    App.ajax.send({
+      name: 'config.tags',
+      sender: this,
+      success: 'onLoadConfigsTags',
+      error: 'onTaskError'
+    });
+  },
+
+  /**
+   * Load all configs for sites from <code>serviceConfigsMap</code> for current service
+   * @param data
+   */
+  onLoadConfigsTags: function (data) {
+    var self = this;
+    var sitesToLoad = this.get('sitesToLoad'), allConfigs = [];
+    var loadedSites = data.Clusters.desired_configs;
+    var siteTagsToLoad = [];
+    for (var site in loadedSites) {
+      if (sitesToLoad.contains(site)) {
+        siteTagsToLoad.push({
+          siteName: site,
+          tagName: loadedSites[site].tag
+        });
+      }
+    }
+    App.router.get('configurationController').getConfigsByTags(siteTagsToLoad).done(function (configs) {
+      configs.forEach(function (site) {
+        self.get('configs')[site.type] = site.properties;
+        allConfigs = allConfigs.concat(App.config.getConfigsFromJSON(site, true));
+      });
+
+      self.get('dependentServiceNames').forEach(function(serviceName) {
+        var configTypes = App.StackService.find(serviceName).get('configTypeList');
+        var configsByService = allConfigs.filter(function (c) {
+          return configTypes.contains(App.config.getConfigTagFromFileName(c.get('filename')));
+        });
+        self.get('stepConfigs').pushObject(App.config.createServiceConfig(serviceName, [], configsByService));
+      });
+
+      self.set('isServiceConfigsLoaded', true);
+    });
+  },
 
   /**
    * Common method for ajax (start/stop service) responses
@@ -489,46 +600,6 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
   },
 
   /**
-   * On click handler for hawq stop cluster command from items menu
-   */
-
-  immediateStopHawqCluster: function(context) {
-    var controller = this;
-    return App.showConfirmationPopup(function() {
-      App.ajax.send({
-        name: 'service.item.immediateStopHawqCluster',
-        sender: controller,
-        data: {
-          command: context.command,
-          context: Em.I18n.t('services.service.actions.run.immediateStopHawqCluster.context'),
-          hosts: App.Service.find(context.service).get('hostComponents').findProperty('componentName', 'HAWQMASTER').get('hostName'),
-          serviceName: context.service,
-          componentName: context.component,
-        },
-        success : 'executeImmediateStopHawqClusterCmdSuccessCallback',
-        error : 'executeImmediateStopHawqClusterCmdErrorCallback'
-      });
-    });
-  },
-
-  executeImmediateStopHawqClusterCmdSuccessCallback  : function(data, ajaxOptions, params) {
-    if (data.Requests.id) {
-      App.router.get('backgroundOperationsController').showPopup();
-    }
-  },
-
-  executeImmediateStopHawqClusterCmdErrorCallback : function(data) {
-    var error = Em.I18n.t('services.service.actions.run.immediateStopHawqCluster.error');
-    if(data && data.responseText){
-      try {
-        var json = $.parseJSON(data.responseText);
-        error += json.message;
-      } catch (err) {}
-    }
-    App.showAlertPopup(Em.I18n.t('services.service.actions.run.immediateStopHawqCluster.error'), error);
-  },
-
-  /**
    * On click handler for rebalance Hdfs command from items menu
    */
   rebalanceHdfsNodes: function () {
@@ -769,60 +840,59 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
     var component = App.StackServiceComponent.find().findProperty('componentName', componentName);
     var componentDisplayName = component.get('displayName');
 
-    self.loadHostsWithoutComponent(componentName);
+    App.get('router.mainAdminKerberosController').getKDCSessionState(function () {
+      return App.ModalPopup.show({
+        primary: Em.computed.ifThenElse('anyHostsWithoutComponent', Em.I18n.t('hosts.host.addComponent.popup.confirm'), undefined),
 
-    return App.ModalPopup.show({
-      primary: Em.computed.ifThenElse('anyHostsWithoutComponent', Em.I18n.t('hosts.host.addComponent.popup.confirm'), undefined),
+        header: Em.I18n.t('popup.confirmation.commonHeader'),
 
-      header: Em.I18n.t('popup.confirmation.commonHeader'),
+        addComponentMsg: Em.I18n.t('hosts.host.addComponent.msg').format(componentDisplayName),
 
-      addComponentMsg: Em.I18n.t('hosts.host.addComponent.msg').format(componentDisplayName),
+        selectHostMsg: Em.computed.i18nFormat('services.summary.selectHostForComponent', 'componentDisplayName'),
 
-      selectHostMsg: Em.computed.i18nFormat('services.summary.selectHostForComponent', 'componentDisplayName'),
+        thereIsNoHostsMsg: Em.computed.i18nFormat('services.summary.allHostsAlreadyRunComponent', 'componentDisplayName'),
 
-      thereIsNoHostsMsg: Em.computed.i18nFormat('services.summary.allHostsAlreadyRunComponent', 'componentDisplayName'),
+        hostsWithoutComponent: function () {
+          var hostsWithComponent = App.HostComponent.find().filterProperty('componentName', componentName).mapProperty('hostName');
+          var result = App.get('allHostNames');
 
-      hostsWithoutComponent: function() {
-        return self.get("hostsWithoutComponent-" + this.get('componentName'));
-      }.property('componentName', 'self.hostsWithoutComponent-' + this.get('componentName')),
+          hostsWithComponent.forEach(function (host) {
+            result = result.without(host);
+          });
 
-      anyHostsWithoutComponent: Em.computed.gt('hostsWithoutComponent.length', 0),
+          return result;
+        }.property(),
 
-      selectedHost: null,
+        anyHostsWithoutComponent: Em.computed.gt('hostsWithoutComponent.length', 0),
 
-      componentName: componentName,
+        selectedHost: null,
 
-      componentDisplayName: componentDisplayName,
+        componentName: componentName,
 
-      bodyClass: Em.View.extend({
-        templateName: require('templates/main/service/add_host_popup')
-      }),
+        componentDisplayName: componentDisplayName,
 
-      onPrimary: function () {
-        var selectedHost = this.get('selectedHost');
+        bodyClass: Em.View.extend({
+          templateName: require('templates/main/service/add_host_popup')
+        }),
 
-        // Install
-        if(['HIVE_METASTORE', 'RANGER_KMS_SERVER', 'NIMBUS'].contains(component.get('componentName')) && !!selectedHost){
-          App.router.get('mainHostDetailsController').addComponentWithCheck(
-            {
-              context: component,
-              selectedHost: selectedHost
-            }
-          );
-        } else {
-          self.installHostComponentCall(selectedHost, component);
+        onPrimary: function () {
+          var selectedHost = this.get('selectedHost');
+
+          // Install
+          if (['HIVE_METASTORE', 'RANGER_KMS_SERVER', 'NIMBUS'].contains(component.get('componentName')) && !!selectedHost) {
+            App.router.get('mainHostDetailsController').addComponentWithCheck(
+                {
+                  context: component,
+                  selectedHost: selectedHost
+                }
+            );
+          } else {
+            self.installHostComponentCall(selectedHost, component);
+          }
+
+          this.hide();
         }
-
-        // Remove host from 'without' collection to immediate recalculate add menu item state
-        var hostsWithoutComponent = this.get('hostsWithoutComponent');
-        var index = hostsWithoutComponent.indexOf(this.get('selectedHost'));
-        if (index > -1) {
-          hostsWithoutComponent.splice(index, 1);
-        }
-
-        self.set('hostsWithoutComponent-' + this.get('componentName'), hostsWithoutComponent);
-        this.hide();
-      }
+      });
     });
   },
 
@@ -869,23 +939,38 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
   }.property('content.serviceName'),
 
   enableHighAvailability: function() {
-    var ability_controller = App.router.get('mainAdminHighAvailabilityController');
-    ability_controller.enableHighAvailability();
+    var highAvailabilityController = App.router.get('mainAdminHighAvailabilityController');
+    highAvailabilityController.enableHighAvailability();
   },
 
   disableHighAvailability: function() {
-    var ability_controller = App.router.get('mainAdminHighAvailabilityController');
-    ability_controller.disableHighAvailability();
+    var highAvailabilityController = App.router.get('mainAdminHighAvailabilityController');
+    highAvailabilityController.disableHighAvailability();
   },
 
   enableRMHighAvailability: function() {
-    var ability_controller = App.router.get('mainAdminHighAvailabilityController');
-    ability_controller.enableRMHighAvailability();
+    var highAvailabilityController = App.router.get('mainAdminHighAvailabilityController');
+    highAvailabilityController.enableRMHighAvailability();
+  },
+
+  addHawqStandby: function() {
+    var highAvailabilityController = App.router.get('mainAdminHighAvailabilityController');
+    highAvailabilityController.addHawqStandby();
+  },
+
+  removeHawqStandby: function() {
+    var highAvailabilityController = App.router.get('mainAdminHighAvailabilityController');
+    highAvailabilityController.removeHawqStandby();
+  },
+
+  activateHawqStandby: function() {
+    var highAvailabilityController = App.router.get('mainAdminHighAvailabilityController');
+    highAvailabilityController.activateHawqStandby();
   },
 
   enableRAHighAvailability: function() {
-    var ability_controller = App.router.get('mainAdminHighAvailabilityController');
-    ability_controller.enableRAHighAvailability();
+    var highAvailabilityController = App.router.get('mainAdminHighAvailabilityController');
+    highAvailabilityController.enableRAHighAvailability();
   },
 
   downloadClientConfigs: function (event) {
@@ -894,6 +979,29 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
       serviceName: this.get('content.serviceName'),
       componentName: (event && event.name) || component.get('componentName'),
       displayName: (event && event.label) || component.get('displayName')
+    });
+  },
+
+  /**
+   * On click handler for custom hawq command from items menu
+   * @param context
+   */
+  executeHawqCustomCommand: function(context) {
+    var controller = this;
+    return App.showConfirmationPopup(function() {
+      App.ajax.send({
+        name : 'service.item.executeCustomCommand',
+        sender: controller,
+        data : {
+          command : context.command,
+          context : context.label,
+          hosts : App.Service.find(context.service).get('hostComponents').findProperty('componentName', context.component).get('hostName'),
+          serviceName : context.service,
+          componentName : context.component
+        },
+        success : 'executeCustomCommandSuccessCallback',
+        error : 'executeCustomCommandErrorCallback'
+      });
     });
   },
 
@@ -938,5 +1046,313 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
     App.showAlertPopup(Em.I18n.t('services.service.actions.run.executeCustomCommand.error'), error);
   },
 
-  isPending:true
+  /**
+   * find dependent services
+   * @param {string[]} serviceNamesToDelete
+   * @returns {Array}
+   */
+  findDependentServices: function (serviceNamesToDelete) {
+    var dependentServices = [];
+
+    App.Service.find().forEach(function (service) {
+      if (!serviceNamesToDelete.contains(service.get('serviceName'))) {
+        var requiredServices = App.StackService.find(service.get('serviceName')).get('requiredServices');
+        serviceNamesToDelete.forEach(function (dependsOnService) {
+          if (requiredServices.contains(dependsOnService)) {
+            dependentServices.push(service.get('serviceName'));
+          }
+        });
+      }
+    }, this);
+    return dependentServices;
+  },
+
+  /**
+   * @param serviceNames
+   * @returns {string}
+   */
+  servicesDisplayNames: function(serviceNames) {
+    return serviceNames.map(function(serviceName) {
+      return App.format.role(serviceName, true);
+    }).join(',');
+  },
+
+  /**
+   * Is services can be removed based on work status
+   * @param serviceNames
+   */
+  allowUninstallServices: function(serviceNames) {
+    return !App.Service.find().filter(function (service) {
+      return serviceNames.contains(service.get('serviceName'));
+    }).mapProperty('workStatus').some(function (workStatus) {
+      return !App.Service.allowUninstallStates.contains(workStatus);
+    });
+  },
+
+  /**
+   * delete service action
+   * @param {string} serviceName
+   */
+  deleteService: function(serviceName) {
+    var self = this,
+      interDependentServices = this.get('interDependentServices'),
+      serviceNamesToDelete = this.get('serviceNamesToDelete'),
+      dependentServices = this.findDependentServices(serviceNamesToDelete),
+      displayName = App.format.role(serviceName, true),
+      popupHeader = Em.I18n.t('services.service.delete.popup.header'),
+      dependentServicesToDeleteFmt = this.servicesDisplayNames(interDependentServices);
+
+    if (App.Service.find().get('length') === 1) {
+      //at least one service should be installed
+      App.ModalPopup.show({
+        secondary: null,
+        header: popupHeader,
+        encodeBody: false,
+        body: Em.I18n.t('services.service.delete.lastService.popup.body').format(displayName)
+      });
+    } else if (dependentServices.length > 0) {
+      this.dependentServicesWarning(serviceName, dependentServices);
+    } else if (this.allowUninstallServices(serviceNamesToDelete)) {
+      App.showConfirmationPopup(
+        function() {self.confirmDeleteService(serviceName, interDependentServices, dependentServicesToDeleteFmt)},
+        Em.I18n.t('services.service.delete.popup.warning').format(displayName) +
+        (interDependentServices.length ? Em.I18n.t('services.service.delete.popup.warning.dependent').format(dependentServicesToDeleteFmt) : ''),
+        null,
+        popupHeader,
+        Em.I18n.t('common.delete'),
+        true
+      );
+    } else {
+      var body = Em.I18n.t('services.service.delete.popup.mustBeStopped').format(displayName);
+      if (interDependentServices.length) {
+        body += Em.I18n.t('services.service.delete.popup.mustBeStopped.dependent').format(dependentServicesToDeleteFmt)
+      }
+      App.ModalPopup.show({
+        secondary: null,
+        header: popupHeader,
+        encodeBody: false,
+        body: body
+      });
+    }
+  },
+
+  /**
+   * warning that show dependent services which must be deleted prior to chosen service deletion
+   * @param {string} origin
+   * @param {Array.<string>} dependent
+   * @returns {App.ModalPopup}
+   */
+  dependentServicesWarning: function(origin, dependent) {
+    var body = Em.I18n.t('services.service.delete.popup.dependentServices').format(App.format.role(origin, true));
+
+    body += '<ul>';
+    dependent.forEach(function(serviceName) {
+      body += '<li>' + App.format.role(serviceName, true) + '</li>';
+    });
+    body += '</ul>';
+
+    return App.ModalPopup.show({
+      secondary: null,
+      header: Em.I18n.t('services.service.delete.popup.header'),
+      bodyClass: Em.View.extend({
+        template: Em.Handlebars.compile(body)
+      })
+    });
+  },
+
+  /**
+   * Confirmation popup of service deletion
+   * @param {string} serviceName
+   * @param {string[]} [dependentServiceNames]
+   * @param {string} [servicesToDeleteFmt]
+   */
+  confirmDeleteService: function (serviceName, dependentServiceNames, servicesToDeleteFmt) {
+    var confirmKey = 'delete',
+        self = this,
+        message = Em.I18n.t('services.service.confirmDelete.popup.body').format(App.format.role(serviceName, true), confirmKey);
+
+    if (dependentServiceNames.length > 0) {
+      message = Em.I18n.t('services.service.confirmDelete.popup.body.dependent')
+                .format(App.format.role(serviceName, true), servicesToDeleteFmt, confirmKey);
+    }
+
+    App.ModalPopup.show({
+
+      /**
+       * @function onPrimary
+       */
+      onPrimary: function() {
+        self.deleteServiceCall([serviceName].concat(dependentServiceNames));
+        this._super();
+      },
+
+      /**
+       * @type {string}
+       */
+      primary: Em.I18n.t('common.delete'),
+
+      /**
+       * @type {string}
+       */
+      primaryClass: 'btn-danger',
+
+      /**
+       * @type {string}
+       */
+      header: Em.I18n.t('services.service.confirmDelete.popup.header'),
+
+      /**
+       * @type {string}
+       */
+      confirmInput: '',
+
+      /**
+       * @type {boolean}
+       */
+      disablePrimary: Em.computed.notEqual('confirmInput', confirmKey),
+
+      /**
+       * @type {Em.View}
+       */
+      bodyClass: Em.View.extend({
+        confirmKey: confirmKey,
+        typeMessage: Em.I18n.t('services.service.confirmDelete.popup.body.type').format(confirmKey),
+        template: Em.Handlebars.compile(message +
+        '<div class="form-inline align-center"></br>' +
+        '<label><b>{{view.typeMessage}}</b></label>&nbsp;' +
+        '{{view Ember.TextField valueBinding="view.parentView.confirmInput" class="input-small"}}</br>' +
+        '</div>')
+      }),
+
+      enterKeyPressed: function(e) {
+        if (this.get('disablePrimary')) return;
+        this.onPrimary();
+      }
+    });
+  },
+
+  /**
+   * All host names
+   * This property required for request for recommendations
+   *
+   * @type {String[]}
+   * @override
+   */
+  hostNames: Em.computed.alias('App.allHostNames'),
+
+  /**
+   * Recommendation object
+   * This property required for request for recommendations
+   *
+   * @type {Object}
+   * @override
+   */
+  hostGroups: function() {
+    var hostGroup = blueprintUtils.generateHostGroups(App.get('allHostNames'));
+    return blueprintUtils.removeDeletedComponents(hostGroup, [this.get('serviceNamesToDelete')]);
+  }.property('serviceNamesToDelete', 'App.allHostNames'),
+
+  /**
+   * List of services without removed
+   * This property required for request for recommendations
+   *
+   * @type {String[]}
+   * @override
+   */
+  serviceNames: function() {
+    return App.Service.find().filter(function(s) {
+      return !this.get('serviceNamesToDelete').contains(s.get('serviceName'));
+    }, this).mapProperty('serviceName');
+  }.property('serviceNamesToDelete'),
+
+  /**
+   * This property required for request for recommendations
+   *
+   * @return {Boolean}
+   * @override
+   */
+  isConfigHasInitialState: function() { return false; },
+
+  /**
+   * Describes condition when recommendation should be applied
+   * For removing services it's always true
+   * This property required for request for recommendations
+   *
+   * @return {Boolean}
+   * @override
+   */
+  allowUpdateProperty: function() { return true; },
+
+  /**
+   * Just config version note
+   *
+   * @type {String}
+   */
+  serviceConfigVersionNote: function() {
+    var services = this.get('serviceNamesToDelete').join(',');
+    if (this.get('serviceNamesToDelete.length') === 1) {
+      return Em.I18n.t('services.service.delete.configVersionNote').format(services);
+    }
+    return Em.I18n.t('services.service.delete.configVersionNote.plural').format(services);
+  }.property('serviceNamesToDelete'),
+
+  /**
+   * Method ot save configs after service have been removed
+   * @override
+   */
+  saveConfigs: function() {
+    var data = [];
+    this.get('stepConfigs').forEach(function(stepConfig) {
+      var serviceConfig = this.getServiceConfigToSave(stepConfig.get('serviceName'), stepConfig.get('configs'));
+
+      if (serviceConfig)  {
+        data.push(serviceConfig);
+      }
+    }, this);
+
+    if (Em.isArray(data) && data.length) {
+      this.putChangedConfigurations(data, 'onSaveConfigs');
+    } else {
+      this.onSaveConfigs();
+    }
+  },
+
+  onSaveConfigs: function() {
+    window.location.reload();
+  },
+
+  /**
+   * Ajax call to delete service
+   * @param {string[]} serviceNames
+   * @returns {$.ajax}
+   */
+  deleteServiceCall: function(serviceNames) {
+    var serviceToDeleteNow = serviceNames[0];
+    if (serviceNames.length > 1) {
+      var servicesToDeleteNext = serviceNames.slice(1);
+    }
+    return App.ajax.send({
+      name : 'common.delete.service',
+      sender: this,
+      data : {
+        serviceName : serviceToDeleteNow,
+        servicesToDeleteNext: servicesToDeleteNext
+      },
+      success : 'deleteServiceCallSuccessCallback',
+      error: 'deleteServiceCallErrorCallback'
+    });
+  },
+
+  deleteServiceCallSuccessCallback: function(data, ajaxOptions, params) {
+    if (params.servicesToDeleteNext) {
+      this.deleteServiceCall(params.servicesToDeleteNext);
+    } else {
+      this.loadConfigRecommendations(null, this.saveConfigs.bind(this));
+    }
+  },
+
+  deleteServiceCallErrorCallback: function (jqXHR, ajaxOptions, error, opt) {
+    App.ajax.defaultErrorHandler(jqXHR, opt.url, opt.method, jqXHR.status);
+  }
+
 });

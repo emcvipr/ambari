@@ -153,6 +153,23 @@ App.HostComponentView = Em.View.extend({
   isActive: Em.computed.equal('content.passiveState', 'OFF'),
 
   /**
+   *  Tooltip message for switch maintenance mode option
+   *  @type {Strting}
+   */
+  maintenanceTooltip: function () {
+    switch (this.get('content.passiveState')) {
+      case 'IMPLIED_FROM_SERVICE':
+        return Em.I18n.t('passiveState.disabled.impliedFromHighLevel').format(this.get('content.displayName'), this.get('content.service.serviceName'));
+      case 'IMPLIED_FROM_HOST':
+        return Em.I18n.t('passiveState.disabled.impliedFromHighLevel').format(this.get('content.displayName'), this.get('content.host.hostName'));
+      case 'IMPLIED_FROM_SERVICE_AND_HOST':
+        return Em.I18n.t('passiveState.disabled.impliedFromServiceAndHost').format(this.get('content.displayName'), this.get('content.service.serviceName'), this.get('content.host.hostName'));
+      default:
+        return '';
+    }
+  }.property('content.passiveState'),
+
+  /**
    * Shows whether we need to show Delete button
    * @type {bool}
    */
@@ -294,15 +311,19 @@ App.HostComponentView = Em.View.extend({
         return;
       }
 
-      var isContextPresent = command in App.HostComponentActionMap.getMap(self) && App.HostComponentActionMap.getMap(self)[command].context;
-      customCommands.push({
-        label: self.getCustomCommandLabel(command),
-        service: component.get('serviceName'),
-        hosts: hostComponent.get('hostName'),
-        context: isContextPresent ? App.HostComponentActionMap.getMap(self)[command].context : null,
-        component: component.get('componentName'),
-        command: command
-      });
+      var commandMap = App.HostComponentActionMap.getMap(self)[command];
+      // push command if either there is no map or map is not instructing to hide command from this view
+      if (!commandMap || !commandMap.hideFromComponentView) {
+        customCommands.push({
+          label: self.getCustomCommandLabel(command),
+          service: component.get('serviceName'),
+          hosts: hostComponent.get('hostName'),
+          context: (!!commandMap && !!commandMap.context) ? commandMap.context : null,
+          component: component.get('componentName'),
+          command: command,
+          disabled: !!commandMap ? !!commandMap.disabled : false
+        });
+      }
     });
 
     return customCommands;

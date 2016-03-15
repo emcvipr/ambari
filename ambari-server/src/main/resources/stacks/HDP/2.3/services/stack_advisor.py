@@ -26,18 +26,26 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
     parentComponentLayoutRecommendations = super(HDP23StackAdvisor, self).createComponentLayoutRecommendations(services, hosts)
 
     hostsList = [host["Hosts"]["host_name"] for host in hosts["items"]]
+    hostGroups = parentComponentLayoutRecommendations["blueprint"]["host_groups"]
     servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
 
-    # remove HAWQSTANDBY on a single node
-    if len(hostsList) == 1 and "HAWQ" in servicesList:
-      components = parentComponentLayoutRecommendations["blueprint"]["host_groups"][0]["components"]
-      components = [ component for component in components if component["name"] != 'HAWQSTANDBY' ]
-      parentComponentLayoutRecommendations["blueprint"]["host_groups"][0]["components"] = components
+    if "HAWQ" in servicesList:
+      # remove HAWQSTANDBY on a single node
+      if len(hostsList) == 1:
+        components = parentComponentLayoutRecommendations["blueprint"]["host_groups"][0]["components"]
+        components = [component for component in components if component["name"] != 'HAWQSTANDBY']
+        parentComponentLayoutRecommendations["blueprint"]["host_groups"][0]["components"] = components
+
+      # co-locate HAWQSEGMENT with DATANODE
+      for host_group in hostGroups:
+        if {"name": "DATANODE"} in host_group["components"] and {"name": "HAWQSEGMENT"} not in host_group["components"]:
+          host_group["components"].append({"name": "HAWQSEGMENT"})
+        if {"name": "DATANODE"} not in host_group["components"] and {"name": "HAWQSEGMENT"} in host_group["components"]:
+          host_group["components"].remove({"name": "HAWQSEGMENT"})
 
     # co-locate PXF with NAMENODE and DATANODE
     if "PXF" in servicesList:
-      host_groups = parentComponentLayoutRecommendations["blueprint"]["host_groups"]
-      for host_group in host_groups:
+      for host_group in hostGroups:
         if ({"name": "NAMENODE"} in host_group["components"] or {"name": "DATANODE"} in host_group["components"]) \
             and {"name": "PXF"} not in host_group["components"]:
           host_group["components"].append({"name": "PXF"})
@@ -47,53 +55,76 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
   def getComponentLayoutValidations(self, services, hosts):
     parentItems = super(HDP23StackAdvisor, self).getComponentLayoutValidations(services, hosts)
 
-    hiveExists = "HIVE" in [service["StackServices"]["service_name"] for service in services["services"]]
-    sparkExists = "SPARK" in [service["StackServices"]["service_name"] for service in services["services"]]
-
-    if not "HAWQ" in [service["StackServices"]["service_name"] for service in services["services"]] and not sparkExists:
-      return parentItems
-
-    childItems = []
-    hostsList = [host["Hosts"]["host_name"] for host in hosts["items"]]
-    hostsCount = len(hostsList)
-
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
     componentsListList = [service["components"] for service in services["services"]]
-    componentsList = [item for sublist in componentsListList for item in sublist]
-    hawqMasterHosts = [component["StackServiceComponents"]["hostnames"][0] for component in componentsList if component["StackServiceComponents"]["component_name"] == "HAWQMASTER"]
-    hawqStandbyHosts = [component["StackServiceComponents"]["hostnames"][0] for component in componentsList if component["StackServiceComponents"]["component_name"] == "HAWQSTANDBY"]
+    componentsList = [item["StackServiceComponents"] for sublist in componentsListList for item in sublist]
+    childItems = []
 
-    # single node case is not analyzed because HAWQ Standby Master will not be present in single node topology due to logic in createComponentLayoutRecommendations()
-    if len(hawqMasterHosts) == 1 and len(hawqStandbyHosts) == 1 and hawqMasterHosts == hawqStandbyHosts:
-      message = "HAWQ Standby Master and HAWQ Master should not be deployed on the same host."
-      childItems.append( { "type": 'host-component', "level": 'ERROR', "message": message, "component-name": 'HAWQSTANDBY', "host": hawqStandbyHosts[0] } )
+    if "HAWQ" in servicesList:
+      hostsList = [host["Hosts"]["host_name"] for host in hosts["items"]]
+      hostsCount = len(hostsList)
 
-    if len(hawqMasterHosts) ==  1 and hostsCount > 1 and self.isLocalHost(hawqMasterHosts[0]):
-      message = "HAWQ Master and Ambari Server should not be deployed on the same host. " \
-                "If you leave them collocated, make sure to set HAWQ Master Port property " \
-                "to a value different from the port number used by Ambari Server database."
-      childItems.append( { "type": 'host-component', "level": 'WARN', "message": message, "component-name": 'HAWQMASTER', "host": hawqMasterHosts[0] } )
+      hawqMasterHosts = self.__getHosts(componentsList, "HAWQMASTER")
+      hawqStandbyHosts = self.__getHosts(componentsList, "HAWQSTANDBY")
+      hawqSegmentHosts = self.__getHosts(componentsList, "HAWQSEGMENT")
+      datanodeHosts = self.__getHosts(componentsList, "DATANODE")
 
-    if len(hawqStandbyHosts) ==  1 and hostsCount > 1 and self.isLocalHost(hawqStandbyHosts[0]):
-      message = "HAWQ Standby Master and Ambari Server should not be deployed on the same host. " \
-                "If you leave them collocated, make sure to set HAWQ Master Port property " \
-                "to a value different from the port number used by Ambari Server database."
-      childItems.append( { "type": 'host-component', "level": 'WARN', "message": message, "component-name": 'HAWQSTANDBY', "host": hawqStandbyHosts[0] } )
+      # Generate WARNING if any HAWQSEGMENT is not colocated with a DATANODE
+      mismatchHosts = sorted(set(hawqSegmentHosts).symmetric_difference(set(datanodeHosts)))
+      if len(mismatchHosts) > 0:
+        hostsString = ', '.join(mismatchHosts)
+        message = "HAWQ Segment must be installed on all DataNodes. " \
+                  "The following {0} host(s) do not satisfy the colocation recommendation: {1}".format(len(mismatchHosts), hostsString)
+        childItems.append( { "type": 'host-component', "level": 'WARN', "message": message, "component-name": 'HAWQSEGMENT' } )
 
-    if "SPARK_THRIFTSERVER" in [service["StackServices"]["service_name"] for service in services["services"]]:
-      if not "HIVE_SERVER" in [service["StackServices"]["service_name"] for service in services["services"]]:
-        message = "SPARK_THRIFTSERVER requires HIVE services to be selected."
-        childItems.append( {"type": 'host-component', "level": 'ERROR', "message": messge, "component-name": 'SPARK_THRIFTSERVER'} )
+      # single node case is not analyzed because HAWQ Standby Master will not be present in single node topology due to logic in createComponentLayoutRecommendations()
+      if len(hawqMasterHosts) == 1 and len(hawqStandbyHosts) == 1 and hawqMasterHosts == hawqStandbyHosts:
+        message = "HAWQ Master and HAWQ Standby Master cannot be deployed on the same host."
+        childItems.append( { "type": 'host-component', "level": 'ERROR', "message": message, "component-name": 'HAWQSTANDBY', "host": hawqStandbyHosts[0] } )
 
-    hmsHosts = [component["StackServiceComponents"]["hostnames"] for component in componentsList if component["StackServiceComponents"]["component_name"] == "HIVE_METASTORE"][0] if hiveExists else []
-    sparkTsHosts = [component["StackServiceComponents"]["hostnames"] for component in componentsList if component["StackServiceComponents"]["component_name"] == "SPARK_THRIFTSERVER"][0] if sparkExists else []
+      if len(hawqMasterHosts) ==  1 and hostsCount > 1 and self.isLocalHost(hawqMasterHosts[0]):
+        message = "The default Postgres port (5432) on the Ambari Server conflicts with the default HAWQ Masters port. " \
+                  "If you are using port 5432 for Postgres, you must either deploy the HAWQ Master on a different host " \
+                  "or configure a different port for the HAWQ Masters in the HAWQ Configuration page."
+        childItems.append( { "type": 'host-component', "level": 'WARN', "message": message, "component-name": 'HAWQMASTER', "host": hawqMasterHosts[0] } )
 
-    # if Spark Thrift Server is deployed but no Hive Server is deployed
-    if len(sparkTsHosts) > 0 and len(hmsHosts) == 0:
-      message = "SPARK_THRIFTSERVER requires HIVE_METASTORE to be selected/deployed."
-      childItems.append( { "type": 'host-component', "level": 'ERROR', "message": message, "component-name": 'SPARK_THRIFTSERVER' } )
+      if len(hawqStandbyHosts) ==  1 and hostsCount > 1 and self.isLocalHost(hawqStandbyHosts[0]):
+        message = "The default Postgres port (5432) on the Ambari Server conflicts with the default HAWQ Masters port. " \
+                  "If you are using port 5432 for Postgres, you must either deploy the HAWQ Standby Master on a different host " \
+                  "or configure a different port for the HAWQ Masters in the HAWQ Configuration page."
+        childItems.append( { "type": 'host-component', "level": 'WARN', "message": message, "component-name": 'HAWQSTANDBY', "host": hawqStandbyHosts[0] } )
+
+    if "PXF" in servicesList:
+      pxfHosts = self.__getHosts(componentsList, "PXF")
+      expectedPxfHosts = set(self.__getHosts(componentsList, "NAMENODE") + self.__getHosts(componentsList, "DATANODE"))
+
+      # Generate WARNING if any PXF is not colocated with NAMENODE or DATANODE
+      mismatchHosts = sorted(expectedPxfHosts.symmetric_difference(set(pxfHosts)))
+      if len(mismatchHosts) > 0:
+        hostsString = ', '.join(mismatchHosts)
+        message = "PXF must be installed on the NameNode, Standby NameNode and all DataNodes. " \
+                  "The following {0} host(s) do not satisfy the colocation recommendation: {1}".format(len(mismatchHosts), hostsString)
+        childItems.append( { "type": 'host-component', "level": 'WARN', "message": message, "component-name": 'PXF' } )
+
+    if "SPARK" in servicesList:
+      if "SPARK_THRIFTSERVER" in servicesList:
+        if not "HIVE_SERVER" in servicesList:
+          message = "SPARK_THRIFTSERVER requires HIVE services to be selected."
+          childItems.append( {"type": 'host-component', "level": 'ERROR', "message": message, "component-name": 'SPARK_THRIFTSERVER'} )
+
+      hmsHosts = self.__getHosts(componentsList, "HIVE_METASTORE") if "HIVE" in servicesList else []
+      sparkTsHosts = self.__getHosts(componentsList, "SPARK_THRIFTSERVER") if "SPARK" in servicesList else []
+
+      # if Spark Thrift Server is deployed but no Hive Server is deployed
+      if len(sparkTsHosts) > 0 and len(hmsHosts) == 0:
+        message = "SPARK_THRIFTSERVER requires HIVE_METASTORE to be selected/deployed."
+        childItems.append( { "type": 'host-component', "level": 'ERROR', "message": message, "component-name": 'SPARK_THRIFTSERVER' } )
 
     parentItems.extend(childItems)
     return parentItems
+
+  def __getHosts(self, componentsList, componentName):
+    return [component["hostnames"] for component in componentsList if component["component_name"] == componentName][0]
 
   def getNotPreferableOnServerComponents(self):
     parentComponents = super(HDP23StackAdvisor, self).getNotPreferableOnServerComponents()
@@ -120,6 +151,7 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
       "HBASE": self.recommendHBASEConfigurations,
       "KAFKA": self.recommendKAFKAConfigurations,
       "RANGER": self.recommendRangerConfigurations,
+      "RANGER_KMS": self.recommendRangerKMSConfigurations,
       "HAWQ": self.recommendHAWQConfigurations
     }
     parentRecommendConfDict.update(childRecommendConfDict)
@@ -318,6 +350,11 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
     putHdfsSiteProperty = self.putProperty(configurations, "hdfs-site", services)
     putHdfsSitePropertyAttribute = self.putPropertyAttribute(configurations, "hdfs-site")
 
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    if "HAWQ" in servicesList:
+      # Set dfs.allow.truncate to true
+      putHdfsSiteProperty('dfs.allow.truncate', 'true')
+
     if ('ranger-hdfs-plugin-properties' in services['configurations']) and ('ranger-hdfs-plugin-enabled' in services['configurations']['ranger-hdfs-plugin-properties']['properties']):
       rangerPluginEnabled = ''
       if 'ranger-hdfs-plugin-properties' in configurations and 'ranger-hdfs-plugin-enabled' in  configurations['ranger-hdfs-plugin-properties']['properties']:
@@ -411,6 +448,41 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
     elif not security_enabled:
       putKafkaBrokerAttributes('authorizer.class.name', 'delete', 'true')
 
+  def recommendRangerKMSConfigurations(self, configurations, clusterData, services, hosts):
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    putRangerKmsDbksProperty = self.putProperty(configurations, "dbks-site", services)
+    putRangerKmsProperty = self.putProperty(configurations, "kms-properties", services)
+
+    if 'kms-properties' in services['configurations'] and ('DB_FLAVOR' in services['configurations']['kms-properties']['properties']):
+
+      rangerKmsDbFlavor = services['configurations']["kms-properties"]["properties"]["DB_FLAVOR"]
+      ranger_kms_sql_connector_dict = {
+        'MYSQL': '/usr/share/java/mysql-connector-java.jar',
+        'ORACLE': '/usr/share/java/ojdbc6.jar',
+        'POSTGRES': '/usr/share/java/postgresql.jar',
+        'MSSQL': '/usr/share/java/sqljdbc4.jar',
+        'SQLA': '/path_to_driver/sqla-client-jdbc.tar.gz'
+      }
+
+      rangerKmsSqlConnectorProperty = ranger_kms_sql_connector_dict.get(rangerKmsDbFlavor, ranger_kms_sql_connector_dict['MYSQL'])
+      putRangerKmsProperty('SQL_CONNECTOR_JAR', rangerKmsSqlConnectorProperty)
+
+      if ('db_host' in services['configurations']['kms-properties']['properties']) and ('db_name' in services['configurations']['kms-properties']['properties']):
+
+        rangerKmsDbHost =   services['configurations']["kms-properties"]["properties"]["db_host"]
+        rangerKmsDbName =   services['configurations']["kms-properties"]["properties"]["db_name"]
+
+        ranger_kms_db_url_dict = {
+          'MYSQL': {'ranger.ks.jpa.jdbc.driver': 'com.mysql.jdbc.Driver', 'ranger.ks.jpa.jdbc.url': 'jdbc:mysql://' + rangerKmsDbHost + '/' + rangerKmsDbName},
+          'ORACLE': {'ranger.ks.jpa.jdbc.driver': 'oracle.jdbc.driver.OracleDriver', 'ranger.ks.jpa.jdbc.url': 'jdbc:oracle:thin:@//' + rangerKmsDbHost},
+          'POSTGRES': {'ranger.ks.jpa.jdbc.driver': 'org.postgresql.Driver', 'ranger.ks.jpa.jdbc.url': 'jdbc:postgresql://' + rangerKmsDbHost + '/' + rangerKmsDbName},
+          'MSSQL': {'ranger.ks.jpa.jdbc.driver': 'com.microsoft.sqlserver.jdbc.SQLServerDriver', 'ranger.ks.jpa.jdbc.url': 'jdbc:sqlserver://' + rangerKmsDbHost + ';databaseName=' + rangerKmsDbName},
+          'SQLA': {'ranger.ks.jpa.jdbc.driver': 'sap.jdbc4.sqlanywhere.IDriver', 'ranger.ks.jpa.jdbc.url': 'jdbc:sqlanywhere:host=' + rangerKmsDbHost + ';database=' + rangerKmsDbName}
+        }
+
+        rangerKmsDbProperties = ranger_kms_db_url_dict.get(rangerKmsDbFlavor, ranger_kms_db_url_dict['MYSQL'])
+        for key in rangerKmsDbProperties:
+          putRangerKmsDbksProperty(key, rangerKmsDbProperties.get(key))
 
   def recommendRangerConfigurations(self, configurations, clusterData, services, hosts):
     super(HDP23StackAdvisor, self).recommendRangerConfigurations(configurations, clusterData, services, hosts)
@@ -546,6 +618,17 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
                 rangerAuditProperty = services["configurations"][item['filename']]["properties"][item['configname']]
               putRangerAuditProperty(item['target_configname'], rangerAuditProperty)
 
+    audit_solr_flag = 'false'
+    audit_db_flag = 'false'
+    ranger_audit_source_type = 'solr'
+    if 'ranger-env' in services['configurations'] and 'xasecure.audit.destination.solr' in services['configurations']["ranger-env"]["properties"]:
+      audit_solr_flag = services['configurations']["ranger-env"]["properties"]['xasecure.audit.destination.solr']
+    if 'ranger-env' in services['configurations'] and 'xasecure.audit.destination.db' in services['configurations']["ranger-env"]["properties"]:
+      audit_db_flag = services['configurations']["ranger-env"]["properties"]['xasecure.audit.destination.db']
+
+    if audit_db_flag == 'true' and audit_solr_flag == 'false':
+      ranger_audit_source_type = 'db'
+    putRangerAdminProperty('ranger.audit.source.type',ranger_audit_source_type)
 
 
   def recommendYARNConfigurations(self, configurations, clusterData, services, hosts):
@@ -584,18 +667,37 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
   def isHawqMasterComponentOnAmbariServer(self, services):
     componentsListList = [service["components"] for service in services["services"]]
     componentsList = [item for sublist in componentsListList for item in sublist]
-    hawqMasterComponentHosts = [component["StackServiceComponents"]["hostnames"][0] for component in componentsList 
-                               if component["StackServiceComponents"]["component_name"] in ("HAWQMASTER", "HAWQSTANDBY")]
+    hawqMasterComponentHosts = [hostname for component in componentsList if component["StackServiceComponents"]["component_name"] in ("HAWQMASTER", "HAWQSTANDBY") for hostname in component["StackServiceComponents"]["hostnames"]]
     return any([self.isLocalHost(host) for host in hawqMasterComponentHosts])
 
 
   def recommendHAWQConfigurations(self, configurations, clusterData, services, hosts):
+    if "hawq-site" not in services["configurations"]:
+      return
+    hawq_site = services["configurations"]["hawq-site"]["properties"]
     putHawqSiteProperty = self.putProperty(configurations, "hawq-site", services)
-    if self.isHawqMasterComponentOnAmbariServer(services):
-      if "hawq-site" in services["configurations"] and "hawq_master_address_port" in services["configurations"]["hawq-site"]["properties"]:
+    componentsListList = [service["components"] for service in services["services"]]
+    componentsList = [item["StackServiceComponents"] for sublist in componentsListList for item in sublist]
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+
+    # remove master port when master is colocated with Ambari server
+    if self.isHawqMasterComponentOnAmbariServer(services) and "hawq_master_address_port" in hawq_site:
         putHawqSiteProperty('hawq_master_address_port', '')
-          
-          
+
+    # calculate optimal number of virtual segments
+    numSegments = len(self.__getHosts(componentsList, "HAWQSEGMENT"))
+    # update default if segments are deployed
+    if numSegments and "default_segment_num" in hawq_site:
+      factor = 6 if numSegments < 50 else 4
+      putHawqSiteProperty('default_segment_num', numSegments * factor)
+
+    # update YARN RM urls with the values from yarn-site if YARN is installed
+    if "YARN" in servicesList and "yarn-site" in services["configurations"]:
+      yarn_site = services["configurations"]["yarn-site"]["properties"]
+      for hs_prop, ys_prop in self.getHAWQYARNPropertyMapping().items():
+        if hs_prop in hawq_site and ys_prop in yarn_site:
+          putHawqSiteProperty(hs_prop, yarn_site[ys_prop])
+
   def getServiceConfigurationValidators(self):
     parentValidators = super(HDP23StackAdvisor, self).getServiceConfigurationValidators()
     childValidators = {
@@ -626,6 +728,14 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
         validationItems.append({"config-name": 'dfs.namenode.inode.attributes.provider.class',
                                     "item": self.getWarnItem(
                                       "dfs.namenode.inode.attributes.provider.class needs to be set to 'org.apache.ranger.authorization.hadoop.RangerHdfsAuthorizer' if Ranger HDFS Plugin is enabled.")})
+
+    # Check if dfs.allow.truncate is true
+    if "HAWQ" in servicesList and \
+        not ("dfs.allow.truncate" in services["configurations"]["hdfs-site"]["properties"] and \
+        services["configurations"]["hdfs-site"]["properties"]["dfs.allow.truncate"].lower() == 'true'):
+        validationItems.append({"config-name": "dfs.allow.truncate",
+                                "item": self.getWarnItem("HAWQ requires dfs.allow.truncate in hdfs-site.xml set to True.")})
+
     validationProblems = self.toConfigurationValidationProblems(validationItems, "hdfs-site")
     validationProblems.extend(parentValidationProblems)
     return validationProblems
@@ -824,27 +934,41 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
       prop_name = 'hawq_master_address_port'
       validationItems.append({"config-name": prop_name,
                                 "item": self.getWarnItem(
-                                "HAWQ Master or Standby Master cannot use the port 5432 when installed on the same host as the Ambari Server. Ambari Postgres DB uses the same port. Please choose a different value (e.g. 10432)")})
+                                "The default Postgres port (5432) on the Ambari Server conflicts with the default HAWQ Masters port. "
+                                "If you are using port 5432 for Postgres, you must either deploy the HAWQ Masters on a different host "
+                                "or configure a different port for the HAWQ Masters in the HAWQ Configuration page.")})
 
     # 2. Check if any data directories are pointing to root dir '/'
-    prop_name = 'hawq_master_directory'
-    display_name = 'HAWQ Master directory'
-    self.validateIfRootDir (properties, validationItems, prop_name, display_name)
+    directories = {
+                    'hawq_master_directory': 'HAWQ Master directory',
+                    'hawq_master_temp_directory': 'HAWQ Master temp directory',
+                    'hawq_segment_directory': 'HAWQ Segment directory',
+                    'hawq_segment_temp_directory': 'HAWQ Segment temp directory'
+                  }
+    for property_name, display_name in directories.iteritems():
+      self.validateIfRootDir(properties, validationItems, property_name, display_name)
 
-    prop_name = 'hawq_master_temp_directory'
-    display_name = 'HAWQ Master temp directory'
-    self.validateIfRootDir (properties, validationItems, prop_name, display_name)
+    # 3. Check YARN RM address properties
+    YARN = "YARN"
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    if YARN in servicesList and "yarn-site" in configurations:
+      yarn_site = getSiteProperties(configurations, "yarn-site")
+      for hs_prop, ys_prop in self.getHAWQYARNPropertyMapping().items():
+        if hs_prop in hawq_site and ys_prop in yarn_site and hawq_site[hs_prop] != yarn_site[ys_prop]:
+          message = "Expected value: {0} (this property should have the same value as the property {1} in yarn-site)".format(yarn_site[ys_prop], ys_prop)
+          validationItems.append({"config-name": hs_prop, "item": self.getWarnItem(message)})
 
-    prop_name = 'hawq_segment_directory'
-    display_name = 'HAWQ Segment directory'
-    self.validateIfRootDir (properties, validationItems, prop_name, display_name)
-
-    prop_name = 'hawq_segment_temp_directory'
-    display_name = 'HAWQ Segment temp directory'
-    self.validateIfRootDir (properties, validationItems, prop_name, display_name)
+    # 4. Check HAWQ Resource Manager type
+    HAWQ_GLOBAL_RM_TYPE = "hawq_global_rm_type"
+    if YARN not in servicesList and HAWQ_GLOBAL_RM_TYPE in hawq_site and hawq_site[HAWQ_GLOBAL_RM_TYPE].upper() == YARN:
+      message = "{0} must be set to none if YARN service is not installed".format(HAWQ_GLOBAL_RM_TYPE)
+      validationItems.append({"config-name": HAWQ_GLOBAL_RM_TYPE, "item": self.getErrorItem(message)})
 
     return self.toConfigurationValidationProblems(validationItems, "hawq-site")
   
   
   def isComponentUsingCardinalityForLayout(self, componentName):
     return componentName in ['NFS_GATEWAY', 'PHOENIX_QUERY_SERVER', 'SPARK_THRIFTSERVER']
+
+  def getHAWQYARNPropertyMapping(self):
+    return { "hawq_rm_yarn_address": "yarn.resourcemanager.address", "hawq_rm_yarn_scheduler_address": "yarn.resourcemanager.scheduler.address" }

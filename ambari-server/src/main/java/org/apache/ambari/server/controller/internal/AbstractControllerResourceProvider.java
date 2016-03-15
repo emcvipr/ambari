@@ -153,6 +153,8 @@ public abstract class AbstractControllerResourceProvider extends AbstractAuthori
         return new GroupResourceProvider(propertyIds, keyPropertyIds, managementController);
       case Member:
         return resourceProviderFactory.getMemberResourceProvider(propertyIds, keyPropertyIds, managementController);
+      case Upgrade:
+        return resourceProviderFactory.getUpgradeResourceProvider(managementController);
       case Stack:
         return new StackResourceProvider(propertyIds, keyPropertyIds, managementController);
       case StackVersion:
@@ -217,7 +219,10 @@ public abstract class AbstractControllerResourceProvider extends AbstractAuthori
         return new RoleAuthorizationResourceProvider(managementController);
       case UserAuthorization:
         return new UserAuthorizationResourceProvider(managementController);
-
+      case VersionDefinition:
+        return new VersionDefinitionResourceProvider();
+      case ClusterKerberosDescriptor:
+        return new ClusterKerberosDescriptorResourceProvider(managementController);
       default:
         throw new IllegalArgumentException("Unknown type " + type);
     }

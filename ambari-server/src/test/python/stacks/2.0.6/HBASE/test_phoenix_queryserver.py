@@ -18,7 +18,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 '''
 import json
-from unittest import SkipTest
+import sys
+import unittest
 
 from mock.mock import MagicMock, patch
 from stacks.utils.RMFTestCase import *
@@ -37,7 +38,7 @@ class TestPhoenixQueryServer(RMFTestCase):
       classname = "PhoenixQueryServer",
       command = "configure",
       config_file = "hbase_default.json",
-      hdp_stack_version = self.STACK_VERSION,
+      stack_version = self.STACK_VERSION,
       target = RMFTestCase.TARGET_COMMON_SERVICES,
       call_mocks = [(0, None, None)]
     )
@@ -51,7 +52,7 @@ class TestPhoenixQueryServer(RMFTestCase):
       classname = "PhoenixQueryServer",
       command = "start",
       config_file = "hbase_default.json",
-      hdp_stack_version = self.STACK_VERSION,
+      stack_version = self.STACK_VERSION,
       target = RMFTestCase.TARGET_COMMON_SERVICES,
       call_mocks = [(0, None, None)]
     )
@@ -70,7 +71,7 @@ class TestPhoenixQueryServer(RMFTestCase):
       classname = "PhoenixQueryServer",
       command = "stop",
       config_file = "hbase_default.json",
-      hdp_stack_version = self.STACK_VERSION,
+      stack_version = self.STACK_VERSION,
       target = RMFTestCase.TARGET_COMMON_SERVICES,
       call_mocks = [(0, None, None)]
     )
@@ -97,7 +98,7 @@ class TestPhoenixQueryServer(RMFTestCase):
       classname = "PhoenixQueryServer",
       command = "configure",
       config_file = "hbase_secure.json",
-      hdp_stack_version = self.STACK_VERSION,
+      stack_version = self.STACK_VERSION,
       target = RMFTestCase.TARGET_COMMON_SERVICES,
       call_mocks = [(0, None, None)]
     )
@@ -111,7 +112,7 @@ class TestPhoenixQueryServer(RMFTestCase):
       classname = "PhoenixQueryServer",
       command = "start",
       config_file = "hbase_secure.json",
-      hdp_stack_version = self.STACK_VERSION,
+      stack_version = self.STACK_VERSION,
       target = RMFTestCase.TARGET_COMMON_SERVICES,
       call_mocks = [(0, None, None)]
     )
@@ -130,7 +131,7 @@ class TestPhoenixQueryServer(RMFTestCase):
       classname = "PhoenixQueryServer",
       command = "stop",
       config_file = "hbase_secure.json",
-      hdp_stack_version = self.STACK_VERSION,
+      stack_version = self.STACK_VERSION,
       target = RMFTestCase.TARGET_COMMON_SERVICES,
       call_mocks = [(0, None, None)]
     )
@@ -152,14 +153,18 @@ class TestPhoenixQueryServer(RMFTestCase):
     self.assertNoMoreResources()
 
   def test_start_default_24(self):
-    raise SkipTest("there's nothing to upgrade to yet")
+    if sys.version_info >= (2, 7):
+      raise unittest.SkipTest("there's nothing to upgrade to yet")
+    else:
+      # skiptest functionality is not available with Python 2.6 unittest
+      return
 
     self.executeScript(
       self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/phoenix_queryserver.py",
       classname = "PhoenixQueryServer",
       command = "start",
       config_file = "hbase-rs-2.4.json",
-      hdp_stack_version = self.STACK_VERSION,
+      stack_version = self.STACK_VERSION,
       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assertResourceCalled('Directory', '/etc/hbase',
@@ -238,8 +243,6 @@ class TestPhoenixQueryServer(RMFTestCase):
       create_parents = True,
     )
     self.assertResourceCalled('Directory', '/tmp',
-      owner = 'hbase',
-      group = 'hadoop',
       create_parents = True,
       mode = 0777
     )
@@ -351,8 +354,6 @@ class TestPhoenixQueryServer(RMFTestCase):
       create_parents = True,
     )
     self.assertResourceCalled('Directory', '/tmp',
-      owner = 'hbase',
-      group = 'hadoop',
       create_parents = True,
       mode = 0777
     )
@@ -469,7 +470,7 @@ class TestPhoenixQueryServer(RMFTestCase):
       command = "pre_upgrade_restart",
       config_dict = json_content,
       call_mocks = [(0, "/etc/hbase/2.3.0.0-1234/0", ''), (0, None, None), (0, None, None)],
-      hdp_stack_version = self.STACK_VERSION,
+      stack_version = self.STACK_VERSION,
       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assertResourceCalled('Directory', '/etc/hbase/2.3.0.0-1234/0',

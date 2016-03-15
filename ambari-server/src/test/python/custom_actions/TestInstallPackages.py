@@ -64,15 +64,15 @@ class TestInstallPackages(RMFTestCase):
   @patch("resource_management.libraries.functions.list_ambari_managed_repos.list_ambari_managed_repos")
   @patch("resource_management.libraries.functions.packages_analyzer.allInstalledPackages")
   @patch("resource_management.libraries.script.Script.put_structured_out")
-  @patch("resource_management.libraries.functions.hdp_select.get_hdp_versions")
+  @patch("resource_management.libraries.functions.stack_select.get_stack_versions")
   @patch("resource_management.libraries.functions.repo_version_history.read_actual_version_from_history_file")
   @patch("resource_management.libraries.functions.repo_version_history.write_actual_version_to_history_file")
   def test_normal_flow_rhel(self,
                             write_actual_version_to_history_file_mock,
                             read_actual_version_from_history_file_mock,
-                            hdp_versions_mock,
+                            stack_versions_mock,
                             put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock):
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [],  # before installation attempt
       [VERSION_STUB]
     ]
@@ -110,29 +110,29 @@ class TestInstallPackages(RMFTestCase):
                               mirror_list=None,
                               append_to_file=True,
     )
-    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"])
-    self.assertResourceCalled('Package', 'snappy', action=["upgrade"])
-    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"])
-    self.assertResourceCalled('Package', 'lzo', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"])
-    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'snappy', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'lzo', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
     self.assertNoMoreResources()
 
   @patch("ambari_commons.os_check.OSCheck.is_suse_family")
   @patch("resource_management.libraries.functions.list_ambari_managed_repos.list_ambari_managed_repos")
   @patch("resource_management.libraries.functions.packages_analyzer.allInstalledPackages")
   @patch("resource_management.libraries.script.Script.put_structured_out")
-  @patch("resource_management.libraries.functions.hdp_select.get_hdp_versions")
+  @patch("resource_management.libraries.functions.stack_select.get_stack_versions")
   @patch("resource_management.libraries.functions.repo_version_history.read_actual_version_from_history_file")
   @patch("resource_management.libraries.functions.repo_version_history.write_actual_version_to_history_file")
   def test_normal_flow_sles(self, write_actual_version_to_history_file_mock,
                             read_actual_version_from_history_file_mock,
-                            hdp_versions_mock, put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock, is_suse_family_mock):
+                            stack_versions_mock, put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock, is_suse_family_mock):
     is_suse_family_mock = True
     Script.stack_version_from_distro_select = VERSION_STUB
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [],  # before installation attempt
       [VERSION_STUB]
     ]
@@ -170,14 +170,14 @@ class TestInstallPackages(RMFTestCase):
                               mirror_list=None,
                               append_to_file=True,
                               )
-    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"])
-    self.assertResourceCalled('Package', 'snappy', action=["upgrade"])
-    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"])
-    self.assertResourceCalled('Package', 'lzo', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"])
-    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'snappy', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'lzo', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
     self.assertNoMoreResources()
 
 
@@ -185,15 +185,15 @@ class TestInstallPackages(RMFTestCase):
   @patch("ambari_commons.os_check.OSCheck.is_redhat_family")
   @patch("resource_management.libraries.script.Script.put_structured_out")
   @patch("resource_management.libraries.functions.packages_analyzer.allInstalledPackages")
-  @patch("resource_management.libraries.functions.hdp_select.get_hdp_versions")
+  @patch("resource_management.libraries.functions.stack_select.get_stack_versions")
   @patch("resource_management.libraries.functions.repo_version_history.read_actual_version_from_history_file")
   @patch("resource_management.libraries.functions.repo_version_history.write_actual_version_to_history_file")
   def test_exclude_existing_repo(self,  write_actual_version_to_history_file_mock,
                                  read_actual_version_from_history_file_mock,
-                                 hdp_versions_mock,
+                                 stack_versions_mock,
                                  allInstalledPackages_mock, put_structured_out_mock,
                                  is_redhat_family_mock, list_ambari_managed_repos_mock):
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [],  # before installation attempt
       [VERSION_STUB]
     ]
@@ -233,14 +233,14 @@ class TestInstallPackages(RMFTestCase):
                               mirror_list=None,
                               append_to_file=True,
     )
-    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"])
-    self.assertResourceCalled('Package', 'snappy', action=["upgrade"])
-    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"])
-    self.assertResourceCalled('Package', 'lzo', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"])
-    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'snappy', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'lzo', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
     self.assertNoMoreResources()
 
 
@@ -319,16 +319,16 @@ class TestInstallPackages(RMFTestCase):
   @patch("resource_management.core.resources.packaging.Package")
   @patch("resource_management.libraries.script.Script.put_structured_out")
   @patch("resource_management.libraries.functions.packages_analyzer.allInstalledPackages")
-  @patch("resource_management.libraries.functions.hdp_select.get_hdp_versions")
+  @patch("resource_management.libraries.functions.stack_select.get_stack_versions")
   @patch("resource_management.libraries.functions.repo_version_history.read_actual_version_from_history_file")
   @patch("resource_management.libraries.functions.repo_version_history.write_actual_version_to_history_file")
   def test_format_package_name(self,                                                                                    write_actual_version_to_history_file_mock,
                                read_actual_version_from_history_file_mock,
-                               hdp_versions_mock,
+                               stack_versions_mock,
                                allInstalledPackages_mock, put_structured_out_mock,
                                package_mock, is_suse_family_mock):
     Script.stack_version_from_distro_select = VERSION_STUB
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [],  # before installation attempt
       [VERSION_STUB]
     ]
@@ -367,29 +367,29 @@ class TestInstallPackages(RMFTestCase):
                               mirror_list=None,
                               append_to_file=True,
                               )
-    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"])
-    self.assertResourceCalled('Package', 'snappy', action=["upgrade"])
-    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"])
-    self.assertResourceCalled('Package', 'lzo', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"])
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"])
-    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'snappy', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'lzo', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
+    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"], retry_count=5, retry_on_repo_unavailability=False)
     self.assertNoMoreResources()
 
 
   @patch("resource_management.libraries.functions.list_ambari_managed_repos.list_ambari_managed_repos")
   @patch("resource_management.libraries.functions.packages_analyzer.allInstalledPackages")
   @patch("resource_management.libraries.script.Script.put_structured_out")
-  @patch("resource_management.libraries.functions.hdp_select.get_hdp_versions")
+  @patch("resource_management.libraries.functions.stack_select.get_stack_versions")
   @patch("resource_management.libraries.functions.repo_version_history.read_actual_version_from_history_file")
   @patch("resource_management.libraries.functions.repo_version_history.write_actual_version_to_history_file")
   def test_version_reporting__build_number_defined(self,
                                                                                    write_actual_version_to_history_file_mock,
                                                                                    read_actual_version_from_history_file_mock,
-                                                                                   hdp_versions_mock,
+                                                                                   stack_versions_mock,
                                                                                    put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock):
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [OLD_VERSION_STUB],  # before installation attempt
       [OLD_VERSION_STUB, VERSION_STUB]
     ]
@@ -419,12 +419,12 @@ class TestInstallPackages(RMFTestCase):
     self.assertTrue(write_actual_version_to_history_file_mock.called)
     self.assertEquals(write_actual_version_to_history_file_mock.call_args[0], (VERSION_STUB_WITHOUT_BUILD_NUMBER, VERSION_STUB))
 
-    hdp_versions_mock.reset_mock()
+    stack_versions_mock.reset_mock()
     write_actual_version_to_history_file_mock.reset_mock()
     put_structured_out_mock.reset_mock()
 
     # Test retrying install again
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [OLD_VERSION_STUB, VERSION_STUB],
       [OLD_VERSION_STUB, VERSION_STUB]
     ]
@@ -460,18 +460,18 @@ class TestInstallPackages(RMFTestCase):
   @patch("resource_management.libraries.functions.list_ambari_managed_repos.list_ambari_managed_repos")
   @patch("resource_management.libraries.functions.packages_analyzer.allInstalledPackages")
   @patch("resource_management.libraries.script.Script.put_structured_out")
-  @patch("resource_management.libraries.functions.hdp_select.get_hdp_versions")
+  @patch("resource_management.libraries.functions.stack_select.get_stack_versions")
   @patch("resource_management.libraries.functions.repo_version_history.read_actual_version_from_history_file")
   @patch("resource_management.libraries.functions.repo_version_history.write_actual_version_to_history_file")
   @patch("os.path.exists")
-  def test_version_reporting__build_number_not_defined__usr_hdp_present__no_components_installed(self,
+  def test_version_reporting__build_number_not_defined_stack_root_present__no_components_installed(self,
                                                                             exists_mock,
                                                                             write_actual_version_to_history_file_mock,
                                                                             read_actual_version_from_history_file_mock,
-                                                                            hdp_versions_mock,
+                                                                            stack_versions_mock,
                                                                             put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock):
     exists_mock.return_value = True
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [],  # before installation attempt
       []
     ]
@@ -508,7 +508,7 @@ class TestInstallPackages(RMFTestCase):
 
     self.assertFalse(write_actual_version_to_history_file_mock.called)
 
-    hdp_versions_mock.reset_mock()
+    stack_versions_mock.reset_mock()
     write_actual_version_to_history_file_mock.reset_mock()
     put_structured_out_mock.reset_mock()
 
@@ -516,18 +516,18 @@ class TestInstallPackages(RMFTestCase):
   @patch("resource_management.libraries.functions.list_ambari_managed_repos.list_ambari_managed_repos")
   @patch("resource_management.libraries.functions.packages_analyzer.allInstalledPackages")
   @patch("resource_management.libraries.script.Script.put_structured_out")
-  @patch("resource_management.libraries.functions.hdp_select.get_hdp_versions")
+  @patch("resource_management.libraries.functions.stack_select.get_stack_versions")
   @patch("resource_management.libraries.functions.repo_version_history.read_actual_version_from_history_file")
   @patch("resource_management.libraries.functions.repo_version_history.write_actual_version_to_history_file")
   @patch("os.path.exists")
-  def test_version_reporting__build_number_not_defined__usr_hdp_absent(self,
+  def test_version_reporting__build_number_not_defined_stack_root_absent(self,
                                                                         exists_mock,
                                                                         write_actual_version_to_history_file_mock,
                                                                         read_actual_version_from_history_file_mock,
-                                                                        hdp_versions_mock,
+                                                                        stack_versions_mock,
                                                                         put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock):
     exists_mock.return_value = False
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [],  # before installation attempt
       []
     ]
@@ -562,13 +562,13 @@ class TestInstallPackages(RMFTestCase):
 
     self.assertFalse(write_actual_version_to_history_file_mock.called)
 
-    hdp_versions_mock.reset_mock()
+    stack_versions_mock.reset_mock()
     write_actual_version_to_history_file_mock.reset_mock()
     put_structured_out_mock.reset_mock()
 
     # Test retrying install again  (correct build number, provided by other nodes, is now received from server)
 
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [],  # before installation attempt
       []
     ]
@@ -608,15 +608,15 @@ class TestInstallPackages(RMFTestCase):
   @patch("resource_management.libraries.functions.list_ambari_managed_repos.list_ambari_managed_repos")
   @patch("resource_management.libraries.functions.packages_analyzer.allInstalledPackages")
   @patch("resource_management.libraries.script.Script.put_structured_out")
-  @patch("resource_management.libraries.functions.hdp_select.get_hdp_versions")
+  @patch("resource_management.libraries.functions.stack_select.get_stack_versions")
   @patch("resource_management.libraries.functions.repo_version_history.read_actual_version_from_history_file")
   @patch("resource_management.libraries.functions.repo_version_history.write_actual_version_to_history_file")
-  def test_version_reporting__build_number_not_defined__usr_hdp_present(self,
+  def test_version_reporting__build_number_not_defined_stack_root_present(self,
                                                                     write_actual_version_to_history_file_mock,
                                                                     read_actual_version_from_history_file_mock,
-                                                                    hdp_versions_mock,
+                                                                    stack_versions_mock,
                                                                     put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock):
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [OLD_VERSION_STUB],  # before installation attempt
       [OLD_VERSION_STUB, VERSION_STUB]
     ]
@@ -646,12 +646,12 @@ class TestInstallPackages(RMFTestCase):
     self.assertTrue(write_actual_version_to_history_file_mock.called)
     self.assertEquals(write_actual_version_to_history_file_mock.call_args[0], (VERSION_STUB_WITHOUT_BUILD_NUMBER, VERSION_STUB))
 
-    hdp_versions_mock.reset_mock()
+    stack_versions_mock.reset_mock()
     write_actual_version_to_history_file_mock.reset_mock()
     put_structured_out_mock.reset_mock()
 
     # Test retrying install again
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [OLD_VERSION_STUB, VERSION_STUB],
       [OLD_VERSION_STUB, VERSION_STUB]
     ]
@@ -686,15 +686,15 @@ class TestInstallPackages(RMFTestCase):
   @patch("resource_management.libraries.functions.list_ambari_managed_repos.list_ambari_managed_repos")
   @patch("resource_management.libraries.functions.packages_analyzer.allInstalledPackages")
   @patch("resource_management.libraries.script.Script.put_structured_out")
-  @patch("resource_management.libraries.functions.hdp_select.get_hdp_versions")
+  @patch("resource_management.libraries.functions.stack_select.get_stack_versions")
   @patch("resource_management.libraries.functions.repo_version_history.read_actual_version_from_history_file")
   @patch("resource_management.libraries.functions.repo_version_history.write_actual_version_to_history_file")
-  def test_version_reporting__wrong_build_number_specified__usr_hdp_present(self,
+  def test_version_reporting__wrong_build_number_specified_stack_root_present(self,
                                                                         write_actual_version_to_history_file_mock,
                                                                         read_actual_version_from_history_file_mock,
-                                                                        hdp_versions_mock,
+                                                                        stack_versions_mock,
                                                                         put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock):
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [OLD_VERSION_STUB],  # before installation attempt
       [OLD_VERSION_STUB, VERSION_STUB]
     ]
@@ -724,12 +724,12 @@ class TestInstallPackages(RMFTestCase):
     self.assertTrue(write_actual_version_to_history_file_mock.called)
     self.assertEquals(write_actual_version_to_history_file_mock.call_args[0], ('2.2.0.1', VERSION_STUB))
 
-    hdp_versions_mock.reset_mock()
+    stack_versions_mock.reset_mock()
     write_actual_version_to_history_file_mock.reset_mock()
     put_structured_out_mock.reset_mock()
 
     # Test retrying install again
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [OLD_VERSION_STUB, VERSION_STUB],
       [OLD_VERSION_STUB, VERSION_STUB]
     ]
@@ -764,18 +764,18 @@ class TestInstallPackages(RMFTestCase):
   @patch("resource_management.libraries.functions.list_ambari_managed_repos.list_ambari_managed_repos")
   @patch("resource_management.libraries.functions.packages_analyzer.allInstalledPackages")
   @patch("resource_management.libraries.script.Script.put_structured_out")
-  @patch("resource_management.libraries.functions.hdp_select.get_hdp_versions")
+  @patch("resource_management.libraries.functions.stack_select.get_stack_versions")
   @patch("resource_management.libraries.functions.repo_version_history.read_actual_version_from_history_file")
   @patch("resource_management.libraries.functions.repo_version_history.write_actual_version_to_history_file")
   @patch("os.path.exists")
-  def test_version_reporting__wrong_build_number_specified__usr_hdp_absent(self,
+  def test_version_reporting__wrong_build_number_specified_stack_root_absent(self,
                                                                             exists_mock,
                                                                             write_actual_version_to_history_file_mock,
                                                                             read_actual_version_from_history_file_mock,
-                                                                            hdp_versions_mock,
+                                                                            stack_versions_mock,
                                                                             put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock):
     exists_mock.return_value = False
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [],  # before installation attempt
       []
     ]
@@ -810,13 +810,13 @@ class TestInstallPackages(RMFTestCase):
 
     self.assertFalse(write_actual_version_to_history_file_mock.called)
 
-    hdp_versions_mock.reset_mock()
+    stack_versions_mock.reset_mock()
     write_actual_version_to_history_file_mock.reset_mock()
     put_structured_out_mock.reset_mock()
 
     # Test retrying install again (correct build number, provided by other nodes, is now received from server)
 
-    hdp_versions_mock.side_effect = [
+    stack_versions_mock.side_effect = [
       [],  # before installation attempt
       []
     ]

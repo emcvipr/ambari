@@ -59,9 +59,9 @@
               <value>10001</value>
             </condition>
           </definition>
+
         </changes>
       </component>
-
       <component name="WEBHCAT_SERVER">
         <changes>
           <definition xsi:type="configure" id="hdp_2_4_0_0_webhcat_server_update_configuration_paths" summary="Updating Configuration Paths">
@@ -76,17 +76,7 @@
       </component>
     </service>
 
-    <!--TODO: remove? Used for non-rolling upgrade only-->
-    <service name="KAFKA">
-      <component name="KAFKA_BROKER">
-        <changes>
-          <definition xsi:type="configure" id="hdp_2_4_0_0_kafka_broker_listeners">
-            <type>kafka-broker</type>
-            <set key="listeners" value="PLAINTEXT://localhost:6667"/>
-          </definition>
-        </changes>
-      </component>
-    </service>
+
   </services>
 
 </upgrade-config-changes>

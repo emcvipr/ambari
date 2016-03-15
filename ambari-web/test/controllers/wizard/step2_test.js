@@ -17,11 +17,11 @@
  */
 
 var App = require('app');
-var Ember = require('ember');
 require('controllers/wizard/step2_controller');
 require('models/host');
 require('models/host_component');
 require('messages');
+var testHelpers = require('test/helpers');
 var c;
 
 function getController() {
@@ -412,7 +412,7 @@ describe('App.WizardStep2Controller', function () {
       var result = true;
       var hosts = controller.get('hostNameArr');
       for (var i = 1; i<12; i++) {
-        var extra = (i.toString().length == 1) ? 0 : '';
+        var extra = i.toString().length === 1 ? 0 : '';
         if (hosts[i-1] !== 'host0' + extra + i) {
           result = false;
         }
@@ -583,16 +583,12 @@ describe('App.WizardStep2Controller', function () {
   });
 
   describe('#setAmbariJavaHome', function() {
-    beforeEach(function() {
-      sinon.stub($, 'ajax', Em.K);
-    });
-    afterEach(function() {
-      $.ajax.restore();
-    });
+
     it('should do ajax-request', function() {
       var controller = App.WizardStep2Controller.create({onGetAmbariJavaHomeSuccess: Em.K, onGetAmbariJavaHomeError: Em.K});
       controller.setAmbariJavaHome();
-      expect($.ajax.calledOnce).to.equal(true);
+      var args = testHelpers.findAjaxRequest('name', 'ambari.service');
+      expect(args).exists;
     });
   });
 

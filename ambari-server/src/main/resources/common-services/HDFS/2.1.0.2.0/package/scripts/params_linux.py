@@ -24,14 +24,16 @@ import os
 import re
 
 from ambari_commons.os_check import OSCheck
+from ambari_commons.str_utils import cbool, cint
 
 from resource_management.libraries.functions import conf_select
-from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions import stack_select
 from resource_management.libraries.functions import format
-from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions.version import format_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions import get_klist_path
 from resource_management.libraries.functions import get_kinit_path
+from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
 from resource_management.libraries.script.script import Script
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
 
@@ -46,7 +48,9 @@ tmp_dir = Script.get_tmp_dir()
 stack_name = default("/hostLevelParams/stack_name", None)
 upgrade_direction = default("/commandParams/upgrade_direction", None)
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+stack_version_formatted = format_stack_version(stack_version_unformatted)
+agent_stack_retry_on_unavailability = cbool(config["hostLevelParams"]["agent_stack_retry_on_unavailability"])
+agent_stack_retry_count = cint(config["hostLevelParams"]["agent_stack_retry_count"])
 
 # New Cluster Stack Version that is defined during the RESTART of a Stack Upgrade
 version = default("/commandParams/version", None)
@@ -72,19 +76,21 @@ dfs_http_policy = default('/configurations/hdfs-site/dfs.http.policy', None)
 dfs_dn_ipc_address = config['configurations']['hdfs-site']['dfs.datanode.ipc.address']
 secure_dn_ports_are_in_use = False
 
+hdfs_tmp_dir = config['configurations']['hadoop-env']['hdfs_tmp_dir']
+
 # hadoop default parameters
 mapreduce_libs_path = "/usr/lib/hadoop-mapreduce/*"
-hadoop_libexec_dir = hdp_select.get_hadoop_dir("libexec")
-hadoop_bin = hdp_select.get_hadoop_dir("sbin")
-hadoop_bin_dir = hdp_select.get_hadoop_dir("bin")
-hadoop_home = hdp_select.get_hadoop_dir("home")
+hadoop_libexec_dir = stack_select.get_hadoop_dir("libexec")
+hadoop_bin = stack_select.get_hadoop_dir("sbin")
+hadoop_bin_dir = stack_select.get_hadoop_dir("bin")
+hadoop_home = stack_select.get_hadoop_dir("home")
 hadoop_secure_dn_user = hdfs_user
 hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
 hadoop_conf_secure_dir = os.path.join(hadoop_conf_dir, "secure")
-hadoop_lib_home = hdp_select.get_hadoop_dir("lib")
+hadoop_lib_home = stack_select.get_hadoop_dir("lib")
 
 # hadoop parameters for 2.2+
-if Script.is_hdp_stack_greater_or_equal("2.2"):
+if Script.is_stack_greater_or_equal("2.2"):
   mapreduce_libs_path = "/usr/hdp/current/hadoop-mapreduce-client/*"
 
   if not security_enabled:
@@ -111,7 +117,7 @@ limits_conf_dir = "/etc/security/limits.d"
 hdfs_user_nofile_limit = default("/configurations/hadoop-env/hdfs_user_nofile_limit", "128000")
 hdfs_user_nproc_limit = default("/configurations/hadoop-env/hdfs_user_nproc_limit", "65536")
 
-create_lib_snappy_symlinks = not Script.is_hdp_stack_greater_or_equal("2.2")
+create_lib_snappy_symlinks = not Script.is_stack_greater_or_equal("2.2")
 jsvc_path = "/usr/lib/bigtop-utils"
 
 execute_path = os.environ['PATH'] + os.pathsep + hadoop_bin_dir
@@ -325,6 +331,7 @@ import functools
 HdfsResource = functools.partial(
   HdfsResource,
   user=hdfs_user,
+  hdfs_resource_ignore_file = "/var/lib/ambari-agent/data/.hdfs_resource_ignore",
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,
@@ -333,6 +340,7 @@ HdfsResource = functools.partial(
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
   default_fs = default_fs,
+  immutable_paths = get_not_managed_resources(),
   dfs_type = dfs_type
 )
 
@@ -341,10 +349,6 @@ HdfsResource = functools.partial(
 io_compression_codecs = default("/configurations/core-site/io.compression.codecs", None)
 lzo_enabled = io_compression_codecs is not None and "com.hadoop.compression.lzo" in io_compression_codecs.lower()
 lzo_packages = get_lzo_packages(stack_version_unformatted)
-
-exclude_packages = []
-if not lzo_enabled:
-  exclude_packages += lzo_packages
   
 name_node_params = default("/commandParams/namenode", None)
 

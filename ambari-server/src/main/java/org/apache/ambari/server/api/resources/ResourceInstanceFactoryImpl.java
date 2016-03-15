@@ -297,6 +297,10 @@ public class ResourceInstanceFactoryImpl implements ResourceInstanceFactory {
         resourceDefinition = new PrivilegeResourceDefinition(Resource.Type.UserPrivilege);
         break;
 
+      case GroupPrivilege:
+        resourceDefinition = new PrivilegeResourceDefinition(Resource.Type.GroupPrivilege);
+        break;
+
       case ViewPermission:
         resourceDefinition = new ViewPermissionResourceDefinition();
         break;
@@ -340,6 +344,11 @@ public class ResourceInstanceFactoryImpl implements ResourceInstanceFactory {
       case UpgradeItem:
         resourceDefinition = new SimpleResourceDefinition(
             Resource.Type.UpgradeItem, "upgrade_item", "upgrade_items", Resource.Type.Task);
+        break;
+
+      case UpgradeSummary:
+        resourceDefinition = new SimpleResourceDefinition(
+            Resource.Type.UpgradeSummary, "upgrade_summary", "upgrade_summary");
         break;
 
       case PreUpgradeCheck:
@@ -406,6 +415,18 @@ public class ResourceInstanceFactoryImpl implements ResourceInstanceFactory {
 
       case UserAuthorization:
         resourceDefinition = new SimpleResourceDefinition(Resource.Type.UserAuthorization, "authorization", "authorizations");
+        break;
+
+      case Setting:
+        resourceDefinition = new SimpleResourceDefinition(Resource.Type.Setting, "setting", "settings");
+        break;
+
+      case VersionDefinition:
+        resourceDefinition = new VersionDefinitionResourceDefinition();
+        break;
+
+      case ClusterKerberosDescriptor:
+        resourceDefinition = new SimpleResourceDefinition(Resource.Type.ClusterKerberosDescriptor, "kerberos_descriptor", "kerberos_descriptors");
         break;
 
       default:

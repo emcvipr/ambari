@@ -17,7 +17,6 @@
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline;
 
-import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -181,6 +180,9 @@ public class TimelineMetricConfiguration {
   public static final String HANDLER_THREAD_COUNT =
     "timeline.metrics.service.handler.thread.count";
 
+  public static final String WATCHER_DISABLED =
+    "timeline.metrics.service.watcher.disabled";
+
   public static final String WATCHER_INITIAL_DELAY =
     "timeline.metrics.service.watcher.initial.delay";
 
@@ -198,6 +200,21 @@ public class TimelineMetricConfiguration {
 
   public static final String AGGREGATE_TABLE_SPLIT_POINTS =
     "timeline.metrics.cluster.aggregate.splitpoints";
+
+  public static final String AGGREGATORS_SKIP_BLOCK_CACHE =
+    "timeline.metrics.aggregators.skip.blockcache.enabled";
+
+  public static final String TIMELINE_SERVICE_HTTP_POLICY =
+    "timeline.metrics.service.http.policy";
+
+  public static final String DISABLE_METRIC_METADATA_MGMT =
+    "timeline.metrics.service.metadata.management.disabled";
+
+  public static final String METRICS_METADATA_SYNC_INIT_DELAY =
+    "timeline.metrics.service.metadata.sync.init.delay";
+
+  public static final String METRICS_METADATA_SYNC_SCHEDULE_DELAY =
+    "timeline.metrics.service.metadata.sync.delay";
 
   public static final String HOST_APP_ID = "HOST";
 
@@ -247,7 +264,7 @@ public class TimelineMetricConfiguration {
   }
 
   public String getWebappAddress() {
-    String defaultHttpAddress = "0.0.0.0:8188";
+    String defaultHttpAddress = "0.0.0.0:6188";
     if (metricsConf != null) {
       return metricsConf.get(WEBAPP_HTTP_ADDRESS, defaultHttpAddress);
     }
@@ -259,6 +276,13 @@ public class TimelineMetricConfiguration {
       return Integer.parseInt(metricsConf.get(HANDLER_THREAD_COUNT, "20"));
     }
     return 20;
+  }
+
+  public boolean isTimelineMetricsServiceWatcherDisabled() {
+    if (metricsConf != null) {
+      return Boolean.parseBoolean(metricsConf.get(WATCHER_DISABLED, "false"));
+    }
+    return false;
   }
 
   public int getTimelineMetricsServiceWatcherInitDelay() {

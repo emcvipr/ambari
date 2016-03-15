@@ -36,11 +36,6 @@ METRIC_TABLES=(METRIC_AGGREGATE_DAILY METRIC_AGGREGATE_HOURLY METRIC_AGGREGATE_M
 METRIC_FIFO_COMPACTION_TABLES=(METRIC_AGGREGATE METRIC_RECORD METRIC_RECORD_MINUTE)
 METRIC_COLLECTOR=ambari-metrics-collector
 
-AMS_COLLECTOR_LOG_DIR=/var/log/ambari-metrics-collector
-
-AMS_HBASE_NORMALIZER_ENABLED=true
-AMS_HBASE_FIFO_COMPACTION_ENABLED=true
-
 NORMALIZER_ENABLED_STUB_FILE=/var/run/ambari-metrics-collector/normalizer_enabled
 FIFO_ENABLED_STUB_FILE=/var/run/ambari-metrics-collector/fifo_enabled
 
@@ -261,13 +256,13 @@ function start()
     rm -f "${PIDFILE}" >/dev/null 2>&1
   fi
 
-  nohup "${JAVA}" "-Xms$AMS_COLLECTOR_HEAPSIZE" "-Xmx$AMS_COLLECTOR_HEAPSIZE" "${AMS_COLLECTOR_OPTS}" "-cp" "/usr/lib/ambari-metrics-collector/*:${COLLECTOR_CONF_DIR}" "-Djava.net.preferIPv4Stack=true" "-Dams.log.dir=${AMS_COLLECTOR_LOG_DIR}" "-Dproc_${DAEMON_NAME}" "${CLASS}" "$@" > $OUTFILE 2>&1 &
+  nohup "${JAVA}" "-Xms$AMS_COLLECTOR_HEAPSIZE" "-Xmx$AMS_COLLECTOR_HEAPSIZE" ${AMS_COLLECTOR_OPTS} "-cp" "/usr/lib/ambari-metrics-collector/*:${COLLECTOR_CONF_DIR}" "-Djava.net.preferIPv4Stack=true" "-Dams.log.dir=${AMS_COLLECTOR_LOG_DIR}" "-Dproc_${DAEMON_NAME}" "${CLASS}" "$@" > $OUTFILE 2>&1 &
   PID=$!
   write_pidfile "${PIDFILE}"
   sleep 2
 
   echo "Verifying ${METRIC_COLLECTOR} process status..." | tee -a $STARTUPFILE
-  if [ -z "`ps ax -o pid | grep ${PID}`" ]; then
+  if [ -z "`ps ax | grep -w ${PID} | grep ApplicationHistoryServer`" ]; then
     if [ -s ${OUTFILE} ]; then
       echo "ERROR: ${METRIC_COLLECTOR} start failed. For more details, see ${OUTFILE}:" | tee -a $STARTUPFILE
       echo "===================="
@@ -283,30 +278,33 @@ function start()
 
   rm -f $STARTUPFILE #Deleting startup file
   echo "$(date) Collector successfully started." | tee -a $STARTUPFILE
-  echo "$(date) Initializing Ambari Metrics data model" | tee -a $STARTUPFILE
-  start=$SECONDS
-  # Wait until METRIC_* tables created
-  for retry in {1..5}
-  do
-    echo 'list' | ${HBASE_CMD} --config ${HBASE_CONF_DIR} shell | grep ^${METRIC_TABLES[0]} > /dev/null 2>&1
-    if [ $? -eq 0 ]; then
-      echo "$(date) Ambari Metrics data model initialization completed." | tee -a $STARTUPFILE
-      break
+  if [[ "${AMS_HBASE_INIT_CHECK_ENABLED}" == "true" || "${AMS_HBASE_INIT_CHECK_ENABLED}" == "True" ]]
+  then
+    echo "$(date) Initializing Ambari Metrics data model" | tee -a $STARTUPFILE
+    start=$SECONDS
+    # Wait until METRIC_* tables created
+    for retry in {1..5}
+    do
+      echo 'list' | ${HBASE_CMD} --config ${HBASE_CONF_DIR} shell 2> /dev/null | grep ^${METRIC_TABLES[0]} > /dev/null 2>&1
+      if [ $? -eq 0 ]; then
+        echo "$(date) Ambari Metrics data model initialization completed." | tee -a $STARTUPFILE
+        break
+      fi
+      echo "$(date) Ambari Metrics data model initialization check $retry" | tee -a $STARTUPFILE
+      duration=$(( SECONDS - start ))
+      if [ $duration -gt 300 ]; then
+        echo "$(date) Ambari Metrics data model initialization timed out" | tee -a $STARTUPFILE
+        break
+      fi
+      sleep 5
+    done
+    if [ $? -ne 0 ]; then
+      echo "WARNING: Ambari Metrics data model initialization failed."
+       >&2 echo "WARNING: Ambari Metrics data model initialization failed."
     fi
-    echo "$(date) Ambari Metrics data model initialization check $retry" | tee -a $STARTUPFILE
-    duration=$(( SECONDS - start ))
-    if [ $duration -gt 300 ]; then
-      echo "$(date) Ambari Metrics data model initialization timed out" | tee -a $STARTUPFILE
-      break
+    else
+      echo "$(date) Skipping Ambari Metrics data model initialization" | tee -a $STARTUPFILE
     fi
-    sleep 5
-  done
-  if [ $? -ne 0 ]; then
-    echo "WARNING: Ambari Metrics data model initialization failed."
-     >&2 echo "WARNING: Ambari Metrics data model initialization failed."
-  else
-    enable_normalization_fifo
-  fi
   }
 
 function stop()
@@ -372,6 +370,12 @@ else
   exit 1
 fi
 
+# set these env variables only if they were not set by ams-env.sh
+: ${AMS_COLLECTOR_LOG_DIR:=/var/log/ambari-metrics-collector}
+: ${AMS_HBASE_NORMALIZER_ENABLED:=true}
+: ${AMS_HBASE_FIFO_COMPACTION_ENABLED:=true}
+: ${AMS_HBASE_INIT_CHECK_ENABLED:=true}
+
 # set pid dir path
 if [[ -n "${AMS_COLLECTOR_PID_DIR}" ]]; then
   PIDFILE=${AMS_COLLECTOR_PID_DIR}/ambari-metrics-collector.pid
@@ -397,7 +401,7 @@ case "$1" in
 	start)
     start
 
-  ;;
+    ;;
 	stop)
     stop
 
@@ -414,6 +418,9 @@ case "$1" in
 	restart)
 	  stop
 	  start
-	;;
+	  ;;
+  enable_normalization_fifo)
+    enable_normalization_fifo
+    ;;
 
 esac

@@ -33,7 +33,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "configure",
                    config_file="default.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     
@@ -45,7 +45,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "start",
                    config_file="default.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     
@@ -61,7 +61,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "stop",
                    config_file="default.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     
@@ -82,7 +82,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "configure",
                    config_file="secured.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     
@@ -94,7 +94,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "start",
                    config_file="secured.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     
@@ -110,7 +110,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "stop",
                    config_file="secured.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
@@ -136,8 +136,6 @@ class TestHbaseRegionServer(RMFTestCase):
       create_parents = True,
     )
     self.assertResourceCalled('Directory', '/tmp',
-      owner = 'hbase',
-      group = 'hadoop',
       create_parents = True,
       mode = 0777
     )
@@ -234,8 +232,6 @@ class TestHbaseRegionServer(RMFTestCase):
       create_parents = True,
     )
     self.assertResourceCalled('Directory', '/tmp',
-      owner = 'hbase',
-      group = 'hadoop',
       create_parents = True,
       mode = 0777
     )
@@ -331,7 +327,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "start",
                    config_file="hbase-rs-2.2.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES)
     
     self.assertResourceCalled('Directory', '/etc/hbase',
@@ -342,8 +338,6 @@ class TestHbaseRegionServer(RMFTestCase):
       group = 'hadoop',
       create_parents = True)
     self.assertResourceCalled('Directory', '/tmp',
-      owner = 'hbase',
-      group = 'hadoop',
       create_parents = True,
       mode = 0777
     )
@@ -447,7 +441,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "start",
                    config_file="hbase-rs-2.2-phoenix.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES)
 
     self.assertResourceCalled('Directory', '/etc/hbase',
@@ -458,8 +452,6 @@ class TestHbaseRegionServer(RMFTestCase):
       group = 'hadoop',
       create_parents = True)
     self.assertResourceCalled('Directory', '/tmp',
-      owner = 'hbase',
-      group = 'hadoop',
       create_parents = True,
       mode = 0777
     )
@@ -555,7 +547,7 @@ class TestHbaseRegionServer(RMFTestCase):
                               owner='hbase',
                               content='log4jproperties\nline2')
 
-    self.assertResourceCalled('Package', 'phoenix_2_2_*')
+    self.assertResourceCalled('Package', 'phoenix_2_2_*', retry_count=5, retry_on_repo_unavailability=False)
 
     self.assertResourceCalled('Execute', '/usr/hdp/current/hbase-regionserver/bin/hbase-daemon.sh --config /usr/hdp/current/hbase-regionserver/conf start regionserver',
       not_if = 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hbase/hbase-hbase-regionserver.pid && ps -p `ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E cat /var/run/hbase/hbase-hbase-regionserver.pid` >/dev/null 2>&1',
@@ -594,7 +586,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "security_status",
                    config_file="secured.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
@@ -616,7 +608,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "security_status",
                    config_file="secured.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
       )
     except:
@@ -633,7 +625,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "security_status",
                    config_file="secured.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityIssuesFound": "Keytab file or principal are not set property."})
@@ -652,7 +644,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "security_status",
                    config_file="secured.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
@@ -662,7 +654,7 @@ class TestHbaseRegionServer(RMFTestCase):
                    classname = "HbaseRegionServer",
                    command = "security_status",
                    config_file="default.json",
-                   hdp_stack_version = self.STACK_VERSION,
+                   stack_version = self.STACK_VERSION,
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
@@ -677,7 +669,7 @@ class TestHbaseRegionServer(RMFTestCase):
                        classname = "HbaseRegionServer",
                        command = "pre_upgrade_restart",
                        config_dict = json_content,
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
     self.assertResourceCalled('Execute',
                               ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'hbase-regionserver', version), sudo=True,)
@@ -695,7 +687,7 @@ class TestHbaseRegionServer(RMFTestCase):
                        classname = "HbaseRegionServer",
                        command = "post_upgrade_restart",
                        config_dict = json_content,
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        call_mocks = [(0, "Dummy output c6401.ambari.apache.org:")],
                        target = RMFTestCase.TARGET_COMMON_SERVICES,
                        mocks_dict = mocks_dict)
@@ -717,7 +709,7 @@ class TestHbaseRegionServer(RMFTestCase):
                        classname = "HbaseRegionServer",
                        command = "pre_upgrade_restart",
                        config_dict = json_content,
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES,
                        call_mocks = [(0, None, ''), (0, None), (0, None), (0, None)],
                        mocks_dict = mocks_dict)

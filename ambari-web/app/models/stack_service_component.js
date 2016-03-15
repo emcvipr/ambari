@@ -68,7 +68,13 @@ App.StackServiceComponent = DS.Model.extend({
   isRestartable: Em.computed.not('isClient'),
 
   /** @property {Boolean} isReassignable - component supports reassign action **/
-  isReassignable: Em.computed.existsIn('componentName', ['NAMENODE', 'SECONDARY_NAMENODE', 'JOBTRACKER', 'RESOURCEMANAGER', 'APP_TIMELINE_SERVER', 'OOZIE_SERVER', 'WEBHCAT_SERVER', 'HIVE_SERVER', 'HIVE_METASTORE', 'MYSQL_SERVER', 'METRICS_COLLECTOR']),
+  isReassignable: Em.computed.existsIn('componentName', ['NAMENODE', 'SECONDARY_NAMENODE', 'JOBTRACKER', 'RESOURCEMANAGER', 'APP_TIMELINE_SERVER', 'OOZIE_SERVER',
+    'WEBHCAT_SERVER', 'HIVE_SERVER', 'HIVE_METASTORE', 'MYSQL_SERVER', 'METRICS_COLLECTOR', 'HISTORYSERVER']),
+
+  /** @property {Boolean} isNonHDPComponent - component not belongs to HDP services **/
+  isNonHDPComponent: function() {
+    return ['METRICS_COLLECTOR', 'METRICS_MONITOR'].contains(this.get('componentName'));
+  }.property('componentName'),
 
   /** @property {Boolean} isRollinRestartAllowed - component supports rolling restart action **/
   isRollinRestartAllowed: function() {
@@ -95,7 +101,7 @@ App.StackServiceComponent = DS.Model.extend({
   /** @property {Boolean} isShownOnInstallerAssignMasterPage - component visible on "Assign Masters" step of Install Wizard **/
   isShownOnInstallerAssignMasterPage: function() {
     var component = this.get('componentName');
-    var mastersNotShown = ['MYSQL_SERVER', 'POSTGRESQL_SERVER'];
+    var mastersNotShown = ['MYSQL_SERVER', 'POSTGRESQL_SERVER', 'HIVE_SERVER_INTERACTIVE'];
     return this.get('isMaster') && !mastersNotShown.contains(component);
   }.property('isMaster','componentName'),
 
@@ -171,7 +177,10 @@ App.StackServiceComponent = DS.Model.extend({
   }.property('componentName'),
 
   /** @property {Boolean} isNotAddableOnlyInInstall - is this component addable, except Install and Add Service Wizards  **/
-  isNotAddableOnlyInInstall: Em.computed.existsIn('componentName', ['HIVE_METASTORE', 'HIVE_SERVER', 'RANGER_KMS_SERVER', 'OOZIE_SERVER'])
+  isNotAddableOnlyInInstall: Em.computed.existsIn('componentName', ['HIVE_METASTORE', 'HIVE_SERVER', 'RANGER_KMS_SERVER', 'OOZIE_SERVER']),
+
+  /** @property {Boolean} isNotAllowedOnSingleNodeCluster - is this component allowed on single node  **/
+  isNotAllowedOnSingleNodeCluster: Em.computed.existsIn('componentName', ['HAWQSTANDBY'])
 
 });
 

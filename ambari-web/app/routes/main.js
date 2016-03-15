@@ -193,6 +193,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
       connectOutlets: function (router, context) {
         App.loadTimer.start('Hosts Page');
         router.get('mainController').connectOutlet('mainHost');
+        router.get('mainHostController').connectOutlet('mainHostComboSearchBox');
       }
     }),
 
@@ -260,6 +261,20 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
           else {
             router.transitionTo('summary');
           }
+        }
+      }),
+
+      logs: Em.Route.extend({
+        route: '/logs:query',
+        connectOutlets: function (router, context) {
+          if (App.get('supports.logSearch')) {
+            router.get('mainHostDetailsController').connectOutlet('mainHostLogs')
+          } else {
+            router.transitionTo('summary');
+          }
+        },
+        serialize: function(router, params) {
+          return this.serializeQueryParams(router, params, 'mainHostDetailsController');
         }
       }),
 
@@ -331,7 +346,8 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
   admin: Em.Route.extend({
     route: '/admin',
     enter: function (router, transition) {
-      if (router.get('loggedIn') && !App.isAuthorized('CLUSTER.TOGGLE_KERBEROS, AMBARI.SET_SERVICE_USERS_GROUPS, CLUSTER.UPGRADE_DOWNGRADE_STACK, CLUSTER.VIEW_STACK_DETAILS')) {
+      if (router.get('loggedIn') && !App.isAuthorized('CLUSTER.TOGGLE_KERBEROS, AMBARI.SET_SERVICE_USERS_GROUPS, CLUSTER.UPGRADE_DOWNGRADE_STACK, CLUSTER.VIEW_STACK_DETAILS')
+        && !(App.get('upgradeInProgress') || App.get('upgradeHolding'))) {
         Em.run.next(function () {
           router.transitionTo('main.dashboard.index');
         });
@@ -339,7 +355,7 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
     },
 
     routePath: function (router, event) {
-      if (!App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK')) {
+      if (!App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK') && !(App.get('upgradeInProgress') || App.get('upgradeHolding'))) {
         Em.run.next(function () {
           App.router.transitionTo('main.dashboard.index');
         });
@@ -505,6 +521,22 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
       connectOutlets: function (router) {
         router.set('mainAdminController.category', "adminServiceAccounts");
         router.get('mainAdminController').connectOutlet('mainAdminServiceAccounts');
+      }
+    }),
+
+    adminServiceAutoStart: Em.Route.extend({
+      route: '/serviceAutoStart',
+      connectOutlets: function (router) {
+        router.set('mainAdminController.category', "serviceAutoStart");
+        router.get('mainAdminController').connectOutlet('mainAdminServiceAutoStart');
+      },
+      exitRoute: function (router, context, callback) {
+        var controller = router.get('mainAdminServiceAutoStartController');
+        if (!controller.get('isSaveDisabled')) {
+          controller.showSavePopup(callback);
+        } else {
+          callback();
+        }
       }
     }),
 
@@ -707,6 +739,12 @@ module.exports = Em.Route.extend(App.RouterRedirections, {
     enableRMHighAvailability: require('routes/rm_high_availability_routes'),
 
     enableRAHighAvailability: require('routes/ra_high_availability_routes'),
+
+    addHawqStandby: require('routes/add_hawq_standby_routes'),
+
+    removeHawqStandby: require('routes/remove_hawq_standby_routes'),
+
+    activateHawqStandby: require('routes/activate_hawq_standby_routes'),
 
     rollbackHighAvailability: require('routes/rollbackHA_routes')
   }),

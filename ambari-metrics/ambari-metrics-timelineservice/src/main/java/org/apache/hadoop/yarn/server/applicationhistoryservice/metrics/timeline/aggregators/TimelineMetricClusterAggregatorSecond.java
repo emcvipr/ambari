@@ -23,6 +23,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixHBaseAccessor;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.discovery.TimelineMetricMetadataManager;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.Condition;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.DefaultCondition;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL;
@@ -43,7 +44,6 @@ import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.ti
  * the precision table and saves into the aggregate.
  */
 public class TimelineMetricClusterAggregatorSecond extends AbstractTimelineAggregator {
-  private static final Log LOG = LogFactory.getLog(TimelineMetricClusterAggregatorSecond.class);
   public Long timeSliceIntervalMillis;
   private TimelineMetricReadHelper timelineMetricReadHelper = new TimelineMetricReadHelper(true);
   // Aggregator to perform app-level aggregates for host metrics
@@ -51,7 +51,10 @@ public class TimelineMetricClusterAggregatorSecond extends AbstractTimelineAggre
   // 1 minute client side buffering adjustment
   private final Long serverTimeShiftAdjustment;
 
-  public TimelineMetricClusterAggregatorSecond(PhoenixHBaseAccessor hBaseAccessor,
+
+  public TimelineMetricClusterAggregatorSecond(String aggregatorName,
+                                               TimelineMetricMetadataManager metadataManager,
+                                               PhoenixHBaseAccessor hBaseAccessor,
                                                Configuration metricsConf,
                                                String checkpointLocation,
                                                Long sleepIntervalMillis,
@@ -61,11 +64,11 @@ public class TimelineMetricClusterAggregatorSecond extends AbstractTimelineAggre
                                                String outputTableName,
                                                Long nativeTimeRangeDelay,
                                                Long timeSliceInterval) {
-    super(hBaseAccessor, metricsConf, checkpointLocation, sleepIntervalMillis,
-      checkpointCutOffMultiplier, aggregatorDisabledParam, tableName,
-      outputTableName, nativeTimeRangeDelay);
+    super(aggregatorName, hBaseAccessor, metricsConf, checkpointLocation,
+      sleepIntervalMillis, checkpointCutOffMultiplier, aggregatorDisabledParam,
+      tableName, outputTableName, nativeTimeRangeDelay);
 
-    appAggregator = new TimelineMetricAppAggregator(metricsConf);
+    appAggregator = new TimelineMetricAppAggregator(metadataManager, metricsConf);
     this.timeSliceIntervalMillis = timeSliceInterval;
     this.serverTimeShiftAdjustment = Long.parseLong(metricsConf.get(SERVER_SIDE_TIMESIFT_ADJUSTMENT, "90000"));
   }
@@ -92,8 +95,7 @@ public class TimelineMetricClusterAggregatorSecond extends AbstractTimelineAggre
     condition.setNoLimit();
     condition.setFetchSize(resultsetFetchSize);
     condition.setStatement(String.format(GET_METRIC_SQL,
-      PhoenixTransactSQL.getNaiveTimeRangeHint(startTime, NATIVE_TIME_RANGE_DELTA),
-      METRICS_RECORD_TABLE_NAME));
+      getQueryHint(startTime), METRICS_RECORD_TABLE_NAME));
     // Retaining order of the row-key avoids client side merge sort.
     condition.addOrderByColumn("METRIC_NAME");
     condition.addOrderByColumn("HOSTNAME");
@@ -234,12 +236,12 @@ public class TimelineMetricClusterAggregatorSecond extends AbstractTimelineAggre
   }
 
   /**
-   * Return beginning of the time slice into which the metric fits.
+   * Return end of the time slice into which the metric fits.
    */
   private Long getSliceTimeForMetric(List<Long[]> timeSlices, Long timestamp) {
     for (Long[] timeSlice : timeSlices) {
-      if (timestamp >= timeSlice[0] && timestamp < timeSlice[1]) {
-        return timeSlice[0];
+      if (timestamp > timeSlice[0] && timestamp <= timeSlice[1]) {
+        return timeSlice[1];
       }
     }
     return -1l;

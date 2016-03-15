@@ -23,7 +23,7 @@
     <min-ambari-version>2.0.*</min-ambari-version>
 
     <validator-class>org.apache.ambari.view.hive.PropertyValidator</validator-class>
-    <view-class>org.apache.ambari.view.utils.ViewImpl</view-class>
+    <view-class>org.apache.ambari.view.hive.HiveViewImpl</view-class>
 
     <!-- Hive Configs -->
     <parameter>
@@ -164,6 +164,23 @@
         <label>WebHDFS Authentication</label>
         <placeholder>auth=SIMPLE</placeholder>
         <required>false</required>
+    </parameter>
+
+    <parameter>
+        <name>hdfs.umask-mode</name>
+        <description>The umask used when creating files and directories. Defaults to 022</description>
+        <label>Umask</label>
+        <default-value>022</default-value>
+        <required>false</required>
+        <cluster-config>hdfs-site/fs.permissions.umask-mode</cluster-config>
+    </parameter>
+
+    <parameter>
+        <name>hdfs.auth_to_local</name>
+        <description>Auth to Local Configuration</description>
+        <label>Auth To Local</label>
+        <required>false</required>
+        <cluster-config>core-site/hadoop.security.auth_to_local</cluster-config>
     </parameter>
 
     <!-- General Configs -->

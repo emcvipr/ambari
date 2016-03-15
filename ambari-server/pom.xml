@@ -26,10 +26,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <python.ver>python &gt;= 2.6</python.ver>
     <!-- On centos the python xml's are inside python package -->
-    <python.xml.package>${python.ver}</python.xml.package>
-    <deb.python.ver>python (&gt;= 2.6)</deb.python.ver>
     <deb.architecture>amd64</deb.architecture>
-    <deb.dependency.list>openssl, postgresql (&gt;= 8.1), ${deb.python.ver}, curl</deb.dependency.list>
     <custom.tests>false</custom.tests>
     <hdpUrlForCentos6>http://public-repo-1.hortonworks.com/HDP/centos6/2.x/updates/2.1.1.0</hdpUrlForCentos6>
     <hdpLatestUrl>http://public-repo-1.hortonworks.com/HDP/hdp_urlinfo.json</hdpLatestUrl>
@@ -43,10 +40,13 @@
     <resourceManagementSrcLocation>${project.basedir}/../ambari-common/src/main/python/resource_management</resourceManagementSrcLocation>
     <customActionsRoot>src/main/resources/custom_actions</customActionsRoot>
     <ambariProperties>conf/unix/ambari.properties</ambariProperties>
-    <commonServicesSrcLocation>target/classes/common-services</commonServicesSrcLocation>
-    <stacksSrcLocation>target/classes/stacks/${stack.distribution}</stacksSrcLocation>
+    <commonServicesSrcLocation>src/main/resources/common-services</commonServicesSrcLocation>
+    <stacksSrcLocation>src/main/resources/stacks/${stack.distribution}</stacksSrcLocation>
     <tarballResourcesFolder>src/main/resources</tarballResourcesFolder>
     <skipPythonTests>false</skipPythonTests>
+    <hadoop.version>2.7.1</hadoop.version>
+    <jetty.version>9.2.11.v20150529</jetty.version>
+    <empty.dir>src/main/package</empty.dir> <!-- any directory in project with not very big amount of files (not to waste-load them) -->
   </properties>
   <build>
     <plugins>
@@ -75,36 +75,17 @@
               <failIfNoMatch>false</failIfNoMatch>
             </configuration>
           </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <artifactId>maven-resources-plugin</artifactId>
-        <version>2.6</version>
-        <executions>
           <execution>
-            <id>copy-resources</id>
-            <phase>generate-test-resources</phase>
+            <id>regex-schema-version</id>
             <goals>
-              <goal>copy-resources</goal>
+              <goal>regex-property</goal>
             </goals>
             <configuration>
-              <outputDirectory>${basedir}/target/</outputDirectory>
-              <resources>
-                <resource>
-                  <directory>${basedir}/../</directory>
-                  <includes>
-                    <include>version</include>
-                  </includes>
-                  <filtering>true</filtering>
-                </resource>
-                <resource>
-                  <directory>${basedir}/sbin/</directory>
-                  <includes>
-                    <include>ambari-server</include>
-                  </includes>
-                  <filtering>true</filtering>
-                </resource>
-              </resources>
+              <name>ambariSchemaVersion</name>
+              <value>${project.version}</value>
+              <regex>^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)(\.|-).*</regex>
+              <replacement>$1.$2.$3</replacement>
+              <failIfNoMatch>false</failIfNoMatch>
             </configuration>
           </execution>
         </executions>
@@ -167,10 +148,97 @@
         <executions>
           <execution>
             <id>build-tarball</id>
-            <phase>package</phase>
+            <phase>${assemblyPhase}</phase>
             <goals>
               <goal>single</goal>
             </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>2.6</version>
+        <executions>
+          <execution>
+            <id>copy-resources</id>
+            <phase>generate-test-resources</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${basedir}/target/</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${basedir}/../</directory>
+                  <includes>
+                    <include>version</include>
+                  </includes>
+                  <filtering>true</filtering>
+                </resource>
+                <resource>
+                  <directory>${basedir}/sbin/</directory>
+                  <includes>
+                    <include>ambari-server</include>
+                  </includes>
+                  <filtering>true</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>copy-repo-resources</id>
+            <phase>${assemblyPhase}</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${basedir}/target/repo</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../ambari-common/src/main/repo</directory>
+                </resource>
+                <resource>
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <include>${project.artifactId}-${project.version}-dist.tar.gz</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${basedir}/src/main/package/deb/control</directory>
+                </resource>
+                <resource>
+                  <directory>${basedir}/src/main/package</directory>
+                  <includes>
+                    <include>dependencies.properties</include>
+                  </includes>
+                </resource>
+                <resource>
+                  <directory>${project.basedir}/../ambari-common/src/main/python/ambari_commons</directory>
+                  <includes>
+                    <include>os_check.py</include>
+                    <include>resources/os_family.json</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>com.coderplus.maven.plugins</groupId>
+        <artifactId>copy-rename-maven-plugin</artifactId>
+        <version>1.0.1</version>
+        <executions>
+          <execution>
+            <id>rename-file</id>
+            <phase>${assemblyPhase}</phase>
+            <goals>
+              <goal>rename</goal>
+            </goals>
+            <configuration>
+              <sourceFile>${basedir}/target/repo/${project.artifactId}-${project.version}-dist.tar.gz</sourceFile>
+              <destinationFile>${basedir}/target/repo/${project.artifactId}.tar.gz</destinationFile>
+            </configuration>
           </execution>
         </executions>
       </plugin>
@@ -259,14 +327,31 @@
           <dependency>
             <groupId>org.eclipse.persistence</groupId>
             <artifactId>eclipselink</artifactId>
-            <version>2.4.2</version>
+            <version>2.6.2</version>
           </dependency>
         </dependencies>
       </plugin>
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
+        <artifactId>properties-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>read-project-properties</goal>
+            </goals>
+            <configuration>
+              <files>
+                <file>${basedir}/src/main/package/dependencies.properties</file>
+              </files>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
         <artifactId>rpm-maven-plugin</artifactId>
-        <version>2.0.1</version>
+        <version>2.1.4</version>
         <executions>
           <execution>
             <!-- unbinds rpm creation from maven lifecycle -->
@@ -281,11 +366,9 @@
           <group>Development</group>
           <description>Maven Recipe: RPM Package.</description>
           <autoRequires>no</autoRequires>
+          <prefix>/</prefix>
           <requires>
-            <require>postgresql-server &gt;= 8.1</require>
-            <require>openssl</require>
-            <require>${python.ver}</require>
-            <require>${python.xml.package}</require>
+            <require>${rpm.dependency.list}</require>
           </requires>
           <postinstallScriptlet>
             <scriptFile>src/main/package/rpm/postinstall.sh</scriptFile>
@@ -303,397 +386,36 @@
             <scriptFile>src/main/package/rpm/posttrans_server.sh</scriptFile>
             <fileEncoding>utf-8</fileEncoding>
           </posttransScriptlet>
-          <defaultFilemode>644</defaultFilemode>
-          <defaultDirmode>755</defaultDirmode>
-          <defaultUsername>root</defaultUsername>
-          <defaultGroupname>root</defaultGroupname>
           <needarch>x86_64</needarch>
           <mappings>
             <mapping>
-              <directory>/usr/lib/ambari-server</directory>
-              <dependency>
-              </dependency>
-            </mapping>
-            <mapping>
-              <directory>/usr/lib/ambari-server/web</directory>
+              <directory>/etc</directory>
+              <username>root</username>
+              <groupname>root</groupname>
+              <directoryIncluded>false</directoryIncluded> <!-- avoid managing /etc/init.d -->
               <sources>
                 <source>
-                  <location>${ambari-web-dir}</location>
-                  <includes>
-                    <include>**</include>
-                  </includes>
+                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/etc</location>
                 </source>
               </sources>
             </mapping>
-            <mapping>
-              <directory>/usr/lib/ambari-server</directory>
-              <sources>
-                <source>
-                  <location>${project.build.directory}/${project.artifactId}-${project.version}.jar</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>${ambari_commons.install.dir}</directory>
-              <sources>
-                <source>
-                  <location>
-                    ${project.basedir}/../ambari-common/src/main/python/ambari_commons
-                  </location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>${resource_management.install.dir}</directory>
-              <sources>
-                <source>
-                  <location>
-                    ${resourceManagementSrcLocation}
-                  </location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>${jinja.install.dir}</directory>
-              <filemode>755</filemode>
+      			<mapping>
+              <directory>/usr</directory>
               <username>root</username>
               <groupname>root</groupname>
               <sources>
                 <source>
-                  <location>${project.basedir}/../ambari-common/src/main/python/ambari_jinja2/ambari_jinja2</location>
-                  <excludes>
-                    <exclude>${project.basedir}/../ambari-common/src/main/python/ambari_jinja2/ambari_jinja2/testsuite</exclude>
-                  </excludes>
+                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/usr</location>
                 </source>
               </sources>
             </mapping>
             <mapping>
-              <directory>${simplejson.install.dir}</directory>
-              <filemode>755</filemode>
+              <directory>/var</directory>
               <username>root</username>
               <groupname>root</groupname>
               <sources>
                 <source>
-                  <location>${project.basedir}/../ambari-common/src/main/python/ambari_simplejson</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/usr/sbin</directory>
-              <filemode>755</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <directoryIncluded>false</directoryIncluded>
-              <sources>
-                <source>
-                  <location>src/main/python/ambari-server.py</location>
-                </source>
-                <source>
-                  <location>src/main/python/ambari_server_main.py</location>
-                </source>
-                <source>
-                  <location>sbin/ambari-server</location>
-                  <filter>true</filter>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/</directory>
-              <filemode>755</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <directoryIncluded>false</directoryIncluded>
-              <sources>
-                <source>
-                  <location>../ambari-common/src/main/unix/ambari-python-wrap</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/etc/ambari-server/conf</directory>
-              <configuration>true</configuration>
-              <sources>
-                <source>
-                  <location>${ambariProperties}</location>
-                </source>
-                <source>
-                  <location>conf/unix/log4j.properties</location>
-                </source>
-                <source>
-                  <location>conf/unix/krb5JAASLogin.conf</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/</directory>
-              <configuration>true</configuration>
-              <filemode>700</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <sources>
-                <source>
-                  <location>conf/unix/ambari-env.sh</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/</directory>
-              <filemode>700</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <sources>
-                <source>
-                  <location>conf/unix/ambari-sudo.sh</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/</directory>
-              <filemode>700</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <sources>
-                <source>
-                  <location>conf/unix/install-helper.sh</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/keys</directory>
-              <sources>
-                <source>
-                  <location>conf/unix/ca.config</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/keys/db</directory>
-              <filemode>700</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <sources>
-                <source>
-                  <location>src/main/resources/db</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/run/ambari-server/bootstrap</directory>
-            </mapping>
-            <mapping>
-              <directory>/var/run/ambari-server/stack-recommendations</directory>
-            </mapping>
-            <mapping>
-              <directory>/var/log/ambari-server</directory>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources</directory>
-              <sources>
-                <source>
-                  <location>target/classes/Ambari-DDL-Postgres-CREATE.sql</location>
-                </source>
-                <source>
-                  <location>src/main/resources/Ambari-DDL-Postgres-DROP.sql</location>
-                </source>
-                <source>
-                  <location>target/classes/Ambari-DDL-Postgres-EMBEDDED-CREATE.sql</location>
-                </source>
-                <source>
-                  <location>src/main/resources/Ambari-DDL-Postgres-EMBEDDED-DROP.sql</location>
-                </source>
-                <source>
-                  <location>target/classes/Ambari-DDL-Oracle-CREATE.sql</location>
-                </source>
-                <source>
-                  <location>target/classes/Ambari-DDL-MySQL-CREATE.sql</location>
-                </source>
-                <source>
-                  <location>src/main/resources/Ambari-DDL-Oracle-DROP.sql</location>
-                </source>
-                <source>
-                  <location>src/main/resources/Ambari-DDL-MySQL-DROP.sql</location>
-                </source>
-                <source>
-                  <location>target/classes/Ambari-DDL-SQLServer-CREATE.sql</location>
-                </source>
-                <source>
-                  <location>target/classes/Ambari-DDL-SQLServer-CREATELOCAL.sql</location>
-                </source>
-                <source>
-                  <location>src/main/resources/Ambari-DDL-SQLServer-DROP.sql</location>
-                </source>
-                <source>
-                  <location>target/classes/Ambari-DDL-SQLAnywhere-CREATE.sql</location>
-                </source>
-                <source>
-                  <location>src/main/resources/Ambari-DDL-SQLAnywhere-DROP.sql</location>
-                </source>
-                <source>
-                  <location>${project.build.directory}/DBConnectionVerification.jar</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/data/tmp</directory>
-              <filemode>755</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/data/cache</directory>
-              <filemode>700</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/apps</directory>
-              <filemode>755</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <sources>
-                <source>
-                  <location>src/main/resources/slider_resources/README.txt</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/scripts</directory>
-              <filemode>755</filemode>
-              <sources>
-                <source>
-                  <location>src/main/resources/scripts</location>
-                </source>
-                <source>
-                  <location>src/main/python/upgradeHelper.py</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/views</directory>
-              <filemode>755</filemode>
-              <sources>
-                <source>
-                  <location>${ambari-admin-dir}/target</location>
-                  <includes>
-                    <include>*.jar</include>
-                  </includes>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/upgrade</directory>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/upgrade/ddl</directory>
-              <sources>
-                <source>
-                  <location>src/main/resources/upgrade/ddl</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/upgrade/dml</directory>
-              <sources>
-                <source>
-                  <location>src/main/resources/upgrade/dml</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/common-services</directory>
-              <sources>
-                <source>
-                  <location>${commonServicesSrcLocation}</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/upgrade/catalog</directory>
-              <sources>
-                <source>
-                  <location>src/main/resources/upgrade/catalog</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/stacks/${stack.distribution}</directory>
-              <sources>
-                <source>
-                  <location>${stacksSrcLocation}</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/stacks</directory>
-              <filemode>755</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <sources>
-                <source>
-                  <location>target/classes/stacks/stack_advisor.py</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/usr/lib/python2.6/site-packages/ambari_server</directory>
-              <filemode>755</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <sources>
-                <source>
-                  <location>src/main/python/ambari_server</location>
-                </source>
-                <source>
-                  <location>src/main/python/bootstrap.py</location>
-                </source>
-                <source>
-                  <location>src/main/python/setupAgent.py</location>
-                </source>
-                <source>
-                  <location>src/main/python/os_check_type.py</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/run/ambari-server</directory>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources</directory>
-              <sources>
-                <source>
-                  <location>../version</location>
-                  <filter>true</filter>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/custom_action_definitions</directory>
-              <sources>
-                <source>
-                  <location>src/main/resources/custom_action_definitions</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <!-- custom actions root-->
-              <directory>/var/lib/ambari-server/resources/custom_actions</directory>
-              <filemode>755</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <sources>
-                <source>
-                  <location>${customActionsRoot}</location>
-                </source>
-              </sources>
-            </mapping>
-            <mapping>
-              <directory>/var/lib/ambari-server/resources/host_scripts</directory>
-              <filemode>755</filemode>
-              <username>root</username>
-              <groupname>root</groupname>
-              <sources>
-                <source>
-                  <location>src/main/resources/host_scripts</location>
+                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/var</location>
                 </source>
               </sources>
             </mapping>
@@ -703,7 +425,7 @@
       <plugin>
         <groupId>org.vafer</groupId>
         <artifactId>jdeb</artifactId>
-        <version>1.0.1</version>
+        <version>1.4</version>
         <executions>
           <execution>
             <!-- unbinds rpm creation from maven lifecycle -->
@@ -715,498 +437,15 @@
         </executions>
         <configuration>
           <controlDir>${basedir}/src/main/package/deb/control</controlDir>
-          <deb>${basedir}/target/${project.artifactId}_${package-version}-${package-release}.deb</deb>
+          <deb>${basedir}/target/${project.artifactId}_${package-version}-${package-release}-dist.deb</deb>
+          <skip>false</skip>
+          <skipPOMs>false</skipPOMs>
           <dataSet>
             <data>
-              <type>template</type>
-              <paths>
-                <path>/usr/lib/ambari-server</path>
-                <path>/var/run/ambari-server</path>
-                <path>/var/run/ambari-server/bootstrap</path>
-                <path>/var/run/ambari-server/stack-recommendations</path>
-                <path>/var/log/ambari-server</path>
-                <path>/var/lib/ambari-server/resources/upgrade</path>
-                <path>/var/lib/ambari-server/data/tmp</path>
-                <path>/var/lib/ambari-server/data/cache</path>
-              </paths>
-            </data>
-            <!-- TODO: should be included all subdirs, if exists-->
-            <data>
-              <src>${basedir}/../ambari-web/public</src>
-              <type>directory</type>
+              <src>${project.build.directory}/${project.artifactId}-${project.version}-dist.tar.gz</src>
+              <type>archive</type>
               <mapper>
                 <type>perm</type>
-                <prefix>/usr/lib/ambari-server/web</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>${project.build.directory}/${project.artifactId}-${project.version}-dist/${project.artifactId}-${project.version}/lib</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/usr/lib</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/python/ambari-server.py</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/usr/sbin</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/python/ambari_server_main.py</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/usr/sbin</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/python/ambari-server.py</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/usr/sbin</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>../ambari-common/src/main/unix/ambari-python-wrap</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>${basedir}/target/ambari-server</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/usr/sbin</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>${ambariProperties}</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/etc/ambari-server/conf</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>conf/unix/log4j.properties</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/etc/ambari-server/conf</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>conf/unix/krb5JAASLogin.conf</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/etc/ambari-server/conf</prefix>
-              </mapper>
-            </data>
-             <!-- /q001 -->
-            <data>
-              <src>conf/unix/ambari-env.sh</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>700</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>conf/unix/ambari-sudo.sh</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>700</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>conf/unix/install-helper.sh</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>700</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/slider_resources/README.txt</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/apps/</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>conf/unix/ca.config</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/keys</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/db</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/keys/db</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>700</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>target/classes/Ambari-DDL-Postgres-CREATE.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/Ambari-DDL-Postgres-DROP.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>target/classes/Ambari-DDL-Postgres-EMBEDDED-CREATE.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/Ambari-DDL-Postgres-EMBEDDED-DROP.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>target/classes/Ambari-DDL-Oracle-CREATE.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>target/classes/Ambari-DDL-MySQL-CREATE.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/Ambari-DDL-Oracle-DROP.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/Ambari-DDL-MySQL-DROP.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>target/classes/Ambari-DDL-SQLServer-CREATE.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>target/classes/Ambari-DDL-SQLServer-CREATELOCAL.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/Ambari-DDL-SQLServer-DROP.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>target/classes/Ambari-DDL-SQLAnywhere-CREATE.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/Ambari-DDL-SQLAnywhere-DROP.sql</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>${project.build.directory}/DBConnectionVerification.jar</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/scripts</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/scripts</prefix>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>${ambari-admin-dir}/target</src>
-              <type>directory</type>
-              <includes>*.jar</includes>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/views</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/python/upgradeHelper.py</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/scripts</prefix>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/upgrade/ddl</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/upgrade/ddl</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/upgrade/dml</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/upgrade/dml</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>${commonServicesSrcLocation}</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/common-services</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/upgrade/catalog</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/upgrade/catalog</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>${stacksSrcLocation}</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/stacks/${stack.distribution}</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>target/classes/stacks/stack_advisor.py</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/stacks</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/python/ambari_server</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/usr/lib/python2.6/site-packages/ambari_server</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/python/bootstrap.py</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/usr/lib/python2.6/site-packages/ambari_server</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/python/setupAgent.py</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/usr/lib/python2.6/site-packages/ambari_server</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/python/os_check_type.py</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/usr/lib/python2.6/site-packages/ambari_server</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>${basedir}/target/version</src>
-              <type>file</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/custom_action_definitions</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/custom_action_definitions</prefix>
-              </mapper>
-            </data>
-            <data>
-              <src>${customActionsRoot}</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/custom_actions</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>
-            <data>
-              <src>src/main/resources/host_scripts</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>/var/lib/ambari-server/resources/host_scripts</prefix>
-                <user>root</user>
-                <group>root</group>
-                <filemode>755</filemode>
-              </mapper>
-            </data>          
-            <data>
-              <src>
-                ${project.basedir}/../ambari-common/src/main/python/ambari_commons
-              </src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>${ambari_commons.install.dir}</prefix>
-                <filemode>755</filemode>
-                <user>root</user>
-                <group>root</group>
-              </mapper>
-            </data>
-            <data>
-              <src>
-                ${resourceManagementSrcLocation}
-              </src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>${resource_management.install.dir}</prefix>
-                <filemode>755</filemode>
-                <user>root</user>
-                <group>root</group>
-              </mapper>
-            </data>
-            <data>
-              <src>${project.basedir}/../ambari-common/src/main/python/ambari_jinja2/ambari_jinja2</src>
-              <excludes>${project.basedir}/../ambari-common/src/main/python/ambari_jinja2/ambari_jinja2/testsuite</excludes>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>${jinja.install.dir}</prefix>
-                <filemode>755</filemode>
-                <user>root</user>
-                <group>root</group>
-              </mapper>
-            </data>
-            <data>
-              <src>${project.basedir}/../ambari-common/src/main/python/ambari_simplejson</src>
-              <type>directory</type>
-              <mapper>
-                <type>perm</type>
-                <prefix>${simplejson.install.dir}</prefix>
-                <filemode>755</filemode>
                 <user>root</user>
                 <group>root</group>
               </mapper>
@@ -1323,6 +562,11 @@
           </execution>
         </executions>
       </plugin>
+      <plugin>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-maven-plugin</artifactId>
+        <version>${jetty.version}</version>
+      </plugin>
     </plugins>
     <resources>
       <resource>
@@ -1332,14 +576,6 @@
           <exclude>stacks/**</exclude>
           <exclude>common-services/**</exclude>
         </excludes>
-      </resource>
-      <resource>
-        <directory>src/main/resources</directory>
-        <filtering>false</filtering>
-        <includes>
-          <include>stacks/**</include>
-          <include>common-services/**</include>
-        </includes>
       </resource>
     </resources>
   </build>
@@ -1533,7 +769,7 @@
     <profile>
       <id>suse11</id>
       <properties>
-        <python.xml.package>python-xml</python.xml.package>
+        <rpm.dependency.list>${rpm.dependency.list.suse}</rpm.dependency.list>
       </properties>
     </profile>
     <profile>
@@ -1764,18 +1000,9 @@
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-webapp</artifactId>
     </dependency>
-    <!--jsp support for jetty -->
     <dependency>
-      <groupId>org.mortbay.jetty</groupId>
-      <artifactId>jsp-api-2.1-glassfish</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.mortbay.jetty</groupId>
-      <artifactId>jsp-2.1-glassfish</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.ant</groupId>
-      <artifactId>ant</artifactId>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-jsp</artifactId>
     </dependency>
     <dependency>
       <groupId>org.apache.ant</groupId>
@@ -1955,11 +1182,6 @@
       <version>4.2.5</version>
     </dependency>
     <dependency>
-      <groupId>com.google.guava</groupId>
-      <artifactId>guava</artifactId>
-      <version>14.0.1</version>
-    </dependency>
-    <dependency>
       <groupId>com.google.code.findbugs</groupId>
       <artifactId>jsr305</artifactId>
       <version>1.3.9</version>
@@ -1968,6 +1190,12 @@
       <groupId>org.quartz-scheduler</groupId>
       <artifactId>quartz</artifactId>
       <version>2.2.1</version>
+      <exclusions>
+        <exclusion>
+          <groupId>c3p0</groupId>
+          <artifactId>c3p0</artifactId>
+        </exclusion>
+      </exclusions>      
     </dependency>
     <dependency>
       <groupId>org.quartz-scheduler</groupId>
@@ -2020,6 +1248,32 @@
           <artifactId>bcprov-jdk15on</artifactId>
         </exclusion>
       </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-auth</artifactId>
+      <version>${hadoop.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-util</artifactId>
+      <version>${jetty.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-util-ajax</artifactId>
+      <version>${jetty.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>commons-cli</groupId>
+      <artifactId>commons-cli</artifactId>
+      <version>1.3.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.mchange</groupId>
+      <artifactId>c3p0</artifactId>
+      <version>[0.9.5.2]</version>
+      <scope>compile</scope>
     </dependency>
   </dependencies>
 

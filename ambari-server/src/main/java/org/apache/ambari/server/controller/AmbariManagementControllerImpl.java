@@ -170,6 +170,7 @@ import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_R
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_TIMEOUT;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.DB_DRIVER_FILENAME;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.GROUP_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.NOT_MANAGED_HDFS_PATH_LIST;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.MAX_DURATION_OF_RETRIES;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.PACKAGE_LIST;
@@ -517,7 +518,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       ServiceComponent sc = s.getServiceComponent(
           request.getComponentName());
 
-      setRestartRequiredServices(s, request.getHostname());
+      setRestartRequiredServices(s, request.getComponentName());
 
       Host host;
       try {
@@ -658,10 +659,12 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
   }
 
   private void setRestartRequiredServices(
-          Service service, String hostName) throws AmbariException {
-
+          Service service, String componentName) throws AmbariException {
     Cluster cluster = service.getCluster();
     StackId stackId = cluster.getCurrentStackVersion();
+    if (service.getServiceComponent(componentName).isClientComponent()) {
+      return;
+    }
     Set<String> needRestartServices = ambariMetaInfo.getRestartRequiredServicesNames(
         stackId.getStackName(), stackId.getStackVersion());
 
@@ -669,16 +672,13 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       Map<String, ServiceComponent> m = service.getServiceComponents();
       for (Entry<String, ServiceComponent> entry : m.entrySet()) {
         ServiceComponent serviceComponent = entry.getValue();
-        if (serviceComponent.isMasterComponent()) {
-          Map<String, ServiceComponentHost> schMap = serviceComponent.getServiceComponentHosts();
-          //schMap will only contain hostName when deleting a host; when adding a host the test skips the loop
-          if(schMap.containsKey(hostName)) {
-            for (Entry<String, ServiceComponentHost> sch : schMap.entrySet()) {
-              ServiceComponentHost serviceComponentHost = sch.getValue();
-              serviceComponentHost.setRestartRequired(true);
-            }
+        Map<String, ServiceComponentHost> schMap = serviceComponent.getServiceComponentHosts();
+
+          for (Entry<String, ServiceComponentHost> sch : schMap.entrySet()) {
+            ServiceComponentHost serviceComponentHost = sch.getValue();
+            serviceComponentHost.setRestartRequired(true);
           }
-        }
+
       }
     }
   }
@@ -1018,7 +1018,11 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
 //       If the user is authorized to view information about this cluster, add it to the response
 //       if (AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, c.getResourceId(),
 //        RoleAuthorization.AUTHORIZATIONS_VIEW_CLUSTER)) {
-      response.add(c.convertToResponse());
+      ClusterResponse cr = c.convertToResponse();
+      cr.setDesiredConfigs(c.getDesiredConfigs());
+      cr.setDesiredServiceConfigVersions(c.getActiveServiceConfigVersions());
+      cr.setCredentialStoreServiceProperties(getCredentialStoreServiceProperties());
+      response.add(cr);
 //       }
     }
     StringBuilder builder = new StringBuilder();
@@ -1502,6 +1506,15 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
             isConfigurationCreationNeeded = true;
             break;
           } else {
+            if (clusterConfig.getServiceConfigVersions().isEmpty()) {
+              //If there's no service config versions containing this config, recreate it even if exactly equal
+              LOG.warn("Existing desired config doesn't belong to any service config version, " +
+                  "forcing config recreation, " +
+                  "clusterName={}, type = {}, tag={}", cluster.getClusterName(), clusterConfig.getType(),
+                  clusterConfig.getTag());
+              isConfigurationCreationNeeded = true;
+              break;
+            }
             for (Entry<String, String> property : requestConfigProperties.entrySet()) {
               if (!StringUtils.equals(property.getValue(), clusterConfigProperties.get(property.getKey()))) {
                 isConfigurationCreationNeeded = true;
@@ -1699,29 +1712,35 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
         } catch (KerberosOperationException e) {
           throw new IllegalArgumentException(e.getMessage(), e);
         }
-      } else if (cluster.getSecurityType() != securityType) {
-        LOG.info("Received cluster security type change request from {} to {}",
-            cluster.getSecurityType().name(), securityType.name());
+      } else {
+        // If force_toggle_kerberos is not specified, null will be returned. Therefore, perform an
+        // equals check to yield true if the result is Boolean.TRUE, otherwise false.
+        boolean forceToggleKerberos = kerberosHelper.getForceToggleKerberosDirective(requestProperties);
 
-        if ((securityType == SecurityType.KERBEROS) || (securityType == SecurityType.NONE)) {
-          if(!AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, cluster.getResourceId(), EnumSet.of(RoleAuthorization.CLUSTER_TOGGLE_KERBEROS))) {
-            throw new AuthorizationException("The authenticated user does not have authorization to enable or disable Kerberos");
+        if (forceToggleKerberos || (cluster.getSecurityType() != securityType)) {
+          LOG.info("Received cluster security type change request from {} to {} (forced: {})",
+              cluster.getSecurityType().name(), securityType.name(), forceToggleKerberos);
+
+          if ((securityType == SecurityType.KERBEROS) || (securityType == SecurityType.NONE)) {
+            if (!AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, cluster.getResourceId(), EnumSet.of(RoleAuthorization.CLUSTER_TOGGLE_KERBEROS))) {
+              throw new AuthorizationException("The authenticated user does not have authorization to enable or disable Kerberos");
+            }
+
+            // Since the security state of the cluster has changed, invoke toggleKerberos to handle
+            // adding or removing Kerberos from the cluster. This may generate multiple stages
+            // or not depending the current state of the cluster.
+            try {
+              requestStageContainer = kerberosHelper.toggleKerberos(cluster, securityType, requestStageContainer,
+                  kerberosHelper.getManageIdentitiesDirective(requestProperties));
+            } catch (KerberosOperationException e) {
+              throw new IllegalArgumentException(e.getMessage(), e);
+            }
+          } else {
+            throw new IllegalArgumentException(String.format("Unexpected security type encountered: %s", securityType.name()));
           }
 
-          // Since the security state of the cluster has changed, invoke toggleKerberos to handle
-          // adding or removing Kerberos from the cluster. This may generate multiple stages
-          // or not depending the current state of the cluster.
-          try {
-            requestStageContainer = kerberosHelper.toggleKerberos(cluster, securityType, requestStageContainer,
-                kerberosHelper.getManageIdentitiesDirective(requestProperties));
-          } catch (KerberosOperationException e) {
-            throw new IllegalArgumentException(e.getMessage(), e);
-          }
-        } else {
-          throw new IllegalArgumentException(String.format("Unexpected security type encountered: %s", securityType.name()));
+          cluster.setSecurityType(securityType);
         }
-
-        cluster.setSecurityType(securityType);
       }
     }
 
@@ -2030,15 +2049,6 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
 
     Host host = clusters.getHost(scHost.getHostName());
 
-    String jobtrackerHost = getJobTrackerHost(cluster);
-    if (!scHost.getHostName().equals(jobtrackerHost)) {
-      if (configTags.get(Configuration.GLOBAL_CONFIG_TAG) != null) {
-        configHelper.applyCustomConfig(
-          configurations, Configuration.GLOBAL_CONFIG_TAG,
-          Configuration.RCA_ENABLED_PROPERTY, "false", false);
-      }
-    }
-
     execCmd.setConfigurations(configurations);
     execCmd.setConfigurationAttributes(configurationAttributes);
     execCmd.setConfigurationTags(configTags);
@@ -2173,6 +2183,10 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     Set<String> groupSet = configHelper.getPropertyValuesWithPropertyType(stackId, PropertyType.GROUP, cluster);
     String groupList = gson.toJson(groupSet);
     hostParams.put(GROUP_LIST, groupList);
+
+    Set<String> notManagedHdfsPathSet = configHelper.getPropertyValuesWithPropertyType(stackId, PropertyType.NOT_MANAGED_HDFS_PATH, cluster);
+    String notManagedHdfsPathList = gson.toJson(notManagedHdfsPathSet);
+    hostParams.put(NOT_MANAGED_HDFS_PATH_LIST, notManagedHdfsPathList);
 
     DatabaseType databaseType = configs.getDatabaseType();
     if (databaseType == DatabaseType.ORACLE) {
@@ -2347,8 +2361,6 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       Collection<ServiceComponentHost> componentsToEnableKerberos = new ArrayList<ServiceComponentHost>();
       Set<String> hostsToForceKerberosOperations = new HashSet<String>();
 
-      //HACK
-      String jobtrackerHost = getJobTrackerHost(cluster);
       for (String compName : changedScHosts.keySet()) {
         for (State newState : changedScHosts.get(compName).keySet()) {
           for (ServiceComponentHost scHost :
@@ -2396,7 +2408,8 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
                   // occur (like distribute keytabs)
                   if((oldSchState == State.INIT || oldSchState == State.INSTALL_FAILED) && kerberosHelper.isClusterKerberosEnabled(cluster)) {
                     // check if host component already exists, if it exists no need to reset kerberos configs
-                    if (!hostComponentAlreadyExists(cluster, scHost)) {
+                    // check if it's blueprint install. If it is, then do not call kerberos.configureService
+                    if (!hostComponentAlreadyExists(cluster, scHost) && !("INITIAL_INSTALL".equals(requestProperties.get("phase")))) {
                       try {
                         kerberosHelper.configureService(cluster, scHost);
                       } catch (KerberosInvalidConfigurationException e) {
@@ -2566,15 +2579,6 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
 
             Map<String, Map<String, String>> configTags =
                 findConfigurationTagsWithOverrides(cluster, host.getHostName());
-
-            // HACK - Set configs on the ExecCmd
-            if (!scHost.getHostName().equals(jobtrackerHost)) {
-              if (configTags.get(Configuration.GLOBAL_CONFIG_TAG) != null) {
-                configHelper.applyCustomConfig(
-                    configurations, Configuration.GLOBAL_CONFIG_TAG,
-                    Configuration.RCA_ENABLED_PROPERTY, "false", false);
-              }
-            }
 
             createHostAction(cluster, stage, scHost, configurations, configurationAttributes, configTags,
                              roleCommand, requestParameters, event);
@@ -2776,6 +2780,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
 
     return response;  }
 
+  @Transactional
   void updateServiceStates(
       Cluster cluster,
       Map<State, List<Service>> changedServices,
@@ -2783,51 +2788,44 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       Map<String, Map<State, List<ServiceComponentHost>>> changedScHosts,
       Collection<ServiceComponentHost> ignoredScHosts
   ) {
-    Lock clusterWriteLock = cluster.getClusterGlobalLock().writeLock();
-
-    clusterWriteLock.lock();
-    try {
-      if (changedServices != null) {
-        for (Entry<State, List<Service>> entry : changedServices.entrySet()) {
-          State newState = entry.getKey();
-          for (Service s : entry.getValue()) {
-            if (s.isClientOnlyService()
-                && newState == State.STARTED) {
-              continue;
-            }
-            s.setDesiredState(newState);
+    if (changedServices != null) {
+      for (Entry<State, List<Service>> entry : changedServices.entrySet()) {
+        State newState = entry.getKey();
+        for (Service s : entry.getValue()) {
+          if (s.isClientOnlyService()
+              && newState == State.STARTED) {
+            continue;
           }
+          s.setDesiredState(newState);
         }
       }
+    }
 
-      if (changedComps != null) {
-        for (Entry<State, List<ServiceComponent>> entry :
-            changedComps.entrySet()) {
-          State newState = entry.getKey();
-          for (ServiceComponent sc : entry.getValue()) {
-            sc.setDesiredState(newState);
-          }
+    if (changedComps != null) {
+      for (Entry<State, List<ServiceComponent>> entry :
+          changedComps.entrySet()) {
+        State newState = entry.getKey();
+        for (ServiceComponent sc : entry.getValue()) {
+          sc.setDesiredState(newState);
         }
       }
+    }
 
-      for (Map<State, List<ServiceComponentHost>> stateScHostMap :
-          changedScHosts.values()) {
-        for (Entry<State, List<ServiceComponentHost>> entry :
-            stateScHostMap.entrySet()) {
-          State newState = entry.getKey();
-          for (ServiceComponentHost sch : entry.getValue()) {
-            sch.setDesiredState(newState);
-          }
+    for (Map<State, List<ServiceComponentHost>> stateScHostMap :
+        changedScHosts.values()) {
+      for (Entry<State, List<ServiceComponentHost>> entry :
+          stateScHostMap.entrySet()) {
+        State newState = entry.getKey();
+        for (ServiceComponentHost sch : entry.getValue()) {
+          sch.setDesiredState(newState);
         }
       }
+    }
 
-      if (ignoredScHosts != null) {
-        for (ServiceComponentHost scHost : ignoredScHosts) {
-          scHost.setDesiredState(scHost.getState());
-        }
+    if (ignoredScHosts != null) {
+      for (ServiceComponentHost scHost : ignoredScHosts) {
+        scHost.setDesiredState(scHost.getState());
       }
-    } finally {
-      clusterWriteLock.unlock();
     }
   }
 
@@ -2863,7 +2861,13 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
         changedHosts, requestParameters, requestProperties,
         runSmokeTest, reconfigureClients);
 
-    updateServiceStates(cluster, changedServices, changedComponents, changedHosts, ignoredHosts);
+    Lock clusterWriteLock = cluster.getClusterGlobalLock().writeLock();
+    clusterWriteLock.lock();
+    try {
+      updateServiceStates(cluster, changedServices, changedComponents, changedHosts, ignoredHosts);
+    } finally {
+      clusterWriteLock.unlock();
+    }
     return requestStages;
   }
 
@@ -3061,7 +3065,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
             "DISABLED/INIT/INSTALLED/INSTALL_FAILED/UNKNOWN state. Current=" + componentHost.getState() + ".");
       }
 
-      setRestartRequiredServices(service, request.getHostname());
+      setRestartRequiredServices(service, request.getComponentName());
 
       if (!safeToRemoveSCHs.containsKey(component)) {
         safeToRemoveSCHs.put(component, new HashSet<ServiceComponentHost>());
@@ -3798,6 +3802,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
    */
   private void verifyRepository(RepositoryRequest request) throws AmbariException {
     URLStreamProvider usp = new URLStreamProvider(REPO_URL_CONNECT_TIMEOUT, REPO_URL_READ_TIMEOUT, null, null, null);
+    usp.setSetupTruststoreForHttps(false);
 
     RepositoryInfo repositoryInfo = ambariMetaInfo.getRepository(request.getStackName(), request.getStackVersion(), request.getOsType(), request.getRepoId());
     String repoName = repositoryInfo.getRepoName();

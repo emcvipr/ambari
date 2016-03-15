@@ -120,7 +120,7 @@ public class ConfigHelper {
   private Map<String, Map<String, String>> getEffectiveDesiredTags(
       Cluster cluster, Map<String, HostConfig> hostConfigOverrides) {
 
-    Map<String, DesiredConfig> clusterDesired = (cluster == null) ? new HashMap<String, DesiredConfig>() : cluster.getDesiredConfigs();
+    Map<String, DesiredConfig> clusterDesired = (cluster == null) ? new HashMap<String, DesiredConfig>() : cluster.getDesiredConfigs(true);
 
     Map<String, Map<String, String>> resolved = new TreeMap<String, Map<String, String>>();
 
@@ -143,7 +143,7 @@ public class ConfigHelper {
 
         tags.put(CLUSTER_DEFAULT_TAG, config.getTag());
 
-      // AMBARI-3672. Only consider Config groups for override tags
+        // AMBARI-3672. Only consider Config groups for override tags
         // tags -> (configGroupId, versionTag)
         if (hostConfigOverrides != null) {
           HostConfig hostConfig = hostConfigOverrides.get(config.getType());
@@ -379,6 +379,10 @@ public class ConfigHelper {
     if (stale == null) {
       stale = calculateIsStaleConfigs(sch);
       staleConfigsCache.put(sch, stale);
+      if(LOG.isDebugEnabled()) {
+        LOG.debug("Config staleness for " +
+                  sch.getServiceComponentName() + " on host " + sch.getHostName() + " - " + stale);
+      }
     }
     return stale;
   }
@@ -680,42 +684,49 @@ public class ConfigHelper {
                                String authenticatedUserName,
                                String serviceVersionNote) throws AmbariException {
 
-    if((configType != null) && (updates != null) && !updates.isEmpty()) {
-      Config oldConfig = cluster.getDesiredConfigByType(configType);
-      Map<String, String> oldConfigProperties;
-      Map<String, String> properties = new HashMap<String, String>();
-      Map<String, Map<String, String>> propertiesAttributes =
-        new HashMap<String, Map<String, String>>();
+    // Nothing to update or remove
+    if (configType == null ||
+      (updates == null || updates.isEmpty()) &&
+      (removals == null || removals.isEmpty())) {
+      return;
+    }
 
-      if (oldConfig == null) {
-        oldConfigProperties = null;
-      } else {
-        oldConfigProperties = oldConfig.getProperties();
-        if (oldConfigProperties != null) {
-          properties.putAll(oldConfigProperties);
-        }
-        if (oldConfig.getPropertiesAttributes() != null) {
-          propertiesAttributes.putAll(oldConfig.getPropertiesAttributes());
-        }
+    Config oldConfig = cluster.getDesiredConfigByType(configType);
+    Map<String, String> oldConfigProperties;
+    Map<String, String> properties = new HashMap<String, String>();
+    Map<String, Map<String, String>> propertiesAttributes =
+      new HashMap<String, Map<String, String>>();
+
+    if (oldConfig == null) {
+      oldConfigProperties = null;
+    } else {
+      oldConfigProperties = oldConfig.getProperties();
+      if (oldConfigProperties != null) {
+        properties.putAll(oldConfigProperties);
       }
+      if (oldConfig.getPropertiesAttributes() != null) {
+        propertiesAttributes.putAll(oldConfig.getPropertiesAttributes());
+      }
+    }
 
+    if (updates != null) {
       properties.putAll(updates);
+    }
 
-      // Remove properties that need to be removed.
-      if(removals != null) {
-        for (String propertyName : removals) {
-          properties.remove(propertyName);
-          for (Map<String, String> attributesMap: propertiesAttributes.values()) {
-            attributesMap.remove(propertyName);
-          }
+    // Remove properties that need to be removed.
+    if (removals != null) {
+      for (String propertyName : removals) {
+        properties.remove(propertyName);
+        for (Map<String, String> attributesMap: propertiesAttributes.values()) {
+          attributesMap.remove(propertyName);
         }
       }
+    }
 
-      if ((oldConfigProperties == null)
-        || !Maps.difference(oldConfigProperties, properties).areEqual()) {
-        createConfigType(cluster, controller, configType, properties,
-          propertiesAttributes, authenticatedUserName, serviceVersionNote);
-      }
+    if ((oldConfigProperties == null)
+      || !Maps.difference(oldConfigProperties, properties).areEqual()) {
+      createConfigType(cluster, controller, configType, properties,
+        propertiesAttributes, authenticatedUserName, serviceVersionNote);
     }
   }
 
@@ -1134,10 +1145,11 @@ public class ConfigHelper {
    * @return true if the tags are different in any way, even if not-specified
    */
   private boolean isTagChanged(Map<String, String> desiredTags, Map<String, String> actualTags, boolean groupSpecificConfigs) {
-    if (!actualTags.get(CLUSTER_DEFAULT_TAG).equals(desiredTags.get(CLUSTER_DEFAULT_TAG)) && !groupSpecificConfigs) {
+    if (!actualTags.get(CLUSTER_DEFAULT_TAG).equals(desiredTags.get(CLUSTER_DEFAULT_TAG))) {
       return true;
     }
 
+    // cluster level configs are already compared for staleness, now they match
     // if the host has group specific configs for type we should ignore the cluster level configs and compare specifics
     if (groupSpecificConfigs) {
       actualTags.remove(CLUSTER_DEFAULT_TAG);

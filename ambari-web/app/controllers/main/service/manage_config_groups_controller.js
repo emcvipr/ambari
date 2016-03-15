@@ -108,7 +108,7 @@ App.ManageConfigGroupsController = Em.Controller.extend(App.ConfigOverridable, {
     return App.StackServiceComponent.find().filterProperty('serviceName', this.get('serviceName')).map(function (component) {
       return Em.Object.create({
         componentName: component.get('componentName'),
-        displayName: App.format.role(component.get('componentName')),
+        displayName: App.format.role(component.get('componentName'), false),
         selected: false
       });
     });
@@ -306,7 +306,7 @@ App.ManageConfigGroupsController = Em.Controller.extend(App.ConfigOverridable, {
       host.host_components.forEach(function (hostComponent) {
         hostComponents.push(Em.Object.create({
           componentName: hostComponent.HostRoles.component_name,
-          displayName: App.format.role(hostComponent.HostRoles.component_name)
+          displayName: App.format.role(hostComponent.HostRoles.component_name, false)
         }));
       }, this);
       wrappedHosts.pushObject(Em.Object.create({
@@ -405,22 +405,32 @@ App.ManageConfigGroupsController = Em.Controller.extend(App.ConfigOverridable, {
    * @returns {Array}
    */
   generateOriginalConfigGroups: function(configGroups) {
+    var self = this;
     return configGroups.map(function (item) {
-      return {
-        id: item.get('id'),
-        config_group_id: item.get('configGroupId'),
-        name: item.get('name'),
-        service_name: item.get('serviceName'),
-        description: item.get('description'),
-        hosts: item.get('hosts').slice(0),
-        service_id: item.get('serviceName'),
-        desired_configs: item.get('desiredConfigs'),
-        is_default: item.get('isDefault'),
-        child_config_groups: item.get('childConfigGroups') ? item.get('childConfigGroups').mapProperty('id') : [],
-        parent_config_group_id: item.get('parentConfigGroup.id'),
-        properties: item.get('properties')
-      };
+      return self.createOriginalRecord(item);
     });
+  },
+
+  /**
+   *  Return object to use for loading to model with correct names for object keys
+   * @param configGroup - config group object from model
+   * @returns {Object}
+   */
+  createOriginalRecord: function (configGroup) {
+    return {
+      id: configGroup.get('id'),
+      config_group_id: configGroup.get('configGroupId'),
+      name: configGroup.get('name'),
+      service_name: configGroup.get('serviceName'),
+      description: configGroup.get('description'),
+      hosts: configGroup.get('hosts').slice(0),
+      service_id: configGroup.get('serviceName'),
+      desired_configs: configGroup.get('desiredConfigs'),
+      is_default: configGroup.get('isDefault'),
+      child_config_groups: configGroup.get('childConfigGroups') ? configGroup.get('childConfigGroups').mapProperty('id') : [],
+      parent_config_group_id: configGroup.get('parentConfigGroup.id'),
+      properties: configGroup.get('properties')
+    };
   },
 
   /**
@@ -628,8 +638,12 @@ App.ManageConfigGroupsController = Em.Controller.extend(App.ConfigOverridable, {
       }.property('warningMessage', 'configGroupName', 'configGroupDesc'),
 
       onPrimary: function () {
-        self.set('selectedConfigGroup.name', this.get('configGroupName'));
-        self.set('selectedConfigGroup.description', this.get('configGroupDesc'));
+        var renamedGroup = self.createOriginalRecord(self.get('selectedConfigGroup'));
+        renamedGroup.name = this.get('configGroupName');
+        renamedGroup.description = this.get('configGroupDesc');
+        App.store.load(App.ServiceConfigGroup, renamedGroup);
+        App.store.commit();
+        App.configGroupsMapper.deleteRecord(self.get('selectedConfigGroup'));
         this.hide();
       }
     });

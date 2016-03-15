@@ -31,6 +31,8 @@ from ambari_commons.os_family_impl import OsFamilyImpl
 
 class AmsCollector(Script):
   def install(self, env):
+    import params
+    env.set_params(params)
     self.install_packages(env)
 
   def configure(self, env, action = None):

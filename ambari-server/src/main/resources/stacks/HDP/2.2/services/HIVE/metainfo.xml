@@ -63,11 +63,12 @@
             <package>
               <name>mysql-connector-java</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_mysl_connector</condition>
             </package>
           </packages>
         </osSpecific>
         <osSpecific>
-          <osFamily>redhat6,redhat7,suse11</osFamily>
+          <osFamily>amazon2015,redhat6,redhat7,suse11</osFamily>
           <packages>
             <package>
               <name>hive_${stack_version}</name>
@@ -81,7 +82,7 @@
           </packages>
         </osSpecific>
         <osSpecific>
-          <osFamily>redhat6,suse11</osFamily>
+          <osFamily>amazon2015,redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>mysql</name>
@@ -95,10 +96,12 @@
             <package>
               <name>mysql-community-release</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_mysql</condition>
             </package>
             <package>
               <name>mysql-community-server</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_mysql</condition>
             </package>
           </packages>
         </osSpecific>
@@ -117,11 +120,12 @@
           </packages>
         </osSpecific>
         <osSpecific>
-          <osFamily>redhat6,ubuntu12</osFamily>
+          <osFamily>amazon2015,redhat6,ubuntu12</osFamily>
           <packages>
             <package>
               <name>mysql-server</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_mysql</condition>
             </package>
           </packages>
         </osSpecific>
@@ -131,6 +135,7 @@
             <package>
               <name>mysql-client</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_mysql</condition>
             </package>
           </packages>
         </osSpecific>

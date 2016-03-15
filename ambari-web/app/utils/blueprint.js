@@ -299,7 +299,6 @@ module.exports = {
   /**
    * @method buildConfigsJSON - generates JSON according to blueprint format
    * @param {Em.Array} stepConfigs - array of Ember Objects
-   * @param {Array} services
    * @returns {Object}
    * Example:
    * {
@@ -317,24 +316,18 @@ module.exports = {
    *   }
    * }
    */
-  buildConfigsJSON: function(services, stepConfigs) {
+  buildConfigsJSON: function (stepConfigs) {
     var configurations = {};
-    services.forEach(function(service) {
-      var config = stepConfigs.findProperty('serviceName', service.get('serviceName'));
-      if (config && service.get('configTypes')) {
-        Object.keys(service.get('configTypes')).forEach(function(type) {
-          if(!configurations[type]){
-            configurations[type] = {
-              properties: {}
-            }
+    stepConfigs.forEach(function (stepConfig) {
+      stepConfig.get('configs').forEach(function (config) {
+        if (config.get('isRequiredByAgent')) {
+          var type = App.config.getConfigTagFromFileName(config.get('filename'));
+          if (!configurations[type]) {
+            configurations[type] = {properties: {}}
           }
-        });
-        config.get('configs').forEach(function(property){
-          if (configurations[property.get('filename').replace('.xml','')]){
-            configurations[property.get('filename').replace('.xml','')]['properties'][property.get('name')] = property.get('value');
-          }
-        });
-      }
+          configurations[type]['properties'][config.get('name')] = config.get('value');
+        }
+      });
     });
     return configurations;
   },
@@ -400,6 +393,28 @@ module.exports = {
         hostMapObject[hostName].push(componentName);
     });
     return hostMapObject;
+  },
+
+  /**
+   * Clean up host groups from components that should be removed
+   *
+   * @param hostGroups
+   * @param serviceNames
+   */
+  removeDeletedComponents: function(hostGroups, serviceNames) {
+    var components = [];
+    App.StackService.find().forEach(function(s) {
+      if (serviceNames.contains(s.get('serviceName'))) {
+        components = components.concat(s.get('serviceComponents').mapProperty('componentName'));
+      }
+    });
+
+    hostGroups.blueprint.host_groups.forEach(function(hg) {
+      hg.components = hg.components.filter(function(c) {
+        return !components.contains(c.name);
+      })
+    });
+    return hostGroups;
   },
 
   /**

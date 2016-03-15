@@ -66,6 +66,7 @@ import org.apache.ambari.server.state.ServiceComponentHost;
 import org.apache.ambari.server.state.stack.OsFamily;
 import org.apache.ambari.server.topology.InvalidTopologyException;
 import org.apache.ambari.server.topology.InvalidTopologyTemplateException;
+import org.apache.ambari.server.topology.LogicalRequest;
 import org.apache.ambari.server.topology.TopologyManager;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
@@ -143,6 +144,11 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
       PropertyHelper.getPropertyId(null, "host_count");
   public static final String HOST_PREDICATE_PROPERTY_ID =
       PropertyHelper.getPropertyId(null, "host_predicate");
+
+  //todo use the same json structure for cluster host addition (cluster template and upscale)
+  public static final String HOST_RACK_INFO_NO_CATEGORY_PROPERTY_ID =
+      PropertyHelper.getPropertyId(null, "rack_info");
+
 
   private static Set<String> pkPropertyIds =
       new HashSet<String>(Arrays.asList(new String[]{
@@ -353,6 +359,7 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
     //todo: constants
     baseUnsupported.remove(HOST_COUNT_PROPERTY_ID);
     baseUnsupported.remove(HOST_PREDICATE_PROPERTY_ID);
+    baseUnsupported.remove(HOST_RACK_INFO_NO_CATEGORY_PROPERTY_ID);
 
     return checkConfigPropertyIds(baseUnsupported, "Hosts");
   }
@@ -405,7 +412,11 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
         (String) properties.get(HOST_CLUSTER_NAME_PROPERTY_ID),
         null);
     hostRequest.setPublicHostName((String) properties.get(HOST_PUBLIC_NAME_PROPERTY_ID));
-    hostRequest.setRackInfo((String) properties.get(HOST_RACK_INFO_PROPERTY_ID));
+
+    String rackInfo = (String) ((null != properties.get(HOST_RACK_INFO_PROPERTY_ID))? properties.get(HOST_RACK_INFO_PROPERTY_ID):
+            properties.get(HOST_RACK_INFO_NO_CATEGORY_PROPERTY_ID));
+
+    hostRequest.setRackInfo(rackInfo);
     hostRequest.setBlueprintName((String) properties.get(BLUEPRINT_PROPERTY_ID));
     hostRequest.setHostGroupName((String) properties.get(HOSTGROUP_PROPERTY_ID));
     
@@ -874,6 +885,10 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
     for (HostRequest hostRequest : okToRemove) {
       // Assume the user also wants to delete it entirely, including all clusters.
       clusters.deleteHost(hostRequest.getHostname());
+
+      for (LogicalRequest logicalRequest: topologyManager.getRequests(Collections.<Long>emptyList())) {
+        logicalRequest.removeHostRequestByHostName(hostRequest.getHostname());
+      }
 
       if (null != hostRequest.getClusterName()) {
         clusters.getCluster(hostRequest.getClusterName()).recalculateAllClusterVersionStates();

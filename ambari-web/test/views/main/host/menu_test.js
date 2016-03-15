@@ -38,37 +38,81 @@ describe('App.MainHostMenuView', function () {
     Em.A([
         {
           stackVersionsAvailable: true,
-          stackUpgrade: true,
           m: '`versions` is visible',
           e: false
         },
         {
-          stackVersionsAvailable: true,
-          stackUpgrade: false,
-          m: '`versions` is invisible (1)',
-          e: true
-        },
-        {
           stackVersionsAvailable: false,
-          stackUpgrade: true,
-          m: '`versions` is invisible (2)',
-          e: true
-        },
-        {
-          stackVersionsAvailable: false,
-          stackUpgrade: false,
-          m: '`versions` is invisible (3)',
+          m: '`versions` is invisible',
           e: true
         }
       ]).forEach(function (test) {
         it(test.m, function () {
           this.mock.withArgs('stackVersionsAvailable').returns(test.stackVersionsAvailable);
-          this.mock.withArgs('supports.stackUpgrade').returns(test.stackUpgrade);
           view.propertyDidChange('content');
           expect(view.get('content').findProperty('name', 'versions').get('hidden')).to.equal(test.e);
         });
       });
 
+    Em.A([
+      {
+        logSearch: false,
+        m: '`logs` tab is invisible',
+        e: true
+      },
+      {
+        logSearch: true,
+        m: '`logs` tab is visible',
+        e: false
+      }
+    ]).forEach(function(test) {
+      it(test.m, function() {
+          this.mock.withArgs('supports.logSearch').returns(test.logSearch);
+          view.propertyDidChange('content');
+          expect(view.get('content').findProperty('name', 'logs').get('hidden')).to.equal(test.e);
+      });
+    });
+  });
+
+  describe("#updateAlertCounter()", function() {
+
+    it("CRITICAL alerts", function() {
+      view.setProperties({
+        host: Em.Object.create({
+          criticalWarningAlertsCount: 1,
+          alertsSummary: Em.Object.create({
+            CRITICAL: 1,
+            WARNING: 0
+          })
+        })
+      });
+      view.updateAlertCounter();
+      expect(view.get('content').findProperty('name', 'alerts').get('badgeText')).to.equal('1');
+      expect(view.get('content').findProperty('name', 'alerts').get('badgeClasses')).to.equal('label alerts-crit-count');
+    });
+
+    it("WARNING alerts", function() {
+      view.setProperties({
+        host: Em.Object.create({
+          criticalWarningAlertsCount: 1,
+          alertsSummary: Em.Object.create({
+            CRITICAL: 0,
+            WARNING: 1
+          })
+        })
+      });
+      view.updateAlertCounter();
+      expect(view.get('content').findProperty('name', 'alerts').get('badgeText')).to.equal('1');
+      expect(view.get('content').findProperty('name', 'alerts').get('badgeClasses')).to.equal('label alerts-warn-count');
+    });
+  });
+
+  describe("#deactivateChildViews()", function() {
+    it("active attr should be empty", function() {
+      view.set('_childViews', [Em.Object.create({active: 'active'})]);
+      view.deactivateChildViews();
+      expect(view.get('_childViews').mapProperty('active')).to.eql(['']);
+    });
   });
 
 });

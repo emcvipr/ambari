@@ -19,6 +19,7 @@
 var App = require('app');
 require('views/common/controls_view');
 var validator = require('utils/validator');
+var testHelpers = require('test/helpers');
 
 describe('App.ServiceConfigRadioButtons', function () {
 
@@ -26,62 +27,6 @@ describe('App.ServiceConfigRadioButtons', function () {
 
   beforeEach(function () {
     view = App.ServiceConfigRadioButtons.create();
-  });
-
-  describe('#setConnectionUrl', function () {
-    beforeEach(function () {
-      sinon.stub(view, 'getPropertyByType', function (name) {
-        return App.ServiceConfigProperty.create({'name': name});
-      });
-      sinon.stub(view, 'getDefaultPropertyValue', function () {
-        return 'host:{0},db:{1}';
-      });
-    });
-
-    afterEach(function () {
-      view.getPropertyByType.restore();
-      view.getDefaultPropertyValue.restore();
-    });
-
-    it('updates value for connection url', function () {
-      expect(view.setConnectionUrl('hostName', 'dbName').get('value')).to.equal('host:hostName,db:dbName');
-    });
-  });
-
-  describe('#setRequiredProperties', function () {
-
-    beforeEach(function () {
-      view.reopen({
-        serviceConfig: Em.Object.create(),
-        categoryConfigsAll: [
-          App.ServiceConfigProperty.create({
-            name: 'p1',
-            value: 'v1'
-          }),
-          App.ServiceConfigProperty.create({
-            name: 'p2',
-            value: 'v2'
-          })
-        ]
-      });
-      sinon.stub(view, 'getPropertyByType', function (name) {
-        return view.get('categoryConfigsAll').findProperty('name', name);
-      });
-      sinon.stub(view, 'getDefaultPropertyValue', function (name) {
-        return name + '_v';
-      });
-    });
-
-    afterEach(function () {
-      view.getPropertyByType.restore();
-      view.getDefaultPropertyValue.restore();
-    });
-
-    it('updates value for connection url', function () {
-      view.setRequiredProperties(['p2', 'p1']);
-      expect(view.get('categoryConfigsAll').findProperty('name', 'p1').get('value')).to.equal('p1_v');
-      expect(view.get('categoryConfigsAll').findProperty('name', 'p2').get('value')).to.equal('p2_v');
-    });
   });
 
   describe('#handleDBConnectionProperty', function () {
@@ -793,23 +738,23 @@ describe('App.CheckDBConnectionView', function () {
         getConnectionProperty: Em.K,
         masterHostName: 'host1'
       });
-      sinon.stub(App.ajax, 'send');
       this.mock = sinon.stub(App.Service, 'find');
     });
     afterEach(function () {
-      App.ajax.send.restore();
       this.mock.restore();
     });
 
     it("service not installed", function() {
       this.mock.returns(Em.Object.create({isLoaded: false}));
       view.createCustomAction();
-      expect(App.ajax.send.getCall(0).args[0].name).to.equal('custom_action.create');
+      var args = testHelpers.findAjaxRequest('name', 'custom_action.create');
+      expect(args[0]).exists;
     });
     it("service is installed", function() {
       this.mock.returns(Em.Object.create({isLoaded: true}));
       view.createCustomAction();
-      expect(App.ajax.send.getCall(0).args[0].name).to.equal('cluster.custom_action.create');
+      var args = testHelpers.findAjaxRequest('name', 'cluster.custom_action.create');
+      expect(args[0]).exists;
     });
   });
 });

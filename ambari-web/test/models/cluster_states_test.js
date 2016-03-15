@@ -57,14 +57,24 @@ describe('App.clusterStatus', function () {
   });
 
   describe('#getUserPrefSuccessCallback', function () {
-    it('should set the cluster parameters', function () {
-      status.getUserPrefSuccessCallback(response);
-      Em.keys(response).forEach(function (key) {
-        expect(status.get(key)).to.equal(response[key]);
+    describe('response', function () {
+      beforeEach(function () {
+        status.getUserPrefSuccessCallback(response);
       });
-      status.getUserPrefSuccessCallback(compressedResponse);
+      Em.keys(response).forEach(function (key) {
+        it(key, function () {
+          expect(status.get(key)).to.equal(response[key]);
+        });
+      });
+    });
+    describe('compressedResponse', function () {
+      beforeEach(function () {
+        status.getUserPrefSuccessCallback(compressedResponse);
+      });
       Em.keys(response2).forEach(function (key) {
-        expect(status.get(key)).to.equal(response2[key]);
+        it(key, function () {
+          expect(status.get(key)).to.equal(response2[key]);
+        });
       });
     });
   });
@@ -72,7 +82,6 @@ describe('App.clusterStatus', function () {
   describe('#setClusterStatus', function () {
 
     beforeEach(function() {
-      sinon.stub(App, 'get').withArgs('testMode').returns(false);
       sinon.stub(status, 'postUserPref', function() {
         return $.ajax();
       });
@@ -80,7 +89,6 @@ describe('App.clusterStatus', function () {
 
     afterEach(function () {
       status.postUserPref.restore();
-      App.get.restore();
     });
 
     it('should set cluster status in non-test mode', function () {

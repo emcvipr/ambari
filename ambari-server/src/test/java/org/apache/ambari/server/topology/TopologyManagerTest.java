@@ -142,8 +142,8 @@ public class TopologyManagerTest {
   private HostGroupInfo group2Info = new HostGroupInfo("group2");
   private Map<String, HostGroupInfo> groupInfoMap = new HashMap<String, HostGroupInfo>();
 
-  private Collection<String> group1Components = Arrays.asList("component1", "component2", "component3");
-  private Collection<String> group2Components = Arrays.asList("component3", "component4");
+  private Collection<Component> group1Components = Arrays.asList(new Component("component1"), new Component("component2"), new Component("component3"));
+  private Collection<Component> group2Components = Arrays.asList(new Component("component3"), new Component("component4"));
 
   private Map<String, Collection<String>> group1ServiceComponents = new HashMap<String, Collection<String>>();
   private Map<String, Collection<String>> group2ServiceComponents = new HashMap<String, Collection<String>>();
@@ -228,6 +228,8 @@ public class TopologyManagerTest {
     expect(stack.getComponents()).andReturn(serviceComponents).anyTimes();
     expect(stack.getComponents("service1")).andReturn(serviceComponents.get("service1")).anyTimes();
     expect(stack.getComponents("service2")).andReturn(serviceComponents.get("service2")).anyTimes();
+    expect(stack.getServiceForConfigType("service1-site")).andReturn("service1").anyTimes();
+    expect(stack.getServiceForConfigType("service2-site")).andReturn("service2").anyTimes();
     expect(stack.getConfiguration()).andReturn(stackConfig).anyTimes();
     expect(stack.getName()).andReturn(STACK_NAME).anyTimes();
     expect(stack.getVersion()).andReturn(STACK_VERSION).anyTimes();

@@ -31,7 +31,7 @@ class TestOozieClient(RMFTestCase):
                        classname = "OozieClient",
                        command = "configure",
                        config_file="default.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('Directory', '/etc/oozie/conf',
@@ -51,6 +51,17 @@ class TestOozieClient(RMFTestCase):
                               owner = 'oozie',
                               content = InlineTemplate(self.getConfig()['configurations']['oozie-env']['content']),
                               group = 'hadoop',
+                              )
+    self.assertResourceCalled('Directory', '/etc/security/limits.d',
+                              owner = 'root',
+                              group = 'root',
+                              create_parents=True,
+                              )
+    self.assertResourceCalled('File', '/etc/security/limits.d/oozie.conf',
+                              owner = 'root',
+                              group = 'root',
+                              mode=0644,
+                              content=Template("oozie.conf.j2"),
                               )
     self.assertResourceCalled('File', '/etc/oozie/conf/oozie-log4j.properties',
                               owner = 'oozie',
@@ -86,7 +97,7 @@ class TestOozieClient(RMFTestCase):
                        classname = "OozieClient",
                        command = "configure",
                        config_file="secured.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('Directory', '/etc/oozie/conf',
@@ -106,6 +117,17 @@ class TestOozieClient(RMFTestCase):
                               owner = 'oozie',
                               content = InlineTemplate(self.getConfig()['configurations']['oozie-env']['content']),
                               group = 'hadoop',
+                              )
+    self.assertResourceCalled('Directory', '/etc/security/limits.d',
+                              owner = 'root',
+                              group = 'root',
+                              create_parents=True,
+                              )
+    self.assertResourceCalled('File', '/etc/security/limits.d/oozie.conf',
+                              owner = 'root',
+                              group = 'root',
+                              mode=0644,
+                              content=Template("oozie.conf.j2"),
                               )
     self.assertResourceCalled('File', '/etc/oozie/conf/oozie-log4j.properties',
                               owner = 'oozie',
@@ -147,7 +169,7 @@ class TestOozieClient(RMFTestCase):
                        classname = "OozieClient",
                        command = "configure",
                        config_dict=default_json,
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('Directory', '/usr/hdp/current/oozie-client/conf',
@@ -168,6 +190,17 @@ class TestOozieClient(RMFTestCase):
                               content = InlineTemplate(self.getConfig()['configurations']['oozie-env']['content']),
                               group = 'hadoop',
     )
+    self.assertResourceCalled('Directory', '/etc/security/limits.d',
+                              owner = 'root',
+                              group = 'root',
+                              create_parents=True,
+                              )
+    self.assertResourceCalled('File', '/etc/security/limits.d/oozie.conf',
+                              owner = 'root',
+                              group = 'root',
+                              mode=0644,
+                              content=Template("oozie.conf.j2"),
+                              )
     self.assertResourceCalled('File', '/usr/hdp/current/oozie-client/conf/oozie-log4j.properties',
                               owner = 'oozie',
                               group = 'hadoop',
@@ -208,7 +241,7 @@ class TestOozieClient(RMFTestCase):
                        classname = "OozieClient",
                        command = "pre_upgrade_restart",
                        config_dict = json_content,
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
     self.assertResourceCalled('Execute',
                               ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'oozie-client', version), sudo=True)
@@ -229,7 +262,7 @@ class TestOozieClient(RMFTestCase):
                        classname = "OozieClient",
                        command = "pre_upgrade_restart",
                        config_dict = json_content,
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES,
                        call_mocks = [(0, None, ''), (0, None)],
                        mocks_dict = mocks_dict)

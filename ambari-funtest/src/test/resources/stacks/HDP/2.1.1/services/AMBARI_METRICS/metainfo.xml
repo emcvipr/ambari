@@ -65,10 +65,11 @@
 
       <osSpecifics>
         <osSpecific>
-          <osFamily>redhat5,redhat6,suse11</osFamily>
+          <osFamily>redhat5,amazon2015,redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>ambari-metrics-collector</name>
+              <condition>should_install_ams_collector</condition>
             </package>
             <package>
               <name>ambari-metrics-monitor</name>

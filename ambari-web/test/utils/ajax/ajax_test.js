@@ -22,18 +22,13 @@ require('utils/ajax/ajax');
 describe('App.ajax', function() {
 
   beforeEach(function() {
+    App.ajax.send.restore();
+    sinon.spy(App.ajax, 'send'); // no sense to test stubbed function, so going to spy on it
     App.set('apiPrefix', '/api/v1');
     App.set('clusterName', 'tdk');
   });
 
   describe('#send', function() {
-    beforeEach(function() {
-      sinon.spy($, 'ajax');
-    });
-
-    afterEach(function() {
-      $.ajax.restore();
-    });
     it('Without sender', function() {
       expect(App.ajax.send({})).to.equal(null);
       expect($.ajax.called).to.equal(false);
@@ -110,14 +105,6 @@ describe('App.ajax', function() {
 
   describe('#formatRequest', function() {
 
-    beforeEach(function () {
-      sinon.stub(App, 'get').withArgs('testMode').returns(false);
-    });
-
-    afterEach(function () {
-      App.get.restore();
-    });
-
     var tests = [
       {
         urlObj: {
@@ -174,5 +161,37 @@ describe('App.ajax', function() {
         data: "{\"RequestInfo\":{\"query\":\"params\"}}"
       });
     });
+  });
+  
+  describe('#abortRequests', function () {
+
+    var xhr = {
+        abort: Em.K
+      },
+      requests;
+
+    beforeEach(function () {
+      sinon.spy(xhr, 'abort');
+      xhr.isForcedAbort = false;
+      requests = [xhr, xhr];
+      App.ajax.abortRequests(requests);
+    });
+
+    afterEach(function () {
+      xhr.abort.restore();
+    });
+
+    it('should abort all requests', function () {
+      expect(xhr.abort.calledTwice).to.be.true;
+    });
+
+    it('should mark request as aborted', function () {
+      expect(xhr.isForcedAbort).to.be.true;
+    });
+
+    it('should clear requests array', function () {
+      expect(requests).to.have.length(0);
+    });
+    
   });
 });
