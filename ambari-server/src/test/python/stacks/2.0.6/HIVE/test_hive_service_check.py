@@ -69,6 +69,7 @@ class TestServiceCheck(RMFTestCase):
         logoutput = True,
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         bin_dir = '/bin:/usr/lib/hive/bin:/usr/bin',
     )
     self.assertResourceCalled('Execute', ' /tmp/hcatSmoke.sh hcatsmoke cleanup false',
@@ -101,6 +102,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'missing_principal',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'file',
@@ -117,6 +119,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'missing_principal',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'file',
@@ -132,6 +135,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'missing_principal',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
         hadoop_conf_dir = '/etc/hadoop/conf',
     )
@@ -180,6 +184,7 @@ class TestServiceCheck(RMFTestCase):
         logoutput = True,
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         bin_dir = '/bin:/usr/lib/hive/bin:/usr/bin',
         principal = 'hdfs',
     )
@@ -214,6 +219,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'file',
@@ -230,6 +236,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'file',
@@ -245,6 +252,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
         hadoop_conf_dir = '/etc/hadoop/conf',
     )

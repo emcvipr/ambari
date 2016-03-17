@@ -36,6 +36,8 @@ host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
+dfs_type = default("/commandParams/dfs_type", "")
+
 # hadoop default params
 mapreduce_libs_path = "/usr/lib/hadoop-mapreduce/*"
 
@@ -128,7 +130,7 @@ metrics_collection_period = default("/configurations/ams-site/timeline.metrics.s
 
 #hadoop params
 
-if has_namenode:
+if has_namenode or dfs_type == 'HCFS':
   hadoop_tmp_dir = format("/tmp/hadoop-{hdfs_user}")
   hadoop_conf_dir = conf_select.get_hadoop_conf_dir(force_latest_on_upgrade=True)
   task_log4j_properties_location = os.path.join(hadoop_conf_dir, "task-log4j.properties")
