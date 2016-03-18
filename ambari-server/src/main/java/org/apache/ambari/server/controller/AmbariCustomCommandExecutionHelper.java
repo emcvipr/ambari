@@ -591,6 +591,19 @@ public class AmbariCustomCommandExecutionHelper {
         StageUtils.getClusterHostInfo(cluster));
 
     Map<String, String> commandParams = new TreeMap<String, String>();
+
+    //Propagate HCFS service type info
+    Iterator<Service> it = cluster.getServices().values().iterator();
+    while(it.hasNext()) {
+        ServiceInfo serviceInfoInstance = ambariMetaInfo.getService(stackId.getStackName(),stackId.getStackVersion(), it.next().getName());
+        LOG.info("Iterating service type Instance in addServiceCheckAction:: " + serviceInfoInstance.getName());
+        if(serviceInfoInstance.getServiceType() != null) {
+            LOG.info("Adding service type info in addServiceCheckAction:: " + serviceInfoInstance.getServiceType());
+            commandParams.put("dfs_type",serviceInfoInstance.getServiceType());
+            break;
+        }
+    }
+
     String commandTimeout = configs.getDefaultAgentTaskTimeout(false);
 
 
