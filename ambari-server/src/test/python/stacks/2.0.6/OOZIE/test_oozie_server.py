@@ -71,6 +71,7 @@ class TestOozieServer(RMFTestCase):
         keytab = UnknownConfigurationMock(),
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'oozie',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'directory',
@@ -84,6 +85,7 @@ class TestOozieServer(RMFTestCase):
         keytab = UnknownConfigurationMock(),
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore', hdfs_site=self.getConfig()['configurations']['hdfs-site'], principal_name=UnknownConfigurationMock(), default_fs='hdfs://c6401.ambari.apache.org:8020',
         hadoop_conf_dir = '/etc/hadoop/conf',
     )
@@ -285,6 +287,7 @@ class TestOozieServer(RMFTestCase):
                               kinit_path_local = '/usr/bin/kinit',
                               principal_name = UnknownConfigurationMock(),
                               user = 'hdfs',
+                              dfs_type = '',
                               owner = 'oozie',
                               hadoop_conf_dir = '/etc/hadoop/conf',
                               type = 'directory',
@@ -301,6 +304,7 @@ class TestOozieServer(RMFTestCase):
                               kinit_path_local = '/usr/bin/kinit',
                               principal_name = UnknownConfigurationMock(),
                               user = 'hdfs',
+                              dfs_type = '',
                               action = ['execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
                               hadoop_conf_dir = '/etc/hadoop/conf',
                               )
@@ -510,6 +514,7 @@ class TestOozieServer(RMFTestCase):
         keytab = UnknownConfigurationMock(),
         default_fs = 'hdfs://c6401.ambari.apache.org:8020',
         user = 'hdfs',
+        dfs_type = '',
         hdfs_site = self.getConfig()['configurations']['hdfs-site'],
         kinit_path_local = '/usr/bin/kinit',
         principal_name = UnknownConfigurationMock(),
@@ -529,6 +534,7 @@ class TestOozieServer(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = UnknownConfigurationMock(),
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
         hadoop_conf_dir = '/etc/hadoop/conf',
     )
@@ -605,6 +611,7 @@ class TestOozieServer(RMFTestCase):
         keytab = '/etc/security/keytabs/hdfs.headless.keytab',
         default_fs = 'hdfs://c6401.ambari.apache.org:8020',
         user = 'hdfs',
+        dfs_type = '',
         hdfs_site = self.getConfig()['configurations']['hdfs-site'],
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs',
@@ -660,6 +667,7 @@ class TestOozieServer(RMFTestCase):
         keytab = UnknownConfigurationMock(),
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'oozie',
         hadoop_bin_dir = '/usr/bin',
         type = 'directory',
@@ -673,6 +681,7 @@ class TestOozieServer(RMFTestCase):
         keytab = UnknownConfigurationMock(),
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore', hdfs_site=self.getConfig()['configurations']['hdfs-site'], principal_name=UnknownConfigurationMock(), default_fs='hdfs://c6401.ambari.apache.org:8020',
         hadoop_conf_dir = '/etc/hadoop/conf',
     )
@@ -844,6 +853,7 @@ class TestOozieServer(RMFTestCase):
         
         kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'oozie',
         hadoop_bin_dir = '/usr/bin',
         type = 'directory',
@@ -1386,6 +1396,7 @@ class TestOozieServer(RMFTestCase):
       keytab = UnknownConfigurationMock(),
       default_fs = 'hdfs://c6401.ambari.apache.org:8020',
       user = 'hdfs',
+      dfs_type = '',
       hdfs_site = UnknownConfigurationMock(),
       kinit_path_local = '/usr/bin/kinit',
       principal_name = UnknownConfigurationMock(),
@@ -1407,6 +1418,7 @@ class TestOozieServer(RMFTestCase):
       kinit_path_local = '/usr/bin/kinit',
       principal_name = UnknownConfigurationMock(),
       user = 'hdfs',
+      dfs_type = '',
       action = ['execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
       hadoop_conf_dir = '/usr/hdp/2.3.0.0-1234/hadoop/conf' )
 
@@ -1459,6 +1471,7 @@ class TestOozieServer(RMFTestCase):
       keytab = UnknownConfigurationMock(),
       default_fs = 'hdfs://c6401.ambari.apache.org:8020',
       user = 'hdfs',
+      dfs_type = '',
       hdfs_site = UnknownConfigurationMock(),
       kinit_path_local = '/usr/bin/kinit',
       principal_name = UnknownConfigurationMock(),
@@ -1480,6 +1493,7 @@ class TestOozieServer(RMFTestCase):
       kinit_path_local = '/usr/bin/kinit',
       principal_name = UnknownConfigurationMock(),
       user = 'hdfs',
+      dfs_type = '',
       action = ['execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
       hadoop_conf_dir = '/usr/hdp/2.3.0.0-1234/hadoop/conf' )
 
