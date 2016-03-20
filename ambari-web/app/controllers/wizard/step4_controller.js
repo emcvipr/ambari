@@ -312,7 +312,7 @@ App.WizardStep4Controller = Em.ArrayController.extend({
           });
         }
     }
-  },
+  }},
 
   /**
    * Checks if a dependent service is selected without selecting the main service.
