@@ -52,7 +52,7 @@ RESOURCE_TO_JSON_FIELDS = {
   'recursive_chown': 'recursiveChown',
   'recursive_chmod': 'recursiveChmod',
   'change_permissions_for_parents': 'changePermissionforParents',
-  'manage_if_exists': 'manageIfExists'
+  'manage_if_exists': 'manageIfExists',
   'dfs_type': 'dfs_type'
 }
 
