@@ -25,6 +25,7 @@ class TestHawqSegment(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = 'HAWQ/2.0.0/package'
   STACK_VERSION = '2.3'
   GPADMIN = 'gpadmin'
+  POSTGRES = 'postgres'
 
   def __asserts_for_configure(self):
 
@@ -37,6 +38,16 @@ class TestHawqSegment(RMFTestCase):
         groups = [self.GPADMIN, u'hadoop'],
         ignore_failures = True,
         password = 'saNIJ3hOyqasU'
+        )
+
+    self.assertResourceCalled('Group', self.POSTGRES,
+        ignore_failures = True
+        )
+
+    self.assertResourceCalled('User', self.POSTGRES,
+        gid = self.POSTGRES,
+        groups = [self.POSTGRES, u'hadoop'],
+        ignore_failures = True
         )
 
     self.assertResourceCalled('Execute', 'chown -R gpadmin:gpadmin /usr/local/hawq/',
@@ -68,6 +79,23 @@ class TestHawqSegment(RMFTestCase):
         group = self.GPADMIN,
         owner = self.GPADMIN,
         mode = 0644
+        )
+
+    self.assertResourceCalled('Directory', '/data/hawq/segment',
+                              owner = self.GPADMIN,
+                              group = self.GPADMIN,
+                              create_parents = True
+                              )
+
+    self.assertResourceCalled('Execute', 'chmod 700 /data/hawq/segment',
+                              user = 'root',
+                              timeout = 600
+                              )
+
+    self.assertResourceCalled('Directory', '/tmp/hawq/segment',
+        owner = self.GPADMIN,
+        group = self.GPADMIN,
+        create_parents = True
         )
 
 
@@ -114,18 +142,6 @@ class TestHawqSegment(RMFTestCase):
         )
 
     self.__asserts_for_configure()
-
-    self.assertResourceCalled('Directory', '/data/hawq/segment',
-        owner = self.GPADMIN,
-        group = self.GPADMIN,
-        create_parents = True
-        )
-
-    self.assertResourceCalled('Directory', '/tmp/hawq/segment',
-        owner = self.GPADMIN,
-        group = self.GPADMIN,
-        create_parents = True
-        )
 
     self.assertResourceCalled('Execute', 'source /usr/local/hawq/greenplum_path.sh && hawq init segment -a -v',
         logoutput = True, 

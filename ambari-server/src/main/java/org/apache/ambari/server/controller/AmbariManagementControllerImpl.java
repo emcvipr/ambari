@@ -18,16 +18,52 @@
 
 package org.apache.ambari.server.controller;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.Multimap;
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_DRIVER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_PASSWORD;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_URL;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_USERNAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.CLIENTS_TO_UPDATE_CONFIGS;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_RETRY_ENABLED;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_TIMEOUT;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.DB_DRIVER_FILENAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.GROUP_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.MAX_DURATION_OF_RETRIES;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.NOT_MANAGED_HDFS_PATH_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.PACKAGE_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.PACKAGE_VERSION;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.REPO_INFO;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT_TYPE;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_PACKAGE_FOLDER;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_REPO_INFO;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.USER_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.VERSION;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.lang.reflect.Type;
+import java.net.InetAddress;
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ClusterNotFoundException;
 import org.apache.ambari.server.DuplicateResourceException;
@@ -61,6 +97,7 @@ import org.apache.ambari.server.customactions.ActionDefinition;
 import org.apache.ambari.server.metadata.ActionMetadata;
 import org.apache.ambari.server.metadata.RoleCommandOrder;
 import org.apache.ambari.server.orm.dao.ClusterDAO;
+import org.apache.ambari.server.orm.dao.ClusterVersionDAO;
 import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
 import org.apache.ambari.server.orm.dao.WidgetDAO;
 import org.apache.ambari.server.orm.dao.WidgetLayoutDAO;
@@ -106,6 +143,7 @@ import org.apache.ambari.server.state.PropertyDependencyInfo;
 import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.state.PropertyInfo.PropertyType;
 import org.apache.ambari.server.state.RepositoryInfo;
+import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponent;
@@ -120,7 +158,9 @@ import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.StackInfo;
 import org.apache.ambari.server.state.State;
 import org.apache.ambari.server.state.configgroup.ConfigGroupFactory;
+import org.apache.ambari.server.state.repository.VersionDefinitionXml;
 import org.apache.ambari.server.state.scheduler.RequestExecutionFactory;
+import org.apache.ambari.server.state.stack.RepositoryXml;
 import org.apache.ambari.server.state.stack.WidgetLayout;
 import org.apache.ambari.server.state.stack.WidgetLayoutInfo;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostInstallEvent;
@@ -137,50 +177,16 @@ import org.apache.http.client.utils.URIBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-import java.lang.reflect.Type;
-import java.net.InetAddress;
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.EnumMap;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_DRIVER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_PASSWORD;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_URL;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.AMBARI_DB_RCA_USERNAME;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.CLIENTS_TO_UPDATE_CONFIGS;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_RETRY_ENABLED;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_TIMEOUT;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.DB_DRIVER_FILENAME;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.GROUP_LIST;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.NOT_MANAGED_HDFS_PATH_LIST;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.MAX_DURATION_OF_RETRIES;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.PACKAGE_LIST;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.REPO_INFO;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT_TYPE;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_PACKAGE_FOLDER;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SERVICE_REPO_INFO;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.USER_LIST;
-import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.VERSION;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Multimap;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
+import com.google.inject.Singleton;
+import com.google.inject.persist.Transactional;
 
 @Singleton
 public class AmbariManagementControllerImpl implements AmbariManagementController {
@@ -393,6 +399,18 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       throw new StackAccessException("stackName=" + stackId.getStackName() + ", stackVersion=" + stackId.getStackVersion());
     }
 
+    RepositoryVersionEntity versionEntity = null;
+
+    if (null != request.getRepositoryVersion()) {
+      versionEntity = repositoryVersionDAO.findByStackAndVersion(stackId,
+          request.getRepositoryVersion());
+
+      if (null == versionEntity) {
+        throw new AmbariException(String.format("Tried to create a cluster on version %s, but that version doesn't exist",
+            request.getRepositoryVersion()));
+      }
+    }
+
     // FIXME add support for desired configs at cluster level
 
     boolean foundInvalidHosts = false;
@@ -424,6 +442,18 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     }
     // Create cluster widgets and layouts
     initializeWidgetsAndLayouts(c, null);
+
+    if (null != versionEntity) {
+      ClusterVersionDAO clusterVersionDAO = injector.getInstance(ClusterVersionDAO.class);
+
+      ClusterVersionEntity clusterVersion = clusterVersionDAO.findByClusterAndStackAndVersion(request.getClusterName(), stackId,
+          request.getRepositoryVersion());
+
+      if (null == clusterVersion) {
+        c.createClusterVersion(stackId, versionEntity.getVersion(), getAuthName(), RepositoryVersionState.INIT);
+      }
+    }
+
   }
 
   @Override
@@ -1506,8 +1536,9 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
             isConfigurationCreationNeeded = true;
             break;
           } else {
-            if (clusterConfig.getServiceConfigVersions().isEmpty()) {
-              //If there's no service config versions containing this config, recreate it even if exactly equal
+            if ( cluster.getServiceByConfigType(clusterConfig.getType()) != null &&  clusterConfig.getServiceConfigVersions().isEmpty() ) {
+
+              //If there's no service config versions containing this config (except cluster configs), recreate it even if exactly equal
               LOG.warn("Existing desired config doesn't belong to any service config version, " +
                   "forcing config recreation, " +
                   "clusterName={}, type = {}, tag={}", cluster.getClusterName(), clusterConfig.getType(),
@@ -2123,9 +2154,10 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
         }
         commandParams.put(MAX_DURATION_OF_RETRIES, Integer.toString(retryMaxTime));
         commandParams.put(COMMAND_RETRY_ENABLED, Boolean.toString(retryEnabled));
-        ClusterVersionEntity currentClusterVersion = cluster.getCurrentClusterVersion();
-        if (currentClusterVersion != null) {
-         commandParams.put(VERSION, currentClusterVersion.getRepositoryVersion().getVersion());
+
+        ClusterVersionEntity effectiveClusterVersion = cluster.getEffectiveClusterVersion();
+        if (effectiveClusterVersion != null) {
+         commandParams.put(VERSION, effectiveClusterVersion.getRepositoryVersion().getVersion());
         }
         if (script.getTimeout() > 0) {
           scriptCommandTimeout = String.valueOf(script.getTimeout());
@@ -2170,6 +2202,20 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     Map<String, String> hostParams = new TreeMap<String, String>();
     hostParams.put(REPO_INFO, repoInfo);
     hostParams.putAll(getRcaParameters());
+
+    RepositoryVersionEntity repoVersion = (null == cluster.getCurrentClusterVersion()) ? null :
+        cluster.getCurrentClusterVersion().getRepositoryVersion();
+    if (null != repoVersion) {
+      try {
+        VersionDefinitionXml xml = repoVersion.getRepositoryXml();
+        if (null != xml && !StringUtils.isBlank(xml.release.packageVersion)) {
+          hostParams.put(PACKAGE_VERSION, xml.release.packageVersion);
+        }
+      } catch (Exception e) {
+        throw new AmbariException(String.format("Could not load version xml from repo version %s",
+            repoVersion.getVersion()), e);
+      }
+    }
 
     List<ServiceOsSpecific.Package> packages =
             getPackagesForServiceHost(serviceInfo, hostParams, osFamily);
@@ -3538,7 +3584,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     } else {
       actionExecutionHelper.validateAction(actionRequest);
     }
-
+    // TODO Alejandro, Called First. insert params.version. Called during Rebalance HDFS, ZOOKEEPER Restart, Zookeeper Service Check.
     long requestId = actionManager.getNextRequestId();
     RequestStageContainer requestStageContainer = new RequestStageContainer(
         requestId,
@@ -3697,6 +3743,8 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
           if (repositoryResponse.getStackVersion() == null) {
             repositoryResponse.setStackVersion(stackVersion);
           }
+
+          repositoryResponse.setClusterVersionId(request.getClusterVersionId());
         }
         response.addAll(repositories);
       } catch (StackAccessException e) {
@@ -3717,6 +3765,16 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     String osType = request.getOsType();
     String repoId = request.getRepoId();
     Long repositoryVersionId = request.getRepositoryVersionId();
+    String versionDefinitionId = request.getVersionDefinitionId();
+
+    // !!! when asking for Repository responses for a versionDefinition, it is either for
+    // an established repo version (a Long) OR from the in-memory generated ones (a String)
+    if (null == repositoryVersionId && null != versionDefinitionId) {
+
+      if (NumberUtils.isDigits(versionDefinitionId)) {
+        repositoryVersionId = Long.valueOf(versionDefinitionId);
+      }
+    }
 
     Set<RepositoryResponse> responses = new HashSet<RepositoryResponse>();
 
@@ -3727,7 +3785,11 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
           if (operatingSystem.getOsType().equals(osType)) {
             for (RepositoryEntity repository: operatingSystem.getRepositories()) {
               final RepositoryResponse response = new RepositoryResponse(repository.getBaseUrl(), osType, repository.getRepositoryId(), repository.getName(), "", "", "");
-              response.setRepositoryVersionId(repositoryVersionId);
+              if (null != versionDefinitionId) {
+                response.setVersionDefinitionId(versionDefinitionId);
+              } else {
+                response.setRepositoryVersionId(repositoryVersionId);
+              }
               response.setStackName(repositoryVersion.getStackName());
               response.setStackVersion(repositoryVersion.getStackVersion());
               responses.add(response);
@@ -3736,6 +3798,29 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
           }
         }
       }
+    } else if (null != versionDefinitionId) {
+      VersionDefinitionXml xml = ambariMetaInfo.getVersionDefinition(versionDefinitionId);
+
+      if (null == xml) {
+        throw new AmbariException(String.format("Version identified by %s does not exist",
+            versionDefinitionId));
+      }
+      StackId stackId = new StackId(xml.release.stackId);
+
+      for (RepositoryXml.Os os : xml.repositoryInfo.getOses()) {
+        for (RepositoryXml.Repo repo : os.getRepos()) {
+          RepositoryResponse resp = new RepositoryResponse(repo.getBaseUrl(), os.getFamily(),
+              repo.getRepoId(), repo.getRepoName(), repo.getMirrorsList(),
+              repo.getBaseUrl(), repo.getLatestUri());
+
+          resp.setVersionDefinitionId(versionDefinitionId);
+          resp.setStackName(stackId.getStackName());
+          resp.setStackVersion(stackId.getStackVersion());
+
+          responses.add(resp);
+        }
+      }
+
     } else {
       if (repoId == null) {
         List<RepositoryInfo> repositories = ambariMetaInfo.getRepositories(stackName, stackVersion, osType);
@@ -4143,18 +4228,50 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     String stackVersion = request.getStackVersion();
     String osType = request.getOsType();
     Long repositoryVersionId = request.getRepositoryVersionId();
+    String versionDefinitionId = request.getVersionDefinitionId();
+
+    // !!! when asking for OperatingSystem responses for a versionDefinition, it is either for
+    // an established repo version (a Long) OR from the in-memory generated ones (a String)
+    if (null == repositoryVersionId && null != versionDefinitionId) {
+      if (NumberUtils.isDigits(versionDefinitionId)) {
+        repositoryVersionId = Long.valueOf(versionDefinitionId);
+      }
+    }
 
     if (repositoryVersionId != null) {
       final RepositoryVersionEntity repositoryVersion = repositoryVersionDAO.findByPK(repositoryVersionId);
       if (repositoryVersion != null) {
         for (OperatingSystemEntity operatingSystem: repositoryVersion.getOperatingSystems()) {
           final OperatingSystemResponse response = new OperatingSystemResponse(operatingSystem.getOsType());
-          response.setRepositoryVersionId(repositoryVersionId);
+          if (null != versionDefinitionId) {
+            response.setVersionDefinitionId(repositoryVersionId.toString());
+          } else {
+            response.setRepositoryVersionId(repositoryVersionId);
+          }
           response.setStackName(repositoryVersion.getStackName());
           response.setStackVersion(repositoryVersion.getStackVersion());
+          response.setAmbariManagedRepos(operatingSystem.isAmbariManagedRepos());
           responses.add(response);
         }
       }
+    } else if (null != versionDefinitionId) {
+      VersionDefinitionXml xml = ambariMetaInfo.getVersionDefinition(versionDefinitionId);
+
+      if (null == xml) {
+        throw new AmbariException(String.format("Version identified by %s does not exist",
+            versionDefinitionId));
+      }
+      StackId stackId = new StackId(xml.release.stackId);
+
+      for (RepositoryXml.Os os : xml.repositoryInfo.getOses()) {
+        OperatingSystemResponse resp = new OperatingSystemResponse(os.getFamily());
+        resp.setVersionDefinitionId(versionDefinitionId);
+        resp.setStackName(stackId.getStackName());
+        resp.setStackVersion(stackId.getStackVersion());
+
+        responses.add(resp);
+      }
+
     } else {
       if (osType != null) {
         OperatingSystemInfo operatingSystem = ambariMetaInfo.getOperatingSystem(stackName, stackVersion, osType);

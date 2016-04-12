@@ -17,12 +17,14 @@
             },
             "warning": {
               "text": "affected: [{1}], total: [{0}]",
-              "value": 0.1
+              "value": 10
             },
             "critical": {
               "text": "affected: [{1}], total: [{0}]",
-              "value": 0.3
-            }
+              "value": 30
+            },
+            "units" : "%",
+            "type": "PERCENT"
           }
         }
       },
@@ -42,12 +44,14 @@
             },
             "warning": {
               "text": "affected: [{1}], total: [{0}]",
-              "value": 0.1
+              "value": 10
             },
             "critical": {
               "text": "affected: [{1}], total: [{0}]",
-              "value": 0.3
-            }
+              "value": 30
+            },
+            "units" : "%",
+            "type": "PERCENT"
           }
         }
       },
@@ -67,12 +71,14 @@
             },
             "warning": {
               "text": "affected: [{1}], total: [{0}]",
-              "value": 0.33
+              "value": 33
             },
             "critical": {
               "text": "affected: [{1}], total: [{0}]",
-              "value": 0.50
-            }
+              "value": 50
+            },
+            "units" : "%",
+            "type": "PERCENT"
           }
         }
       }
@@ -164,7 +170,8 @@
               "text": "{1} CPU, load {0:.1%}",
               "value": 250
             },
-            "units" : "%"
+            "units" : "%",
+            "type": "PERCENT"
           },
           "jmx": {
             "property_list": [
@@ -304,7 +311,8 @@
               "text": "Capacity Used:[{2:.0f}%, {0}], Capacity Remaining:[{1}]",
               "value": 80
             },
-            "units" : "%"
+            "units" : "%",
+            "type": "PERCENT"
           },
           "jmx": {
             "property_list": [
@@ -427,9 +435,9 @@
             "connection_timeout": 5.0,
             "high_availability": {
               "nameservice": "{{hdfs-site/dfs.nameservices}}",
-              "alias_key" : "{{hdfs-site/dfs.ha.namenodes.{{ha-nameservice}}}}",
-              "http_pattern" : "{{hdfs-site/dfs.namenode.http-address.{{ha-nameservice}}.{{alias}}}}",
-              "https_pattern" : "{{hdfs-site/dfs.namenode.https-address.{{ha-nameservice}}.{{alias}}}}"
+              "alias_key": "{{hdfs-site/dfs.ha.namenodes.{{ha-nameservice}}}}",
+              "http_pattern": "{{hdfs-site/dfs.namenode.http-address.{{ha-nameservice}}.{{alias}}}}",
+              "https_pattern": "{{hdfs-site/dfs.namenode.https-address.{{ha-nameservice}}.{{alias}}}}"
             }
           },
           "reporting": {
@@ -444,7 +452,7 @@
               "text": "DataNode Health: [Live={2}, Stale={1}, Dead={0}]",
               "value": 1
             },
-            "units" : "DNs"
+            "units": "DNs"
           },
           "jmx": {
             "property_list": [
@@ -453,6 +461,91 @@
               "Hadoop:service=NameNode,name=FSNamesystemState/NumLiveDataNodes"
             ],
             "value": "{0} + {1}"
+          }
+        }
+      },
+      {
+        "name": "namenode_free_heap_size_deviation_percentage",
+        "label": "NameNode Heap Usage (Hourly)",
+        "description": "This service-level alert is triggered if the NN heap usage deviation has grown beyond the specified threshold within a given time interval.",
+        "interval": 1,
+        "scope": "SERVICE",
+        "enabled": false,
+        "source": {
+          "type": "AMS",
+          "uri": {
+            "http": "{{ams-site/timeline.metrics.service.webapp.address}}",
+            "https": "{{ams-site/timeline.metrics.service.webapp.address}}",
+            "https_property": "{{ams-site/timeline.metrics.service.http.policy}}",
+            "https_property_value": "HTTPS_ONLY",
+            "connection_timeout": 5.0
+          },
+          "reporting": {
+            "ok": {
+              "text": "The sample standard deviation percentage is {0}%"
+            },
+            "warning": {
+              "text": "The sample standard deviation percentage is {0}%",
+              "value": 20
+            },
+            "critical": {
+              "text": "The sample standard deviation percentage is {0}%",
+              "value": 50
+            },
+            "units" : "%"
+          },
+          "ams": {
+            "app_id": "NAMENODE",
+            "interval": 60,
+            "metric_list": [
+              "jvm.JvmMetrics.MemHeapUsedM",
+              "jvm.JvmMetrics.MemHeapMaxM"
+            ],
+            "minimum_value": 1,
+            "value": "{1} - {0}",
+            "compute": "sample_standard_deviation_percentage"
+          }
+        }
+      },
+      {
+        "name": "namenode_mean_heapsize_used",
+        "label": "NameNode Mean Used Heap Size (Hourly)",
+        "description": "This service-level alert is triggered if the mean NN heap size is beyond the specified threshold within a given time interval.",
+        "interval": 1,
+        "scope": "SERVICE",
+        "enabled": false,
+        "source": {
+          "type": "AMS",
+          "uri": {
+            "http": "{{ams-site/timeline.metrics.service.webapp.address}}",
+            "https": "{{ams-site/timeline.metrics.service.webapp.address}}",
+            "https_property": "{{ams-site/timeline.metrics.service.http.policy}}",
+            "https_property_value": "HTTPS_ONLY",
+            "connection_timeout": 5.0
+          },
+          "reporting": {
+            "ok": {
+              "text": "OK: the mean used heap size is {0} MB."
+            },
+            "warning": {
+              "text": "Warning: the mean used heap size is {0} MB.",
+              "value": 768
+            },
+            "critical": {
+              "text": "Critical: the mean used heap size is {0} MB.",
+              "value": 1024
+            },
+            "units" : "MB"
+          },
+          "ams": {
+            "app_id": "NAMENODE",
+            "interval": 30,
+            "metric_list": [
+              "jvm.JvmMetrics.MemHeapUsedM"
+            ],
+            "minimum_value": -1,
+            "value": "{0}",
+            "compute": "mean"
           }
         }
       },
@@ -479,7 +572,7 @@
             {
               "name": "checkpoint.time.warning.threshold",
               "display_name": "Checkpoint Warning",
-              "value": 2.0,
+              "value": 200,
               "type": "PERCENT",
               "description": "The percentage of the last checkpoint time greater than the interval in order to trigger a warning alert.",
               "units": "%",
@@ -488,7 +581,7 @@
             {
               "name": "checkpoint.time.critical.threshold",
               "display_name": "Checkpoint Critical",
-              "value": 2.0,
+              "value": 200,
               "type": "PERCENT",
               "description": "The percentage of the last checkpoint time greater than the interval in order to trigger a critical alert.",
               "units": "%",
@@ -527,7 +620,7 @@
         "description": "This service-level alert is triggered if the deviation of RPC queue latency on datanode port has grown beyond the specified threshold within a given time interval.",
         "interval": 5,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -537,7 +630,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -551,14 +645,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "rpc.rpc.datanode.RpcQueueTimeAvgTime",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -592,7 +688,7 @@
         "description": "This service-level alert is triggered if the deviation of RPC queue latency on client port has grown beyond the specified threshold within a given time interval.",
         "interval": 5,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -602,7 +698,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -616,14 +713,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "rpc.rpc.client.RpcQueueTimeAvgTime",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -657,7 +756,7 @@
         "description": "This service-level alert is triggered if the deviation of RPC latency on datanode port has grown beyond the specified threshold within a given time interval.",
         "interval": 5,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -667,7 +766,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -681,14 +781,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "rpc.rpc.datanode.RpcProcessingTimeAvgTime",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -722,7 +824,7 @@
         "description": "This service-level alert is triggered if the deviation of RPC latency on client port has grown beyond the specified threshold within a given time interval.",
         "interval": 5,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -732,7 +834,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -746,14 +849,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "rpc.rpc.client.RpcProcessingTimeAvgTime",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -787,7 +892,7 @@
         "description": "This service-level alert is triggered if the NN heap usage deviation has grown beyond the specified threshold within a given time interval.",
         "interval": 480,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -797,7 +902,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -811,14 +917,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "jvm.JvmMetrics.MemHeapUsedM",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -845,7 +953,7 @@
         "description": "This service-level alert is triggered if the deviation of RPC latency on datanode port has grown beyond the specified threshold within a given time interval.",
         "interval": 480,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -855,7 +963,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -869,14 +978,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "rpc.rpc.datanode.RpcProcessingTimeAvgTime",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -910,7 +1021,7 @@
         "description": "This service-level alert is triggered if the deviation of RPC latency on client port has grown beyond the specified threshold within a given time interval.",
         "interval": 480,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -920,7 +1031,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -934,14 +1046,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "rpc.rpc.client.RpcProcessingTimeAvgTime",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -975,7 +1089,7 @@
         "description": "This service-level alert is triggered if the deviation of RPC latency on datanode port has grown beyond the specified threshold within a given time interval.",
         "interval": 480,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -985,7 +1099,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -999,14 +1114,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "rpc.rpc.datanode.RpcQueueTimeAvgTime",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -1040,7 +1157,7 @@
         "description": "This service-level alert is triggered if the deviation of RPC latency on client port has grown beyond the specified threshold within a given time interval.",
         "interval": 480,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -1050,7 +1167,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -1064,14 +1182,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "rpc.rpc.client.RpcQueueTimeAvgTime",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -1105,7 +1225,7 @@
         "description": "This service-level alert is triggered if the increase in storage capacity usage deviation has grown beyond the specified threshold within a given time interval.",
         "interval": 480,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -1115,7 +1235,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -1129,14 +1250,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "dfs.FSNamesystem.CapacityUsed",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -1163,7 +1286,7 @@
         "description": "This service-level alert is triggered if the NN heap usage deviation has grown beyond the specified threshold within a given time interval.",
         "interval": 1440,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -1173,7 +1296,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -1187,14 +1311,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "jvm.JvmMetrics.MemHeapUsedM",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -1221,7 +1347,7 @@
         "description": "This service-level alert is triggered if the increase in storage capacity usage deviation has grown beyond the specified threshold within a given time interval.",
         "interval": 1440,
         "scope": "ANY",
-        "enabled": true,
+        "enabled": false,
         "source": {
           "type": "SCRIPT",
           "path": "HDFS/2.1.0.2.0/package/alerts/alert_metrics_deviation.py",
@@ -1231,7 +1357,8 @@
               "display_name": "Whether active and stanby NameNodes metrics should be merged",
               "value": "false",
               "type": "STRING",
-              "description": "Whether active and stanby NameNodes metrics should be merged."
+              "description": "Whether active and stanby NameNodes metrics should be merged.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "interval",
@@ -1245,14 +1372,16 @@
               "display_name": "AMS application id",
               "value": "NAMENODE",
               "type": "STRING",
-              "description": "The application id used to retrieve the metric."
+              "description": "The application id used to retrieve the metric.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metricName",
               "display_name": "Metric Name",
               "value": "dfs.FSNamesystem.CapacityUsed",
               "type": "STRING",
-              "description": "The metric to monitor."
+              "description": "The metric to monitor.",
+              "visibility": "HIDDEN"
             },
             {
               "name": "metric.deviation.warning.threshold",
@@ -1455,7 +1584,8 @@
               "text": "Remaining Capacity:[{0}], Total Capacity:[{2:.0f}% Used, {1}]",
               "value": 80
             },
-            "units" : "%"
+            "units" : "%",
+            "type": "PERCENT"
           },
           "jmx": {
             "property_list": [
@@ -1508,7 +1638,8 @@
               "text": "Used Heap:[{2:.0f}%, {0} MB], Max Heap: {1} MB",
               "value": 90
             },
-            "units" : "%"
+            "units" : "%",
+            "type": "PERCENT"
           },
           "jmx": {
             "property_list": [

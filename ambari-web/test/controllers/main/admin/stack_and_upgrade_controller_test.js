@@ -49,7 +49,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
     });
     it("should be valid", function() {
       controller.propertyDidChange('realRepoUrl');
-      expect(controller.get('realRepoUrl')).to.equal('apiPrefixstackVersionURL/repository_versions?fields=*,RepositoryVersions/*,operating_systems/*,operating_systems/repositories/*');
+      expect(controller.get('realRepoUrl')).to.equal('apiPrefixstackVersionURL/compatible_repository_versions?fields=*,operating_systems/*,operating_systems/repositories/*');
     });
   });
 
@@ -84,15 +84,33 @@ describe('App.MainAdminStackAndUpgradeController', function() {
   });
 
   describe("#requestStatus", function() {
-    it("state ABORTED", function() {
+
+    beforeEach(function() {
+      this.mock = sinon.stub(App, 'get');
+    });
+    afterEach(function() {
+      this.mock.restore();
+    });
+
+    it("App.upgradeSuspended is true", function() {
+      this.mock.returns(true);
       controller.set('upgradeData', { Upgrade: {request_status: 'ABORTED'}});
       controller.propertyDidChange('requestStatus');
       expect(controller.get('requestStatus')).to.equal('SUSPENDED');
     });
+
     it("state not ABORTED", function() {
+      this.mock.returns(false);
       controller.set('upgradeData', { Upgrade: {request_status: 'INIT'}});
       controller.propertyDidChange('requestStatus');
       expect(controller.get('requestStatus')).to.equal('INIT');
+    });
+
+    it("upgradeData is null", function() {
+      this.mock.returns(false);
+      controller.set('upgradeData', null);
+      controller.propertyDidChange('requestStatus');
+      expect(controller.get('requestStatus')).to.be.empty;
     });
   });
 
@@ -1483,7 +1501,7 @@ describe('App.MainAdminStackAndUpgradeController', function() {
 
   describe("#suspendUpgrade()", function() {
     beforeEach(function () {
-      sinon.stub(controller, 'abortUpgrade').returns({
+      sinon.stub(controller, 'abortUpgradeWithSuspend').returns({
         done: Em.clb
       });
       sinon.stub(controller, 'setDBProperty', Em.K);
@@ -1491,12 +1509,12 @@ describe('App.MainAdminStackAndUpgradeController', function() {
       controller.suspendUpgrade();
     });
     afterEach(function () {
-      controller.abortUpgrade.restore();
+      controller.abortUpgradeWithSuspend.restore();
       controller.setDBProperty.restore();
       App.clusterStatus.setClusterStatus.restore();
     });
     it("upgrade aborted", function() {
-      expect(controller.abortUpgrade.calledOnce).to.be.true;
+      expect(controller.abortUpgradeWithSuspend.calledOnce).to.be.true;
     });
     it('App.upgradeState is ABORTED', function () {
       expect(App.get('upgradeState')).to.equal('ABORTED');

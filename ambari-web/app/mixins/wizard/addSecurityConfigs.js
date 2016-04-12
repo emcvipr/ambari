@@ -17,7 +17,6 @@
  */
 
 var App = require('app');
-var objectUtils = require('utils/object_utils');
 
 /**
  * Mixin for loading and setting secure configs
@@ -33,56 +32,24 @@ App.AddSecurityConfigs = Em.Mixin.create({
   /**
    * security configs, which values should be modified after APPLY CONFIGURATIONS stage
    */
-  secureConfigs: function () {
-    var configs = [
-      {
-        name: 'zookeeper_principal_name',
-        serviceName: 'ZOOKEEPER'
-      },
-      {
-        name: 'knox_principal_name',
-        serviceName: 'KNOX'
-      },
-      {
-        name: 'storm_principal_name',
-        serviceName: 'STORM'
-      }
-    ];
-    if (App.get('isHadoop22Stack')) {
-      configs.push({
-        name: 'nimbus_principal_name',
-        serviceName: 'STORM'
-      });
+  secureConfigs: [
+    {
+      name: 'zookeeper_principal_name',
+      serviceName: 'ZOOKEEPER'
+    },
+    {
+      name: 'knox_principal_name',
+      serviceName: 'KNOX'
+    },
+    {
+      name: 'storm_principal_name',
+      serviceName: 'STORM'
+    },
+    {
+      name: 'nimbus_principal_name',
+      serviceName: 'STORM'
     }
-    return configs;
-  }.property('App.isHadoop22Stack'),
-
-  /**
-   * Generate stack descriptor configs.
-   *  - Load kerberos artifacts from stack endpoint
-   *  - Load kerberos artifacts from cluster resource and merge them with stack descriptor.
-   * When cluster descriptor is absent then stack artifacts used.
-   *
-   * @returns {$.Deferred}
-   */
-  getDescriptorConfigs: function () {
-    var dfd = $.Deferred();
-    var self = this;
-    this.loadStackDescriptorConfigs().then(function(data) {
-      var stackArtifacts = data;
-      self.loadClusterDescriptorConfigs().then(function(clusterArtifacts) {
-        self.storeClusterDescriptorStatus(true);
-        dfd.resolve(self.createServicesStackDescriptorConfigs(objectUtils.deepMerge(data, clusterArtifacts)));
-      }, function() {
-        self.storeClusterDescriptorStatus(false);
-        dfd.resolve(self.createServicesStackDescriptorConfigs(stackArtifacts));
-      });
-    }, function() {
-      dfd.reject();
-    });
-    return dfd.promise();
-  },
-
+  ],
 
   /**
    * Store status of kerberos descriptor located in cluster artifacts.
@@ -106,7 +73,7 @@ App.AddSecurityConfigs = Em.Mixin.create({
     var self = this;
     var configs = [];
     var clusterConfigs = [];
-    var kerberosDescriptor = items.artifact_data;
+    var kerberosDescriptor = Em.get(items, 'KerberosDescriptor.kerberos_descriptor');
     this.set('kerberosDescriptor', kerberosDescriptor);
     // generate configs for root level properties object, currently realm, keytab_dir
     clusterConfigs = clusterConfigs.concat(this.expandKerberosStackDescriptorProps(kerberosDescriptor.properties, 'Cluster', 'stackConfigs'));
@@ -199,7 +166,12 @@ App.AddSecurityConfigs = Em.Mixin.create({
         configObject.referenceProperty = name.substring(1) + ':' + item;
         configObject.isEditable = false;
       }
-      configObject.defaultValue = configObject.savedValue = configObject.value = itemValue;
+      Em.setProperties(configObject, {
+        recommendedValue: itemValue,
+        initialValue: itemValue,
+        defaultValue: itemValue,
+        value: itemValue
+      });
       configObject.filename = prop.configuration ? prop.configuration.split('/')[0] : 'cluster-env';
       configObject.name = prop.configuration ? prop.configuration.split('/')[1] : name + '_' + item;
       predefinedProperty = self.get('kerberosDescriptorProperties').findProperty('name', configObject.name);
@@ -239,17 +211,20 @@ App.AddSecurityConfigs = Em.Mixin.create({
 
     for (var propertyName in kerberosProperties) {
       var predefinedProperty = this.get('kerberosDescriptorProperties').findProperty('name', propertyName);
+      var value = kerberosProperties[propertyName];
+      var isRequired = propertyName == 'additional_realms' ? false : value !== "";
       var propertyObject = {
         name: propertyName,
-        value: kerberosProperties[propertyName],
-        defaultValue: kerberosProperties[propertyName],
-        savedValue: kerberosProperties[propertyName],
+        value: value,
+        defaultValue: value,
+        recommendedValue: value,
+        initialValue: value,
         serviceName: serviceName,
         filename: filename,
         displayName: serviceName == "Cluster" ? App.format.normalizeName(propertyName) : propertyName,
         isOverridable: false,
         isEditable: propertyName != 'realm',
-        isRequired: propertyName != 'additional_realms',
+        isRequired: isRequired,
         isSecureConfig: true,
         placeholderText: predefinedProperty && !Em.isNone(predefinedProperty.index) ? predefinedProperty.placeholderText : '',
         index: predefinedProperty && !Em.isNone(predefinedProperty.index) ? predefinedProperty.index : Infinity

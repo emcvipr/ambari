@@ -87,6 +87,7 @@ class TestMapReduce2Client(RMFTestCase):
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-yarn',
       owner = 'yarn',
+      group = 'hadoop',
       create_parents = True,
       ignore_failures = True,
       cd_access = 'a',
@@ -254,6 +255,7 @@ class TestMapReduce2Client(RMFTestCase):
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-yarn',
       owner = 'yarn',
+      group = 'hadoop',
       create_parents = True,
       ignore_failures = True,
       cd_access = 'a',
@@ -385,7 +387,7 @@ class TestMapReduce2Client(RMFTestCase):
                    target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
-    # for now, it's enough that hdp-select is confirmed
+    # for now, it's enough that <stack-selector-tool> is confirmed
     self.assertResourceCalled("Execute", ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'hadoop-client', '2.2.1.0-2067'), sudo=True)
 
 

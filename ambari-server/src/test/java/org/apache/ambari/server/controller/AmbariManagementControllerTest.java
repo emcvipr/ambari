@@ -72,7 +72,10 @@ import org.apache.ambari.server.actionmanager.StageFactory;
 import org.apache.ambari.server.actionmanager.TargetHostType;
 import org.apache.ambari.server.agent.ExecutionCommand;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.audit.AuditLogger;
+import org.apache.ambari.server.audit.AuditLoggerModule;
 import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.controller.internal.ClusterStackVersionResourceProviderTest;
 import org.apache.ambari.server.controller.internal.ComponentResourceProviderTest;
 import org.apache.ambari.server.controller.internal.HostComponentResourceProviderTest;
 import org.apache.ambari.server.controller.internal.HostResourceProviderTest;
@@ -93,11 +96,15 @@ import org.apache.ambari.server.orm.OrmTestHelper;
 import org.apache.ambari.server.orm.dao.ExecutionCommandDAO;
 import org.apache.ambari.server.orm.dao.HostDAO;
 import org.apache.ambari.server.orm.dao.HostRoleCommandDAO;
+import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
+import org.apache.ambari.server.orm.dao.StackDAO;
+import org.apache.ambari.server.orm.dao.TopologyHostInfoDAO;
 import org.apache.ambari.server.orm.dao.WidgetDAO;
 import org.apache.ambari.server.orm.dao.WidgetLayoutDAO;
 import org.apache.ambari.server.orm.entities.ExecutionCommandEntity;
 import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.HostRoleCommandEntity;
+import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.orm.entities.WidgetEntity;
 import org.apache.ambari.server.orm.entities.WidgetLayoutEntity;
 import org.apache.ambari.server.orm.entities.WidgetLayoutUserWidgetEntity;
@@ -170,6 +177,14 @@ public class AmbariManagementControllerTest {
 
   private static final String STACK_NAME = "HDP";
 
+  private static final String SERVICE_NAME_YARN = "YARN";
+  private static final String COMPONENT_NAME_NODEMANAGER = "NODEMANAGER";
+  private static final String SERVICE_NAME_HBASE = "HBASE";
+  private static final String COMPONENT_NAME_REGIONSERVER = "HBASE_REGIONSERVER";
+  private static final String COMPONENT_NAME_DATANODE = "DATANODE";
+  private static final String SERVICE_NAME_HIVE = "HIVE";
+  private static final String COMPONENT_NAME_HIVE_METASTORE = "HIVE_METASTORE";
+  private static final String COMPONENT_NAME_HIVE_SERVER = "HIVE_SERVER";
   private static final String STACK_VERSION = "0.2";
   private static final String NEW_STACK_VERSION = "2.0.6";
   private static final String OS_TYPE = "centos5";
@@ -210,6 +225,7 @@ public class AmbariManagementControllerTest {
   private OrmTestHelper helper;
   private StageFactory stageFactory;
   private HostDAO hostDAO;
+  private TopologyHostInfoDAO topologyHostInfoDAO;
   private HostRoleCommandDAO hostRoleCommandDAO;
   private TopologyManager topologyManager;
 
@@ -246,16 +262,19 @@ public class AmbariManagementControllerTest {
     helper = injector.getInstance(OrmTestHelper.class);
     stageFactory = injector.getInstance(StageFactory.class);
     hostDAO = injector.getInstance(HostDAO.class);
+    topologyHostInfoDAO = injector.getInstance(TopologyHostInfoDAO.class);
     hostRoleCommandDAO = injector.getInstance(HostRoleCommandDAO.class);
     topologyManager = injector.getInstance(TopologyManager.class);
     StageUtils.setTopologyManager(topologyManager);
     ActionManager.setTopologyManager(topologyManager);
+    EasyMock.replay(injector.getInstance(AuditLogger.class));
   }
 
   @After
   public void teardown() {
     injector.getInstance(PersistService.class).stop();
     actionDB = null;
+    EasyMock.reset(injector.getInstance(AuditLogger.class));
   }
 
   private void setOsFamily(Host host, String osFamily, String osVersion) {
@@ -3033,16 +3052,20 @@ public class AmbariManagementControllerTest {
       if (resp.getHostname().equals("h1")) {
         Assert.assertEquals("c1", resp.getClusterName());
         Assert.assertEquals(2, resp.getHostAttributes().size());
+        Assert.assertEquals(MaintenanceState.OFF, resp.getMaintenanceState());
       } else if (resp.getHostname().equals("h2")) {
         Assert.assertEquals("c1", resp.getClusterName());
         Assert.assertEquals(2, resp.getHostAttributes().size());
+        Assert.assertEquals(MaintenanceState.OFF, resp.getMaintenanceState());
       } else if (resp.getHostname().equals("h3")) {
         Assert.assertEquals("c2", resp.getClusterName());
         Assert.assertEquals(3, resp.getHostAttributes().size());
+        Assert.assertEquals(MaintenanceState.OFF, resp.getMaintenanceState());
       } else if (resp.getHostname().equals("h4")) {
         //todo: why wouldn't this be null?
         Assert.assertEquals("", resp.getClusterName());
         Assert.assertEquals(4, resp.getHostAttributes().size());
+        Assert.assertEquals(null, resp.getMaintenanceState());
       } else {
         fail("Found invalid host");
       }
@@ -3056,6 +3079,7 @@ public class AmbariManagementControllerTest {
     HostResponse resp = resps.iterator().next();
     Assert.assertEquals("h1", resp.getHostname());
     Assert.assertEquals("c1", resp.getClusterName());
+    Assert.assertEquals(MaintenanceState.OFF, resp.getMaintenanceState());
     Assert.assertEquals(2, resp.getHostAttributes().size());
 
   }
@@ -7211,11 +7235,12 @@ public class AmbariManagementControllerTest {
     Assert.assertEquals(REPOS_CNT, responses.size());
 
     RepositoryRequest requestWithParams = new RepositoryRequest(STACK_NAME, STACK_VERSION, OS_TYPE, REPO_ID);
+    requestWithParams.setClusterVersionId(525L);
     Set<RepositoryResponse> responsesWithParams = controller.getRepositories(Collections.singleton(requestWithParams));
     Assert.assertEquals(1, responsesWithParams.size());
     for (RepositoryResponse responseWithParams: responsesWithParams) {
       Assert.assertEquals(responseWithParams.getRepoId(), REPO_ID);
-
+      Assert.assertEquals(525L, responseWithParams.getClusterVersionId().longValue());
     }
 
     RepositoryRequest invalidRequest = new RepositoryRequest(STACK_NAME, STACK_VERSION, OS_TYPE, NON_EXT_VALUE);
@@ -7335,6 +7360,27 @@ public class AmbariManagementControllerTest {
   }
 
   @Test
+  public void testGetStackOperatingSystemsWithRepository() throws Exception {
+    RepositoryVersionDAO dao = injector.getInstance(RepositoryVersionDAO.class);
+    StackDAO stackDAO = injector.getInstance(StackDAO.class);
+    StackEntity stackEntity = stackDAO.find(STACK_NAME, STACK_VERSION);
+    assertNotNull(stackEntity);
+
+    dao.create(stackEntity, "0.2.2", "HDP-0.2", ClusterStackVersionResourceProviderTest.OS_JSON);
+
+    OperatingSystemRequest request = new OperatingSystemRequest(STACK_NAME, STACK_VERSION, null);
+    Set<OperatingSystemResponse> responses = controller.getOperatingSystems(Collections.singleton(request));
+    Assert.assertEquals(OS_CNT, responses.size());
+
+    OperatingSystemRequest requestWithParams = new OperatingSystemRequest(STACK_NAME, STACK_VERSION, OS_TYPE);
+    requestWithParams.setVersionDefinitionId("1");
+
+    Set<OperatingSystemResponse> responsesWithParams = controller.getOperatingSystems(Collections.singleton(requestWithParams));
+    Assert.assertEquals(1, responsesWithParams.size());
+
+  }
+
+  @Test
   public void testStackServiceCheckSupported() throws Exception {
     StackServiceRequest hdfsServiceRequest = new StackServiceRequest(
         STACK_NAME, "2.0.8", SERVICE_NAME);
@@ -7378,6 +7424,128 @@ public class AmbariManagementControllerTest {
     response = responses.iterator().next();
     assertNotNull(response.getCustomCommands());
     assertEquals(0, response.getCustomCommands().size());
+  }
+
+  @Test
+  public void testDecommissionAllowed() throws Exception{
+    StackServiceComponentRequest requestWithParams = new StackServiceComponentRequest(STACK_NAME, NEW_STACK_VERSION, SERVICE_NAME_HBASE, COMPONENT_NAME_REGIONSERVER);
+    Set<StackServiceComponentResponse> responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getComponentName(), COMPONENT_NAME_REGIONSERVER);
+      Assert.assertTrue(responseWithParams.isDecommissionAlllowed());
+    }
+  }
+
+  @Test
+  public void testDecommissionAllowedInheritance() throws Exception{
+    //parent has it, child doesn't
+    StackServiceComponentRequest requestWithParams = new StackServiceComponentRequest(STACK_NAME, NEW_STACK_VERSION, SERVICE_NAME, COMPONENT_NAME_DATANODE);
+    Set<StackServiceComponentResponse> responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getComponentName(), COMPONENT_NAME_DATANODE);
+      Assert.assertTrue(responseWithParams.isDecommissionAlllowed());
+    }
+  }
+
+  @Test
+  public void testDecommissionAllowedOverwrite() throws Exception{
+    StackServiceComponentRequest requestWithParams = new StackServiceComponentRequest(STACK_NAME, "2.0.5", SERVICE_NAME_YARN, COMPONENT_NAME_NODEMANAGER);
+    Set<StackServiceComponentResponse> responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+
+    //parent has it
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getComponentName(), COMPONENT_NAME_NODEMANAGER);
+      Assert.assertFalse(responseWithParams.isDecommissionAlllowed());
+    }
+
+    requestWithParams = new StackServiceComponentRequest(STACK_NAME, NEW_STACK_VERSION, SERVICE_NAME_YARN, COMPONENT_NAME_NODEMANAGER);
+    responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+    //parent has it, child overwrites it
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getComponentName(), COMPONENT_NAME_NODEMANAGER);
+      Assert.assertTrue(responseWithParams.isDecommissionAlllowed());
+    }
+  }
+
+  @Test
+  public void testRassignAllowed() throws Exception{
+    StackServiceComponentRequest requestWithParams = new StackServiceComponentRequest(STACK_NAME, "2.0.5", SERVICE_NAME, COMPONENT_NAME);
+    Set<StackServiceComponentResponse> responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getComponentName(), COMPONENT_NAME);
+      Assert.assertTrue(responseWithParams.isReassignAlllowed());
+    }
+
+    requestWithParams = new StackServiceComponentRequest(STACK_NAME, "2.0.5", SERVICE_NAME, COMPONENT_NAME_DATANODE);
+    responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getComponentName(), COMPONENT_NAME_DATANODE);
+      Assert.assertFalse(responseWithParams.isReassignAlllowed());
+    }
+  }
+
+  @Test
+  public void testReassignAllowedInheritance() throws Exception{
+    //parent has it, child doesn't
+    StackServiceComponentRequest requestWithParams = new StackServiceComponentRequest(STACK_NAME, NEW_STACK_VERSION, SERVICE_NAME_HIVE, COMPONENT_NAME_HIVE_METASTORE);
+    Set<StackServiceComponentResponse> responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getComponentName(), COMPONENT_NAME_HIVE_METASTORE);
+      Assert.assertTrue(responseWithParams.isReassignAlllowed());
+    }
+  }
+
+  @Test
+  public void testReassignAllowedOverwrite() throws Exception{
+    StackServiceComponentRequest requestWithParams = new StackServiceComponentRequest(STACK_NAME, "2.0.5", SERVICE_NAME_HIVE, COMPONENT_NAME_HIVE_SERVER);
+    Set<StackServiceComponentResponse> responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+
+    //parent has it
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getComponentName(), COMPONENT_NAME_HIVE_SERVER);
+      Assert.assertTrue(responseWithParams.isReassignAlllowed());
+    }
+
+    requestWithParams = new StackServiceComponentRequest(STACK_NAME, NEW_STACK_VERSION, SERVICE_NAME_HIVE, COMPONENT_NAME_HIVE_SERVER);
+    responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+    //parent has it, child overwrites it
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getComponentName(), COMPONENT_NAME_HIVE_SERVER);
+      Assert.assertFalse(responseWithParams.isReassignAlllowed());
+    }
+  }
+
+  @Test
+  public void testBulkCommandsInheritence() throws Exception{
+    //HDP 2.0.6 inherit HDFS configurations from HDP 2.0.5
+    StackServiceComponentRequest requestWithParams = new StackServiceComponentRequest(STACK_NAME, NEW_STACK_VERSION, SERVICE_NAME, COMPONENT_NAME_DATANODE);
+    Set<StackServiceComponentResponse> responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+    Assert.assertEquals(1, responsesWithParams.size());
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getComponentName(), COMPONENT_NAME_DATANODE);
+      Assert.assertEquals(responseWithParams.getBulkCommandsDisplayName(), "DataNodes");
+      Assert.assertEquals(responseWithParams.getBulkCommandsMasterComponentName(), "NAMENODE");
+    }
+  }
+
+  @Test
+  public void testBulkCommandsChildStackOverride() throws Exception{
+    //Both HDP 2.0.6 and HDP 2.0.5 has HBase configurations
+    StackServiceComponentRequest requestWithParams = new StackServiceComponentRequest(STACK_NAME, "2.0.5", SERVICE_NAME_HBASE, COMPONENT_NAME_REGIONSERVER);
+    Set<StackServiceComponentResponse> responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+    Assert.assertEquals(1, responsesWithParams.size());
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getBulkCommandsDisplayName(), "Region Servers");
+      Assert.assertEquals(responseWithParams.getBulkCommandsMasterComponentName(), "HBASE_MASTER");
+    }
+
+    requestWithParams = new StackServiceComponentRequest(STACK_NAME, NEW_STACK_VERSION, SERVICE_NAME_HBASE, COMPONENT_NAME_REGIONSERVER);
+    responsesWithParams = controller.getStackComponents(Collections.singleton(requestWithParams));
+    Assert.assertEquals(1, responsesWithParams.size());
+    for (StackServiceComponentResponse responseWithParams: responsesWithParams) {
+      Assert.assertEquals(responseWithParams.getBulkCommandsDisplayName(), "HBase Region Servers");
+      Assert.assertEquals(responseWithParams.getBulkCommandsMasterComponentName(), "HBASE_MASTER");
+    }
   }
 
   // disabled as upgrade feature is disabled
@@ -8619,6 +8787,8 @@ public class AmbariManagementControllerTest {
 
     Assert.assertEquals(0, cluster.getServiceComponentHosts(host1).size());
 
+    Assert.assertNull(topologyHostInfoDAO.findByHostname(host1));
+
     // Deletion without specifying cluster should be successful
     requests.clear();
     requests.add(new HostRequest(host1, null, null));
@@ -8630,7 +8800,7 @@ public class AmbariManagementControllerTest {
     // Verify host is no longer part of the cluster
     Assert.assertFalse(clusters.getHostsForCluster(clusterName).containsKey(host1));
     Assert.assertFalse(clusters.getClustersForHost(host1).contains(cluster));
-
+    Assert.assertNull(topologyHostInfoDAO.findByHostname(host1));
 
     // Case 3: Delete host that is still part of the cluster, and specify the cluster_name in the request
     requests.clear();
@@ -8643,6 +8813,7 @@ public class AmbariManagementControllerTest {
     // Verify host is no longer part of the cluster
     Assert.assertFalse(clusters.getHostsForCluster(clusterName).containsKey(host2));
     Assert.assertFalse(clusters.getClustersForHost(host2).contains(cluster));
+    Assert.assertNull(topologyHostInfoDAO.findByHostname(host2));
 
     // Case 4: Attempt to delete a host that has already been deleted
     requests.clear();
@@ -8835,7 +9006,7 @@ public class AmbariManagementControllerTest {
 
   @Test
   public void testApplyConfigurationWithTheSameTag() throws AuthorizationException {
-    Injector injector = Guice.createInjector(new AbstractModule() {
+    Injector injector = Guice.createInjector(new AuditLoggerModule(), new AbstractModule() {
       @Override
       protected void configure() {
         Properties properties = new Properties();
@@ -8907,7 +9078,7 @@ public class AmbariManagementControllerTest {
   @Test
   public void testDeleteClusterCreateHost() throws Exception {
 
-    Injector injector = Guice.createInjector(new AbstractModule() {
+    Injector injector = Guice.createInjector(new AuditLoggerModule(), new AbstractModule() {
       @Override
       protected void configure() {
         Properties properties = new Properties();
@@ -9018,7 +9189,7 @@ public class AmbariManagementControllerTest {
   @Ignore
   public void testDisableAndDeleteStates() throws Exception {
     Map<String,String> mapRequestProps = new HashMap<String, String>();
-    Injector injector = Guice.createInjector(new AbstractModule() {
+    Injector injector = Guice.createInjector(new AuditLoggerModule(), new AbstractModule() {
       @Override
       protected void configure() {
         Properties properties = new Properties();
@@ -9356,7 +9527,7 @@ public class AmbariManagementControllerTest {
     final String YARN_SERVICE_CHECK_ROLE = "YARN_SERVICE_CHECK";
 
     Map<String,String> mapRequestProps = Collections.emptyMap();
-    Injector injector = Guice.createInjector(new AbstractModule() {
+    Injector injector = Guice.createInjector(new AuditLoggerModule(), new AbstractModule() {
       @Override
       protected void configure() {
         Properties properties = new Properties();

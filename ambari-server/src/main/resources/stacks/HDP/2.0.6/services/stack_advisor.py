@@ -132,6 +132,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
   def recommendYARNConfigurations(self, configurations, clusterData, services, hosts):
     putYarnProperty = self.putProperty(configurations, "yarn-site", services)
+    putYarnPropertyAttribute = self.putPropertyAttribute(configurations, "yarn-site")
     putYarnEnvProperty = self.putProperty(configurations, "yarn-env", services)
     nodemanagerMinRam = 1048576 # 1TB in mb
     if "referenceNodeManagerHost" in clusterData:
@@ -145,6 +146,18 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       containerExecutorGroup = services['configurations']['cluster-env']['properties']['user_group']
     putYarnProperty("yarn.nodemanager.linux-container-executor.group", containerExecutorGroup)
 
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    if "TEZ" in servicesList:
+        ambari_user = self.getAmbariUser(services)
+        putYarnProperty("yarn.timeline-service.http-authentication.proxyuser.{0}.hosts".format(ambari_user), "*")
+        putYarnProperty("yarn.timeline-service.http-authentication.proxyuser.{0}.groups".format(ambari_user), "*")
+        putYarnProperty("yarn.timeline-service.http-authentication.proxyuser.{0}.users".format(ambari_user), "*")
+        old_ambari_user = self.getOldAmbariUser(services)
+        if old_ambari_user is not None:
+            putYarnPropertyAttribute("yarn.timeline-service.http-authentication.proxyuser.{0}.hosts".format(old_ambari_user), 'delete', 'true')
+            putYarnPropertyAttribute("yarn.timeline-service.http-authentication.proxyuser.{0}.groups".format(old_ambari_user), 'delete', 'true')
+            putYarnPropertyAttribute("yarn.timeline-service.http-authentication.proxyuser.{0}.users".format(old_ambari_user), 'delete', 'true')
+
   def recommendMapReduce2Configurations(self, configurations, clusterData, services, hosts):
     putMapredProperty = self.putProperty(configurations, "mapred-site", services)
     putMapredProperty('yarn.app.mapreduce.am.resource.mb', int(clusterData['amMemory']))
@@ -154,6 +167,37 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putMapredProperty('mapreduce.map.java.opts', "-Xmx" + str(int(round(0.8 * clusterData['mapMemory']))) + "m")
     putMapredProperty('mapreduce.reduce.java.opts', "-Xmx" + str(int(round(0.8 * clusterData['reduceMemory']))) + "m")
     putMapredProperty('mapreduce.task.io.sort.mb', min(int(round(0.4 * clusterData['mapMemory'])), 1024))
+
+  def getAmbariUser(self, services):
+    ambari_user = services['ambari-server-properties']['ambari-server.user']
+    if "cluster-env" in services["configurations"] \
+          and "ambari_principal_name" in services["configurations"]["cluster-env"]["properties"] \
+                and "security_enabled" in services["configurations"]["cluster-env"]["properties"] \
+                    and services["configurations"]["cluster-env"]["properties"]["security_enabled"].lower() == "true":
+      ambari_user = services["configurations"]["cluster-env"]["properties"]["ambari_principal_name"]
+      ambari_user = ambari_user.split('@')[0]
+    return ambari_user
+
+  def getOldAmbariUser(self, services):
+    ambari_user = None
+    if "cluster-env" in services["configurations"]:
+      if "security_enabled" in services["configurations"]["cluster-env"]["properties"] \
+              and services["configurations"]["cluster-env"]["properties"]["security_enabled"].lower() == "true":
+         ambari_user = services['ambari-server-properties']['ambari-server.user']
+      elif "ambari_principal_name" in services["configurations"]["cluster-env"]["properties"]:
+         ambari_user = services["configurations"]["cluster-env"]["properties"]["ambari_principal_name"]
+         ambari_user = ambari_user.split('@')[0]
+    return ambari_user
+
+  def recommendAmbariProxyUsersForHDFS(self, services, servicesList, putCoreSiteProperty, putCoreSitePropertyAttribute):
+      if "HDFS" in servicesList:
+          ambari_user = self.getAmbariUser(services)
+          putCoreSiteProperty("hadoop.proxyuser.{0}.hosts".format(ambari_user), "*")
+          putCoreSiteProperty("hadoop.proxyuser.{0}.groups".format(ambari_user), "*")
+          old_ambari_user = self.getOldAmbariUser(services)
+          if old_ambari_user is not None:
+            putCoreSitePropertyAttribute("hadoop.proxyuser.{0}.hosts".format(old_ambari_user), 'delete', 'true')
+            putCoreSitePropertyAttribute("hadoop.proxyuser.{0}.groups".format(old_ambari_user), 'delete', 'true')
 
   def recommendHadoopProxyUsers (self, configurations, services, hosts):
     servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
@@ -233,6 +277,8 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
         services["forced-configurations"].append({"type" : "core-site", "name" : "hadoop.proxyuser.{0}.hosts".format(user_name)})
         services["forced-configurations"].append({"type" : "core-site", "name" : "hadoop.proxyuser.{0}.groups".format(user_name)})
 
+    self.recommendAmbariProxyUsersForHDFS(services, servicesList, putCoreSiteProperty, putCoreSitePropertyAttribute)
+
   def recommendHDFSConfigurations(self, configurations, clusterData, services, hosts):
     putHDFSProperty = self.putProperty(configurations, "hadoop-env", services)
     putHDFSSiteProperty = self.putProperty(configurations, "hdfs-site", services)
@@ -281,9 +327,25 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
   def recommendHbaseConfigurations(self, configurations, clusterData, services, hosts):
     # recommendations for HBase env config
+
+    # If cluster size is < 100, hbase master heap = 2G
+    # else If cluster size is < 500, hbase master heap = 4G
+    # else hbase master heap = 8G
+    # for small test clusters use 1 gb
+    hostsCount = 0
+    if hosts and "items" in hosts:
+      hostsCount = len(hosts["items"])
+
+    hbaseMasterRam = {
+      hostsCount < 20: 1,
+      20 <= hostsCount < 100: 2,
+      100 <= hostsCount < 500: 4,
+      500 <= hostsCount: 8
+    }[True]
+
     putHbaseProperty = self.putProperty(configurations, "hbase-env", services)
     putHbaseProperty('hbase_regionserver_heapsize', int(clusterData['hbaseRam']) * 1024)
-    putHbaseProperty('hbase_master_heapsize', int(clusterData['hbaseRam']) * 1024)
+    putHbaseProperty('hbase_master_heapsize', hbaseMasterRam * 1024)
 
     # recommendations for HBase site config
     putHbaseSiteProperty = self.putProperty(configurations, "hbase-site", services)
@@ -295,20 +357,8 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
 
   def recommendRangerConfigurations(self, configurations, clusterData, services, hosts):
-    ranger_sql_connector_dict = {
-      'MYSQL': '/usr/share/java/mysql-connector-java.jar',
-      'ORACLE': '/usr/share/java/ojdbc6.jar',
-      'POSTGRES': '/usr/share/java/postgresql.jar',
-      'MSSQL': '/usr/share/java/sqljdbc4.jar',
-      'SQLA': '/path_to_driver/sqla-client-jdbc.tar.gz'
-    }
 
     putRangerAdminProperty = self.putProperty(configurations, "admin-properties", services)
-
-    if 'admin-properties' in services['configurations'] and 'DB_FLAVOR' in services['configurations']['admin-properties']['properties']:
-      rangerDbFlavor = services['configurations']["admin-properties"]["properties"]["DB_FLAVOR"]
-      rangerSqlConnectorProperty = ranger_sql_connector_dict.get(rangerDbFlavor, ranger_sql_connector_dict['MYSQL'])
-      putRangerAdminProperty('SQL_CONNECTOR_JAR', rangerSqlConnectorProperty)
 
     # Build policymgr_external_url
     protocol = 'http'
@@ -493,9 +543,24 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putAmsHbaseSiteProperty = self.putProperty(configurations, "ams-hbase-site", services)
     putAmsSiteProperty = self.putProperty(configurations, "ams-site", services)
     putHbaseEnvProperty = self.putProperty(configurations, "ams-hbase-env", services)
+    putGrafanaProperty = self.putProperty(configurations, "ams-grafana-env", services)
     putGrafanaPropertyAttribute = self.putPropertyAttribute(configurations, "ams-grafana-env")
 
     amsCollectorHosts = self.getComponentHostNames(services, "AMBARI_METRICS", "METRICS_COLLECTOR")
+
+    if 'cluster-env' in services['configurations'] and \
+        'metrics_collector_vip_host' in services['configurations']['cluster-env']['properties']:
+      metric_collector_host = services['configurations']['cluster-env']['properties']['metrics_collector_vip_host']
+    else:
+      metric_collector_host = 'localhost' if len(amsCollectorHosts) == 0 else amsCollectorHosts[0]
+
+    putAmsSiteProperty("timeline.metrics.service.webapp.address", str(metric_collector_host) + ":6188")
+
+    log_dir = "/var/log/ambari-metrics-collector"
+    if "ams-env" in services["configurations"]:
+      if "metrics_collector_log_dir" in services["configurations"]["ams-env"]["properties"]:
+        log_dir = services["configurations"]["ams-env"]["properties"]["metrics_collector_log_dir"]
+      putHbaseEnvProperty("hbase_log_dir", log_dir)
 
     defaultFs = 'file:///'
     if "core-site" in services["configurations"] and \
@@ -509,7 +574,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
 
     if operatingMode == "distributed":
       putAmsSiteProperty("timeline.metrics.service.watcher.disabled", 'true')
-      putAmsSiteProperty("timeline.metrics.host.aggregator.ttl", 604800)
+      putAmsSiteProperty("timeline.metrics.host.aggregator.ttl", 259200)
       putAmsHbaseSiteProperty("hbase.cluster.distributed", 'true')
     else:
       putAmsSiteProperty("timeline.metrics.service.watcher.disabled", 'false')
@@ -584,12 +649,14 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
         putAmsHbaseSiteProperty("phoenix.query.maxGlobalMemoryPercentage", 20)
         putAmsHbaseSiteProperty("phoenix.coprocessor.maxMetaDataCacheSize", 81920000)
         putAmsSiteProperty("phoenix.query.maxGlobalMemoryPercentage", 30)
+        putAmsSiteProperty("timeline.metrics.service.resultset.fetchSize", 10000)
       elif total_sinks_count >= 500:
         putAmsHbaseSiteProperty("hbase.regionserver.handler.count", 60)
         putAmsHbaseSiteProperty("hbase.regionserver.hlog.blocksize", 134217728)
         putAmsHbaseSiteProperty("hbase.regionserver.maxlogs", 64)
         putAmsHbaseSiteProperty("hbase.hregion.memstore.flush.size", 268435456)
         putAmsHbaseSiteProperty("phoenix.coprocessor.maxMetaDataCacheSize", 40960000)
+        putAmsSiteProperty("timeline.metrics.service.resultset.fetchSize", 5000)
       else:
         putAmsHbaseSiteProperty("phoenix.coprocessor.maxMetaDataCacheSize", 20480000)
       pass
@@ -658,11 +725,13 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
     putAmsSiteProperty("timeline.metrics.cluster.aggregate.splitpoints", ','.join(aggregate_splits))
 
     component_grafana_exists = False
-    for service in services:
+    for service in services['services']:
       if 'components' in service:
         for component in service['components']:
           if 'StackServiceComponents' in component:
-            if 'METRICS_GRAFANA' in component['StackServiceComponents']['component_name']:
+            # If Grafana is installed the hostnames would indicate its location
+            if 'METRICS_GRAFANA' in component['StackServiceComponents']['component_name'] and\
+              len(component['StackServiceComponents']['hostnames']) != 0:
               component_grafana_exists = True
               break
     pass
@@ -782,7 +851,7 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       {"os":12, "hbase":16},
       {"os":24, "hbase":24},
       {"os":32, "hbase":32},
-      {"os":64, "hbase":64}
+      {"os":64, "hbase":32}
     ]
     index = {
       cluster["ram"] <= 4: 0,
@@ -797,8 +866,11 @@ class HDP206StackAdvisor(DefaultStackAdvisor):
       128 < cluster["ram"] <= 256: 9,
       256 < cluster["ram"]: 10
     }[1]
+
+
     cluster["reservedRam"] = ramRecommendations[index]["os"]
     cluster["hbaseRam"] = ramRecommendations[index]["hbase"]
+
 
     cluster["minContainerSize"] = {
       cluster["ram"] <= 4: 256,
@@ -1571,10 +1643,12 @@ def getMountPointForDir(dir, mountPoints):
     # "/", "/hadoop/hdfs", and "/hadoop/hdfs/data".
     # So take the one with the greatest number of segments.
     for mountPoint in mountPoints:
-      if dir.startswith(mountPoint):
+      # Ensure that the mount path and the dir path ends with "/"
+      # The mount point "/hadoop" should not match with the path "/hadoop1"
+      if os.path.join(dir, "").startswith(os.path.join(mountPoint, "")):
         if bestMountFound is None:
           bestMountFound = mountPoint
-        elif bestMountFound.count(os.path.sep) < os.path.join(mountPoint, "").count(os.path.sep):
+        elif os.path.join(bestMountFound, "").count(os.path.sep) < os.path.join(mountPoint, "").count(os.path.sep):
           bestMountFound = mountPoint
 
   return bestMountFound

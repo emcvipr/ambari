@@ -39,6 +39,7 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
     'installHostComponents',
     'startZooKeeperServers',
     'startNameNode',
+    'stopHostComponentsInMaintenanceMode',
     'deleteHostComponents',
     'configureMySqlServer',
     'startMySqlServer',
@@ -57,6 +58,7 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
     'cleanMySqlServer',
     'putHostComponentsInMaintenanceMode',
     'reconfigure',
+    'stopHostComponentsInMaintenanceMode',
     'deleteHostComponents',
     'configureMySqlServer',
     'startRequiredServices'
@@ -75,18 +77,18 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
   componentsWithoutReconfiguration: ['METRICS_COLLECTOR'],
 
   /**
-   * Map with lists of unrelated services.
+   * Map with lists of related services.
    * Used to define list of services to stop/start.
    */
-  unrelatedServicesMap: {
-    'JOBTRACKER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
-    'RESOURCEMANAGER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
-    'APP_TIMELINE_SERVER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
-    'OOZIE_SERVER': ['ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM', 'HIVE'],
-    'WEBHCAT_SERVER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
-    'HIVE_SERVER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
-    'HIVE_METASTORE': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'],
-    'MYSQL_SERVER': ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM']
+  relatedServicesMap: {
+    'JOBTRACKER': ['PIG', 'OOZIE'],
+    'RESOURCEMANAGER': ['YARN', 'MAPREDUCE2', 'TEZ', 'PIG', 'OOZIE', 'SLIDER', 'SPARK'],
+    'APP_TIMELINE_SERVER': ['YARN', 'MAPREDUCE2', 'TEZ', 'OOZIE', 'SLIDER', 'SPARK'],
+    'HIVE_SERVER': ['HIVE', 'FALCON', 'ATLAS', 'OOZIE'],
+    'HIVE_METASTORE': ['HIVE', 'PIG', 'FALCON', 'ATLAS', 'OOZIE'],
+    'WEBHCAT_SERVER': ['HIVE'],
+    'OOZIE_SERVER': ['OOZIE', 'FALCON', 'KNOX'],
+    'MYSQL_SERVER': ['HIVE', 'OOZIE', 'RANGER', 'RANGER_KMS']
   },
 
   dbPropertyMap: {
@@ -386,9 +388,9 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
     if (this.get('content.hasManualSteps')) {
       if (componentName === 'NAMENODE' && App.get('isHaEnabled')) {
         // Only for reassign NameNode with HA enabled
-        this.removeTasks(['deleteHostComponents', 'startRequiredServices']);
+        this.removeTasks(['stopHostComponentsInMaintenanceMode', 'deleteHostComponents', 'startRequiredServices']);
       } else {
-        this.removeTasks(['startZooKeeperServers', 'startNameNode', 'deleteHostComponents', 'startRequiredServices']);
+        this.removeTasks(['startZooKeeperServers', 'startNameNode', 'stopHostComponentsInMaintenanceMode', 'deleteHostComponents', 'startRequiredServices']);
       }
     } else {
       this.removeTasks(['startZooKeeperServers', 'startNameNode']);
@@ -396,6 +398,10 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
 
     if (this.get('componentsWithoutReconfiguration').contains(componentName)) {
       this.removeTasks(['reconfigure']);
+    }
+
+    if (!this.get('content.reassignComponentsInMM.length')) {
+      this.removeTasks(['stopHostComponentsInMaintenanceMode']);
     }
   },
 
@@ -460,8 +466,8 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
   }.observes('tasks.@each.showRollback'),
 
   onComponentsTasksSuccess: function () {
-    this.incrementProperty('multiTaskCounter');
-    if (this.get('multiTaskCounter') >= this.get('hostComponents').length) {
+    this.decrementProperty('multiTaskCounter');
+    if (this.get('multiTaskCounter') <= 0) {
       this.onTaskCompleted();
     }
   },
@@ -470,13 +476,13 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
    * make server call to stop services
    */
   stopRequiredServices: function () {
-    this.stopServices(this.get('unrelatedServicesMap')[this.get('content.reassign.component_name')]);
+    this.stopServices(this.get('relatedServicesMap')[this.get('content.reassign.component_name')], true);
   },
 
   createHostComponents: function () {
-    this.set('multiTaskCounter', 0);
     var hostComponents = this.get('hostComponents');
     var hostName = this.get('content.reassignHosts.target');
+    this.set('multiTaskCounter', hostComponents.length);
     for (var i = 0; i < hostComponents.length; i++) {
       this.createComponent(hostComponents[i], hostName, this.get('content.reassign.service_id'));
     }
@@ -487,9 +493,9 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
   },
 
   putHostComponentsInMaintenanceMode: function () {
-    this.set('multiTaskCounter', 0);
     var hostComponents = this.get('hostComponents');
     var hostName = this.get('content.reassignHosts.source');
+    this.set('multiTaskCounter', hostComponents.length);
     for (var i = 0; i < hostComponents.length; i++) {
       App.ajax.send({
         name: 'common.host.host_component.passive',
@@ -506,9 +512,9 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
   },
 
   installHostComponents: function () {
-    this.set('multiTaskCounter', 0);
     var hostComponents = this.get('hostComponents');
     var hostName = this.get('content.reassignHosts.target');
+    this.set('multiTaskCounter', hostComponents.length);
     for (var i = 0; i < hostComponents.length; i++) {
       this.updateComponent(hostComponents[i], hostName, this.get('content.reassign.service_id'), "Install", hostComponents.length);
     }
@@ -914,9 +920,9 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
    * make server call to start services
    */
   startRequiredServices: function () {
-    var unrelatedServices = this.get('unrelatedServicesMap')[this.get('content.reassign.component_name')];
-    if (unrelatedServices) {
-      this.startServices(false, unrelatedServices);
+    var relatedServices = this.get('relatedServicesMap')[this.get('content.reassign.component_name')];
+    if (relatedServices) {
+      this.startServices(false, relatedServices, true);
     } else {
       this.startServices(true);
     }
@@ -926,9 +932,9 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
    * make DELETE call for each host component on host
    */
   deleteHostComponents: function () {
-    this.set('multiTaskCounter', 0);
     var hostComponents = this.get('hostComponents');
     var hostName = this.get('content.reassignHosts.source');
+    this.set('multiTaskCounter', hostComponents.length);
     for (var i = 0; i < hostComponents.length; i++) {
       App.ajax.send({
         name: 'common.delete.host_component',
@@ -1244,6 +1250,21 @@ App.ReassignMasterWizardStep4Controller = App.HighAvailabilityProgressPageContro
 
   saveServiceProperties: function(configs) {
     App.router.get(this.get('content.controllerName')).saveServiceProperties(configs);
+  },
+
+  stopHostComponentsInMaintenanceMode: function () {
+    var hostComponentsInMM = this.get('content.reassignComponentsInMM');
+    var hostName = this.get('content.reassignHosts.source');
+    var serviceName = this.get('content.reassign.service_id');
+    hostComponentsInMM = hostComponentsInMM.map(function(componentName){
+      return {
+        hostName: hostName,
+        serviceName: serviceName,
+        componentName: componentName
+      };
+    });
+    this.set('multiTaskCounter', hostComponentsInMM.length);
+    this.updateComponentsState(hostComponentsInMM, 'INSTALLED');
   }
 
 });

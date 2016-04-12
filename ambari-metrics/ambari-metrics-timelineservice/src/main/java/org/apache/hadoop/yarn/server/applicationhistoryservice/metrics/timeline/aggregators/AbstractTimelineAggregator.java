@@ -20,6 +20,9 @@ package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixHBaseAccessor;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.availability.AggregationTaskRunner;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.availability.AggregationTaskRunner.AGGREGATOR_NAME;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.availability.TimelineMetricHAController;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.Condition;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL;
 import org.slf4j.LoggerFactory;
@@ -34,6 +37,7 @@ import java.util.Date;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.AGGREGATOR_CHECKPOINT_DELAY;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.RESULTSET_FETCH_SIZE;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.availability.AggregationTaskRunner.ACTUAL_AGGREGATOR_NAMES;
 
 /**
  * Base class for all runnable aggregators. Provides common functions like
@@ -52,12 +56,12 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
   protected String tableName;
   protected String outputTableName;
   protected Long nativeTimeRangeDelay;
-  protected Long lastAggregatedEndTime = -1l;
+  protected AggregationTaskRunner taskRunner;
 
   // Explicitly name aggregators for logging needs
-  private final String aggregatorName;
+  private final AGGREGATOR_NAME aggregatorName;
 
-  AbstractTimelineAggregator(String aggregatorName,
+  AbstractTimelineAggregator(AGGREGATOR_NAME aggregatorName,
                              PhoenixHBaseAccessor hBaseAccessor,
                              Configuration metricsConf) {
     this.aggregatorName = aggregatorName;
@@ -65,10 +69,10 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
     this.metricsConf = metricsConf;
     this.checkpointDelayMillis = SECONDS.toMillis(metricsConf.getInt(AGGREGATOR_CHECKPOINT_DELAY, 120));
     this.resultsetFetchSize = metricsConf.getInt(RESULTSET_FETCH_SIZE, 2000);
-    this.LOG = LoggerFactory.getLogger(aggregatorName);
+    this.LOG = LoggerFactory.getLogger(ACTUAL_AGGREGATOR_NAMES.get(aggregatorName));
   }
 
-  public AbstractTimelineAggregator(String aggregatorName,
+  public AbstractTimelineAggregator(AGGREGATOR_NAME aggregatorName,
                                     PhoenixHBaseAccessor hBaseAccessor,
                                     Configuration metricsConf,
                                     String checkpointLocation,
@@ -77,7 +81,8 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
                                     String aggregatorDisableParam,
                                     String tableName,
                                     String outputTableName,
-                                    Long nativeTimeRangeDelay) {
+                                    Long nativeTimeRangeDelay,
+                                    TimelineMetricHAController haController) {
     this(aggregatorName, hBaseAccessor, metricsConf);
     this.checkpointLocation = checkpointLocation;
     this.sleepIntervalMillis = sleepIntervalMillis;
@@ -85,7 +90,9 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
     this.aggregatorDisableParam = aggregatorDisableParam;
     this.tableName = tableName;
     this.outputTableName = outputTableName;
-    this.nativeTimeRangeDelay =  nativeTimeRangeDelay;
+    this.nativeTimeRangeDelay = nativeTimeRangeDelay;
+    this.taskRunner = haController != null && haController.isInitialized() ?
+      haController.getAggregationTaskRunner() : null;
   }
 
   @Override
@@ -93,67 +100,82 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
     LOG.info("Started Timeline aggregator thread @ " + new Date());
     Long SLEEP_INTERVAL = getSleepIntervalMillis();
     runOnce(SLEEP_INTERVAL);
-    this.lastAggregatedEndTime = this.lastAggregatedEndTime + SLEEP_INTERVAL;
   }
 
   /**
    * Access relaxed for tests
    */
   public void runOnce(Long SLEEP_INTERVAL) {
-    long lastCheckPointTime = readLastCheckpointSavingOnFirstRun();
+    boolean performAggregationFunction = true;
+    if (taskRunner != null) {
+      switch (getAggregatorType()) {
+        case HOST:
+          performAggregationFunction = taskRunner.performsHostAggregation();
+          break;
+        case CLUSTER:
+          performAggregationFunction = taskRunner.performsClusterAggregation();
+      }
+    }
 
-    if (lastCheckPointTime != -1) {
-      LOG.info("Last check point time: " + lastCheckPointTime + ", lagBy: "
-        + ((lastAggregatedEndTime - lastCheckPointTime) / 1000)
-        + " seconds.");
+    if (performAggregationFunction) {
+      long currentTime = System.currentTimeMillis();
+      long lastCheckPointTime = readLastCheckpointSavingOnFirstRun(currentTime);
 
-      boolean success = doWork(lastCheckPointTime, lastCheckPointTime + SLEEP_INTERVAL);
+      if (lastCheckPointTime != -1) {
+        LOG.info("Last check point time: " + lastCheckPointTime + ", lagBy: "
+          + ((currentTime - lastCheckPointTime) / 1000)
+          + " seconds.");
 
-      if (success) {
-        try {
-          saveCheckPoint(lastCheckPointTime + SLEEP_INTERVAL);
-        } catch (IOException io) {
-          LOG.warn("Error saving checkpoint, restarting aggregation at " +
-            "previous checkpoint.");
+        boolean success = doWork(lastCheckPointTime, lastCheckPointTime + SLEEP_INTERVAL);
+
+        if (success) {
+          try {
+            saveCheckPoint(lastCheckPointTime + SLEEP_INTERVAL);
+          } catch (IOException io) {
+            LOG.warn("Error saving checkpoint, restarting aggregation at " +
+              "previous checkpoint.");
+          }
         }
       }
+    } else {
+      LOG.info("Skipping aggregation function not owned by this instance.");
     }
   }
 
-  private long readLastCheckpointSavingOnFirstRun() {
+  private long readLastCheckpointSavingOnFirstRun(long currentTime) {
     long lastCheckPointTime = -1;
 
     try {
       lastCheckPointTime = readCheckPoint();
-      LOG.info("Last Checkpoint read : " + new Date(lastCheckPointTime));
+      if (lastCheckPointTime != -1) {
+        LOG.info("Last Checkpoint read : " + new Date(lastCheckPointTime));
+        if (isLastCheckPointTooOld(currentTime, lastCheckPointTime)) {
+          LOG.warn("Last Checkpoint is too old, discarding last checkpoint. " +
+            "lastCheckPointTime = " + new Date(lastCheckPointTime));
+          lastCheckPointTime = getRoundedAggregateTimeMillis(getSleepIntervalMillis()) - getSleepIntervalMillis();
+          LOG.info("Saving checkpoint time. " + new Date((lastCheckPointTime)));
+          saveCheckPoint(lastCheckPointTime);
 
-      if (lastAggregatedEndTime == -1l) {
-        lastAggregatedEndTime = getRoundedAggregateTimeMillis(getSleepIntervalMillis());
-      }
+        } else {
 
-      if (isLastCheckPointTooOld(lastCheckPointTime)) {
-        LOG.warn("Last Checkpoint is too old, discarding last checkpoint. " +
-          "lastCheckPointTime = " + new Date(lastCheckPointTime));
-        lastCheckPointTime = -1;
-      }
+          if (lastCheckPointTime > 0) {
+            lastCheckPointTime = getRoundedCheckPointTimeMillis(lastCheckPointTime, getSleepIntervalMillis());
+            LOG.info("Rounded off checkpoint : " + new Date(lastCheckPointTime));
+          }
 
-      if (lastCheckPointTime > 0) {
-        lastCheckPointTime = getRoundedCheckPointTimeMillis(lastCheckPointTime, getSleepIntervalMillis());
-        LOG.info("Rounded off checkpoint : " + new Date(lastCheckPointTime));
-      }
-
-      if (isLastCheckPointTooYoung(lastCheckPointTime)) {
-        LOG.info("Last checkpoint too recent for aggregation. Sleeping for 1 cycle.");
-        lastCheckPointTime = -1;
-      }
-
-      if (lastCheckPointTime == -1) {
-        // Assuming first run, save checkpoint and sleep.
-        // Set checkpoint to rounded time in the past to allow the
-        // agents/collectors to catch up
-        LOG.info("Saving checkpoint time on first run. " +
-          new Date((lastAggregatedEndTime)));
-        saveCheckPoint(lastAggregatedEndTime);
+          if (isLastCheckPointTooYoung(lastCheckPointTime)) {
+            LOG.info("Last checkpoint too recent for aggregation. Sleeping for 1 cycle.");
+            return -1; //Skip Aggregation this time around
+          }
+        }
+      } else {
+        /*
+          No checkpoint. Save current rounded checkpoint and sleep for 1 cycle.
+         */
+        LOG.info("No checkpoint found");
+        long firstCheckPoint = getRoundedAggregateTimeMillis(getSleepIntervalMillis());
+        LOG.info("Saving checkpoint time. " + new Date((firstCheckPoint)));
+        saveCheckPoint(firstCheckPoint);
       }
     } catch (IOException io) {
       LOG.warn("Unable to write last checkpoint time. Resuming sleep.", io);
@@ -161,19 +183,22 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
     return lastCheckPointTime;
   }
 
-  private boolean isLastCheckPointTooOld(long checkpoint) {
+  private boolean isLastCheckPointTooOld(long currentTime, long checkpoint) {
     // first checkpoint is saved checkpointDelayMillis in the past,
     // so here we also need to take it into account
     return checkpoint != -1 &&
-      ((lastAggregatedEndTime - checkpoint) > getCheckpointCutOffIntervalMillis());
+      ((currentTime - checkpoint) > getCheckpointCutOffIntervalMillis());
   }
 
   private boolean isLastCheckPointTooYoung(long checkpoint) {
     return checkpoint != -1 &&
-      ((lastAggregatedEndTime <= checkpoint));
+      ((getRoundedAggregateTimeMillis(getSleepIntervalMillis()) <= checkpoint));
   }
 
   protected long readCheckPoint() {
+    if (taskRunner != null) {
+      return taskRunner.getCheckpointManager().readCheckpoint(aggregatorName);
+    }
     try {
       File checkpoint = new File(getCheckpointLocation());
       if (checkpoint.exists()) {
@@ -189,15 +214,23 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
   }
 
   protected void saveCheckPoint(long checkpointTime) throws IOException {
-    File checkpoint = new File(getCheckpointLocation());
-    if (!checkpoint.exists()) {
-      boolean done = checkpoint.createNewFile();
-      if (!done) {
-        throw new IOException("Could not create checkpoint at location, " +
-          getCheckpointLocation());
+    if (taskRunner != null) {
+      boolean success = taskRunner.getCheckpointManager().writeCheckpoint(aggregatorName, checkpointTime);
+      if (!success) {
+        LOG.error("Error saving checkpoint with AggregationTaskRunner, " +
+          "aggregator = " + aggregatorName + "value = " + checkpointTime);
       }
+    } else {
+      File checkpoint = new File(getCheckpointLocation());
+      if (!checkpoint.exists()) {
+        boolean done = checkpoint.createNewFile();
+        if (!done) {
+          throw new IOException("Could not create checkpoint at location, " +
+            getCheckpointLocation());
+        }
+      }
+      FileUtils.writeStringToFile(checkpoint, String.valueOf(checkpointTime));
     }
-    FileUtils.writeStringToFile(checkpoint, String.valueOf(checkpointTime));
   }
 
   /**
@@ -308,14 +341,6 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
     return checkpointLocation;
   }
 
-  protected void setLastAggregatedEndTime(long lastAggregatedEndTime) {
-    this.lastAggregatedEndTime = lastAggregatedEndTime;
-  }
-
-  protected long getLastAggregatedEndTime() {
-    return lastAggregatedEndTime;
-  }
-
   public static long getRoundedCheckPointTimeMillis(long referenceTime, long aggregatorPeriod) {
     return referenceTime - (referenceTime % aggregatorPeriod);
   }
@@ -325,4 +350,21 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
     return currentTime - (currentTime % aggregatorPeriod);
   }
 
+  /**
+   * Get @AGGREGATOR_TYPE based on the output table.
+   * This is solely used by the HAController to determine which lock to acquire.
+   */
+  public AGGREGATOR_TYPE getAggregatorType() {
+    if (outputTableName.contains("RECORD")) {
+      return AGGREGATOR_TYPE.HOST;
+    } else if (outputTableName.contains("AGGREGATE")) {
+      return AGGREGATOR_TYPE.CLUSTER;
+    }
+    return null;
+  }
+
+  @Override
+  public AGGREGATOR_NAME getName() {
+    return aggregatorName;
+  }
 }

@@ -25,6 +25,8 @@ from resource_management.libraries.resources.hdfs_resource import HdfsResource
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import stack_select
 from resource_management.libraries.functions import format
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
 from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
 from resource_management.libraries.functions.version import format_stack_version
@@ -34,7 +36,7 @@ from resource_management.libraries import functions
 import status_params
 
 # a map of the Ambari role to the component name
-# for use with /usr/hdp/current/<component>
+# for use with <stack-root>/current/<component>
 MAPR_SERVER_ROLE_DIRECTORY_MAP = {
   'HISTORYSERVER' : 'hadoop-mapreduce-historyserver',
   'MAPREDUCE2_CLIENT' : 'hadoop-mapreduce-client',
@@ -52,11 +54,16 @@ config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
 stack_name = default("/hostLevelParams/stack_name", None)
+stack_root = Script.get_stack_root()
+tarball_map = default("/configurations/cluster-env/tarball_map", None)
 
 # This is expected to be of the form #.#.#.#
-stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
+stack_version_unformatted = config['hostLevelParams']['stack_version']
 stack_version_formatted_major = format_stack_version(stack_version_unformatted)
 stack_version_formatted = functions.get_stack_version('hadoop-yarn-resourcemanager')
+
+stack_supports_ru = stack_version_formatted_major and check_stack_feature(StackFeature.ROLLING_UPGRADE, stack_version_formatted_major)
+stack_supports_timeline_state_store = stack_version_formatted_major and check_stack_feature(StackFeature.TIMELINE_STATE_STORE, stack_version_formatted_major)
 
 # New Cluster Stack Version that is defined during the RESTART of a Stack Upgrade.
 # It cannot be used during the initial Cluser Install because the version is not yet known.
@@ -76,8 +83,8 @@ yarn_bin = "/usr/lib/hadoop-yarn/sbin"
 yarn_container_bin = "/usr/lib/hadoop-yarn/bin"
 hadoop_java_io_tmpdir = os.path.join(tmp_dir, "hadoop_java_io_tmpdir")
 
-# hadoop parameters for 2.2+
-if Script.is_stack_greater_or_equal("2.2"):
+# hadoop parameters stack supporting rolling_uprade
+if stack_supports_ru:
   # MapR directory root
   mapred_role_root = "hadoop-mapreduce-client"
   command_role = default("/role", "")
@@ -89,14 +96,15 @@ if Script.is_stack_greater_or_equal("2.2"):
   if command_role in YARN_SERVER_ROLE_DIRECTORY_MAP:
     yarn_role_root = YARN_SERVER_ROLE_DIRECTORY_MAP[command_role]
 
-  hadoop_mapred2_jar_location = format("/usr/hdp/current/{mapred_role_root}")
-  mapred_bin = format("/usr/hdp/current/{mapred_role_root}/sbin")
+  hadoop_mapred2_jar_location = format("{stack_root}/current/{mapred_role_root}")
+  mapred_bin = format("{stack_root}/current/{mapred_role_root}/sbin")
 
-  hadoop_yarn_home = format("/usr/hdp/current/{yarn_role_root}")
-  yarn_bin = format("/usr/hdp/current/{yarn_role_root}/sbin")
-  yarn_container_bin = format("/usr/hdp/current/{yarn_role_root}/bin")
+  hadoop_yarn_home = format("{stack_root}/current/{yarn_role_root}")
+  yarn_bin = format("{stack_root}/current/{yarn_role_root}/sbin")
+  yarn_container_bin = format("{stack_root}/current/{yarn_role_root}/bin")
 
-  # Timeline Service property that was added in 2.2
+if stack_supports_timeline_state_store:
+  # Timeline Service property that was added timeline_state_store stack feature
   ats_leveldb_state_store_dir = config['configurations']['yarn-site']['yarn.timeline-service.leveldb-state-store.path']
 
 # ats 1.5 properties
@@ -135,10 +143,12 @@ yarn_nodemanager_container_executor_class =  config['configurations']['yarn-site
 is_linux_container_executor = (yarn_nodemanager_container_executor_class == 'org.apache.hadoop.yarn.server.nodemanager.LinuxContainerExecutor')
 container_executor_mode = 06050 if is_linux_container_executor else 02050
 kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
+yarn_http_policy = config['configurations']['yarn-site']['yarn.http.policy']
+yarn_https_on = (yarn_http_policy.upper() == 'HTTPS_ONLY')
 rm_hosts = config['clusterHostInfo']['rm_host']
 rm_host = rm_hosts[0]
 rm_port = config['configurations']['yarn-site']['yarn.resourcemanager.webapp.address'].split(':')[-1]
-rm_https_port = config['configurations']['yarn-site']['yarn.resourcemanager.webapp.https.address'].split(':')[-1]
+rm_https_port = default('/configurations/yarn-site/yarn.resourcemanager.webapp.https.address', ":8090").split(':')[-1]
 # TODO UPGRADE default, update site during upgrade
 rm_nodes_exclude_path = default("/configurations/yarn-site/yarn.resourcemanager.nodes.exclude-path","/etc/hadoop/conf/yarn.exclude")
 
@@ -217,7 +227,7 @@ if security_enabled:
   _rm_keytab = config['configurations']['yarn-site']['yarn.resourcemanager.keytab']
   rm_kinit_cmd = format("{kinit_path_local} -kt {_rm_keytab} {_rm_principal_name};")
 
-  # YARN timeline security options are only available in HDP Champlain
+  # YARN timeline security options
   if has_ats:
     _yarn_timelineservice_principal_name = config['configurations']['yarn-site']['yarn.timeline-service.principal']
     _yarn_timelineservice_principal_name = _yarn_timelineservice_principal_name.replace('_HOST', hostname.lower())
@@ -316,8 +326,6 @@ else:
 
 ranger_admin_log_dir = default("/configurations/ranger-env/ranger_admin_log_dir","/var/log/ranger/admin")
 
-yarn_http_policy = config['configurations']['yarn-site']['yarn.http.policy']
-yarn_https_on = (yarn_http_policy.upper() == 'HTTPS_ONLY')
 scheme = 'http' if not yarn_https_on else 'https'
 yarn_rm_address = config['configurations']['yarn-site']['yarn.resourcemanager.webapp.address'] if not yarn_https_on else config['configurations']['yarn-site']['yarn.resourcemanager.webapp.https.address']
 rm_active_port = rm_https_port if yarn_https_on else rm_port
@@ -346,7 +354,6 @@ if has_ranger_admin:
   if is_supported_yarn_ranger:
     enable_ranger_yarn = (config['configurations']['ranger-yarn-plugin-properties']['ranger-yarn-plugin-enabled'].lower() == 'yes')
     policymgr_mgr_url = config['configurations']['admin-properties']['policymgr_external_url']
-    sql_connector_jar = config['configurations']['admin-properties']['SQL_CONNECTOR_JAR']
     xa_audit_db_flavor = (config['configurations']['admin-properties']['DB_FLAVOR']).lower()
     xa_audit_db_name = config['configurations']['admin-properties']['audit_db_name']
     xa_audit_db_user = config['configurations']['admin-properties']['audit_db_user']
@@ -379,13 +386,11 @@ if has_ranger_admin:
     jdk_location = config['hostLevelParams']['jdk_location']
     java_share_dir = '/usr/share/java'
     if xa_audit_db_flavor and xa_audit_db_flavor == 'mysql':
-      jdbc_symlink_name = "mysql-jdbc-driver.jar"
-      jdbc_jar_name = "mysql-connector-java.jar"
+      jdbc_jar_name = default("/hostLevelParams/custom_mysql_jdbc_name", None)
       audit_jdbc_url = format('jdbc:mysql://{xa_db_host}/{xa_audit_db_name}')
       jdbc_driver = "com.mysql.jdbc.Driver"
     elif xa_audit_db_flavor and xa_audit_db_flavor == 'oracle':
-      jdbc_jar_name = "ojdbc6.jar"
-      jdbc_symlink_name = "oracle-jdbc-driver.jar"
+      jdbc_jar_name = default("/hostLevelParams/custom_oracle_jdbc_name", None)
       colon_count = xa_db_host.count(':')
       if colon_count == 2 or colon_count == 0:
         audit_jdbc_url = format('jdbc:oracle:thin:@{xa_db_host}')
@@ -393,24 +398,21 @@ if has_ranger_admin:
         audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
       jdbc_driver = "oracle.jdbc.OracleDriver"
     elif xa_audit_db_flavor and xa_audit_db_flavor == 'postgres':
-      jdbc_jar_name = "postgresql.jar"
-      jdbc_symlink_name = "postgres-jdbc-driver.jar"
+      jdbc_jar_name = default("/hostLevelParams/custom_postgres_jdbc_name", None)
       audit_jdbc_url = format('jdbc:postgresql://{xa_db_host}/{xa_audit_db_name}')
       jdbc_driver = "org.postgresql.Driver"
     elif xa_audit_db_flavor and xa_audit_db_flavor == 'mssql':
-      jdbc_jar_name = "sqljdbc4.jar"
-      jdbc_symlink_name = "mssql-jdbc-driver.jar"
+      jdbc_jar_name = default("/hostLevelParams/custom_mssql_jdbc_name", None)
       audit_jdbc_url = format('jdbc:sqlserver://{xa_db_host};databaseName={xa_audit_db_name}')
       jdbc_driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
     elif xa_audit_db_flavor and xa_audit_db_flavor == 'sqla':
-      jdbc_jar_name = "sajdbc4.jar"
-      jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
+      jdbc_jar_name = default("/hostLevelParams/custom_sqlanywhere_jdbc_name", None)
       audit_jdbc_url = format('jdbc:sqlanywhere:database={xa_audit_db_name};host={xa_db_host}')
       jdbc_driver = "sap.jdbc4.sqlanywhere.IDriver"
 
     downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 
-    driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
+    driver_curl_source = format("{jdk_location}/{jdbc_jar_name}")
     driver_curl_target = format("{hadoop_yarn_home}/lib/{jdbc_jar_name}")
 
     ranger_audit_solr_urls = config['configurations']['ranger-admin-site']['ranger.audit.solr.urls']

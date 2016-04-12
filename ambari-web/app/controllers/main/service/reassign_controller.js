@@ -64,7 +64,8 @@ App.ReassignMasterController = App.WizardController.extend({
     hasManualSteps: false,
     hasCheckDBStep: false,
     componentsWithCheckDBStep: ['HIVE_METASTORE', 'HIVE_SERVER', 'OOZIE_SERVER'],
-    componentsWithoutSecurityConfigs: ['MYSQL_SERVER']
+    componentsWithoutSecurityConfigs: ['MYSQL_SERVER'],
+    reassignComponentsInMM: []
   }),
 
   /**
@@ -245,6 +246,16 @@ App.ReassignMasterController = App.WizardController.extend({
     }
   },
 
+  loadReassignComponentsInMM: function () {
+    var reassignComponentsInMM = this.getDBProperty('reassignComponentsInMM');
+    this.set('content.reassignComponentsInMM', reassignComponentsInMM);
+  },
+
+  saveReassignComponentsInMM: function (reassignComponentsInMM) {
+    this.setDBProperty('reassignComponentsInMM', reassignComponentsInMM);
+    this.set('content.reassignComponentsInMM', reassignComponentsInMM);
+  },
+
   /**
    * Load data for all steps until <code>current step</code>
    */
@@ -260,6 +271,7 @@ App.ReassignMasterController = App.WizardController.extend({
         this.loadTasksStatuses();
         this.loadTasksRequestIds();
         this.loadRequestIds();
+        this.loadReassignComponentsInMM();
       case '3':
         this.loadReassignHosts();
       case '2':
@@ -291,6 +303,19 @@ App.ReassignMasterController = App.WizardController.extend({
       wizardControllerName: 'reassignMasterController',
       localdb: App.db.data
     });
+  },
+
+  getReassignComponentsInMM: function () {
+    var hostComponentsInMM = [];
+    var sourceHostComponents = App.HostComponent.find().filterProperty('hostName', this.get('content.reassignHosts.source'));
+    var reassignComponents = this.get('content.reassign.component_name') === 'NAMENODE' && App.get('isHaEnabled') ? ['NAMENODE', 'ZKFC'] : [this.get('content.reassign.component_name')];
+    reassignComponents.forEach(function(hostComponent){
+      var componentToReassign = sourceHostComponents.findProperty('componentName', hostComponent);
+      if (componentToReassign && !componentToReassign.get('isActive') && componentToReassign.get('workStatus') === 'STARTED') {
+        hostComponentsInMM.push(hostComponent);
+      }
+    });
+    return hostComponentsInMM;
   },
 
   /**

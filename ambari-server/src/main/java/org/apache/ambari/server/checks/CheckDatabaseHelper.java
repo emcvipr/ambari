@@ -17,22 +17,6 @@
  */
 package org.apache.ambari.server.checks;
 
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Multimap;
-import com.google.inject.Guice;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
-import org.apache.ambari.server.AmbariException;
-import org.apache.ambari.server.api.services.AmbariMetaInfo;
-import org.apache.ambari.server.controller.ControllerModule;
-import org.apache.ambari.server.orm.DBAccessor;
-import org.apache.ambari.server.state.ServiceInfo;
-import org.apache.ambari.server.utils.EventBusSynchronizer;
-import org.apache.commons.lang.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -42,6 +26,24 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+
+import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.audit.AuditLoggerModule;
+import org.apache.ambari.server.controller.ControllerModule;
+import org.apache.ambari.server.orm.DBAccessor;
+import org.apache.ambari.server.state.ServiceInfo;
+import org.apache.ambari.server.utils.EventBusSynchronizer;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Multimap;
+import com.google.inject.Guice;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
 
 /*
 * Class for database validation.
@@ -73,9 +75,9 @@ public class CheckDatabaseHelper {
   /**
    * Extension of main controller module
    */
-  public static class CheckHelperModule extends ControllerModule {
+  public static class CheckHelperControllerModule extends ControllerModule {
 
-    public CheckHelperModule() throws Exception {
+    public CheckHelperControllerModule() throws Exception {
     }
 
     @Override
@@ -83,6 +85,21 @@ public class CheckDatabaseHelper {
       super.configure();
       EventBusSynchronizer.synchronizeAmbariEventPublisher(binder());
     }
+  }
+
+  /**
+   * Extension of audit logger module
+   */
+  public static class CheckHelperAuditModule extends AuditLoggerModule {
+
+    public CheckHelperAuditModule() throws Exception {
+    }
+
+    @Override
+    protected void configure() {
+      super.configure();
+    }
+
   }
 
   /*
@@ -319,8 +336,8 @@ public class CheckDatabaseHelper {
             "join serviceconfig sc on cs.service_name=sc.service_name and cs.cluster_id=sc.cluster_id " +
             "join serviceconfigmapping scm on sc.service_config_id=scm.service_config_id " +
             "join clusterconfig cc on scm.config_id=cc.config_id and sc.cluster_id=cc.cluster_id " +
-            "join clusters c on cc.cluster_id=c.cluster_id " +
-            "where sc.group_id is null " +
+            "join clusters c on cc.cluster_id=c.cluster_id and sc.stack_id=c.desired_stack_id " +
+            "where sc.group_id is null and sc.service_config_id=(select max(service_config_id) from serviceconfig sc2 where sc2.service_name=sc.service_name and sc2.cluster_id=sc.cluster_id) " +
             "group by c.cluster_name, cs.service_name, cc.type_name, sc.version";
     String GET_NOT_SELECTED_SERVICE_CONFIGS_QUERY = "select c.cluster_name, cs.service_name, cc.type_name from clusterservices cs " +
             "join serviceconfig sc on cs.service_name=sc.service_name and cs.cluster_id=sc.cluster_id " +
@@ -519,7 +536,7 @@ public class CheckDatabaseHelper {
     try {
       LOG.info("******************************* Check database started *******************************");
 
-      Injector injector = Guice.createInjector(new CheckHelperModule());
+      Injector injector = Guice.createInjector(new CheckHelperControllerModule(), new CheckHelperAuditModule());
       checkDatabaseHelper = injector.getInstance(CheckDatabaseHelper.class);
 
       checkDatabaseHelper.startPersistenceService();

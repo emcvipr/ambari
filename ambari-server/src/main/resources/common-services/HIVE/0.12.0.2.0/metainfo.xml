@@ -31,6 +31,7 @@
           <category>MASTER</category>
           <cardinality>1</cardinality>
           <versionAdvertised>true</versionAdvertised>
+          <reassignAllowed>true</reassignAllowed>
           <clientsToUpdateConfigs></clientsToUpdateConfigs>
           <auto-deploy>
             <enabled>true</enabled>
@@ -41,6 +42,11 @@
             <scriptType>PYTHON</scriptType>
             <timeout>1200</timeout>
           </commandScript>
+          <logs>
+            <log>
+              <logId>hive_metastore</logId>
+            </log>
+          </logs>
           <configuration-dependencies>
             <config-type>hive-site</config-type>
           </configuration-dependencies>
@@ -52,6 +58,7 @@
           <category>MASTER</category>
           <cardinality>1</cardinality>
           <versionAdvertised>true</versionAdvertised>
+          <reassignAllowed>true</reassignAllowed>
           <clientsToUpdateConfigs></clientsToUpdateConfigs>
           <dependencies>
             <dependency>
@@ -81,6 +88,11 @@
             <script>scripts/hive_server.py</script>
             <scriptType>PYTHON</scriptType>
           </commandScript>
+          <logs>
+            <log>
+              <logId>hive_hiveserver2</logId>
+            </log>
+          </logs>
           <configuration-dependencies>
             <config-type>hive-site</config-type>
           </configuration-dependencies>
@@ -91,6 +103,7 @@
           <category>MASTER</category>
           <cardinality>1</cardinality>
           <versionAdvertised>true</versionAdvertised>
+          <reassignAllowed>true</reassignAllowed>
           <clientsToUpdateConfigs>
             <client>HCAT</client>
           </clientsToUpdateConfigs>
@@ -161,6 +174,7 @@
           <category>MASTER</category>
           <cardinality>0-1</cardinality>
           <versionAdvertised>false</versionAdvertised>
+          <reassignAllowed>true</reassignAllowed>
           <clientsToUpdateConfigs></clientsToUpdateConfigs>
           <commandScript>
             <script>scripts/mysql_server.py</script>
@@ -320,6 +334,7 @@
         <config-type>hive-log4j</config-type>
         <config-type>hive-exec-log4j</config-type>
         <config-type>hive-env</config-type>
+        <!-- TODO, hive-interactive-site shouldn't be in common-services. -->
         <config-type>hive-interactive-site</config-type>
         <config-type>webhcat-site</config-type>
         <config-type>webhcat-env</config-type>

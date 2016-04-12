@@ -93,6 +93,7 @@ App.MainAlertDefinitionDetailsView = App.TableView.extend({
   tooltipsUpdater: function () {
     Em.run.next(function () {
       App.tooltip($(".enable-disable-button"));
+      App.tooltip($(".repeat-tolerance-button"));
     });
   }.observes('controller.content.enabled'),
 
@@ -317,5 +318,21 @@ App.AlertInstanceServiceHostView = Em.View.extend({
    * Define whether show separator between service and hosts labels
    */
   showSeparator: Em.computed.and('instance.serviceDisplayName', 'instance.hostName')
+
+});
+
+App.AlertInstanceStateView = Em.View.extend({
+
+  templateName: require('templates/main/alerts/alert_instance/status'),
+
+  didInsertElement: function () {
+    App.tooltip(this.$("[rel='StateTooltip']"));
+    App.tooltip(this.$("[rel='tooltip']"));
+  },
+
+  willDestroyElement: function() {
+    this.$("[rel='StateTooltip']").remove();
+    this.$("[rel='tooltip']").remove();
+  }
 
 });

@@ -55,6 +55,9 @@ module.exports = Em.Application.create({
    *  - IN_PROGRESS
    *  - HOLDING
    *  - COMPLETED
+   *  - ABORTED
+   *  - HOLDING_FAILED
+   *  - HOLDING_TIMEDOUT
    * @type {String}
    */
   upgradeState: 'INIT',
@@ -71,16 +74,25 @@ module.exports = Em.Application.create({
    * @returns {boolean}
    */
   upgradeHolding: function() {
-    return this.get('upgradeState').contains("HOLDING");
-  }.property('upgradeState'),
+    return this.get('upgradeState').contains("HOLDING") || this.get('upgradeAborted');
+  }.property('upgradeState', 'upgradeAborted'),
 
   /**
    * flag is true when upgrade process is aborted
+   * SHOULD behave similar to HOLDING_FAILED state
    * @returns {boolean}
    */
   upgradeAborted: function () {
-    return this.get('upgradeState') === "ABORTED";
-  }.property('upgradeState'),
+    return this.get('upgradeState') === "ABORTED" && !App.router.get('mainAdminStackAndUpgradeController.isSuspended');
+  }.property('upgradeState', 'App.router.mainAdminStackAndUpgradeController.isSuspended'),
+
+  /**
+   * flag is true when upgrade process is suspended
+   * @returns {boolean}
+   */
+  upgradeSuspended: function () {
+    return this.get('upgradeState') === "ABORTED" && App.router.get('mainAdminStackAndUpgradeController.isSuspended');
+  }.property('upgradeState', 'App.router.mainAdminStackAndUpgradeController.isSuspended'),
 
   /**
    * RU is running
@@ -89,15 +101,15 @@ module.exports = Em.Application.create({
   upgradeIsRunning: Em.computed.or('upgradeInProgress', 'upgradeHolding'),
 
   /**
-   * flag is true when upgrade process is running or aborted
+   * flag is true when upgrade process is running or suspended
    * or wizard used by another user
    * @returns {boolean}
    */
   wizardIsNotFinished: function () {
     return this.get('upgradeIsRunning') ||
-           this.get('upgradeAborted') ||
+           this.get('upgradeSuspended') ||
            App.router.get('wizardWatcherController.isNonWizardUser');
-  }.property('upgradeIsRunning', 'upgradeAborted', 'router.wizardWatcherController.isNonWizardUser'),
+  }.property('upgradeIsRunning', 'upgradeAborted', 'router.wizardWatcherController.isNonWizardUser', 'upgradeSuspended'),
 
   /**
    * Options:
@@ -112,7 +124,7 @@ module.exports = Em.Application.create({
     var result = false;
     authRoles = $.map(authRoles.split(","), $.trim);
 
-    if (!(this.get('upgradeState') == "ABORTED") &&
+    if (!this.get('upgradeSuspended') &&
         !App.get('supports.opsDuringRollingUpgrade') &&
         !['INIT', 'COMPLETED'].contains(this.get('upgradeState')) ||
         !App.auth){
@@ -186,26 +198,7 @@ module.exports = Em.Application.create({
     return (stringUtils.compareVersions(this.get('currentStackVersionNumber'), "2.3") > -1);
   }.property('currentStackVersionNumber'),
 
-  isHadoop22Stack: function () {
-    return (stringUtils.compareVersions(this.get('currentStackVersionNumber'), "2.2") > -1);
-  }.property('currentStackVersionNumber'),
-
-  /**
-   * Determines if current stack is 2.0.*
-   * @type {boolean}
-   */
-  isHadoop20Stack: function () {
-    return (stringUtils.compareVersions(this.get('currentStackVersionNumber'), "2.1") == -1 && stringUtils.compareVersions(this.get('currentStackVersionNumber'), "2.0") > -1);
-  }.property('currentStackVersionNumber'),
-
   isHadoopWindowsStack: Em.computed.equal('currentStackName', 'HDPWIN'),
-
-  /**
-   * when working with enhanced configs we should rely on stack version
-   * as version that is below 2.2 doesn't supports it
-   * @type {boolean}
-   */
-  isClusterSupportsEnhancedConfigs: Em.computed.alias('isHadoop22Stack'),
 
   /**
    * If NameNode High Availability is enabled

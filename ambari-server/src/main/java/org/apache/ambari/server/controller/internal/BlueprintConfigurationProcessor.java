@@ -22,7 +22,6 @@ package org.apache.ambari.server.controller.internal;
 import com.google.common.base.Predicates;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-import org.apache.ambari.server.Role;
 import org.apache.ambari.server.state.PropertyDependencyInfo;
 import org.apache.ambari.server.state.ValueAttributesInfo;
 import org.apache.ambari.server.topology.AdvisedConfiguration;
@@ -137,6 +136,11 @@ public class BlueprintConfigurationProcessor {
   private static Pattern LOCALHOST_PORT_REGEX = Pattern.compile("localhost:?(\\d+)?");
 
   /**
+   * Special network address
+   */
+  private static String BIND_ALL_IP_ADDRESS = "0.0.0.0";
+
+  /**
    * Statically-defined set of properties that can support HA using a nameservice name
    *   in the configuration, rather than just a host name.
    *   This set also contains other HA properties that will be exported if the
@@ -154,12 +158,13 @@ public class BlueprintConfigurationProcessor {
     { new PasswordPropertyFilter(),
       new SimplePropertyNameExportFilter("tez.tez-ui.history-url.base", "tez-site"),
       new SimplePropertyNameExportFilter("admin_server_host", "kerberos-env"),
-      new SimplePropertyNameExportFilter("kdc_host", "kerberos-env"),
+      new SimplePropertyNameExportFilter("kdc_hosts", "kerberos-env"),
       new SimplePropertyNameExportFilter("realm", "kerberos-env"),
       new SimplePropertyNameExportFilter("kdc_type", "kerberos-env"),
       new SimplePropertyNameExportFilter("ldap-url", "kerberos-env"),
       new SimplePropertyNameExportFilter("container_dn", "kerberos-env"),
-      new SimplePropertyNameExportFilter("domains", "krb5-conf")
+      new SimplePropertyNameExportFilter("domains", "krb5-conf"),
+      new StackPasswordPropertyFilter()
     };
 
   /**
@@ -435,8 +440,12 @@ public class BlueprintConfigurationProcessor {
         String configType = advConfEntry.getKey();
         AdvisedConfiguration advisedConfig = advConfEntry.getValue();
         LOG.info("Update '{}' configurations with recommended configurations provided by the stack advisor.", configType);
-        doReplaceProperties(configuration, configType, advisedConfig, configTypesUpdated);
-        doRemovePropertiesIfNeeded(configuration, configType, advisedConfig, configTypesUpdated);
+        if (advisedConfig.getProperties() != null) {
+          doReplaceProperties(configuration, configType, advisedConfig, configTypesUpdated);
+        }
+        if (advisedConfig.getPropertyValueAttributes() != null) {
+          doRemovePropertiesIfNeeded(configuration, configType, advisedConfig, configTypesUpdated);
+        }
       }
     } else {
       LOG.info("No any recommended configuration applied. (strategy: {})", ConfigRecommendationStrategy.NEVER_APPLY);
@@ -455,9 +464,11 @@ public class BlueprintConfigurationProcessor {
       AdvisedConfiguration advisedConfiguration = adConfEntry.getValue();
       if (stackDefaultProps.containsKey(adConfEntry.getKey())) {
         Map<String, String> defaultProps = stackDefaultProps.get(adConfEntry.getKey());
-        Map<String, String> outFilteredProps = Maps.filterKeys(advisedConfiguration.getProperties(),
-          Predicates.not(Predicates.in(defaultProps.keySet())));
-        advisedConfiguration.getProperties().keySet().removeAll(Sets.newCopyOnWriteArraySet(outFilteredProps.keySet()));
+        if (advisedConfiguration.getProperties() != null) {
+          Map<String, String> outFilteredProps = Maps.filterKeys(advisedConfiguration.getProperties(),
+            Predicates.not(Predicates.in(defaultProps.keySet())));
+          advisedConfiguration.getProperties().keySet().removeAll(Sets.newCopyOnWriteArraySet(outFilteredProps.keySet()));
+        }
 
         if (advisedConfiguration.getPropertyValueAttributes() != null) {
           Map<String, ValueAttributesInfo> outFilteredValueAttrs = Maps.filterKeys(advisedConfiguration.getPropertyValueAttributes(),
@@ -999,7 +1010,7 @@ public class BlueprintConfigurationProcessor {
    *         false if the 0.0.0.0 address is not included in this string
    */
   private static boolean isSpecialNetworkAddress(String propertyValue) {
-    return propertyValue.contains("0.0.0.0");
+    return propertyValue.contains(BIND_ALL_IP_ADDRESS);
   }
 
   /**
@@ -2188,6 +2199,7 @@ public class BlueprintConfigurationProcessor {
     allUpdaters.add(mPropertyUpdaters);
     allUpdaters.add(nonTopologyUpdaters);
 
+    Map<String, PropertyUpdater> amsSiteMap = new HashMap<String, PropertyUpdater>();
     Map<String, PropertyUpdater> hdfsSiteMap = new HashMap<String, PropertyUpdater>();
     Map<String, PropertyUpdater> mapredSiteMap = new HashMap<String, PropertyUpdater>();
     Map<String, PropertyUpdater> coreSiteMap = new HashMap<String, PropertyUpdater>();
@@ -2226,9 +2238,11 @@ public class BlueprintConfigurationProcessor {
     Map<String, PropertyUpdater> dbHiveSiteMap = new HashMap<String, PropertyUpdater>();
     Map<String, PropertyUpdater> rangerAdminPropsMap = new HashMap<String, PropertyUpdater>();
     Map<String, PropertyUpdater> hawqSiteMap = new HashMap<String, PropertyUpdater>();
+    Map<String, PropertyUpdater> zookeeperEnvMap = new HashMap<String, PropertyUpdater>();
 
 
 
+    singleHostTopologyUpdaters.put("ams-site", amsSiteMap);
     singleHostTopologyUpdaters.put("hdfs-site", hdfsSiteMap);
     singleHostTopologyUpdaters.put("mapred-site", mapredSiteMap);
     singleHostTopologyUpdaters.put("core-site", coreSiteMap);
@@ -2245,6 +2259,7 @@ public class BlueprintConfigurationProcessor {
     singleHostTopologyUpdaters.put("application-properties", atlasPropsMap);
     singleHostTopologyUpdaters.put("admin-properties", rangerAdminPropsMap);
     singleHostTopologyUpdaters.put("hawq-site", hawqSiteMap);
+    singleHostTopologyUpdaters.put("zookeeper-env", zookeeperEnvMap);
 
 
     mPropertyUpdaters.put("hadoop-env", hadoopEnvMap);
@@ -2397,19 +2412,27 @@ public class BlueprintConfigurationProcessor {
     //todo: john - this property should be removed
     hiveSiteMap.put("atlas.rest.address", new SingleHostTopologyUpdater("ATLAS_SERVER") {
       @Override
-      public String replacePropertyValue(String origValue, String host, Map<String, Map<String, String>> properties) {
-        boolean tlsEnabled = Boolean.parseBoolean(properties.get("application-properties").get("atlas.enableTLS"));
-        String scheme;
-        String port;
-        if (tlsEnabled) {
-          scheme = "https";
-          port = properties.get("application-properties").get("atlas.server.https.port");
-        } else {
-          scheme = "http";
-          port = properties.get("application-properties").get("atlas.server.http.port");
+      public String updateForClusterCreate(String propertyName,
+                                           String origValue,
+                                           Map<String, Map<String, String>> properties,
+                                           ClusterTopology topology) {
+        if (topology.getBlueprint().getServices().contains("ATLAS")) {
+          String host = topology.getHostAssignmentsForComponent("ATLAS_SERVER").iterator().next();
+          
+          boolean tlsEnabled = Boolean.parseBoolean(properties.get("application-properties").get("atlas.enableTLS"));
+          String scheme;
+          String port;
+          if (tlsEnabled) {
+            scheme = "https";
+            port = properties.get("application-properties").get("atlas.server.https.port");
+          } else {
+            scheme = "http";
+            port = properties.get("application-properties").get("atlas.server.http.port");
+          }
+  
+          return String.format("%s://%s:%s", scheme, host, port);
         }
-
-        return String.format("%s://%s:%s", scheme, host, port);
+        return origValue;
       }
     });
 
@@ -2527,10 +2550,24 @@ public class BlueprintConfigurationProcessor {
     hbaseEnvMap.put("hbase_regionserver_heapsize", new MPropertyUpdater());
     oozieEnvHeapSizeMap.put("oozie_heapsize", new MPropertyUpdater());
     oozieEnvHeapSizeMap.put("oozie_permsize", new MPropertyUpdater());
+    zookeeperEnvMap.put("zk_server_heapsize", new MPropertyUpdater());
 
     hawqSiteMap.put("hawq_master_address_host", new SingleHostTopologyUpdater("HAWQMASTER"));
     hawqSiteMap.put("hawq_standby_address_host", new SingleHostTopologyUpdater("HAWQSTANDBY"));
     hawqSiteMap.put("hawq_dfs_url", new SingleHostTopologyUpdater("NAMENODE"));
+
+    // AMS
+    amsSiteMap.put("timeline.metrics.service.webapp.address", new SingleHostTopologyUpdater("METRICS_COLLECTOR") {
+      @Override
+      public String updateForClusterCreate(String propertyName, String origValue, Map<String, Map<String, String>> properties, ClusterTopology topology) {
+        String value = origValue;
+        if (isSpecialNetworkAddress(origValue)) {
+          value = origValue.replace(BIND_ALL_IP_ADDRESS, "localhost");
+        }
+        return super.updateForClusterCreate(propertyName, value, properties, topology);
+      }
+    });
+
   }
 
   /**
@@ -2691,6 +2728,33 @@ public class BlueprintConfigurationProcessor {
     @Override
     public boolean isPropertyIncluded(String propertyName, String propertyValue, String configType, ClusterTopology topology) {
       return !PASSWORD_NAME_REGEX.matcher(propertyName).matches();
+    }
+  }
+  /**
+   * A Filter that excludes properties if in stack a property is marked as password property
+   *
+   */
+  private static class StackPasswordPropertyFilter implements PropertyFilter {
+
+    /**
+     * Query to determine if a given property should be included in a collection of
+     * properties.
+     *
+     * This implementation filters property if in stack configuration is the property type is password.
+     *
+     * @param propertyName property name
+     * @param propertyValue property value
+     * @param configType config type that contains this property
+     * @param topology cluster topology instance
+     *
+     * @return true if the property should be included
+     *         false if the property should not be included
+     */
+    @Override
+    public boolean isPropertyIncluded(String propertyName, String propertyValue, String configType, ClusterTopology topology) {
+        Stack stack = topology.getBlueprint().getStack();
+        final String serviceName = stack.getServiceForConfigType(configType);
+        return !stack.isPasswordProperty(serviceName, configType, propertyName);
     }
   }
 

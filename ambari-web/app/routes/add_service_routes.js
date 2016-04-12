@@ -52,22 +52,7 @@ module.exports = App.WizardRoute.extend({
                   App.router.get('updateController').updateServiceMetric();
                 });
                 var exitPath = addServiceController.getDBProperty('onClosePath') || 'main.services.index';
-                addServiceController.finish();
-                App.router.get('wizardWatcherController').resetUser();
-                // We need to do recovery based on whether we are in Add Host or Installer wizard
-                App.clusterStatus.setClusterStatus({
-                  clusterName: App.router.get('content.cluster.name'),
-                  clusterState: 'DEFAULT'
-                }, {
-                  alwaysCallback: function () {
-                    self.hide();
-                    App.router.transitionTo(exitPath);
-                    Em.run.next(function() {
-                      location.reload();
-                    });
-                  }
-                });
-
+                addServiceController.resetOnClose(addServiceController, exitPath);
               },
               didInsertElement: function () {
                 this.fitHeight();
@@ -287,6 +272,7 @@ module.exports = App.WizardRoute.extend({
     next: function (router) {
       if (App.Cluster.find().objectAt(0).get('isKerberosEnabled')) {
         if (router.get('mainAdminKerberosController.isManualKerberos')) {
+          router.get('wizardStep8Controller').set('wizardController', router.get('addServiceController'));
           router.get('wizardStep8Controller').updateKerberosDescriptor(true);
         }
         router.get('addServiceController').cacheStepConfigValues(router.get('kerberosWizardStep4Controller'));

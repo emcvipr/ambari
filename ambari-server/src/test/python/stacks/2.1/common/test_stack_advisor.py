@@ -118,7 +118,7 @@ class TestHDP21StackAdvisor(TestCase):
       }
     }
 
-    self.stackAdvisor.recommendHiveConfigurations(configurations, clusterData, {"configurations": {}}, None)
+    self.stackAdvisor.recommendHiveConfigurations(configurations, clusterData, {"configurations": {}, "services": []}, None)
     self.maxDiff = None
     self.assertEquals(configurations, expected)
 
@@ -143,7 +143,7 @@ class TestHDP21StackAdvisor(TestCase):
       }
     }
 
-    self.stackAdvisor.recommendHiveConfigurations(configurations, clusterData, {"configurations":{}}, None)
+    self.stackAdvisor.recommendHiveConfigurations(configurations, clusterData, {"configurations":{}, "services": []}, None)
     self.assertEquals(configurations, expected)
 
   def test_createComponentLayoutRecommendations_mastersIn10nodes(self):
@@ -255,6 +255,12 @@ class TestHDP21StackAdvisor(TestCase):
     self.assertEquals(configurations['hive-site']['properties']['javax.jdo.option.ConnectionURL'], "jdbc:sqlanywhere:host=example.com;database=hive_name")
     self.assertEquals(configurations['hive-site']['properties']['javax.jdo.option.ConnectionDriverName'], "sap.jdbc4.sqlanywhere.IDriver")
 
+    # existing Mysql / MariaDB
+    services['configurations']['hive-env']['properties']['hive_database'] = 'Existing MySQL / MariaDB Database'
+    self.stackAdvisor.recommendHiveConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations['hive-site']['properties']['javax.jdo.option.ConnectionURL'], "jdbc:mysql://example.com/hive_name")
+    self.assertEquals(configurations['hive-site']['properties']['javax.jdo.option.ConnectionDriverName'], "com.mysql.jdbc.Driver")
+
   def test_recommendHiveConfigurations_containersRamIsLess(self):
     configurations = {}
     clusterData = {
@@ -276,30 +282,29 @@ class TestHDP21StackAdvisor(TestCase):
       }
     }
 
-    self.stackAdvisor.recommendHiveConfigurations(configurations, clusterData, {"configurations":{}}, None)
+    self.stackAdvisor.recommendHiveConfigurations(configurations, clusterData, {"configurations":{}, "services": []}, None)
     self.assertEquals(configurations, expected)
 
   def test_recommendHbaseConfigurations(self):
     servicesList = ["HBASE"]
     configurations = {}
     components = []
+    host_item = {
+      "Hosts" : {
+        "cpu_count" : 6,
+        "total_mem" : 50331648,
+        "disk_info" : [
+          {"mountpoint" : "/"},
+          {"mountpoint" : "/dev/shm"},
+          {"mountpoint" : "/vagrant"},
+          {"mountpoint" : "/"},
+          {"mountpoint" : "/dev/shm"},
+          {"mountpoint" : "/vagrant"}
+        ]
+      }
+    }
     hosts = {
-      "items" : [
-        {
-          "Hosts" : {
-            "cpu_count" : 6,
-            "total_mem" : 50331648,
-            "disk_info" : [
-              {"mountpoint" : "/"},
-              {"mountpoint" : "/dev/shm"},
-              {"mountpoint" : "/vagrant"},
-              {"mountpoint" : "/"},
-              {"mountpoint" : "/dev/shm"},
-              {"mountpoint" : "/vagrant"}
-            ]
-          }
-        }
-      ]
+      "items" : [host_item for i in range(1, 600)]
     }
     services = {
       "services" : [
@@ -334,7 +339,7 @@ class TestHDP21StackAdvisor(TestCase):
     clusterData = self.stackAdvisor.getConfigurationClusterSummary(servicesList, hosts, components, None)
     self.assertEquals(clusterData['hbaseRam'], 8)
 
-    self.stackAdvisor.recommendHbaseConfigurations(configurations, clusterData, services, None)
+    self.stackAdvisor.recommendHbaseConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
 
   def test_recommendHDFSConfigurations(self):
@@ -362,7 +367,8 @@ class TestHDP21StackAdvisor(TestCase):
             "service_name": "HDFS"
           }, "components": []
         }],
-      "configurations": configurations
+      "configurations": configurations,
+      "ambari-server-properties": {"ambari-server.user":"ambari_user"}
     }
 
     clusterData = {
@@ -381,6 +387,8 @@ class TestHDP21StackAdvisor(TestCase):
         "properties": {
           "hadoop.proxyuser.hdfs.hosts": "*",
           "hadoop.proxyuser.hdfs.groups": "*",
+          "hadoop.proxyuser.ambari_user.hosts": "*",
+          "hadoop.proxyuser.ambari_user.groups": "*"
         }
       },
       "hdfs-site": {

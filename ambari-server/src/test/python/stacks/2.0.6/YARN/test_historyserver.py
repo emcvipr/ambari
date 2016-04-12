@@ -216,6 +216,25 @@ class TestHistoryServer(RMFTestCase):
         action = ['create_on_execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore', hdfs_site=self.getConfig()['configurations']['hdfs-site'], principal_name=UnknownConfigurationMock(), default_fs='hdfs://c6401.ambari.apache.org:8020',
         mode = 0777,
     )
+    self.assertResourceCalled('HdfsResource', '/tmp',
+        immutable_paths = self.DEFAULT_IMMUTABLE_PATHS,
+        security_enabled = False,
+        hadoop_bin_dir = '/usr/bin',
+        keytab = UnknownConfigurationMock(),
+        default_fs = 'hdfs://c6401.ambari.apache.org:8020',
+        hdfs_site = self.getConfig()['configurations']['hdfs-site'],
+        kinit_path_local = '/usr/bin/kinit',
+        principal_name = UnknownConfigurationMock(),
+        user = 'hdfs',
+        dfs_type = '',
+        owner = 'yarn',
+        group = 'hadoop',
+        hadoop_conf_dir = '/etc/hadoop/conf',
+        type = 'directory',
+        action = ['create_on_execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
+        mode = 0777
+      )
+
     self.assertResourceCalled('HdfsResource', '/tmp/entity-file-history/active',
         immutable_paths = self.DEFAULT_IMMUTABLE_PATHS,
         security_enabled = False,
@@ -337,6 +356,7 @@ class TestHistoryServer(RMFTestCase):
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-yarn',
       owner = 'yarn',
+      group = 'hadoop',
       create_parents = True,
       ignore_failures = True,
       cd_access = 'a',
@@ -468,6 +488,25 @@ class TestHistoryServer(RMFTestCase):
         action = ['create_on_execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore', hdfs_site=self.getConfig()['configurations']['hdfs-site'], principal_name='hdfs', default_fs='hdfs://c6401.ambari.apache.org:8020',
         mode = 0777,
     )
+
+    self.assertResourceCalled('HdfsResource', '/tmp',
+        immutable_paths = self.DEFAULT_IMMUTABLE_PATHS,
+        security_enabled = True,
+        hadoop_bin_dir = '/usr/bin',
+        keytab = '/etc/security/keytabs/hdfs.headless.keytab',
+        default_fs = 'hdfs://c6401.ambari.apache.org:8020',
+        hdfs_site = self.getConfig()['configurations']['hdfs-site'],
+        kinit_path_local = '/usr/bin/kinit',
+        principal_name = 'hdfs',
+        user = 'hdfs',
+        dfs_type = '',
+        owner = 'yarn',
+        group = 'hadoop',
+        hadoop_conf_dir = '/etc/hadoop/conf',
+        type = 'directory',
+        action = ['create_on_execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
+        mode = 0777
+    )
     self.assertResourceCalled('HdfsResource', '/tmp/entity-file-history/active',
         immutable_paths = self.DEFAULT_IMMUTABLE_PATHS,
         security_enabled = True,
@@ -589,6 +628,7 @@ class TestHistoryServer(RMFTestCase):
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-yarn',
       owner = 'yarn',
+      group = 'hadoop',
       create_parents = True,
       ignore_failures = True,
       cd_access = 'a',
@@ -824,7 +864,6 @@ class TestHistoryServer(RMFTestCase):
                               action = ["delete"])
     self.assertResourceCalled("Link", "/etc/hadoop/conf", to="/usr/hdp/current/hadoop-client/conf")
 
-  @patch.object(Script, "is_stack_greater_or_equal", new = MagicMock(return_value="2.3.0"))
   @patch.object(functions, "get_stack_version", new = MagicMock(return_value="2.3.0.0-1234"))
   @patch("resource_management.libraries.functions.copy_tarball.copy_to_hdfs")
   def test_pre_upgrade_restart_23(self, copy_to_hdfs_mock):
@@ -833,7 +872,7 @@ class TestHistoryServer(RMFTestCase):
       json_content = json.load(f)
     version = '2.3.0.0-1234'
     json_content['commandParams']['version'] = version
-
+    json_content['hostLevelParams']['stack_version'] = '2.3'
     copy_to_hdfs_mock.return_value = True
     mocks_dict = {}
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/historyserver.py",

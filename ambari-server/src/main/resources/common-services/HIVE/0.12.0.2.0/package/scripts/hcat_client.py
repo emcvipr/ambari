@@ -24,7 +24,8 @@ from ambari_commons.os_family_impl import OsFamilyImpl
 from resource_management.core.logger import Logger
 from resource_management.core.exceptions import ClientComponentHasNoStatus
 from resource_management.libraries.functions import stack_select
-from resource_management.libraries.functions.version import compare_versions
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
 from resource_management.libraries.script.script import Script
 
 
@@ -51,15 +52,16 @@ class HCatClientWindows(HCatClient):
 @OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
 class HCatClientDefault(HCatClient):
   def get_stack_to_component(self):
-    # HCat client doesn't have a first-class entry in hdp-select. Since clients always
+    # HCat client doesn't have a first-class entry in <stack-selector-tool>. Since clients always
     # update after daemons, this ensures that the hcat directories are correct on hosts
     # which do not include the WebHCat daemon
-    return {"HDP": "hive-webhcat"}
+    import params
+    return {params.stack_name: "hive-webhcat"}
 
 
   def pre_upgrade_restart(self, env, upgrade_type=None):
     """
-    Execute hdp-select before reconfiguring this client to the new HDP version.
+    Execute <stack-selector-tool> before reconfiguring this client to the new stack version.
 
     :param env:
     :param upgrade_type:
@@ -70,12 +72,11 @@ class HCatClientDefault(HCatClient):
     import params
     env.set_params(params)
 
-    # this function should not execute if the version can't be determined or
-    # is not at least HDP 2.2.0.0
-    if not params.version or compare_versions(params.version, "2.2", format=True) < 0:
+    # this function should not execute if the stack version does not support rolling upgrade
+    if not (params.version and check_stack_feature(StackFeature.ROLLING_UPGRADE, params.version)):
       return
 
-    # HCat client doesn't have a first-class entry in hdp-select. Since clients always
+    # HCat client doesn't have a first-class entry in <stack-selector-tool>. Since clients always
     # update after daemons, this ensures that the hcat directories are correct on hosts
     # which do not include the WebHCat daemon
     stack_select.select("hive-webhcat", params.version)

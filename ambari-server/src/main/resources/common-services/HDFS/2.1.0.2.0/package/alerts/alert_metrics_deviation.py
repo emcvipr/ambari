@@ -21,11 +21,11 @@ import httplib
 
 import json
 import logging
-from math import sqrt
 import urllib
 import time
 import urllib2
 from resource_management import Environment
+from ambari_commons.aggregate_functions import sample_standard_deviation, mean
 
 from resource_management.libraries.functions.curl_krb_request import curl_krb_request
 from resource_management.libraries.functions.curl_krb_request import DEFAULT_KERBEROS_KINIT_TIMER_MS
@@ -64,10 +64,16 @@ METRIC_NAME_PARAM_KEY = 'metricName'
 METRIC_NAME_PARAM_DEFAULT = ''
 APP_ID_PARAM_KEY = 'appId'
 APP_ID_PARAM_DEFAULT = 'NAMENODE'
+
+# the interval to check the metric (should be cast to int but could be a float)
 INTERVAL_PARAM_KEY = 'interval'
 INTERVAL_PARAM_DEFAULT = 60
+
+# the default threshold to trigger a CRITICAL (should be cast to int but could a float)
 DEVIATION_CRITICAL_THRESHOLD_KEY = 'metric.deviation.critical.threshold'
 DEVIATION_CRITICAL_THRESHOLD_DEFAULT = 10
+
+# the default threshold to trigger a WARNING (should be cast to int but could be a float)
 DEVIATION_WARNING_THRESHOLD_KEY = 'metric.deviation.warning.threshold'
 DEVIATION_WARNING_THRESHOLD_DEFAULT = 5
 NAMENODE_SERVICE_RPC_PORT_KEY = ''
@@ -123,19 +129,19 @@ def execute(configurations={}, parameters={}, host_name=None):
 
   interval = INTERVAL_PARAM_DEFAULT
   if INTERVAL_PARAM_KEY in parameters:
-    interval = int(parameters[INTERVAL_PARAM_KEY])
+    interval = _coerce_to_integer(parameters[INTERVAL_PARAM_KEY])
 
   warning_threshold = DEVIATION_WARNING_THRESHOLD_DEFAULT
   if DEVIATION_WARNING_THRESHOLD_KEY in parameters:
-    warning_threshold = int(parameters[DEVIATION_WARNING_THRESHOLD_KEY])
+    warning_threshold = _coerce_to_integer(parameters[DEVIATION_WARNING_THRESHOLD_KEY])
 
   critical_threshold = DEVIATION_CRITICAL_THRESHOLD_DEFAULT
   if DEVIATION_CRITICAL_THRESHOLD_KEY in parameters:
-    critical_threshold = int(parameters[DEVIATION_CRITICAL_THRESHOLD_KEY])
+    critical_threshold = _coerce_to_integer(parameters[DEVIATION_CRITICAL_THRESHOLD_KEY])
 
   minimum_value_threshold = None
   if MINIMUM_VALUE_THRESHOLD_KEY in parameters:
-    minimum_value_threshold = int(parameters[MINIMUM_VALUE_THRESHOLD_KEY])
+    minimum_value_threshold = _coerce_to_integer(parameters[MINIMUM_VALUE_THRESHOLD_KEY])
 
   #parse configuration
   if configurations is None:
@@ -304,25 +310,23 @@ def execute(configurations={}, parameters={}, host_name=None):
   pass
 
   if not metrics or len(metrics) < 2:
-    return (RESULT_STATE_UNKNOWN, ["Unable to calculate the standard deviation for {0} datapoints".format(len(metrics))])
+    return (RESULT_STATE_SKIPPED, ["Unable to calculate the standard deviation for {0} datapoints".format(len(metrics))])
 
-  # Filter out points below min threshold
-  for metric in metrics:
-    if metric <= minimum_value_threshold:
-      metrics.remove(metric)
-  pass
+  if minimum_value_threshold:
+    # Filter out points below min threshold
+    metrics = [metric for metric in metrics if metric > (minimum_value_threshold * 1000)]
+    if len(metrics) < 2:
+      return (RESULT_STATE_OK, ['No datapoints found above the minimum threshold of {0} seconds'.format(minimum_value_threshold)])
 
-  if len(metrics) < 2:
-    return (RESULT_STATE_SKIPPED, ['No datapoints found above the minimum threshold of {0}'.format(minimum_value_threshold)])
-
-  mean = calculate_mean(metrics)
-  stddev = calulate_sample_std_deviation(metrics)
+  mean_value = mean(metrics)
+  stddev = sample_standard_deviation(metrics)
+  max_value = max(metrics) / 1000
 
   try:
-    deviation_percent = stddev / mean * 100
+    deviation_percent = stddev / mean_value * 100
   except ZeroDivisionError:
     # should not be a case for this alert
-    return (RESULT_STATE_UNKNOWN, ["Unable to calculate the standard deviation percentage. The mean value is 0"])
+    return (RESULT_STATE_SKIPPED, ["Unable to calculate the standard deviation percentage. The mean value is 0"])
 
   logger.debug("""
   AMS request parameters - {0}
@@ -330,23 +334,13 @@ def execute(configurations={}, parameters={}, host_name=None):
   Mean - {2}
   Standard deviation - {3}
   Percentage standard deviation - {4}
-  """.format(encoded_get_metrics_parameters, data_json, mean, stddev, deviation_percent))
+  """.format(encoded_get_metrics_parameters, data_json, mean_value, stddev, deviation_percent))
 
   if deviation_percent > critical_threshold:
-    return (RESULT_STATE_CRITICAL,['CRITICAL. Percentage standard deviation value {0}% is beyond the critical threshold of {1}%'.format("%.2f" % deviation_percent, "%.2f" % critical_threshold)])
+    return (RESULT_STATE_CRITICAL,['CRITICAL. Percentage standard deviation value {0}% is beyond the critical threshold of {1}% (growing {2} seconds to {3} seconds)'.format("%.2f" % deviation_percent, "%.2f" % critical_threshold, minimum_value_threshold, "%.2f" % max_value)])
   if deviation_percent > warning_threshold:
-    return (RESULT_STATE_WARNING,['WARNING. Percentage standard deviation value {0}% is beyond the warning threshold of {1}%'.format("%.2f" % deviation_percent, "%.2f" % warning_threshold)])
+    return (RESULT_STATE_WARNING,['WARNING. Percentage standard deviation value {0}% is beyond the warning threshold of {1}% (growing {2} seconds to {3} seconds)'.format("%.2f" % deviation_percent, "%.2f" % warning_threshold, minimum_value_threshold, "%.2f" % max_value)])
   return (RESULT_STATE_OK,['OK. Percentage standard deviation value is {0}%'.format("%.2f" % deviation_percent)])
-
-def calulate_sample_std_deviation(lst):
-  """calculates standard deviation"""
-  mean = calculate_mean(lst)
-  variance = sum([(element-mean)**2 for element in lst]) / (len(lst) - 1)
-  return sqrt(variance)
-
-def calculate_mean(lst):
-  """calculates mean"""
-  return sum(lst) / len(lst)
 
 def valid_collector_webapp_address(webapp_address):
   if len(webapp_address) == 2 \
@@ -375,7 +369,7 @@ def get_jmx(query, connection_timeout):
 
 def _get_ha_state_from_json(string_json):
   """
-  Searches through the specified JSON string looking for either the HDP 2.0 or 2.1+ HA state
+  Searches through the specified JSON string looking for HA state
   enumerations.
   :param string_json: the string JSON
   :return:  the value of the HA state (active, standby, etc)
@@ -383,7 +377,7 @@ def _get_ha_state_from_json(string_json):
   json_data = json.loads(string_json)
   jmx_beans = json_data["beans"]
 
-  # look for HDP 2.1+ first
+  # look for NameNodeStatus-State  first
   for jmx_bean in jmx_beans:
     if "name" not in jmx_bean:
       continue
@@ -392,7 +386,7 @@ def _get_ha_state_from_json(string_json):
     if jmx_bean_name == "Hadoop:service=NameNode,name=NameNodeStatus" and "State" in jmx_bean:
       return jmx_bean["State"]
 
-  # look for HDP 2.0 last
+  # look for FSNamesystem-tag.HAState last
   for jmx_bean in jmx_beans:
     if "name" not in jmx_bean:
       continue
@@ -400,3 +394,17 @@ def _get_ha_state_from_json(string_json):
     jmx_bean_name = jmx_bean["name"]
     if jmx_bean_name == "Hadoop:service=NameNode,name=FSNamesystem":
       return jmx_bean["tag.HAState"]
+
+
+def _coerce_to_integer(value):
+  """
+  Attempts to correctly coerce a value to an integer. For the case of an integer or a float,
+  this will essentially either NOOP or return a truncated value. If the parameter is a string,
+  then it will first attempt to be coerced from a integer, and failing that, a float.
+  :param value: the value to coerce
+  :return: the coerced value as an integer
+  """
+  try:
+    return int(value)
+  except ValueError:
+    return int(float(value))

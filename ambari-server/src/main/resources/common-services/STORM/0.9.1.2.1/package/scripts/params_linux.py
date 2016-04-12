@@ -17,6 +17,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 """
+import os
 import re
 import ambari_simplejson as json # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 
@@ -34,11 +35,16 @@ from resource_management.libraries.functions import stack_select
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
+from resource_management.libraries.functions.stack_features import check_stack_feature
+from resource_management.libraries.functions import StackFeature
 
 # server configurations
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
+stack_root = status_params.stack_root
 sudo = AMBARI_SUDO_BINARY
+
+cluster_name = config['clusterName']
 
 stack_name = default("/hostLevelParams/stack_name", None)
 upgrade_direction = default("/commandParams/upgrade_direction", Direction.UPGRADE)
@@ -47,9 +53,11 @@ version = default("/commandParams/version", None)
 storm_component_home_dir = status_params.storm_component_home_dir
 conf_dir = status_params.conf_dir
 
-stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-stack_version_formatted = format_stack_version(stack_version_unformatted)
-stack_is_hdp22_or_further = Script.is_stack_greater_or_equal("2.2")
+stack_version_unformatted = status_params.stack_version_unformatted
+stack_version_formatted = status_params.stack_version_formatted
+stack_supports_ru = stack_version_formatted and check_stack_feature(StackFeature.ROLLING_UPGRADE, stack_version_formatted)
+stack_supports_storm_kerberos = stack_version_formatted and check_stack_feature(StackFeature.STORM_KERBEROS, stack_version_formatted)
+stack_supports_storm_ams = stack_version_formatted and check_stack_feature(StackFeature.STORM_AMS, stack_version_formatted)
 
 # default hadoop params
 rest_lib_dir = "/usr/lib/storm/contrib/storm-rest"
@@ -57,7 +65,7 @@ storm_bin_dir = "/usr/bin"
 storm_lib_dir = "/usr/lib/storm/lib/"
 
 # hadoop parameters for 2.2+
-if stack_is_hdp22_or_further:
+if stack_supports_ru:
   rest_lib_dir = format("{storm_component_home_dir}/contrib/storm-rest")
   storm_bin_dir = format("{storm_component_home_dir}/bin")
   storm_lib_dir = format("{storm_component_home_dir}/lib")
@@ -116,35 +124,34 @@ security_enabled = config['configurations']['cluster-env']['security_enabled']
 
 storm_ui_host = default("/clusterHostInfo/storm_ui_server_hosts", [])
 
+storm_user_nofile_limit = default('/configurations/storm-env/storm_user_nofile_limit', 128000)
+storm_user_nproc_limit = default('/configurations/storm-env/storm_user_noproc_limit', 65536)
+
 if security_enabled:
   _hostname_lowercase = config['hostname'].lower()
   _storm_principal_name = config['configurations']['storm-env']['storm_principal_name']
   storm_jaas_principal = _storm_principal_name.replace('_HOST',_hostname_lowercase)
   storm_keytab_path = config['configurations']['storm-env']['storm_keytab']
 
-  if stack_is_hdp22_or_further:
+  if stack_supports_storm_kerberos:
     storm_ui_keytab_path = config['configurations']['storm-env']['storm_ui_keytab']
     _storm_ui_jaas_principal_name = config['configurations']['storm-env']['storm_ui_principal_name']
     storm_ui_jaas_principal = _storm_ui_jaas_principal_name.replace('_HOST',_hostname_lowercase)
-
     storm_bare_jaas_principal = get_bare_principal(_storm_principal_name)
-
     _nimbus_principal_name = config['configurations']['storm-env']['nimbus_principal_name']
     nimbus_jaas_principal = _nimbus_principal_name.replace('_HOST', _hostname_lowercase)
     nimbus_bare_jaas_principal = get_bare_principal(_nimbus_principal_name)
     nimbus_keytab_path = config['configurations']['storm-env']['nimbus_keytab']
 
 kafka_bare_jaas_principal = None
-if stack_is_hdp22_or_further:
+if stack_supports_storm_kerberos:
   if security_enabled:
     storm_thrift_transport = config['configurations']['storm-site']['_storm.thrift.secure.transport']
     # generate KafkaClient jaas config if kafka is kerberoized
     _kafka_principal_name = default("/configurations/kafka-env/kafka_principal_name", None)
     kafka_bare_jaas_principal = get_bare_principal(_kafka_principal_name)
-
   else:
     storm_thrift_transport = config['configurations']['storm-site']['_storm.thrift.nonsecure.transport']
-
 
 ams_collector_hosts = default("/clusterHostInfo/metrics_collector_hosts", [])
 has_metric_collector = not len(ams_collector_hosts) == 0
@@ -158,7 +165,7 @@ if has_metric_collector:
       'metrics_collector_vip_port' in config['configurations']['cluster-env']:
     metric_collector_port = config['configurations']['cluster-env']['metrics_collector_vip_port']
   else:
-    metric_collector_web_address = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "0.0.0.0:6188")
+    metric_collector_web_address = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "localhost:6188")
     if metric_collector_web_address.find(':') != -1:
       metric_collector_port = metric_collector_web_address.split(':')[1]
     else:
@@ -178,6 +185,17 @@ metrics_report_interval = default("/configurations/ams-site/timeline.metrics.sin
 metrics_collection_period = default("/configurations/ams-site/timeline.metrics.sink.collection.period", 10)
 metric_collector_sink_jar = "/usr/lib/storm/lib/ambari-metrics-storm-sink*.jar"
 
+jar_jvm_opts = ''
+
+# Atlas related params
+atlas_hosts = default('/clusterHostInfo/atlas_server_hosts', [])
+has_atlas = len(atlas_hosts) > 0
+
+if has_atlas:
+  atlas_home_dir = os.environ['METADATA_HOME_DIR'] if 'METADATA_HOME_DIR' in os.environ else stack_root + '/current/atlas-server'
+  atlas_conf_dir = os.environ['METADATA_CONF'] if 'METADATA_CONF' in os.environ else '/etc/atlas/conf'
+  jar_jvm_opts = '-Datlas.conf=' + atlas_conf_dir
+
 # ranger host
 ranger_admin_hosts = default("/clusterHostInfo/ranger_admin_hosts", [])
 has_ranger_admin = not len(ranger_admin_hosts) == 0
@@ -186,7 +204,6 @@ ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 
 #ranger storm properties
 policymgr_mgr_url = config['configurations']['admin-properties']['policymgr_external_url']
-sql_connector_jar = config['configurations']['admin-properties']['SQL_CONNECTOR_JAR']
 xa_audit_db_name = config['configurations']['admin-properties']['audit_db_name']
 xa_audit_db_user = config['configurations']['admin-properties']['audit_db_user']
 xa_db_host = config['configurations']['admin-properties']['db_host']
@@ -217,13 +234,11 @@ if has_ranger_admin:
   xa_audit_db_flavor = (config['configurations']['admin-properties']['DB_FLAVOR']).lower()
 
   if xa_audit_db_flavor == 'mysql':
-    jdbc_symlink_name = "mysql-jdbc-driver.jar"
-    jdbc_jar_name = "mysql-connector-java.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_mysql_jdbc_name", None)
     audit_jdbc_url = format('jdbc:mysql://{xa_db_host}/{xa_audit_db_name}')
     jdbc_driver = "com.mysql.jdbc.Driver"
   elif xa_audit_db_flavor == 'oracle':
-    jdbc_jar_name = "ojdbc6.jar"
-    jdbc_symlink_name = "oracle-jdbc-driver.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_oracle_jdbc_name", None)
     colon_count = xa_db_host.count(':')
     if colon_count == 2 or colon_count == 0:
       audit_jdbc_url = format('jdbc:oracle:thin:@{xa_db_host}')
@@ -231,25 +246,23 @@ if has_ranger_admin:
       audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
     jdbc_driver = "oracle.jdbc.OracleDriver"
   elif xa_audit_db_flavor == 'postgres':
-    jdbc_jar_name = "postgresql.jar"
-    jdbc_symlink_name = "postgres-jdbc-driver.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_postgres_jdbc_name", None)
     audit_jdbc_url = format('jdbc:postgresql://{xa_db_host}/{xa_audit_db_name}')
     jdbc_driver = "org.postgresql.Driver"
   elif xa_audit_db_flavor == 'mssql':
-    jdbc_jar_name = "sqljdbc4.jar"
-    jdbc_symlink_name = "mssql-jdbc-driver.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_mssql_jdbc_name", None)
     audit_jdbc_url = format('jdbc:sqlserver://{xa_db_host};databaseName={xa_audit_db_name}')
     jdbc_driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
   elif xa_audit_db_flavor == 'sqla':
-    jdbc_jar_name = "sajdbc4.jar"
-    jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
+    jdbc_jar_name = default("/hostLevelParams/custom_sqlanywhere_jdbc_name", None)
     audit_jdbc_url = format('jdbc:sqlanywhere:database={xa_audit_db_name};host={xa_db_host}')
     jdbc_driver = "sap.jdbc4.sqlanywhere.IDriver"
 
   downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 
-  driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
+  driver_curl_source = format("{jdk_location}/{jdbc_jar_name}")
   driver_curl_target = format("{storm_component_home_dir}/lib/{jdbc_jar_name}")
+  sql_connector_jar = ''
 
   storm_ranger_plugin_config = {
     'username': repo_config_username,

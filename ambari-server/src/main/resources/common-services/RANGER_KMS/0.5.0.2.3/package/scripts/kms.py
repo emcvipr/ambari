@@ -56,7 +56,7 @@ def setup_kms_db(stack_version=None):
     kms_home = params.kms_home
     version = params.version
     if stack_version is not None:
-      kms_home = format("/usr/hdp/{stack_version}/ranger-kms")
+      kms_home = format("{stack_root}/{stack_version}/ranger-kms")
       version = stack_version
 
     password_validation(params.kms_master_key_password, 'KMS master key')
@@ -144,7 +144,10 @@ def kms(upgrade_type=None):
     )
 
     cp = format("{check_db_connection_jar}")
-    cp = cp + os.pathsep + format("{kms_home}/ews/webapp/lib/{jdbc_jar_name}")
+    if params.db_flavor.lower() == 'sqla':
+      cp = cp + os.pathsep + format("{kms_home}/ews/webapp/lib/sajdbc4.jar")
+    else:
+      cp = cp + os.pathsep + format("{kms_home}/ews/webapp/lib/{jdbc_jar_name}")
 
     db_connection_check_command = format(
       "{java_home}/bin/java -cp {cp} org.apache.ambari.server.DBConnectionVerification '{ranger_kms_jdbc_connection_url}' {db_user} {db_password!p} {ranger_kms_jdbc_driver}")
@@ -190,7 +193,17 @@ def kms(upgrade_type=None):
 
     Directory(params.kms_log_dir,
       owner = params.kms_user,
-      group = params.kms_group
+      group = params.kms_group,
+      cd_access = 'a',
+      create_parents=True,
+      mode=0755
+    )
+
+    File(format('{kms_conf_dir}/ranger-kms-env-logdir.sh'),
+      content = format("export RANGER_KMS_LOG_DIR={kms_log_dir}"),
+      owner = params.kms_user,
+      group = params.kms_group,
+      mode=0755
     )
 
     Execute(('ln','-sf', format('{kms_home}/ranger-kms'),'/usr/bin/ranger-kms'),
@@ -256,31 +269,28 @@ def kms(upgrade_type=None):
       content=params.kms_log4j,
       mode=0644
     )
+    if params.security_enabled:
+      # core-site.xml linking required by setup for HDFS encryption
+      XmlConfig("core-site.xml",
+        conf_dir=params.kms_conf_dir,
+        configurations=params.config['configurations']['core-site'],
+        configuration_attributes=params.config['configuration_attributes']['core-site'],
+        owner=params.kms_user,
+        group=params.kms_group,
+        mode=0644
+      )
 
 def copy_jdbc_connector(stack_version=None):
   import params
 
   kms_home = params.kms_home
   if stack_version is not None:
-    kms_home = format("/usr/hdp/{stack_version}/ranger-kms")
+    kms_home = format("{stack_root}/{stack_version}/ranger-kms")
 
   File(params.downloaded_custom_connector,
     content = DownloadSource(params.driver_curl_source),
     mode = 0644
   )
-
-  Directory(params.java_share_dir,
-    mode=0755,
-    create_parents=True,
-    cd_access="a"
-  )
-
-  if params.db_flavor.lower() != 'sqla':
-    Execute(('cp', '--remove-destination', params.downloaded_custom_connector, params.driver_curl_target),
-        path=["/bin", "/usr/bin/"],
-        sudo=True)
-
-    File(params.driver_curl_target, mode=0644)
 
   Directory(os.path.join(kms_home, 'ews', 'lib'),
     mode=0755
@@ -299,12 +309,14 @@ def copy_jdbc_connector(stack_version=None):
 
     Execute(as_sudo(['yes', '|', 'cp', params.libs_path_in_archive, params.jdbc_libs_dir], auto_escape=False),
       path=["/bin", "/usr/bin/"])
+
+    File(os.path.join(kms_home, 'ews', 'webapp', 'lib', 'sajdbc4.jar'), mode=0644)
   else:
     Execute(('cp', '--remove-destination', params.downloaded_custom_connector, os.path.join(kms_home, 'ews', 'webapp', 'lib')),
       path=["/bin", "/usr/bin/"],
       sudo=True)
 
-  File(os.path.join(kms_home, 'ews', 'webapp', 'lib', params.jdbc_jar_name), mode=0644)
+    File(os.path.join(kms_home, 'ews', 'webapp', 'lib', params.jdbc_jar_name), mode=0644)
 
   ModifyPropertiesFile(format("{kms_home}/install.properties"),
     properties = params.config['configurations']['kms-properties'],
@@ -313,7 +325,12 @@ def copy_jdbc_connector(stack_version=None):
 
   if params.db_flavor.lower() == 'sqla':
     ModifyPropertiesFile(format("{kms_home}/install.properties"),
-      properties = {'SQL_CONNECTOR_JAR': format('{kms_home}/ews/webapp/lib/{jdbc_jar_name}')},
+      properties = {'SQL_CONNECTOR_JAR': format('{kms_home}/ews/webapp/lib/sajdbc4.jar')},
+      owner = params.kms_user,
+    )
+  else:
+    ModifyPropertiesFile(format("{kms_home}/install.properties"),
+      properties = {'SQL_CONNECTOR_JAR': format('{driver_curl_target}')},
       owner = params.kms_user,
     )
 
@@ -394,6 +411,36 @@ def enable_kms_plugin():
       group = params.kms_group,
       mode = 0640
       )
+
+def setup_kms_jce():
+  import params
+
+  if params.jce_name is not None:
+    Directory(params.jce_source_dir,
+      create_parents = True
+    )
+
+    jce_target = format('{jce_source_dir}/{jce_name}')
+
+    File(jce_target,
+      content = DownloadSource(format('{jdk_location}/{jce_name}')),
+      mode = 0644,
+    )
+
+    File([format("{java_home}/jre/lib/security/local_policy.jar"), format("{java_home}/jre/lib/security/US_export_policy.jar")],
+      action = "delete",
+    )
+
+    unzip_cmd = ("unzip", "-o", "-j", "-q", jce_target, "-d", format("{java_home}/jre/lib/security"))
+
+    Execute(unzip_cmd,
+      only_if = format("test -e {java_home}/jre/lib/security && test -f {jce_target}"),
+      path = ['/bin/','/usr/bin'],
+      sudo = True
+    )
+  else:
+    Logger.warning("Required jce policy zip is not available, need to setup manually")
+
   
 def check_ranger_service():
   import params

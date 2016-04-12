@@ -158,26 +158,10 @@ class TestHDP23StackAdvisor(TestCase):
     self.assertFalse('HAWQSTANDBY' in recommendedComponents)
     self.assertFalse('HAWQSEGMENT' in recommendedComponents)
 
+  def test_createComponentLayoutRecommendations_hawqsegment_cluster_install(self):
+    """ Test that HAWQSEGMENT gets recommended correctly during Cluster Install Wizard, when HAWQ is selected for installation """
 
-  def test_createComponentLayoutRecommendations_pxf_co_locate_with_namenode_or_datanode(self):
-    """ Test that PXF gets recommended on same host group which has NAMENODE or DATANODE"""
-
-    services = self.load_json("services-hawq-pxf-hdfs.json")
-    hosts = self.load_json("hosts-3-hosts.json")
-    recommendations = self.stackAdvisor.createComponentLayoutRecommendations(services, hosts)
-
-    for hostgroup in recommendations["blueprint"]["host_groups"]:
-      component_names = [component["name"] for component in hostgroup["components"]]
-      if "NAMENODE" in component_names or "DATANODE" in component_names:
-        self.assertTrue("PXF" in component_names)
-      if "NAMENODE" not in component_names and "DATANODE" not in component_names:
-        self.assertTrue("PXF" not in component_names)
-
-
-  def test_createComponentLayoutRecommendations_hawqsegment_co_locate_datanode(self):
-    """ Test that HAWQSegment gets recommended on same host group which has DATANODE"""
-
-    # Case 1: HDFS is already installed, HAWQ is being added during Add Service Wizard
+    hosts = self.prepareHosts(["c6401.ambari.apache.org", "c6402.ambari.apache.org", "c6403.ambari.apache.org"])
     services =  {
                   "services" : [
                     {
@@ -190,7 +174,7 @@ class TestHDP23StackAdvisor(TestCase):
                             "cardinality" : "1+",
                             "component_category" : "SLAVE",
                             "component_name" : "DATANODE",
-                            "hostnames" : [ "c6401.ambari.apache.org" ]
+                            "hostnames" : []
                           }
                         }
                       ]
@@ -205,7 +189,7 @@ class TestHDP23StackAdvisor(TestCase):
                             "cardinality" : "1+",
                             "component_category" : "SLAVE",
                             "component_name" : "HAWQSEGMENT",
-                            "hostnames" : [ ]
+                            "hostnames" : []
                           }
                         }
                       ]
@@ -213,70 +197,294 @@ class TestHDP23StackAdvisor(TestCase):
                   ]
                 }
 
-    # Cluster has 2 hosts
-    hosts = self.prepareHosts(["c6401.ambari.apache.org", "c6402.ambari.apache.org"])
-
+    hawqSegmentHosts = set(["c6401.ambari.apache.org", "c6402.ambari.apache.org", "c6403.ambari.apache.org"])
     recommendations = self.stackAdvisor.createComponentLayoutRecommendations(services, hosts)
-    """
-    Recommendations is as below:
-                                  {
-                                    'blueprint':{
-                                      'host_groups':[
-                                        {
-                                          'name':'host-group-1',
-                                          'components':[ ]
-                                        },
-                                        {
-                                          'name':'host-group-2',
-                                          'components':[
-                                            {
-                                              'name':'DATANODE'
-                                            },
-                                            {
-                                              'name':'HAWQSEGMENT'
-                                            }
-                                          ]
-                                        }
-                                      ]
-                                    },
-                                      'blueprint_cluster_binding':{
-                                        'host_groups':[
-                                          {
-                                            'hosts':[
-                                              {
-                                                'fqdn':'c6402.ambari.apache.org'
-                                              }
-                                            ],
-                                            'name':'host-group-1'
-                                          },
-                                          {
-                                            'hosts':[
-                                              {
-                                                'fqdn':'c6401.ambari.apache.org'
-                                              }
-                                            ],
-                                            'name':'host-group-2'
-                                          }
-                                        ]
-                                      }
-                                    }
-    """
-    for hostgroup in recommendations["blueprint"]["host_groups"]:
-      component_names = [component["name"] for component in hostgroup["components"]]
-      if 'DATANODE' in component_names:
-        self.assertTrue('HAWQSEGMENT' in component_names)
-      if 'DATANODE' not in component_names:
-        self.assertTrue('HAWQSEGMENT' not in component_names)
+    hostGroups = [ hostgroup["name"] for hostgroup in recommendations["blueprint"]["host_groups"] if {"name": "HAWQSEGMENT"} in hostgroup["components"] ]
+    hostNames = [ host["fqdn"] for hostgroup in recommendations["blueprint_cluster_binding"]["host_groups"] if hostgroup["name"] in hostGroups for host in hostgroup["hosts"] ]
+    self.assertEquals(set(hostNames), hawqSegmentHosts)
 
-    # Case 2: HDFS and HAWQ are being installed on a fresh cluster, HAWQSEGMENT and DATANODE must be recommended on all the host groups
-    # Update HDFS hostnames to empty list
-    services["services"][0]["components"][0]["StackServiceComponents"]["hostnames"] = []
+  def test_createComponentLayoutRecommendations_hawqsegment_add_service_wizard_to_be_installed(self):
+    """ Test that HAWQSEGMENT gets recommended correctly during Add Service Wizard, when HAWQ is selected for installation """
+
+    hosts = self.prepareHosts(["c6401.ambari.apache.org", "c6402.ambari.apache.org", "c6403.ambari.apache.org"])
+    services =  {
+                  "services" : [
+                    {
+                      "StackServices" : {
+                        "service_name" : "HDFS"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "DATANODE",
+                            "hostnames" : ["c6401.ambari.apache.org", "c6403.ambari.apache.org"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "StackServices" : {
+                        "service_name" : "HAWQ"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "HAWQSEGMENT",
+                            "hostnames" : []
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+
+    hawqSegmentHosts = set(["c6401.ambari.apache.org", "c6403.ambari.apache.org"])
     recommendations = self.stackAdvisor.createComponentLayoutRecommendations(services, hosts)
-    for hostgroup in recommendations["blueprint"]["host_groups"]:
-      component_names = [component["name"] for component in hostgroup["components"]]
-      self.assertTrue('HAWQSEGMENT' in component_names)
-      self.assertTrue('DATANODE' in component_names)
+    hostGroups = [ hostgroup["name"] for hostgroup in recommendations["blueprint"]["host_groups"] if {"name": "HAWQSEGMENT"} in hostgroup["components"] ]
+    hostNames = [ host["fqdn"] for hostgroup in recommendations["blueprint_cluster_binding"]["host_groups"] if hostgroup["name"] in hostGroups for host in hostgroup["hosts"] ]
+    self.assertEquals(set(hostNames), hawqSegmentHosts)
 
+  def test_createComponentLayoutRecommendations_hawqsegment_add_service_wizard_already_installed(self):
+    """ Test that HAWQSEGMENT does not get recommended during Add Service Wizard, when HAWQ has already been installed """
+
+    hosts = self.prepareHosts(["c6401.ambari.apache.org", "c6402.ambari.apache.org", "c6403.ambari.apache.org"])
+    services =  {
+                  "services" : [
+                    {
+                      "StackServices" : {
+                        "service_name" : "HDFS"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "DATANODE",
+                            "hostnames" : ["c6401.ambari.apache.org", "c6403.ambari.apache.org"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "StackServices" : {
+                        "service_name" : "HAWQ"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "HAWQSEGMENT",
+                            "hostnames" : ["c6402.ambari.apache.org"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "StackServices" : {
+                        "service_name" : "PXF"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "PXF",
+                            "hostnames" : []
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+
+    hawqSegmentHosts = set(["c6402.ambari.apache.org"])
+    recommendations = self.stackAdvisor.createComponentLayoutRecommendations(services, hosts)
+    hostGroups = [ hostgroup["name"] for hostgroup in recommendations["blueprint"]["host_groups"] if {"name": "HAWQSEGMENT"} in hostgroup["components"] ]
+    hostNames = [ host["fqdn"] for hostgroup in recommendations["blueprint_cluster_binding"]["host_groups"] if hostgroup["name"] in hostGroups for host in hostgroup["hosts"] ]
+    self.assertEquals(set(hostNames), hawqSegmentHosts)
+
+  def test_createComponentLayoutRecommendations_pxf_cluster_install(self):
+    """ Test that PXF gets recommended correctly during Cluster Install Wizard, when PXF is selected for installation """
+
+    hosts = self.prepareHosts(["c6401.ambari.apache.org", "c6402.ambari.apache.org", "c6403.ambari.apache.org"])
+    services =  {
+                  "services" : [
+                    {
+                      "StackServices" : {
+                        "service_name" : "HDFS"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "MASTER",
+                            "component_name" : "NAMENODE",
+                            "is_master": "true",
+                            "hostnames" : []
+                          }
+                        },
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "DATANODE",
+                            "hostnames" : []
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "StackServices" : {
+                        "service_name" : "PXF"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "PXF",
+                            "hostnames" : []
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+
+    pxfHosts = set(["c6401.ambari.apache.org", "c6402.ambari.apache.org", "c6403.ambari.apache.org"])
+    recommendations = self.stackAdvisor.createComponentLayoutRecommendations(services, hosts)
+    hostGroups = [ hostgroup["name"] for hostgroup in recommendations["blueprint"]["host_groups"] if {"name": "PXF"} in hostgroup["components"] ]
+    hostNames = [ host["fqdn"] for hostgroup in recommendations["blueprint_cluster_binding"]["host_groups"] if hostgroup["name"] in hostGroups for host in hostgroup["hosts"] ]
+    self.assertEquals(set(hostNames), pxfHosts)
+
+  def test_createComponentLayoutRecommendations_pxf_add_service_wizard_to_be_installed(self):
+    """ Test that PXF gets recommended correctly during Add Service Wizard, when PXF is selected for installation """
+
+    hosts = self.prepareHosts(["c6401.ambari.apache.org", "c6402.ambari.apache.org", "c6403.ambari.apache.org"])
+    services =  {
+                  "services" : [
+                    {
+                      "StackServices" : {
+                        "service_name" : "HDFS"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "MASTER",
+                            "component_name" : "NAMENODE",
+                            "is_master": "true",
+                            "hostnames" : ["c6401.ambari.apache.org"]
+                          }
+                        },
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "DATANODE",
+                            "hostnames" : ["c6402.ambari.apache.org", "c6403.ambari.apache.org"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "StackServices" : {
+                        "service_name" : "PXF"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "PXF",
+                            "hostnames" : []
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+
+    pxfHosts = set(["c6401.ambari.apache.org", "c6402.ambari.apache.org", "c6403.ambari.apache.org"])
+    recommendations = self.stackAdvisor.createComponentLayoutRecommendations(services, hosts)
+    hostGroups = [ hostgroup["name"] for hostgroup in recommendations["blueprint"]["host_groups"] if {"name": "PXF"} in hostgroup["components"] ]
+    hostNames = [ host["fqdn"] for hostgroup in recommendations["blueprint_cluster_binding"]["host_groups"] if hostgroup["name"] in hostGroups for host in hostgroup["hosts"] ]
+    self.assertEquals(set(hostNames), pxfHosts)
+
+  def test_createComponentLayoutRecommendations_pxf_add_service_wizard_already_installed(self):
+    """ Test that PXF does not get recommended during Add Service Wizard, when PXF has already been installed """
+
+    hosts = self.prepareHosts(["c6401.ambari.apache.org", "c6402.ambari.apache.org", "c6403.ambari.apache.org"])
+    services =  {
+                  "services" : [
+                    {
+                      "StackServices" : {
+                        "service_name" : "HDFS"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "MASTER",
+                            "component_name" : "NAMENODE",
+                            "is_master": "true",
+                            "hostnames" : ["c6401.ambari.apache.org"]
+                          }
+                        },
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "DATANODE",
+                            "hostnames" : ["c6402.ambari.apache.org", "c6403.ambari.apache.org"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "StackServices" : {
+                        "service_name" : "PXF"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "PXF",
+                            "hostnames" : ["c6402.ambari.apache.org"]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "StackServices" : {
+                        "service_name" : "HBASE"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "MASTER",
+                            "component_name" : "HBASE_MASTER",
+                            "is_master": "true",
+                            "hostnames" : []
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+
+    pxfHosts = set(["c6402.ambari.apache.org"])
+    recommendations = self.stackAdvisor.createComponentLayoutRecommendations(services, hosts)
+    hostGroups = [ hostgroup["name"] for hostgroup in recommendations["blueprint"]["host_groups"] if {"name": "PXF"} in hostgroup["components"] ]
+    hostNames = [ host["fqdn"] for hostgroup in recommendations["blueprint_cluster_binding"]["host_groups"] if hostgroup["name"] in hostGroups for host in hostgroup["hosts"] ]
+    self.assertEquals(set(hostNames), pxfHosts)
 
   def fqdn_mock_result(value=None):
       return 'c6401.ambari.apache.org' if value is None else value
@@ -611,7 +819,8 @@ class TestHDP23StackAdvisor(TestCase):
       "Versions": {
         "stack_version": "2.3"
       },
-      "configurations": configurations
+      "configurations": configurations,
+      "ambari-server-properties": {"ambari-server.user":"ambari_user"}
     }
 
     # Test with Ranger HDFS plugin disabled
@@ -857,7 +1066,7 @@ class TestHDP23StackAdvisor(TestCase):
       },
       "hbase-env": {
         "properties": {
-          "hbase_master_heapsize": "114688",
+          "hbase_master_heapsize": "1024",
           "hbase_max_direct_memory_size": "94208",
           "hbase_regionserver_heapsize": "20480"
         }
@@ -987,7 +1196,7 @@ class TestHDP23StackAdvisor(TestCase):
     expected["hbase-site"]["property_attributes"]["hbase.bucketcache.ioengine"] = {"delete": "true"}
     expected["hbase-site"]["property_attributes"]["hbase.bucketcache.percentage.in.combinedcache"] = {"delete": "true"}
     expected["hbase-env"]["property_attributes"] = {"hbase_max_direct_memory_size" : {"delete": "true"}}
-    expected["hbase-env"]["properties"]["hbase_master_heapsize"] = "4096"
+    expected["hbase-env"]["properties"]["hbase_master_heapsize"] = "1024"
     expected["hbase-env"]["properties"]["hbase_regionserver_heapsize"] = "4096"
     self.stackAdvisor.recommendHBASEConfigurations(configurations, clusterData, services, None)
     self.assertEquals(configurations, expected)
@@ -1471,9 +1680,13 @@ class TestHDP23StackAdvisor(TestCase):
     hawqSegmentComponent = [component["StackServiceComponents"] for component in componentsList if component["StackServiceComponents"]["component_name"] == "HAWQSEGMENT"][0]
 
     # setup default configuration values
-    services["configurations"]["hawq-site"] = {"properties": {"default_segment_num": "24",
+    services["configurations"]["hawq-site"] = {"properties": {"default_hash_table_bucket_number": "24",
+                                                              "hawq_rm_nvseg_perquery_limit": "512",
                                                               "hawq_rm_yarn_address": "localhost:8032",
                                                               "hawq_rm_yarn_scheduler_address": "localhost:8030"}}
+
+    services["configurations"]["hdfs-client"] = {"properties": {"output.replace-datanode-on-failure": "true"}}
+
     services["configurations"]["yarn-site"] = {"properties": {"yarn.resourcemanager.address": "host1:8050",
                                                               "yarn.resourcemanager.scheduler.address": "host1:8030"}}
     services["services"].append({"StackServices" : {"service_name" : "YARN"}, "components":[]})
@@ -1483,29 +1696,38 @@ class TestHDP23StackAdvisor(TestCase):
     # Test 1 - with 3 segments
     self.assertEquals(len(hawqSegmentComponent["hostnames"]), 3)
     self.stackAdvisor.recommendHAWQConfigurations(configurations, clusterData, services, None)
-    self.assertEquals(configurations["hawq-site"]["properties"]["default_segment_num"], str(3 * 6))
+    self.assertEquals(configurations["hawq-site"]["properties"]["default_hash_table_bucket_number"], str(3 * 6))
+    self.assertEquals(configurations["hdfs-client"]["properties"]["output.replace-datanode-on-failure"], "false")
 
     # check derived properties
     self.assertEquals(configurations["hawq-site"]["properties"]["hawq_rm_yarn_address"], "host1:8050")
     self.assertEquals(configurations["hawq-site"]["properties"]["hawq_rm_yarn_scheduler_address"], "host1:8030")
 
-    # Test 2 - with 49 segments
-    hawqSegmentComponent["hostnames"] = ["host" + str(i) for i in range(49)]
+    # Test 2 - with 100 segments
+    hawqSegmentComponent["hostnames"] = ["host" + str(i) for i in range(100)]
     self.stackAdvisor.recommendHAWQConfigurations(configurations, clusterData, services, None)
-    self.assertEquals(configurations["hawq-site"]["properties"]["default_segment_num"], str(49 * 6))
+    self.assertEquals(configurations["hawq-site"]["properties"]["default_hash_table_bucket_number"], str(100 * 5))
+    self.assertEquals(configurations["hdfs-client"]["properties"]["output.replace-datanode-on-failure"], "true")
 
-    # Test 3 - with 50 segments (threshold for new factor)
-    hawqSegmentComponent["hostnames"] = ["host" + str(i) for i in range(50)]
+    # Test 3 - with 512 segments
+    hawqSegmentComponent["hostnames"] = ["host" + str(i) for i in range(512)]
     self.stackAdvisor.recommendHAWQConfigurations(configurations, clusterData, services, None)
-    self.assertEquals(configurations["hawq-site"]["properties"]["default_segment_num"], str(50 * 4))
+    self.assertEquals(configurations["hawq-site"]["properties"]["default_hash_table_bucket_number"], "512")
+    self.assertEquals(configurations["hdfs-client"]["properties"]["output.replace-datanode-on-failure"], "true")
 
-    # Test 4 - with no segments
+    # Test 4 - with 513 segments
+    hawqSegmentComponent["hostnames"] = ["host" + str(i) for i in range(513)]
+    self.stackAdvisor.recommendHAWQConfigurations(configurations, clusterData, services, None)
+    self.assertEquals(configurations["hawq-site"]["properties"]["default_hash_table_bucket_number"], "512")
+    self.assertEquals(configurations["hdfs-client"]["properties"]["output.replace-datanode-on-failure"], "true")
+
+    # Test 5 - with no segments
     configurations = {}
     services["configurations"]["hawq-site"] = {"properties":{'hawq-site': {'properties': {}}}}
     hawqSegmentComponent["hostnames"] = []
     self.stackAdvisor.recommendHAWQConfigurations(configurations, clusterData, services, None)
-    self.assertEquals(configurations, {'hawq-site': {'properties': {}}})
-
+    self.assertEquals(configurations, {'hdfs-client': {'properties': {'output.replace-datanode-on-failure': 'false'}},
+                                       'hawq-site': {'properties': {}}})
 
   def test_validateHiveConfigurations(self):
     properties = {"hive_security_authorization": "None",
@@ -1670,8 +1892,7 @@ class TestHDP23StackAdvisor(TestCase):
     expected = {
       'admin-properties': {
         'properties': {
-          'policymgr_external_url': 'http://host1:7777',
-          'SQL_CONNECTOR_JAR': '/usr/share/java/mysql-connector-java.jar'
+          'policymgr_external_url': 'http://host1:7777'
         }
       },
       'ranger-ugsync-site': {
@@ -1775,7 +1996,7 @@ class TestHDP23StackAdvisor(TestCase):
     self.assertEqual(len(problems), 0)
 
 
-  def test_validateHAWQConfigurations(self):
+  def test_validateHAWQSiteConfigurations(self):
     services = self.load_json("services-hawq-3-hosts.json")
     # setup default configuration values
     # Test hawq_rm_yarn_address and hawq_rm_scheduler_address are set correctly
@@ -1806,11 +2027,47 @@ class TestHDP23StackAdvisor(TestCase):
       }
     }
 
-    problems = self.stackAdvisor.validateHAWQConfigurations(properties, defaults, configurations, services, hosts)
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, configurations, services, hosts)
     problems_dict = {}
     for problem in problems:
       problems_dict[problem['config-name']] = problem
     self.assertEqual(len(problems), 2)
+    self.assertEqual(problems_dict, expected_warnings)
+
+    # Test hawq_master_directory multiple directories validation
+    configurations["hawq-site"] = {"properties": {"hawq_master_directory": "/data/hawq/master",
+                                                  "hawq_segment_directory": "/data/hawq/segment"}}
+    properties = configurations["hawq-site"]["properties"]
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, configurations, services, hosts)
+    problems_dict = {}
+    self.assertEqual(len(problems), 0)
+    expected_warnings = {}
+    self.assertEqual(problems_dict, expected_warnings)
+
+    configurations["hawq-site"] = {"properties": {"hawq_master_directory": "/data/hawq/master1,/data/hawq/master2",
+                                                  "hawq_segment_directory": "/data/hawq/segment1 /data/hawq/segment2"}}
+    properties = configurations["hawq-site"]["properties"]
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, configurations, services, hosts)
+    problems_dict = {}
+    for problem in problems:
+      problems_dict[problem['config-name']] = problem
+    self.assertEqual(len(problems), 2)
+    expected_warnings = {
+      'hawq_master_directory': {
+        'config-type': 'hawq-site',
+        'message': 'Multiple directories for HAWQ Master directory are not allowed.',
+        'type': 'configuration',
+        'config-name': 'hawq_master_directory',
+        'level': 'ERROR'
+      },
+      'hawq_segment_directory': {
+        'config-type': 'hawq-site',
+        'message': 'Multiple directories for HAWQ Segment directory are not allowed.',
+        'type': 'configuration',
+        'config-name': 'hawq_segment_directory',
+        'level': 'ERROR'
+      }
+    }
     self.assertEqual(problems_dict, expected_warnings)
 
     # Test hawq_global_rm_type validation
@@ -1844,7 +2101,7 @@ class TestHDP23StackAdvisor(TestCase):
                           "level": "ERROR"
                     } ]
     """
-    problems = self.stackAdvisor.validateHAWQConfigurations(properties, defaults, services["configurations"], services, hosts)
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, services["configurations"], services, hosts)
     self.assertEqual(len(problems), 1)
     expected = {
       "config-type": "hawq-site",
@@ -1858,7 +2115,7 @@ class TestHDP23StackAdvisor(TestCase):
     # case 2: hawq_global_rm_type is set as yarn, and YARN service is installed. No validation errors expected.
     services["services"].append({"StackServices" : {"service_name" : "YARN"}, "components":[]})
 
-    problems = self.stackAdvisor.validateHAWQConfigurations(properties, defaults, services["configurations"], services, hosts)
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, services["configurations"], services, hosts)
     self.assertEqual(len(problems), 0)
 
     # Test HAWQ Master port conflict with Ambari Server Postgres port
@@ -1871,7 +2128,7 @@ class TestHDP23StackAdvisor(TestCase):
           {"hawq_master_address_port": "5432"}
       }
     }
-    problems = self.stackAdvisor.validateHAWQConfigurations(properties, defaults, configurations, services, hosts)
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, configurations, services, hosts)
     self.assertEqual(len(problems), 1)
     expected = {
       "config-name": "hawq_master_address_port",
@@ -1886,17 +2143,215 @@ class TestHDP23StackAdvisor(TestCase):
     # case 2: HAWQ Master is placed on Ambari Server and HAWQ Master port is different from  Ambari Server Postgres Port
     self.stackAdvisor.isHawqMasterComponentOnAmbariServer = MagicMock(return_value=True)
     configurations["hawq-site"]["properties"]["hawq_master_address_port"] = "10432"
-    problems = self.stackAdvisor.validateHAWQConfigurations(properties, defaults, configurations, services, hosts)
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, configurations, services, hosts)
     self.assertEqual(len(problems), 0)
 
     # case 3: HAWQ Master is not placed on Ambari Server and HAWQ Master port is same as  Ambari Server Postgres Port
     self.stackAdvisor.isHawqMasterComponentOnAmbariServer = MagicMock(return_value=False)
     configurations["hawq-site"]["properties"]["hawq_master_address_port"] = "5432"
-    problems = self.stackAdvisor.validateHAWQConfigurations(properties, defaults, configurations, services, hosts)
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, configurations, services, hosts)
     self.assertEqual(len(problems), 0)
 
     # case 4: HAWQ Master is not placed on Ambari Server and HAWQ Master port is different from  Ambari Server Postgres Port
     self.stackAdvisor.isHawqMasterComponentOnAmbariServer = MagicMock(return_value=False)
     configurations["hawq-site"]["properties"]["hawq_master_address_port"] = "10432"
-    problems = self.stackAdvisor.validateHAWQConfigurations(properties, defaults, configurations, services, hosts)
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, configurations, services, hosts)
     self.assertEqual(len(problems), 0)
+
+    # -------- test query limits warning ----------
+    services = {
+      "services":  [
+        { "StackServices": {"service_name": "HAWQ"},
+          "components": [{
+            "StackServiceComponents": {
+              "component_name": "HAWQSEGMENT",
+              "hostnames": []
+            }}]
+          }],
+      "configurations": {}
+    }
+    # setup default configuration values
+    configurations = services["configurations"]
+    configurations["hawq-site"] = {"properties": {"default_hash_table_bucket_number": "600",
+                                                  "hawq_rm_nvseg_perquery_limit": "500"}}
+    properties = configurations["hawq-site"]["properties"]
+    defaults = {}
+    hosts = {}
+
+    expected = {
+      'config-type': 'hawq-site',
+      'message': 'Default buckets for Hash Distributed tables parameter value should not be greater than the value of Virtual Segments Limit per Query (Total) parameter, currently set to 500.',
+      'type': 'configuration',
+      'config-name': 'default_hash_table_bucket_number',
+      'level': 'ERROR'
+    }
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, configurations, services, hosts)
+    self.assertEqual(len(problems), 1)
+    self.assertEqual(problems[0], expected)
+
+    configurations["hawq-site"] = {"properties": {"default_hash_table_bucket_number": "500",
+                                                  "hawq_rm_nvseg_perquery_limit": "500"}}
+    properties = configurations["hawq-site"]["properties"]
+    problems = self.stackAdvisor.validateHAWQSiteConfigurations(properties, defaults, configurations, services, hosts)
+    self.assertEqual(len(problems), 0)
+
+
+  def test_validateHAWQHdfsClientConfigurations(self):
+    services = {
+      "services":  [
+        { "StackServices": {"service_name": "HAWQ"},
+          "components": [{
+            "StackServiceComponents": {
+              "component_name": "HAWQSEGMENT",
+              "hostnames": []
+            }}]
+          }],
+      "configurations": {}
+    }
+    # setup default configuration values
+    configurations = services["configurations"]
+    configurations["hdfs-client"] = {"properties": {"output.replace-datanode-on-failure": "true"}}
+    properties = configurations["hdfs-client"]["properties"]
+    defaults = {}
+    hosts = {}
+
+    # 1. Try with no hosts
+    expected = {
+        'config-type': 'hdfs-client',
+        'message': 'output.replace-datanode-on-failure should be set to false (unchecked) for clusters with 3 or less HAWQ Segments',
+        'type': 'configuration',
+        'config-name': 'output.replace-datanode-on-failure',
+        'level': 'WARN'
+    }
+
+    problems = self.stackAdvisor.validateHAWQHdfsClientConfigurations(properties, defaults, configurations, services, hosts)
+    self.assertEqual(len(problems), 1)
+    self.assertEqual(problems[0], expected)
+
+    # 2. Try with 3 hosts
+    services["services"][0]["components"][0]["StackServiceComponents"]["hostnames"] = ["host1", "host2", "host3"]
+    problems = self.stackAdvisor.validateHAWQHdfsClientConfigurations(properties, defaults, configurations, services, hosts)
+    self.assertEqual(len(problems), 1)
+    self.assertEqual(problems[0], expected)
+
+    # 3. Try with 4 hosts - default value
+    services["services"][0]["components"][0]["StackServiceComponents"]["hostnames"] = ["host1", "host2", "host3", "host4"]
+    problems = self.stackAdvisor.validateHAWQHdfsClientConfigurations(properties, defaults, configurations, services, hosts)
+    self.assertEqual(len(problems), 0)
+
+    # 4. Try with 4 hosts
+    properties = {"output.replace-datanode-on-failure": "false"}
+    expected = {
+      'config-type': 'hdfs-client',
+      'message': 'output.replace-datanode-on-failure should be set to true (checked) for clusters with more than 3 HAWQ Segments',
+      'type': 'configuration',
+      'config-name': 'output.replace-datanode-on-failure',
+      'level': 'WARN'
+    }
+    problems = self.stackAdvisor.validateHAWQHdfsClientConfigurations(properties, defaults, configurations, services, hosts)
+    self.assertEqual(len(problems), 1)
+    self.assertEqual(problems[0], expected)
+
+  def test_recommendRangerKMSConfigurations(self):
+    clusterData = {}
+    services = {
+      "Versions": {
+        "stack_version" : "2.3",
+        },
+      "services": [
+        {
+          "StackServices": {
+            "service_name": "RANGER",
+            "service_version": "0.5.0.2.3"
+          },
+          "components": [
+            {
+              "StackServiceComponents": {
+                "component_name": "RANGER_ADMIN",
+                "hostnames": ["host1"]
+              }
+            }
+          ]
+        }
+        ],
+      "configurations": {
+        "kms-env": {
+          "properties": {
+            "kms_user": "kmsname"
+            }
+        },
+        "core-site": {
+          "properties": {
+          }
+        }
+      },
+      "forced-configurations": []
+    }
+    expected = {
+      'kms-properties': {
+        'properties': {}
+      },
+      'dbks-site': {
+        'properties': {}
+      },
+      'core-site': {
+        'properties': {
+        }
+      }
+    }
+
+    # non kerberized cluster. There should be no proxyuser configs
+    recommendedConfigurations = {}
+    self.stackAdvisor.recommendRangerKMSConfigurations(recommendedConfigurations, clusterData, services, None)
+    self.assertEquals(recommendedConfigurations, expected)
+
+    # kerberized cluster
+    services['services'].append({
+      "StackServices": {
+        "service_name": "KERBEROS"
+      }
+    })
+
+    expected = {
+      'kms-properties': {
+        'properties': {}
+      },
+      'dbks-site': {
+        'properties': {}
+      },
+      'core-site': {
+        'properties': {
+          'hadoop.proxyuser.kmsname.groups': '*'
+        }
+      }
+    }
+
+    # on kerberized cluster property should be recommended
+    recommendedConfigurations = {}
+    self.stackAdvisor.recommendRangerKMSConfigurations(recommendedConfigurations, clusterData, services, None)
+    self.assertEquals(recommendedConfigurations, expected)
+
+    recommendedConfigurations = {}
+    services['changed-configurations'] = [
+      {
+        'type': 'kms-env',
+        'name': 'kms_user',
+        'old_value': 'kmsname'
+      }
+    ]
+    services['configurations']['kms-env']['properties']['kms_user'] = 'kmsnew'
+
+    expected['core-site'] = {
+      'properties': {
+        'hadoop.proxyuser.kmsnew.groups': '*'
+      },
+      'property_attributes': {
+        'hadoop.proxyuser.kmsname.groups': {
+          'delete': 'true'
+        }
+      }
+    }
+
+    # kms_user was changed, old property should be removed
+    self.stackAdvisor.recommendRangerKMSConfigurations(recommendedConfigurations, clusterData, services, None)
+    self.assertEquals(recommendedConfigurations, expected)

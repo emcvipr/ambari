@@ -316,7 +316,7 @@ class ActionScheduler implements Runnable {
         }
 
         if (failed) {
-          LOG.warn("Operation completely failed, aborting request id: {}", stage.getRequestId());
+          LOG.error("Operation completely failed, aborting request id: {}", stage.getRequestId());
           cancelHostRoleCommands(stage.getOrderedHostRoleCommands(), FAILED_TASK_ABORT_REASONING);
           abortOperationsForStage(stage);
           return;
@@ -689,6 +689,15 @@ class ActionScheduler implements Runnable {
             processActionDeath(cluster.getClusterName(), c.getHostname(), roleStr);
           }
           status = HostRoleStatus.ABORTED;
+        } else if (wasAgentRestartedDuringOperation(hostObj, s, roleStr)) {
+          String message = String.format("Detected ambari-agent restart during command execution." +
+            "The command has been aborted." +
+            "Execution command details: host: %s, role: %s, actionId: %s", host, roleStr, s.getActionId());
+          LOG.warn(message);
+          if (c.getRoleCommand().equals(RoleCommand.ACTIONEXECUTE)) {
+            processActionDeath(cluster.getClusterName(), c.getHostname(), roleStr);
+          }
+          status = HostRoleStatus.ABORTED;
         } else if (timeOutActionNeeded(status, s, hostObj, roleStr, now, commandTimeout)) {
           // Process command timeouts
           LOG.info("Host:" + host + ", role:" + roleStr + ", actionId:" + s.getActionId() + " timed out");
@@ -871,6 +880,17 @@ class ActionScheduler implements Runnable {
       return true;
     }
     return false;
+  }
+
+  boolean wasAgentRestartedDuringOperation(Host host, Stage stage, String role) {
+    if (host == null) {
+      // null host is valid in case of server action, skip restart detection
+      return false;
+    } else {
+      String hostName = host.getHostName();
+      long taskStartTime = stage.getHostRoleCommand(hostName, role).getStartTime();
+      return taskStartTime > 0 && taskStartTime <= host.getLastRegistrationTime();
+    }
   }
 
   private boolean hasCommandInProgress(Stage stage, String host) {

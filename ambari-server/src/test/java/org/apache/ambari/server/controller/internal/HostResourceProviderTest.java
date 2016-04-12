@@ -217,8 +217,8 @@ public class HostResourceProviderTest extends EasyMockSupport {
     expect(managementController.getHostComponents(EasyMock.<Set<ServiceComponentHostRequest>>anyObject()))
         .andReturn(Collections.<ServiceComponentHostResponse>emptySet()).anyTimes();
     expect(resourceProviderFactory.getHostResourceProvider(EasyMock.<Set<String>>anyObject(),
-        EasyMock.<Map<Resource.Type, String>>anyObject(),
-        eq(managementController))).
+            EasyMock.<Map<Resource.Type, String>>anyObject(),
+            eq(managementController))).
         andReturn(hostResourceProvider).anyTimes();
 
     expect(clusters.getHosts()).andReturn(hosts).anyTimes();
@@ -236,6 +236,7 @@ public class HostResourceProviderTest extends EasyMockSupport {
 
     propertyIds.add(HostResourceProvider.HOST_CLUSTER_NAME_PROPERTY_ID);
     propertyIds.add(HostResourceProvider.HOST_NAME_PROPERTY_ID);
+    propertyIds.add(HostResourceProvider.HOST_MAINTENANCE_STATE_PROPERTY_ID);
 
     Predicate predicate =
         new PredicateBuilder().property(HostResourceProvider.HOST_CLUSTER_NAME_PROPERTY_ID).equals("Cluster100").
@@ -260,6 +261,8 @@ public class HostResourceProviderTest extends EasyMockSupport {
     for (Resource resource : resources) {
       String clusterName = (String) resource.getPropertyValue(HostResourceProvider.HOST_CLUSTER_NAME_PROPERTY_ID);
       Assert.assertEquals("Cluster100", clusterName);
+      MaintenanceState maintenanceState = (MaintenanceState)resource.getPropertyValue(HostResourceProvider.HOST_MAINTENANCE_STATE_PROPERTY_ID);
+      Assert.assertEquals(MaintenanceState.OFF, maintenanceState);
     }
 
     // verify
@@ -1075,6 +1078,7 @@ public class HostResourceProviderTest extends EasyMockSupport {
     expect(clusters.getClustersForHost("Host100")).andReturn(clusterSet).anyTimes();
     clusters.deleteHost("Host100");
     expectLastCall().anyTimes();
+    expect(clusters.getClusters()).andReturn(Collections.EMPTY_MAP);
     expect(host1.getHostName()).andReturn("Host100").anyTimes();
     expect(healthStatus.getHealthStatus()).andReturn(HostHealthStatus.HealthStatus.HEALTHY).anyTimes();
     expect(healthStatus.getHealthReport()).andReturn("HEALTHY").anyTimes();

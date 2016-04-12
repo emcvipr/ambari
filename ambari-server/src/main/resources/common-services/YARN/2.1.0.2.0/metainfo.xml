@@ -32,11 +32,29 @@
           <category>MASTER</category>
           <cardinality>1</cardinality>
           <versionAdvertised>true</versionAdvertised>
+          <reassignAllowed>true</reassignAllowed>
           <commandScript>
             <script>scripts/resourcemanager.py</script>
             <scriptType>PYTHON</scriptType>
             <timeout>1200</timeout>
           </commandScript>
+          <logs>
+            <log>
+              <logId>mapred_historyserver</logId>
+            </log>
+            <log>
+              <logId>yarn_resourcemanager</logId>
+            </log>
+            <log>
+              <logId>yarn_timelineserver</logId>
+            </log>
+            <log>
+              <logId>yarn_historyserver</logId>
+            </log>
+            <log>
+              <logId>yarn_jobsummary</logId>
+            </log>
+          </logs>
           <customCommands>
             <customCommand>
               <name>DECOMMISSION</name>
@@ -67,11 +85,22 @@
           <category>SLAVE</category>
           <cardinality>1+</cardinality>
           <versionAdvertised>true</versionAdvertised>
+          <decommissionAllowed>true</decommissionAllowed>
           <commandScript>
             <script>scripts/nodemanager.py</script>
             <scriptType>PYTHON</scriptType>
             <timeout>1200</timeout>
           </commandScript>
+           <bulkCommands>
+             <displayName>NodeManagers</displayName>
+             <!-- Used by decommission and recommission -->
+             <masterComponent>RESOURCEMANAGER</masterComponent>
+           </bulkCommands>
+          <logs>
+            <log>
+              <logId>yarn_nodemanager</logId>
+            </log>
+          </logs>
         </component>
 
         <component>
@@ -169,6 +198,7 @@
           <category>MASTER</category>
           <cardinality>1</cardinality>
           <versionAdvertised>true</versionAdvertised>
+          <reassignAllowed>true</reassignAllowed>
           <auto-deploy>
             <enabled>true</enabled>
             <co-locate>YARN/RESOURCEMANAGER</co-locate>

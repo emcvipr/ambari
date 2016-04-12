@@ -31,20 +31,11 @@ App.HostComponent = DS.Model.extend({
   service: DS.belongsTo('App.Service'),
   adminState: DS.attr('string'),
 
-  serviceDisplayName: function(){
-    var name = this.get('service.displayName');
-    return name.length > 14 ? name.substr(0, 11) + "..." : name;
-  }.property('service'),
+  serviceDisplayName: Em.computed.truncate('service.displayName', 14, 11),
 
-  getDisplayName:function(){
-    var name = this.get('displayName');
-    return name.length > 19 ? name.substr(0, 16) + "..." : name;
-  }.property('displayName'),
+  getDisplayName: Em.computed.truncate('displayName', 19, 16),
 
-  getDisplayNameAdvanced:function(){
-    var name = this.get('displayNameAdvanced');
-    return name.length > 19 ? name.substr(0, 16) + "..." : name;
-  }.property('displayNameAdvanced'),
+  getDisplayNameAdvanced:Em.computed.truncate('displayNameAdvanced', 19, 16),
 
   summaryLabelClassName:function(){
     return 'label_for_'+this.get('componentName').toLowerCase();
@@ -154,24 +145,15 @@ App.HostComponent = DS.Model.extend({
     return this.get('isActive') ? this.get('workStatus') : 'icon-medkit';
   }.property('workStatus', 'isActive'),
 
-  statusIconClass: function () {
-    switch (this.get('statusClass')) {
-      case 'STARTED':
-      case 'STARTING':
-        return App.healthIconClassGreen;
-        break;
-      case 'INSTALLED':
-      case 'STOPPING':
-        return App.healthIconClassRed;
-        break;
-      case 'UNKNOWN':
-        return App.healthIconClassYellow;
-        break;
-      default:
-        return "";
-        break;
-    }
-  }.property('statusClass'),
+  statusIconClass: Em.computed.getByKey('statusIconClassMap', 'statusClass', ''),
+
+  statusIconClassMap: {
+    STARTED: App.healthIconClassGreen,
+    STARTING: App.healthIconClassGreen,
+    INSTALLED: App.healthIconClassRed,
+    STOPPING: App.healthIconClassRed,
+    UNKNOWN: App.healthIconClassYellow
+  },
 
   componentTextStatus: function () {
     return App.HostComponentStatus.getTextStatus(this.get("workStatus"));
@@ -294,6 +276,7 @@ App.HostComponentActionMap = {
     var HM = ctx.get('controller.content.hostComponents').findProperty('componentName', 'HAWQMASTER');
     var HS = ctx.get('controller.content.hostComponents').findProperty('componentName', 'HAWQSTANDBY');
     var HMComponent = App.MasterComponent.find('HAWQMASTER');
+    var HSComponent = App.MasterComponent.find('HAWQSTANDBY');
     return {
       RESTART_ALL: {
         action: 'restartAllHostComponents',
@@ -380,6 +363,13 @@ App.HostComponentActionMap = {
         cssClass: 'icon-stop',
         disabled: false
       },
+      RESTART_LLAP: {
+        action: 'restartLLAP',
+        customCommand: 'RESTART_LLAP',
+        context: Em.I18n.t('services.service.actions.run.restartLLAP'),
+        label: Em.I18n.t('services.service.actions.run.restartLLAP') + ' ∞',
+        cssClass: 'icon-refresh'
+      },
       REBALANCEHDFS: {
         action: 'rebalanceHdfsNodes',
         customCommand: 'REBALANCEHDFS',
@@ -424,7 +414,7 @@ App.HostComponentActionMap = {
         label: Em.I18n.t('services.service.actions.run.resyncHawqStandby.label'),
         cssClass: 'icon-refresh',
         isHidden : App.get('isSingleNode') || !HS ,
-        disabled: !((!!HMComponent && HMComponent.get('startedCount') === 1) && (!!HS && HS.get('workStatus') === App.HostComponentStatus.started))
+        disabled: !((!!HMComponent && HMComponent.get('startedCount') === 1) && (!!HSComponent && HSComponent.get('startedCount') === 1))
       },
       TOGGLE_ADD_HAWQ_STANDBY: {
         action: 'addHawqStandby',
@@ -448,7 +438,8 @@ App.HostComponentActionMap = {
         context: Em.I18n.t('admin.activateHawqStandby.button.enable'),
         cssClass: 'icon-arrow-up',
         isHidden: App.get('isSingleNode') || !HS,
-        disabled: false
+        disabled: false,
+        hideFromComponentView: true
       },
       HAWQ_CLEAR_CACHE: {
         action: 'executeHawqCustomCommand',

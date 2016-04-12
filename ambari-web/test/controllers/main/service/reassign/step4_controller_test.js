@@ -320,7 +320,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
     it('stopServices is called with valid list of services', function() {
       controller.set('content.reassign.component_name', 'JOBTRACKER');
       controller.stopRequiredServices();
-      expect(controller.stopServices.calledWith(['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'])).to.be.true;
+      expect(controller.stopServices.calledWith(['PIG', 'OOZIE'], true)).to.be.true;
     });
   });
 
@@ -390,24 +390,17 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
       controller.onTaskCompleted.restore();
     });
 
-    it('No host-components', function () {
-      controller.set('multiTaskCounter', 0);
-      controller.set('hostComponents', []);
-      controller.onComponentsTasksSuccess();
-      expect(controller.get('multiTaskCounter')).to.equal(1);
-      expect(controller.onTaskCompleted.calledOnce).to.be.true;
-    });
     it('One host-component', function () {
-      controller.set('multiTaskCounter', 0);
+      controller.set('multiTaskCounter', 1);
       controller.set('hostComponents', [
         {}
       ]);
       controller.onComponentsTasksSuccess();
-      expect(controller.get('multiTaskCounter')).to.equal(1);
+      expect(controller.get('multiTaskCounter')).to.equal(0);
       expect(controller.onTaskCompleted.calledOnce).to.be.true;
     });
     it('two host-components', function () {
-      controller.set('multiTaskCounter', 0);
+      controller.set('multiTaskCounter', 2);
       controller.set('hostComponents', [
         {},
         {}
@@ -434,14 +427,6 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
       controller.createComponent.restore();
     });
 
-    it('No host-components', function () {
-      controller.set('hostComponents', []);
-
-      controller.createHostComponents();
-
-      expect(controller.get('multiTaskCounter')).to.equal(0);
-      expect(controller.createComponent.called).to.be.false;
-    });
     it('One host-component', function () {
       controller.set('hostComponents', ['COMP1']);
       controller.set('content.reassignHosts.target', 'host1');
@@ -449,7 +434,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
 
       controller.createHostComponents();
 
-      expect(controller.get('multiTaskCounter')).to.equal(0);
+      expect(controller.get('multiTaskCounter')).to.equal(1);
       expect(controller.createComponent.calledWith('COMP1', 'host1', 'SERVICE1')).to.be.true;
     });
   });
@@ -490,7 +475,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
       controller.putHostComponentsInMaintenanceMode();
       var args = testHelpers.findAjaxRequest('name', 'common.host.host_component.passive');
       expect(args).exists;
-      expect(controller.get('multiTaskCounter')).to.equal(0);
+      expect(controller.get('multiTaskCounter')).to.equal(1);
     });
   });
 
@@ -517,7 +502,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
 
       controller.installHostComponents();
 
-      expect(controller.get('multiTaskCounter')).to.equal(0);
+      expect(controller.get('multiTaskCounter')).to.equal(1);
       expect(controller.updateComponent.calledWith('COMP1', 'host1', 'SERVICE1', 'Install', 1)).to.be.true;
     });
   });
@@ -1215,7 +1200,7 @@ describe('App.ReassignMasterWizardStep4Controller', function () {
     it("component has related services", function() {
       controller.set('content.reassign.component_name', 'JOBTRACKER');
       controller.startRequiredServices();
-      expect(controller.startServices.calledWith(false, ['HDFS', 'ZOOKEEPER', 'HBASE', 'FLUME', 'SQOOP', 'STORM'])).to.be.true;
+      expect(controller.startServices.calledWith(false, ['PIG', 'OOZIE'], true)).to.be.true;
     });
     it("component does not have related services", function() {
       controller.set('content.reassign.component_name', 'C1');

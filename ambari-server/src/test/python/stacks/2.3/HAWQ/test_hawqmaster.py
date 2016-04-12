@@ -27,6 +27,7 @@ class TestHawqMaster(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = 'HAWQ/2.0.0/package'
   STACK_VERSION = '2.3'
   GPADMIN = 'gpadmin'
+  POSTGRES = 'postgres'
   DEFAULT_IMMUTABLE_PATHS = ['/apps/hive/warehouse', '/apps/falcon', '/mr-history/done', '/app-logs', '/tmp']
 
   def __asserts_for_configure(self):
@@ -40,6 +41,16 @@ class TestHawqMaster(RMFTestCase):
         groups = ['gpadmin', u'hadoop'],
         ignore_failures = True,
         password = 'saNIJ3hOyqasU'
+        )
+
+    self.assertResourceCalled('Group', self.POSTGRES,
+        ignore_failures = True
+        )
+
+    self.assertResourceCalled('User', self.POSTGRES,
+        gid = self.POSTGRES,
+        groups = [self.POSTGRES, u'hadoop'],
+        ignore_failures = True
         )
 
     self.assertResourceCalled('Execute', 'chown -R gpadmin:gpadmin /usr/local/hawq/',
@@ -87,20 +98,7 @@ class TestHawqMaster(RMFTestCase):
         mode = 0644
         )
 
-    self.assertResourceCalled('File', '/usr/local/hawq/etc/hawq_hosts',
-        content = InlineTemplate('c6401.ambari.apache.org\nc6402.ambari.apache.org\nc6403.ambari.apache.org\n\n'),
-        group = self.GPADMIN,
-        owner = self.GPADMIN,
-        mode = 0644
-        )
-
     self.assertResourceCalled('Directory', '/data/hawq/master',
-        group = self.GPADMIN,
-        owner = self.GPADMIN,
-        create_parents = True
-        )
-
-    self.assertResourceCalled('Directory', '/tmp/hawq/master',
         group = self.GPADMIN,
         owner = self.GPADMIN,
         create_parents = True
@@ -109,6 +107,12 @@ class TestHawqMaster(RMFTestCase):
     self.assertResourceCalled('Execute', 'chmod 700 /data/hawq/master',
         user = 'root',
         timeout =  600
+        )
+
+    self.assertResourceCalled('Directory', '/tmp/hawq/master',
+        group = self.GPADMIN,
+        owner = self.GPADMIN,
+        create_parents = True
         )
 
 
@@ -143,12 +147,7 @@ class TestHawqMaster(RMFTestCase):
 
 
   @patch ('hawqmaster.common.__set_osparams')
-  @patch ('hawqmaster.master_helper.__is_active_master')
-  @patch ('hawqmaster.master_helper.__is_local_initialized')
-  def test_start_default(self, is_local_initialized_mock, active_master_mock, set_osparams_mock):
-    active_master_mock.return_value = True
-    is_local_initialized_mock.return_value = False
-
+  def test_start_default(self, set_osparams_mock):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + '/scripts/hawqmaster.py',
         classname = 'HawqMaster',
         command = 'start',
@@ -158,14 +157,6 @@ class TestHawqMaster(RMFTestCase):
         )
 
     self.__asserts_for_configure()
-
-    self.assertResourceCalled('Execute', 'source /usr/local/hawq/greenplum_path.sh && hawq ssh-exkeys -f /usr/local/hawq/etc/hawq_hosts -p gpadmin',
-        logoutput = True,
-        not_if = None,
-        only_if = None,
-        user = self.GPADMIN,
-        timeout = 900
-        )
 
     self.assertResourceCalled('HdfsResource', '/hawq_default',
         immutable_paths = self.DEFAULT_IMMUTABLE_PATHS,
@@ -208,74 +199,7 @@ class TestHawqMaster(RMFTestCase):
 
 
   @patch ('hawqmaster.common.__set_osparams')
-  @patch ('hawqmaster.master_helper.__is_active_master')
-  @patch ('hawqmaster.master_helper.__is_local_initialized')
-  def test_start_localmaster(self, is_local_initialized_mock, active_master_mock, set_osparams_mock):
-    active_master_mock.return_value = True
-    is_local_initialized_mock.return_value = True
-
-    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + '/scripts/hawqmaster.py',
-        classname = 'HawqMaster',
-        command = 'start',
-        config_file ='hawq_default.json',
-        stack_version = self.STACK_VERSION,
-        target = RMFTestCase.TARGET_COMMON_SERVICES
-        )
-
-    self.__asserts_for_configure()
-
-    self.assertResourceCalled('Execute', 'source /usr/local/hawq/greenplum_path.sh && hawq ssh-exkeys -f /usr/local/hawq/etc/hawq_hosts -p gpadmin',
-        logoutput = True,
-        not_if = None,
-        only_if = None,
-        user = self.GPADMIN,
-        timeout = 900
-        )
-
-    self.assertResourceCalled('HdfsResource', '/hawq_default',
-        immutable_paths = self.DEFAULT_IMMUTABLE_PATHS,
-        default_fs = u'hdfs://c6401.ambari.apache.org:8020',
-        hdfs_site = self.getConfig()['configurations']['hdfs-site'],
-        type = 'directory',
-        action = ['create_on_execute'],
-        owner = self.GPADMIN,
-        group = self.GPADMIN,
-        user = u'hdfs',
-        mode = 493,
-        security_enabled = False,
-        kinit_path_local = '/usr/bin/kinit',
-        recursive_chown = True,
-        keytab = UnknownConfigurationMock(),
-        principal_name = UnknownConfigurationMock(),
-        )
-
-    self.assertResourceCalled('HdfsResource', None,
-        immutable_paths = self.DEFAULT_IMMUTABLE_PATHS,
-        default_fs = u'hdfs://c6401.ambari.apache.org:8020',
-        hdfs_site = self.getConfig()['configurations']['hdfs-site'],
-        action = ['execute'],
-        user = u'hdfs',
-        security_enabled = False,
-        kinit_path_local = '/usr/bin/kinit',
-        keytab = UnknownConfigurationMock(),
-        principal_name = UnknownConfigurationMock()
-        )
-
-    self.assertResourceCalled('Execute', 'source /usr/local/hawq/greenplum_path.sh && hawq start master -a -v',
-        logoutput = True, 
-        not_if = "netstat -tupln | egrep ':5432\\s' | egrep postgres",
-        only_if = None, 
-        user = self.GPADMIN,
-        timeout = 900
-        )
-
-    self.assertNoMoreResources()
-
-
-  @patch ('hawqmaster.common.__set_osparams')
-  @patch ('hawqmaster.master_helper.__is_active_master')
-  def test_stop_default(self, active_master_mock, set_osparams_mock):
-    active_master_mock.return_value = True
+  def test_stop_default(self, set_osparams_mock):
 
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + '/scripts/hawqmaster.py',
         classname = 'HawqMaster',
@@ -294,4 +218,3 @@ class TestHawqMaster(RMFTestCase):
         )
 
     self.assertNoMoreResources()
-

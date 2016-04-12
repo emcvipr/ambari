@@ -82,12 +82,11 @@ datanode.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collec
 namenode.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
 resourcemanager.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
 nodemanager.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
-historyserver.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
+jobhistoryserver.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
 journalnode.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
-nimbus.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
-supervisor.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
 maptask.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
 reducetask.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
+applicationhistoryserver.sink.timeline.collector={{metric_collector_protocol}}://{{metric_collector_host}}:{{metric_collector_port}}
 
 resourcemanager.sink.timeline.tagsForPrefix.yarn=Queue
 
@@ -101,5 +100,9 @@ namenode.sink.timeline.metric.rpc.datanode.port={{nn_rpc_dn_port}}
 {% if is_nn_healthcheck_port_configured %}
 namenode.sink.timeline.metric.rpc.healthcheck.port={{nn_rpc_healthcheck_port}}
 {% endif %}
+
+# Switch off container metrics
+*.source.filter.class=org.apache.hadoop.metrics2.filter.GlobFilter
+nodemanager.*.source.filter.exclude=*ContainerResource*
 
 {% endif %}

@@ -403,6 +403,11 @@ public class HeartbeatProcessor extends AbstractService{
       if (hostRoleCommand.getStatus() == HostRoleStatus.QUEUED &&
           report.getStatus().equals("IN_PROGRESS")) {
         hostRoleCommand.setStartTime(now);
+
+        // Because the task may be retried several times, set the original start time only once.
+        if (hostRoleCommand.getOriginalStartTime() == -1) {
+          hostRoleCommand.setOriginalStartTime(now);
+        }
       }
 
       // If the report indicates the keytab file was successfully transferred to a host or removed
@@ -542,8 +547,8 @@ public class HeartbeatProcessor extends AbstractService{
               }
             }
 
-            LOG.warn("Operation failed - may be retried. Service component host: "
-                + schName + ", host: " + hostname + " Action id" + report.getActionId());
+            LOG.error("Operation failed - may be retried. Service component host: "
+                + schName + ", host: " + hostname + " Action id " + report.getActionId() + " and Task id " + report.getTaskId());
             if (actionManager.isInProgressCommand(report)) {
               scHost.handleEvent(new ServiceComponentHostOpFailedEvent
                   (schName, hostname, now));

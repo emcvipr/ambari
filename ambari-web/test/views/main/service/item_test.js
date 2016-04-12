@@ -498,6 +498,8 @@ describe('App.MainServiceItemView', function () {
             return Em.Object.create({ customCommands: ["DECOMMISSION"] });
           case 'KNOX_GATEWAY':
             return Em.Object.create({ customCommands: ["STARTDEMOLDAP", "STOPDEMOLDAP"] });
+          case 'HIVE_SERVER_INTERACTIVE':
+            return Em.Object.create({ customCommands: ["RESTART_LLAP"] });
           case 'HISTORYSERVER':
           case 'SECONDARY_NAMENODE':
           case 'ZOOKEEPER_SERVER':

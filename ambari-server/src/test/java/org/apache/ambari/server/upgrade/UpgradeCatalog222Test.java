@@ -19,16 +19,31 @@
 package org.apache.ambari.server.upgrade;
 
 
-import com.google.common.collect.Maps;
-import com.google.gson.Gson;
-import com.google.inject.AbstractModule;
-import com.google.inject.Binder;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.Module;
-import com.google.inject.Provider;
-import com.google.inject.persist.PersistService;
+import javax.persistence.EntityManager;
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.anyString;
+import static org.easymock.EasyMock.capture;
+import static org.easymock.EasyMock.createMockBuilder;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.createStrictMock;
+import static org.easymock.EasyMock.eq;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.expectLastCall;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.reset;
+import static org.easymock.EasyMock.verify;
+import static org.junit.Assert.assertTrue;
+
+import java.io.File;
+import java.lang.reflect.Method;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.actionmanager.ActionManager;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
@@ -49,6 +64,7 @@ import org.apache.ambari.server.stack.StackManagerFactory;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
+import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponentHost;
 import org.apache.ambari.server.state.ServiceInfo;
 import org.apache.ambari.server.state.StackId;
@@ -65,28 +81,15 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-import javax.persistence.EntityManager;
-import java.io.File;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import static org.easymock.EasyMock.anyObject;
-import static org.easymock.EasyMock.anyString;
-import static org.easymock.EasyMock.capture;
-import static org.easymock.EasyMock.createMockBuilder;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.createStrictMock;
-import static org.easymock.EasyMock.eq;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.expectLastCall;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.reset;
-import static org.easymock.EasyMock.verify;
-import static org.junit.Assert.assertTrue;
+import com.google.common.collect.Maps;
+import com.google.gson.Gson;
+import com.google.inject.AbstractModule;
+import com.google.inject.Binder;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.Module;
+import com.google.inject.Provider;
+import com.google.inject.persist.PersistService;
 
 public class UpgradeCatalog222Test {
   private Injector injector;
@@ -128,8 +131,12 @@ public class UpgradeCatalog222Test {
     Method updateHiveConfigs = UpgradeCatalog222.class.getDeclaredMethod("updateHiveConfig");
     Method updateHostRoleCommands = UpgradeCatalog222.class.getDeclaredMethod("updateHostRoleCommands");
     Method updateHDFSWidget = UpgradeCatalog222.class.getDeclaredMethod("updateHDFSWidgetDefinition");
+    Method updateYARNWidget = UpgradeCatalog222.class.getDeclaredMethod("updateYARNWidgetDefinition");
+    Method updateHBASEWidget = UpgradeCatalog222.class.getDeclaredMethod("updateHBASEWidgetDefinition");
     Method updateCorruptedReplicaWidget = UpgradeCatalog222.class.getDeclaredMethod("updateCorruptedReplicaWidget");
-
+    Method createNewSliderConfigVersion = UpgradeCatalog222.class.getDeclaredMethod("createNewSliderConfigVersion");
+    Method updateZookeeperConfigs = UpgradeCatalog222.class.getDeclaredMethod("updateZookeeperConfigs");
+    Method initializeStromAnsKafkaWidgets = UpgradeCatalog222.class.getDeclaredMethod("initializeStromAndKafkaWidgets");
 
     UpgradeCatalog222 upgradeCatalog222 = createMockBuilder(UpgradeCatalog222.class)
       .addMockedMethod(addNewConfigurationsFromXml)
@@ -139,7 +146,12 @@ public class UpgradeCatalog222Test {
       .addMockedMethod(updateHiveConfigs)
       .addMockedMethod(updateHostRoleCommands)
       .addMockedMethod(updateHDFSWidget)
+      .addMockedMethod(updateYARNWidget)
+      .addMockedMethod(updateHBASEWidget)
       .addMockedMethod(updateCorruptedReplicaWidget)
+      .addMockedMethod(createNewSliderConfigVersion)
+      .addMockedMethod(updateZookeeperConfigs)
+      .addMockedMethod(initializeStromAnsKafkaWidgets)
       .createMock();
 
     upgradeCatalog222.addNewConfigurationsFromXml();
@@ -156,7 +168,17 @@ public class UpgradeCatalog222Test {
     expectLastCall().once();
     upgradeCatalog222.updateHDFSWidgetDefinition();
     expectLastCall().once();
+    upgradeCatalog222.updateYARNWidgetDefinition();
+    expectLastCall().once();
+    upgradeCatalog222.updateHBASEWidgetDefinition();
+    expectLastCall().once();
     upgradeCatalog222.updateCorruptedReplicaWidget();
+    expectLastCall().once();
+    upgradeCatalog222.updateZookeeperConfigs();
+    expectLastCall().once();
+    upgradeCatalog222.createNewSliderConfigVersion();
+    expectLastCall().once();
+    upgradeCatalog222.initializeStromAndKafkaWidgets();
     expectLastCall().once();
 
     replay(upgradeCatalog222);
@@ -277,6 +299,57 @@ public class UpgradeCatalog222Test {
   }
 
   @Test
+  public void testUpdateZookeeperConfigs() throws Exception{
+    EasyMockSupport easyMockSupport = new EasyMockSupport();
+    final AmbariManagementController mockAmbariManagementController = easyMockSupport.createNiceMock(AmbariManagementController.class);
+    final Clusters mockClusters = easyMockSupport.createStrictMock(Clusters.class);
+    final Cluster mockClusterExpected = easyMockSupport.createNiceMock(Cluster.class);
+
+    final Config zookeeperEnv = easyMockSupport.createNiceMock(Config.class);
+    expect(zookeeperEnv.getProperties()).andReturn(new HashMap<String, String>(){{
+      put("zk_server_heapsize", "1024");
+    }}
+    ).anyTimes();
+
+    final Injector mockInjector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(AmbariManagementController.class).toInstance(mockAmbariManagementController);
+        bind(Clusters.class).toInstance(mockClusters);
+        bind(EntityManager.class).toInstance(entityManager);
+        bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
+        bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
+      }
+    });
+
+    expect(mockAmbariManagementController.getClusters()).andReturn(mockClusters).once();
+    expect(mockClusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
+      put("normal", mockClusterExpected);
+    }}).atLeastOnce();
+    expect(mockClusterExpected.getDesiredConfigByType("zookeeper-env")).andReturn(zookeeperEnv).atLeastOnce();
+
+    UpgradeCatalog222 upgradeCatalog222 = createMockBuilder(UpgradeCatalog222.class)
+        .withConstructor(Injector.class)
+        .withArgs(mockInjector)
+        .addMockedMethod("updateConfigurationPropertiesForCluster", Cluster.class, String.class,
+            Map.class, boolean.class, boolean.class)
+        .createMock();
+
+    Map<String, String> expectedUpdates = new HashMap<>();
+    expectedUpdates.put("zk_server_heapsize", "1024m");
+
+    upgradeCatalog222.updateConfigurationPropertiesForCluster(mockClusterExpected, "zookeeper-env", expectedUpdates,
+        true, false);
+    expectLastCall().once();
+
+    easyMockSupport.replayAll();
+    replay(upgradeCatalog222);
+    upgradeCatalog222.updateZookeeperConfigs();
+    easyMockSupport.verifyAll();
+  }
+
+
+  @Test
   public void testAmsSiteUpdateConfigs() throws Exception{
 
     Map<String, String> oldPropertiesAmsSite = new HashMap<String, String>() {
@@ -292,6 +365,7 @@ public class UpgradeCatalog222Test {
         put("timeline.metrics.cluster.aggregator.minute.ttl", String.valueOf(7776000));
         put("timeline.metrics.cluster.aggregator.hourly.ttl", String.valueOf(31536000));
         put("timeline.metrics.cluster.aggregator.daily.ttl", String.valueOf(63072000));
+        put("timeline.metrics.service.webapp.address", "0.0.0.0:6188");
       }
     };
     Map<String, String> newPropertiesAmsSite = new HashMap<String, String>() {
@@ -299,7 +373,7 @@ public class UpgradeCatalog222Test {
         put("timeline.metrics.host.aggregator.daily.checkpointCutOffMultiplier", String.valueOf(2));
         put("timeline.metrics.cluster.aggregator.daily.checkpointCutOffMultiplier", String.valueOf(2));
         put("timeline.metrics.service.watcher.disabled", String.valueOf(false));
-        put("timeline.metrics.host.aggregator.ttl", String.valueOf(7 * 86400));
+        put("timeline.metrics.host.aggregator.ttl", String.valueOf(3 * 86400));
         put("timeline.metrics.host.aggregator.minute.ttl", String.valueOf(7 * 86400));
         put("timeline.metrics.host.aggregator.hourly.ttl", String.valueOf(30 * 86400));
         put("timeline.metrics.host.aggregator.daily.ttl", String.valueOf(365 * 86400));
@@ -308,6 +382,8 @@ public class UpgradeCatalog222Test {
         put("timeline.metrics.cluster.aggregator.hourly.ttl", String.valueOf(365 * 86400));
         put("timeline.metrics.cluster.aggregator.daily.ttl", String.valueOf(730 * 86400));
         put("timeline.metrics.service.operation.mode", "distributed");
+        put("timeline.metrics.service.webapp.address", "host1:6188");
+        put("timeline.metrics.cluster.aggregator.interpolation.enabled", String.valueOf(true));
       }
     };
     EasyMockSupport easyMockSupport = new EasyMockSupport();
@@ -326,6 +402,9 @@ public class UpgradeCatalog222Test {
     expect(injector.getInstance(Gson.class)).andReturn(null).anyTimes();
     expect(injector.getInstance(MaintenanceStateHelper.class)).andReturn(null).anyTimes();
     expect(injector.getInstance(KerberosHelper.class)).andReturn(createNiceMock(KerberosHelper.class)).anyTimes();
+    expect(cluster.getHosts("AMBARI_METRICS", "METRICS_COLLECTOR")).andReturn( new HashSet<String>() {{
+      add("host1");
+    }}).atLeastOnce();
 
     replay(injector, clusters, mockAmsSite, cluster);
 
@@ -350,6 +429,65 @@ public class UpgradeCatalog222Test {
 
     Map<String, String> updatedProperties = propertiesCapture.getValue();
     assertTrue(Maps.difference(newPropertiesAmsSite, updatedProperties).areEqual());
+  }
+
+  @Test
+  public void testAmsHbaseSiteUpdateConfigs() throws Exception{
+
+    Map<String, String> oldPropertiesAmsHbaseSite = new HashMap<String, String>() {
+      {
+        put("hbase.client.scanner.timeout.period", String.valueOf(900000));
+        put("phoenix.query.timeoutMs", String.valueOf(1200000));
+      }
+    };
+    Map<String, String> newPropertiesAmsHbaseSite = new HashMap<String, String>() {
+      {
+        put("hbase.client.scanner.timeout.period", String.valueOf(300000));
+        put("hbase.rpc.timeout", String.valueOf(300000));
+        put("phoenix.query.timeoutMs", String.valueOf(300000));
+        put("phoenix.query.keepAliveMs", String.valueOf(300000));
+      }
+    };
+    EasyMockSupport easyMockSupport = new EasyMockSupport();
+
+    Clusters clusters = easyMockSupport.createNiceMock(Clusters.class);
+    final Cluster cluster = easyMockSupport.createNiceMock(Cluster.class);
+    Config mockAmsHbaseSite = easyMockSupport.createNiceMock(Config.class);
+
+    expect(clusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
+      put("normal", cluster);
+    }}).once();
+    expect(cluster.getDesiredConfigByType("ams-hbase-site")).andReturn(mockAmsHbaseSite).atLeastOnce();
+    expect(mockAmsHbaseSite.getProperties()).andReturn(oldPropertiesAmsHbaseSite).anyTimes();
+
+    Injector injector = easyMockSupport.createNiceMock(Injector.class);
+    expect(injector.getInstance(Gson.class)).andReturn(null).anyTimes();
+    expect(injector.getInstance(MaintenanceStateHelper.class)).andReturn(null).anyTimes();
+    expect(injector.getInstance(KerberosHelper.class)).andReturn(createNiceMock(KerberosHelper.class)).anyTimes();
+
+    replay(injector, clusters, mockAmsHbaseSite, cluster);
+
+    AmbariManagementControllerImpl controller = createMockBuilder(AmbariManagementControllerImpl.class)
+      .addMockedMethod("createConfiguration")
+      .addMockedMethod("getClusters", new Class[] { })
+      .addMockedMethod("createConfig")
+      .withConstructor(createNiceMock(ActionManager.class), clusters, injector)
+      .createNiceMock();
+
+    Injector injector2 = easyMockSupport.createNiceMock(Injector.class);
+    Capture<Map> propertiesCapture = EasyMock.newCapture();
+
+    expect(injector2.getInstance(AmbariManagementController.class)).andReturn(controller).anyTimes();
+    expect(controller.getClusters()).andReturn(clusters).anyTimes();
+    expect(controller.createConfig(anyObject(Cluster.class), anyString(), capture(propertiesCapture), anyString(),
+      anyObject(Map.class))).andReturn(createNiceMock(Config.class)).once();
+
+    replay(controller, injector2);
+    new UpgradeCatalog222(injector2).updateAMSConfigs();
+    easyMockSupport.verifyAll();
+
+    Map<String, String> updatedProperties = propertiesCapture.getValue();
+    assertTrue(Maps.difference(newPropertiesAmsHbaseSite, updatedProperties).areEqual());
   }
 
   @Test
@@ -411,11 +549,39 @@ public class UpgradeCatalog222Test {
     final WidgetDAO widgetDAO = createNiceMock(WidgetDAO.class);
     final AmbariMetaInfo metaInfo = createNiceMock(AmbariMetaInfo.class);
     WidgetEntity widgetEntity = createNiceMock(WidgetEntity.class);
+    WidgetEntity widgetEntity2 = createNiceMock(WidgetEntity.class);
     StackId stackId = new StackId("HDP", "2.0.0");
     StackInfo stackInfo = createNiceMock(StackInfo.class);
     ServiceInfo serviceInfo = createNiceMock(ServiceInfo.class);
 
-    String widgetStr = "{\"layouts\":[{\"layout_name\":\"default_hdfs_dashboard\",\"display_name\":\"Standard HDFS Dashboard\",\"section_name\":\"HDFS_SUMMARY\",\"widgetLayoutInfo\":[{\"widget_name\":\"NameNode RPC\",\"metrics\":[],\"values\":[]}]}]}";
+    String widgetStr = "{\n" +
+      "  \"layouts\": [\n" +
+      "    {\n" +
+      "      \"layout_name\": \"default_hdfs_dashboard\",\n" +
+      "      \"display_name\": \"Standard HDFS Dashboard\",\n" +
+      "      \"section_name\": \"HDFS_SUMMARY\",\n" +
+      "      \"widgetLayoutInfo\": [\n" +
+      "        {\n" +
+      "          \"widget_name\": \"NameNode RPC\",\n" +
+      "          \"metrics\": [],\n" +
+      "          \"values\": []\n" +
+      "        }\n" +
+      "      ]\n" +
+      "    },\n" +
+      "        {\n" +
+      "      \"layout_name\": \"default_hdfs_heatmap\",\n" +
+      "      \"display_name\": \"Standard HDFS HeatMaps\",\n" +
+      "      \"section_name\": \"HDFS_HEATMAPS\",\n" +
+      "      \"widgetLayoutInfo\": [\n" +
+      "        {\n" +
+      "          \"widget_name\": \"HDFS Bytes Read\",\n" +
+      "          \"metrics\": [],\n" +
+      "          \"values\": []\n" +
+      "        }\n" +
+      "      ]\n" +
+      "    }\n" +
+      "  ]\n" +
+      "}";
 
     File dataDirectory = temporaryFolder.newFolder();
     File file = new File(dataDirectory, "hdfs_widget.json");
@@ -441,17 +607,182 @@ public class UpgradeCatalog222Test {
     }}).anyTimes();
     expect(cluster.getClusterId()).andReturn(1L).anyTimes();
     expect(stackInfo.getService("HDFS")).andReturn(serviceInfo);
+    expect(cluster.getDesiredStackVersion()).andReturn(stackId).anyTimes();
+    expect(metaInfo.getStack("HDP", "2.0.0")).andReturn(stackInfo).anyTimes();
+    expect(serviceInfo.getWidgetsDescriptorFile()).andReturn(file).anyTimes();
+
     expect(widgetDAO.findByName(1L, "NameNode RPC", "ambari", "HDFS_SUMMARY"))
       .andReturn(Collections.singletonList(widgetEntity));
-    expect(cluster.getDesiredStackVersion()).andReturn(stackId);
-    expect(metaInfo.getStack("HDP", "2.0.0")).andReturn(stackInfo);
-    expect(serviceInfo.getWidgetsDescriptorFile()).andReturn(file);
     expect(widgetDAO.merge(widgetEntity)).andReturn(null);
     expect(widgetEntity.getWidgetName()).andReturn("Namenode RPC").anyTimes();
 
-    replay(clusters, cluster, controller, widgetDAO, metaInfo, widgetEntity, stackInfo, serviceInfo);
+    expect(widgetDAO.findByName(1L, "HDFS Bytes Read", "ambari", "HDFS_HEATMAPS"))
+      .andReturn(Collections.singletonList(widgetEntity2));
+    expect(widgetDAO.merge(widgetEntity2)).andReturn(null);
+    expect(widgetEntity2.getWidgetName()).andReturn("HDFS Bytes Read").anyTimes();
+
+    replay(clusters, cluster, controller, widgetDAO, metaInfo, widgetEntity, widgetEntity2, stackInfo, serviceInfo);
 
     mockInjector.getInstance(UpgradeCatalog222.class).updateHDFSWidgetDefinition();
+
+    verify(clusters, cluster, controller, widgetDAO, widgetEntity, widgetEntity2, stackInfo, serviceInfo);
+  }
+
+  @Test
+  public void testYARNWidgetUpdate() throws Exception {
+    final Clusters clusters = createNiceMock(Clusters.class);
+    final Cluster cluster = createNiceMock(Cluster.class);
+    final AmbariManagementController controller = createNiceMock(AmbariManagementController.class);
+    final Gson gson = new Gson();
+    final WidgetDAO widgetDAO = createNiceMock(WidgetDAO.class);
+    final AmbariMetaInfo metaInfo = createNiceMock(AmbariMetaInfo.class);
+    WidgetEntity widgetEntity = createNiceMock(WidgetEntity.class);
+    WidgetEntity widgetEntity2 = createNiceMock(WidgetEntity.class);
+    StackId stackId = new StackId("HDP", "2.0.0");
+    StackInfo stackInfo = createNiceMock(StackInfo.class);
+    ServiceInfo serviceInfo = createNiceMock(ServiceInfo.class);
+
+    String widgetStr = "{\n" +
+      "  \"layouts\": [\n" +
+      "    {\n" +
+      "      \"layout_name\": \"default_yarn_dashboard\",\n" +
+      "      \"display_name\": \"Standard YARN Dashboard\",\n" +
+      "      \"section_name\": \"YARN_SUMMARY\",\n" +
+      "      \"widgetLayoutInfo\": [\n" +
+      "        {\n" +
+      "          \"widget_name\": \"Container Failures\",\n" +
+      "          \"metrics\": [],\n" +
+      "          \"values\": []\n" +
+      "        }\n" +
+      "      ]\n" +
+      "    },\n" +
+      "        {\n" +
+      "      \"layout_name\": \"default_yarn_heatmap\",\n" +
+      "      \"display_name\": \"Standard YARN HeatMaps\",\n" +
+      "      \"section_name\": \"YARN_HEATMAPS\",\n" +
+      "      \"widgetLayoutInfo\": [\n" +
+      "        {\n" +
+      "          \"widget_name\": \"Container Failures\",\n" +
+      "          \"metrics\": [],\n" +
+      "          \"values\": []\n" +
+      "        }\n" +
+      "      ]\n" +
+      "    }\n" +
+      "  ]\n" +
+      "}";
+
+    File dataDirectory = temporaryFolder.newFolder();
+    File file = new File(dataDirectory, "yarn_widget.json");
+    FileUtils.writeStringToFile(file, widgetStr);
+
+    final Injector mockInjector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(EntityManager.class).toInstance(createNiceMock(EntityManager.class));
+        bind(AmbariManagementController.class).toInstance(controller);
+        bind(Clusters.class).toInstance(clusters);
+        bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
+        bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
+        bind(Gson.class).toInstance(gson);
+        bind(WidgetDAO.class).toInstance(widgetDAO);
+        bind(StackManagerFactory.class).toInstance(createNiceMock(StackManagerFactory.class));
+        bind(AmbariMetaInfo.class).toInstance(metaInfo);
+      }
+    });
+    expect(controller.getClusters()).andReturn(clusters).anyTimes();
+    expect(clusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
+      put("normal", cluster);
+    }}).anyTimes();
+    expect(cluster.getClusterId()).andReturn(1L).anyTimes();
+    expect(stackInfo.getService("YARN")).andReturn(serviceInfo);
+    expect(cluster.getDesiredStackVersion()).andReturn(stackId).anyTimes();
+    expect(metaInfo.getStack("HDP", "2.0.0")).andReturn(stackInfo).anyTimes();
+    expect(serviceInfo.getWidgetsDescriptorFile()).andReturn(file).anyTimes();
+
+    expect(widgetDAO.findByName(1L, "Container Failures", "ambari", "YARN_SUMMARY"))
+      .andReturn(Collections.singletonList(widgetEntity));
+    expect(widgetDAO.merge(widgetEntity)).andReturn(null);
+    expect(widgetEntity.getWidgetName()).andReturn("Container Failures").anyTimes();
+
+    expect(widgetDAO.findByName(1L, "Container Failures", "ambari", "YARN_HEATMAPS"))
+      .andReturn(Collections.singletonList(widgetEntity2));
+    expect(widgetDAO.merge(widgetEntity2)).andReturn(null);
+    expect(widgetEntity2.getWidgetName()).andReturn("Container Failures").anyTimes();
+
+    replay(clusters, cluster, controller, widgetDAO, metaInfo, widgetEntity, widgetEntity2, stackInfo, serviceInfo);
+
+    mockInjector.getInstance(UpgradeCatalog222.class).updateYARNWidgetDefinition();
+
+    verify(clusters, cluster, controller, widgetDAO, widgetEntity, widgetEntity2, stackInfo, serviceInfo);
+  }
+
+
+  @Test
+  public void testHBASEWidgetUpdate() throws Exception {
+    final Clusters clusters = createNiceMock(Clusters.class);
+    final Cluster cluster = createNiceMock(Cluster.class);
+    final AmbariManagementController controller = createNiceMock(AmbariManagementController.class);
+    final Gson gson = new Gson();
+    final WidgetDAO widgetDAO = createNiceMock(WidgetDAO.class);
+    final AmbariMetaInfo metaInfo = createNiceMock(AmbariMetaInfo.class);
+    WidgetEntity widgetEntity = createNiceMock(WidgetEntity.class);
+    StackId stackId = new StackId("HDP", "2.0.0");
+    StackInfo stackInfo = createNiceMock(StackInfo.class);
+    ServiceInfo serviceInfo = createNiceMock(ServiceInfo.class);
+
+    String widgetStr = "{\n" +
+      "  \"layouts\": [\n" +
+      "    {\n" +
+      "      \"layout_name\": \"default_hbase_dashboard\",\n" +
+      "      \"display_name\": \"Standard HBASE Dashboard\",\n" +
+      "      \"section_name\": \"HBASE_SUMMARY\",\n" +
+      "      \"widgetLayoutInfo\": [\n" +
+      "        {\n" +
+      "          \"widget_name\": \"Blocked Updates\",\n" +
+      "          \"metrics\": [],\n" +
+      "          \"values\": []\n" +
+      "        }\n" +
+      "      ]\n" +
+      "    } " +
+      "]\n" +
+      "}";
+
+    File dataDirectory = temporaryFolder.newFolder();
+    File file = new File(dataDirectory, "hbase_widget.json");
+    FileUtils.writeStringToFile(file, widgetStr);
+
+    final Injector mockInjector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(EntityManager.class).toInstance(createNiceMock(EntityManager.class));
+        bind(AmbariManagementController.class).toInstance(controller);
+        bind(Clusters.class).toInstance(clusters);
+        bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
+        bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
+        bind(Gson.class).toInstance(gson);
+        bind(WidgetDAO.class).toInstance(widgetDAO);
+        bind(StackManagerFactory.class).toInstance(createNiceMock(StackManagerFactory.class));
+        bind(AmbariMetaInfo.class).toInstance(metaInfo);
+      }
+    });
+    expect(controller.getClusters()).andReturn(clusters).anyTimes();
+    expect(clusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
+      put("normal", cluster);
+    }}).anyTimes();
+    expect(cluster.getClusterId()).andReturn(1L).anyTimes();
+    expect(stackInfo.getService("HBASE")).andReturn(serviceInfo);
+    expect(cluster.getDesiredStackVersion()).andReturn(stackId).anyTimes();
+    expect(metaInfo.getStack("HDP", "2.0.0")).andReturn(stackInfo).anyTimes();
+    expect(serviceInfo.getWidgetsDescriptorFile()).andReturn(file).anyTimes();
+
+    expect(widgetDAO.findByName(1L, "Blocked Updates", "ambari", "HBASE_SUMMARY"))
+      .andReturn(Collections.singletonList(widgetEntity));
+    expect(widgetDAO.merge(widgetEntity)).andReturn(null);
+    expect(widgetEntity.getWidgetName()).andReturn("Blocked Updates").anyTimes();
+
+    replay(clusters, cluster, controller, widgetDAO, metaInfo, widgetEntity, stackInfo, serviceInfo);
+
+    mockInjector.getInstance(UpgradeCatalog222.class).updateHBASEWidgetDefinition();
 
     verify(clusters, cluster, controller, widgetDAO, widgetEntity, stackInfo, serviceInfo);
   }
@@ -459,7 +790,7 @@ public class UpgradeCatalog222Test {
   @Test
   public void testUpdateHostRoleCommands() throws Exception {
     final DBAccessor dbAccessor = createNiceMock(DBAccessor.class);
-    dbAccessor.createIndex(eq("idx_hrc_status"), eq("host_role_command"), eq("status"), eq("role"));
+    dbAccessor.createIndex(eq("idx_hrc_status_role"), eq("host_role_command"), eq("status"), eq("role"));
     expectLastCall().once();
 
     replay(dbAccessor);
@@ -556,6 +887,89 @@ public class UpgradeCatalog222Test {
       UpgradeCatalog222.WIDGET_VALUES_VALUE,
       UpgradeCatalog222.WIDGET_CORRUPT_BLOCKS)));
 
+  }
+
+  @Test
+  public void testCreateNewSliderConfigVersion() throws AmbariException {
+    EasyMockSupport easyMockSupport = new EasyMockSupport();
+    final AmbariManagementController mockAmbariManagementController = easyMockSupport.createNiceMock(AmbariManagementController.class);
+    final Clusters mockClusters = easyMockSupport.createStrictMock(Clusters.class);
+    final Cluster mockClusterExpected = easyMockSupport.createNiceMock(Cluster.class);
+    final Service mockSliderService = easyMockSupport.createNiceMock(Service.class);
+
+    final Injector mockInjector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(AmbariManagementController.class).toInstance(mockAmbariManagementController);
+        bind(Clusters.class).toInstance(mockClusters);
+        bind(EntityManager.class).toInstance(entityManager);
+        bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
+        bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
+      }
+    });
+
+    expect(mockAmbariManagementController.getClusters()).andReturn(mockClusters).once();
+    expect(mockClusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
+      put("normal", mockClusterExpected);
+    }}).atLeastOnce();
+    expect(mockClusterExpected.getService("SLIDER")).andReturn(mockSliderService);
+    expect(mockClusterExpected.createServiceConfigVersion("SLIDER", "ambari-upgrade", "Creating new service config version for SLIDER service.", null)).andReturn(null).once();
+
+    easyMockSupport.replayAll();
+    mockInjector.getInstance(UpgradeCatalog222.class).createNewSliderConfigVersion();
+    easyMockSupport.verifyAll();
+  }
+
+  @Test
+  public void testInitializeStromAndKafkaWidgets() throws AmbariException {
+
+    String stormServiceName = "STORM";
+    String kafkaServiceName = "KAFKA";
+    String hbaseServiceName = "HBASE";
+
+    final AmbariManagementController controller = createStrictMock(AmbariManagementController.class);
+    final Clusters clusters = createStrictMock(Clusters.class);
+    final Cluster cluster = createStrictMock(Cluster.class);
+    final Service stormService = createStrictMock(Service.class);
+    final Service kafkaService = createStrictMock(Service.class);
+    final Service hbaseService = createStrictMock(Service.class);
+    final Map<String, Cluster> clusterMap = Collections.singletonMap("c1", cluster);
+    final Map<String, Service> services = new HashMap<>();
+    services.put(stormServiceName, stormService);
+    services.put(kafkaServiceName, kafkaService);
+    services.put(hbaseServiceName, hbaseService);
+
+
+    Module module = new Module() {
+      @Override
+      public void configure(Binder binder) {
+        binder.bind(AmbariManagementController.class).toInstance(controller);
+        binder.bind(Clusters.class).toInstance(clusters);
+        binder.bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
+        binder.bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
+      }
+    };
+
+    expect(controller.getClusters()).andReturn(clusters).anyTimes();
+    expect(clusters.getClusters()).andReturn(clusterMap).anyTimes();
+
+    expect(cluster.getServices()).andReturn(services).once();
+    expect(stormService.getName()).andReturn(stormServiceName).atLeastOnce();
+    expect(kafkaService.getName()).andReturn(kafkaServiceName).atLeastOnce();
+    expect(hbaseService.getName()).andReturn(hbaseServiceName).atLeastOnce();
+
+    controller.initializeWidgetsAndLayouts(cluster, kafkaService);
+    expectLastCall().once();
+    controller.initializeWidgetsAndLayouts(cluster, stormService);
+    expectLastCall().once();
+    // but no controller call for HBase
+
+    replay(controller, clusters, cluster, stormService, kafkaService, hbaseService);
+
+    Injector injector = Guice.createInjector(module);
+    injector.getInstance(UpgradeCatalog222.class).initializeStromAndKafkaWidgets();
+
+    verify(controller, clusters, cluster, stormService, kafkaService, hbaseService);
   }
 
 }

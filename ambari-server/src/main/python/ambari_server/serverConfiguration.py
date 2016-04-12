@@ -27,12 +27,13 @@ import stat
 import string
 import sys
 import tempfile
+import getpass
 import ambari_server.serverClassPath
 
 from ambari_commons.exceptions import FatalException
 from ambari_commons.os_check import OSCheck, OSConst
 from ambari_commons.os_family_impl import OsFamilyImpl
-from ambari_commons.os_utils import run_os_command, search_file, set_file_permissions
+from ambari_commons.os_utils import run_os_command, search_file, set_file_permissions, parse_log4j_file
 from ambari_commons.logging_utils import get_debug_mode, print_info_msg, print_warning_msg, print_error_msg, \
   set_debug_mode
 from ambari_server.properties import Properties
@@ -59,6 +60,7 @@ OS_FAMILY_PROPERTY = "server.os_family"
 OS_TYPE_PROPERTY = "server.os_type"
 
 BOOTSTRAP_DIR_PROPERTY = "bootstrap.dir"
+RECOMMENDATIONS_DIR_PROPERTY = 'recommendations.dir'
 
 AMBARI_CONF_VAR = "AMBARI_CONF_DIR"
 AMBARI_PROPERTIES_FILE = "ambari.properties"
@@ -183,17 +185,60 @@ DEFAULT_DB_NAME = "ambari"
 
 SECURITY_KEYS_DIR = "security.server.keys_dir"
 COMMON_SERVICES_PATH_PROPERTY = 'common.services.path'
+MPACKS_STAGING_PATH_PROPERTY = 'mpacks.staging.path'
 WEBAPP_DIR_PROPERTY = 'webapp.dir'
 SHARED_RESOURCES_DIR = 'shared.resources.dir'
 BOOTSTRAP_SCRIPT = 'bootstrap.script'
 CUSTOM_ACTION_DEFINITIONS = 'custom.action.definitions'
 BOOTSTRAP_SETUP_AGENT_SCRIPT = 'bootstrap.setup_agent.script'
 STACKADVISOR_SCRIPT = 'stackadvisor.script'
+PID_DIR_PROPERTY = 'pid.dir'
 REQUIRED_PROPERTIES = [OS_FAMILY_PROPERTY, OS_TYPE_PROPERTY, COMMON_SERVICES_PATH_PROPERTY, SERVER_VERSION_FILE_PATH,
                        WEBAPP_DIR_PROPERTY, STACK_LOCATION_KEY, SECURITY_KEYS_DIR, JDBC_DATABASE_NAME_PROPERTY,
                        NR_USER_PROPERTY, JAVA_HOME_PROPERTY, JDBC_PASSWORD_PROPERTY, SHARED_RESOURCES_DIR,
                        JDBC_USER_NAME_PROPERTY, BOOTSTRAP_SCRIPT, RESOURCES_DIR_PROPERTY, CUSTOM_ACTION_DEFINITIONS,
-                       BOOTSTRAP_SETUP_AGENT_SCRIPT, STACKADVISOR_SCRIPT, BOOTSTRAP_DIR_PROPERTY]
+                       BOOTSTRAP_SETUP_AGENT_SCRIPT, STACKADVISOR_SCRIPT, BOOTSTRAP_DIR_PROPERTY, PID_DIR_PROPERTY,
+                       MPACKS_STAGING_PATH_PROPERTY]
+
+def get_conf_dir():
+  try:
+    conf_dir = os.environ[AMBARI_CONF_VAR]
+    return conf_dir
+  except KeyError:
+    default_conf_dir = AmbariPath.get("/etc/ambari-server/conf")
+    print_info_msg(AMBARI_CONF_VAR + " is not set, using default " + default_conf_dir)
+    return default_conf_dir
+
+def find_properties_file():
+  conf_file = search_file(AMBARI_PROPERTIES_FILE, get_conf_dir())
+  if conf_file is None:
+    err = 'File %s not found in search path $%s: %s' % (AMBARI_PROPERTIES_FILE,
+          AMBARI_CONF_VAR, get_conf_dir())
+    print err
+    raise FatalException(1, err)
+  else:
+    print_info_msg('Loading properties from ' + conf_file)
+  return conf_file
+
+# Load ambari properties and return dict with values
+def get_ambari_properties():
+  conf_file = find_properties_file()
+
+  properties = None
+  try:
+    properties = Properties()
+    with open(conf_file) as hfR:
+      properties.load(hfR)
+
+    root = os.environ["ROOT"].rstrip("/")
+
+    for k,v in properties.iteritems():
+      properties.__dict__[k] = v.replace("$ROOT", root)
+      properties._props[k] = v.replace("$ROOT", root)
+  except (Exception), e:
+    print 'Could not read "%s": %s' % (conf_file, e)
+    return -1
+  return properties
 
 class ServerDatabaseType(object):
   internal = 0
@@ -279,9 +324,13 @@ class ServerDatabases(object):
 
 class ServerConfigDefaults(object):
   def __init__(self):
+    properties = get_ambari_properties()
+    if properties == -1:
+      print_error_msg("Error getting ambari properties")
+  
     self.JAVA_SHARE_PATH = "/usr/share/java"
     self.SHARE_PATH = "/usr/share"
-    self.OUT_DIR = AmbariPath.get(os.sep + os.path.join("var", "log", "ambari-server"))
+    self.OUT_DIR = parse_log4j_file(get_conf_dir() + "/log4j.properties")['ambari.log.dir'].replace("//", "/")
     self.SERVER_OUT_FILE = os.path.join(self.OUT_DIR, "ambari-server.out")
     self.SERVER_LOG_FILE = os.path.join(self.OUT_DIR, "ambari-server.log")
     self.ROOT_FS_PATH = os.sep
@@ -294,7 +343,13 @@ class ServerConfigDefaults(object):
 
     # Configuration defaults
     self.DEFAULT_CONF_DIR = ""
-    self.PID_DIR = AmbariPath.get(os.sep + os.path.join("var", "run", "ambari-server"))
+    self.PID_DIR = properties.get_property(PID_DIR_PROPERTY)
+    self.BOOTSTRAP_DIR = properties.get_property(BOOTSTRAP_DIR_PROPERTY)
+    self.RECOMMENDATIONS_DIR = properties.get_property(RECOMMENDATIONS_DIR_PROPERTY)
+    
+    # this directories should be pre-created by user and be writable.
+    self.check_if_directories_writable([self.OUT_DIR, self.PID_DIR])
+    
     self.DEFAULT_LIBS_DIR = ""
     self.DEFAULT_VLIBS_DIR = ""
 
@@ -317,6 +372,8 @@ class ServerConfigDefaults(object):
     self.DEFAULT_DB_NAME = "ambari"
 
     self.STACK_LOCATION_DEFAULT = ""
+    self.COMMON_SERVICES_LOCATION_DEFAULT = ""
+    self.MPACKS_STAGING_LOCATION_DEFAULT = ""
 
     self.DEFAULT_VIEWS_DIR = ""
 
@@ -329,6 +386,11 @@ class ServerConfigDefaults(object):
     self.MESSAGE_ERROR_RESET_NOT_ROOT = ""
     self.MESSAGE_ERROR_UPGRADE_NOT_ROOT = ""
     self.MESSAGE_CHECK_FIREWALL = ""
+    
+  def check_if_directories_writable(self, directories):
+    for directory in directories:
+      if not os.path.isdir(directory) or not os.access(directory, os.W_OK):
+        raise FatalException(-1, "Unable to access {0} directory. Confirm the directory is created and is writable by the Ambari Server user account '{1}'".format(directory, getpass.getuser()))
 
 @OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
 class ServerConfigDefaultsWindows(ServerConfigDefaults):
@@ -372,6 +434,8 @@ class ServerConfigDefaultsWindows(ServerConfigDefaults):
 
     self.SERVER_RESOURCES_DIR = "resources"
     self.STACK_LOCATION_DEFAULT = "resources\\stacks"
+    self.COMMON_SERVICES_LOCATION_DEFAULT = "resources\\common-services"
+    self.MPACKS_STAGING_LOCATION_DEFAULT = "resources\\mpacks"
 
     self.DEFAULT_VIEWS_DIR = "resources\\views"
 
@@ -407,11 +471,11 @@ class ServerConfigDefaultsLinux(ServerConfigDefaults):
     # Rules are executed in the same order as they are listed
     # {0} in user/group will be replaced by customized ambari-server username
     self.NR_ADJUST_OWNERSHIP_LIST = [
-      (AmbariPath.get("/var/log/ambari-server/*"), "644", "{0}", True),
-      (AmbariPath.get("/var/log/ambari-server/"), "755", "{0}", False),
-      (AmbariPath.get("/var/run/ambari-server/*"), "644", "{0}", True),
-      (AmbariPath.get("/var/run/ambari-server/"), "755", "{0}", False),
-      (AmbariPath.get("/var/run/ambari-server/bootstrap"), "755", "{0}", False),
+      (self.OUT_DIR + "/*", "644", "{0}", True),
+      (self.OUT_DIR, "755", "{0}", False),
+      (self.PID_DIR + "/*", "644", "{0}", True),
+      (self.PID_DIR, "755", "{0}", False),
+      (self.BOOTSTRAP_DIR, "755", "{0}", False),
       (AmbariPath.get("/var/lib/ambari-server/ambari-env.sh"), "700", "{0}", False),
       (AmbariPath.get("/var/lib/ambari-server/ambari-sudo.sh"), "700", "{0}", False),
       (AmbariPath.get("/var/lib/ambari-server/keys/*"), "600", "{0}", True),
@@ -431,8 +495,8 @@ class ServerConfigDefaultsLinux(ServerConfigDefaults):
       (AmbariPath.get("/etc/ambari-server/conf/password.dat"), "640", "{0}", False),
       (AmbariPath.get("/var/lib/ambari-server/keys/pass.txt"), "600", "{0}", False),
       (AmbariPath.get("/etc/ambari-server/conf/ldap-password.dat"), "640", "{0}", False),
-      (AmbariPath.get("/var/run/ambari-server/stack-recommendations/"), "744", "{0}", True),
-      (AmbariPath.get("/var/run/ambari-server/stack-recommendations/"), "755", "{0}", False),
+      (self.RECOMMENDATIONS_DIR, "744", "{0}", True),
+      (self.RECOMMENDATIONS_DIR, "755", "{0}", False),
       (AmbariPath.get("/var/lib/ambari-server/resources/data/"), "644", "{0}", False),
       (AmbariPath.get("/var/lib/ambari-server/resources/data/"), "755", "{0}", False),
       (AmbariPath.get("/var/lib/ambari-server/data/tmp/*"), "644", "{0}", True),
@@ -445,8 +509,8 @@ class ServerConfigDefaultsLinux(ServerConfigDefaults):
     self.NR_CHANGE_OWNERSHIP_LIST = [
       (AmbariPath.get("/var/lib/ambari-server"), "{0}", True),
       (AmbariPath.get("/usr/lib/ambari-server"), "{0}", True),
-      (AmbariPath.get("/var/log/ambari-server"), "{0}", True),
-      (AmbariPath.get("/var/run/ambari-server"), "{0}", True),
+      (self.OUT_DIR, "{0}", True),
+      (self.PID_DIR, "{0}", True),
       (AmbariPath.get("/etc/ambari-server"), "{0}", True),
     ]
     self.NR_USERADD_CMD = 'useradd -M --comment "{1}" ' \
@@ -454,6 +518,8 @@ class ServerConfigDefaultsLinux(ServerConfigDefaults):
 
     self.SERVER_RESOURCES_DIR = AmbariPath.get("/var/lib/ambari-server/resources")
     self.STACK_LOCATION_DEFAULT = AmbariPath.get("/var/lib/ambari-server/resources/stacks")
+    self.COMMON_SERVICES_LOCATION_DEFAULT = AmbariPath.get("/var/lib/ambari-server/resources/common-services")
+    self.MPACKS_STAGING_LOCATION_DEFAULT = AmbariPath.get("/var/lib/ambari-server/resources/mpacks")
 
     self.DEFAULT_VIEWS_DIR = AmbariPath.get("/var/lib/ambari-server/resources/views")
 
@@ -493,44 +559,6 @@ SECURITY_PROVIDER_KEY_CMD = "{0} -cp {1} " + \
                             "> " + configDefaults.SERVER_OUT_FILE + " 2>&1"
 
 
-
-def get_conf_dir():
-  try:
-    conf_dir = os.environ[AMBARI_CONF_VAR]
-    return conf_dir
-  except KeyError:
-    default_conf_dir = configDefaults.DEFAULT_CONF_DIR
-    print_info_msg(AMBARI_CONF_VAR + " is not set, using default " + default_conf_dir)
-    return default_conf_dir
-
-def find_properties_file():
-  conf_file = search_file(AMBARI_PROPERTIES_FILE, get_conf_dir())
-  if conf_file is None:
-    err = 'File %s not found in search path $%s: %s' % (AMBARI_PROPERTIES_FILE,
-          AMBARI_CONF_VAR, get_conf_dir())
-    print err
-    raise FatalException(1, err)
-  else:
-    print_info_msg('Loading properties from ' + conf_file)
-  return conf_file
-
-# Load ambari properties and return dict with values
-def get_ambari_properties():
-  conf_file = find_properties_file()
-
-  properties = None
-  try:
-    properties = Properties()
-    with open(conf_file) as hfR:
-      properties.load(hfR)
-      
-    for k,v in properties.iteritems():
-      properties.__dict__[k] = v.replace("$ROOT", os.environ["ROOT"])
-      properties._props[k] = v.replace("$ROOT", os.environ["ROOT"])
-  except (Exception), e:
-    print 'Could not read "%s": %s' % (conf_file, e)
-    return -1
-  return properties
 
 def read_ambari_user():
   '''
@@ -736,20 +764,20 @@ def update_database_name_property(upgrade=False):
       raise FatalException(-1, err)
 
 
-def encrypt_password(alias, password):
+def encrypt_password(alias, password, options):
   properties = get_ambari_properties()
   if properties == -1:
     raise FatalException(1, None)
-  return get_encrypted_password(alias, password, properties)
+  return get_encrypted_password(alias, password, properties, options)
 
-def get_encrypted_password(alias, password, properties):
+def get_encrypted_password(alias, password, properties, options):
   isSecure = get_is_secure(properties)
   (isPersisted, masterKeyFile) = get_is_persisted(properties)
   if isSecure:
     masterKey = None
     if not masterKeyFile:
       # Encryption enabled but no master key file found
-      masterKey = get_original_master_key(properties)
+      masterKey = get_original_master_key(properties, options)
 
     retCode = save_passwd_for_alias(alias, password, masterKey)
     if retCode != 0:
@@ -776,7 +804,7 @@ def get_alias_string(alias):
 def get_alias_from_alias_string(aliasStr):
   return aliasStr[8:-1]
 
-def read_passwd_for_alias(alias, masterKey=""):
+def read_passwd_for_alias(alias, masterKey="", options=None):
   if alias:
     jdk_path = find_jdk()
     if jdk_path is None:
@@ -793,6 +821,8 @@ def read_passwd_for_alias(alias, masterKey=""):
     with open(tempFilePath, 'w+'):
       os.chmod(tempFilePath, stat.S_IREAD | stat.S_IWRITE)
 
+    if options is not None and options.master_key is not None and options.master_key:
+      masterKey = options.master_key
     if masterKey is None or masterKey == "":
       masterKey = "None"
 
@@ -813,16 +843,15 @@ def read_passwd_for_alias(alias, masterKey=""):
   else:
     print_error_msg("Alias is unreadable.")
 
-def decrypt_password_for_alias(properties, alias):
+def decrypt_password_for_alias(properties, alias, options=None):
   isSecure = get_is_secure(properties)
   if isSecure:
     masterKey = None
     (isPersisted, masterKeyFile) = get_is_persisted(properties)
     if not masterKeyFile:
       # Encryption enabled but no master key file found
-      masterKey = get_original_master_key(properties)
-
-    return read_passwd_for_alias(alias, masterKey)
+      masterKey = get_original_master_key(properties, options)
+    return read_passwd_for_alias(alias, masterKey, options)
   else:
     return alias
 
@@ -880,12 +909,16 @@ def remove_password_file(filename):
   return 0
 
 
-def get_original_master_key(properties):
+def get_original_master_key(properties, options = None):
   input = True
+  masterKey = None
   while(input):
     try:
-      masterKey = get_validated_string_input('Enter current Master Key: ',
-                                             "", ".*", "", True, False)
+      if options is not None and options.master_key is not None and options.master_key:
+        masterKey = options.master_key
+      if masterKey is None:
+        masterKey = get_validated_string_input('Enter current Master Key: ',
+                                               "", ".*", "", True, False)
     except KeyboardInterrupt:
       print 'Exiting...'
       sys.exit(1)
@@ -908,7 +941,7 @@ def get_original_master_key(properties):
 
     # Decrypt alias with master to validate it, if no master return
     if alias and masterKey:
-      password = read_passwd_for_alias(alias, masterKey)
+      password = read_passwd_for_alias(alias, masterKey, options)
       if not password:
         print "ERROR: Master key does not match."
         continue
@@ -1317,13 +1350,31 @@ def get_resources_location(properties):
   return resources_dir
 
 #
-# Stack upgrade
+# Stack location
 #
 def get_stack_location(properties):
   stack_location = properties[STACK_LOCATION_KEY]
   if stack_location is None:
     stack_location = configDefaults.STACK_LOCATION_DEFAULT
   return stack_location
+
+#
+# Common services location
+#
+def get_common_services_location(properties):
+  common_services_location = properties[COMMON_SERVICES_PATH_PROPERTY]
+  if common_services_location is None:
+    common_services_location = configDefaults.COMMON_SERVICES_LOCATION_DEFAULT
+  return common_services_location
+
+#
+# Management packs staging location
+#
+def get_mpacks_staging_location(properties):
+  mpacks_staging_location = properties[MPACKS_STAGING_PATH_PROPERTY]
+  if mpacks_staging_location is None:
+    mpacks_staging_location = configDefaults.MPACKS_STAGING_LOCATION_DEFAULT
+  return mpacks_staging_location
 
 def get_missing_properties(properties):
   missing_propertiers = []

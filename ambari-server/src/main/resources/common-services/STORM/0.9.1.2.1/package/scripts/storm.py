@@ -26,7 +26,8 @@ from resource_management.libraries.resources.template_config import TemplateConf
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.script.script import Script
 from resource_management.core.source import Template
-from resource_management.libraries.functions import compare_versions
+from resource_management.libraries.functions.stack_features import check_stack_feature
+from resource_management.libraries.functions import StackFeature
 from storm_yaml_utils import yaml_config_template, yaml_config
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from ambari_commons import OSConst
@@ -51,6 +52,7 @@ def storm(name=None):
 @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
 def storm(name=None):
   import params
+  import os
 
   Directory(params.log_dir,
             owner=params.storm_user,
@@ -92,6 +94,18 @@ def storm(name=None):
        content=InlineTemplate(params.storm_env_sh_template)
   )
 
+  if params.has_atlas:
+    atlas_storm_hook_dir = os.path.join(params.atlas_home_dir, "hook", "storm")
+    if os.path.exists(atlas_storm_hook_dir):
+      storm_extlib_dir = os.path.join(params.storm_component_home_dir, "extlib")
+      if os.path.exists(storm_extlib_dir):
+        src_files = os.listdir(atlas_storm_hook_dir)
+        for file_name in src_files:
+          atlas_storm_hook_file_name = os.path.join(atlas_storm_hook_dir, file_name)
+          storm_lib_file_name = os.path.join(storm_extlib_dir, file_name)
+          if (os.path.isfile(atlas_storm_hook_file_name)):
+            Link(storm_lib_file_name, to = atlas_storm_hook_file_name)
+
   if params.has_metric_collector:
     File(format("{conf_dir}/storm-metrics2.properties"),
         owner=params.storm_user,
@@ -126,12 +140,12 @@ def storm(name=None):
       owner=params.storm_user,
       content=InlineTemplate(params.storm_worker_log4j_content)
     )
-  
+
   if params.security_enabled:
     TemplateConfig(format("{conf_dir}/storm_jaas.conf"),
                    owner=params.storm_user
     )
-    if params.stack_version_formatted != "" and compare_versions(params.stack_version_formatted, '2.2') >= 0:
+    if params.stack_version_formatted and check_stack_feature(StackFeature.ROLLING_UPGRADE, params.stack_version_formatted):
       TemplateConfig(format("{conf_dir}/client_jaas.conf"),
                      owner=params.storm_user
       )

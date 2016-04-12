@@ -19,17 +19,20 @@ limitations under the License.
 from metadata import metadata
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import stack_select
-from resource_management import Execute, check_process_status, Script
+from resource_management import Execute, File, check_process_status, Script
 from resource_management.libraries.functions import format
-from resource_management.libraries.functions.version import compare_versions, format_stack_version
 from resource_management.libraries.functions.security_commons import build_expectations, \
   get_params_from_filesystem, validate_security_config_properties, \
   FILE_TYPE_PROPERTIES
+from resource_management.libraries.functions.show_logs import show_logs
+from resource_management.libraries.functions.stack_features import check_stack_feature
+from resource_management.libraries.functions import StackFeature
 
 class MetadataServer(Script):
 
   def get_stack_to_component(self):
-    return {"HDP": "atlas-server"}
+    import params
+    return {params.stack_name: "atlas-server"}
 
   def install(self, env):
     self.install_packages(env)
@@ -43,8 +46,11 @@ class MetadataServer(Script):
     import params
     env.set_params(params)
 
-    if params.version and compare_versions(format_stack_version(params.version), '2.3.0.0') >= 0:
-      # conf_select.select(params.stack_name, "atlas", params.version)
+    # TODO: Add ATLAS_CONFIG_VERSIONING stack feature and uncomment this code when config versioning for Atlas is supported
+    #if params.version and check_stack_feature(StackFeature.ATLAS_CONFIG_VERSIONING, params.version):
+    #  conf_select.select(params.stack_name, "atlas", params.version)
+
+    if params.version and check_stack_feature(StackFeature.ATLAS_ROLLING_UPGRADE, params.version):
       stack_select.select("atlas-server", params.version)
 
   def start(self, env, upgrade_type=None):
@@ -54,19 +60,30 @@ class MetadataServer(Script):
 
     daemon_cmd = format('source {params.conf_dir}/atlas-env.sh ; {params.metadata_start_script}')
     no_op_test = format('ls {params.pid_file} >/dev/null 2>&1 && ps -p `cat {params.pid_file}` >/dev/null 2>&1')
-    Execute(daemon_cmd,
-            user=params.metadata_user,
-            not_if=no_op_test
-    )
+    
+    try:
+      Execute(daemon_cmd,
+              user=params.metadata_user,
+              not_if=no_op_test
+      )
+    except:
+      show_logs(params.log_dir, params.metadata_user)
+      raise
 
   def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     daemon_cmd = format('source {params.conf_dir}/atlas-env.sh; {params.metadata_stop_script}')
-    Execute(daemon_cmd,
-            user=params.metadata_user,
-    )
-    Execute (format("rm -f {params.pid_file}"))
+    
+    try:
+      Execute(daemon_cmd,
+              user=params.metadata_user,
+      )
+    except:
+      show_logs(params.log_dir, params.metadata_user)
+      raise
+    
+    File(params.pid_file, action="delete")
 
   def status(self, env):
     import status_params
@@ -96,7 +113,7 @@ class MetadataServer(Script):
     atlas_expectations.update(atlas_site_expectations)
 
     security_params = get_params_from_filesystem(status_params.conf_dir,
-                                                 {'application.properties': FILE_TYPE_PROPERTIES})
+                                                 {status_params.conf_file: FILE_TYPE_PROPERTIES})
     result_issues = validate_security_config_properties(security_params, atlas_expectations)
     if not result_issues:  # If all validations passed successfully
       try:

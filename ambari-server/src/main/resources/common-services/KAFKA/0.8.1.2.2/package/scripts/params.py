@@ -17,9 +17,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 """
+import os
 from resource_management.libraries.functions import format
 from resource_management.libraries.script.script import Script
-from resource_management.libraries.functions.version import format_stack_version, compare_versions
+from resource_management.libraries.functions.version import format_stack_version
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
 from resource_management.libraries.functions.default import default
 from utils import get_bare_principal
 from resource_management.libraries.functions.get_stack_version import get_stack_version
@@ -35,6 +38,7 @@ from resource_management.libraries.functions.get_not_managed_resources import ge
 # server configurations
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
+stack_root = Script.get_stack_root()
 stack_name = default("/hostLevelParams/stack_name", None)
 retryAble = default("/commandParams/command_retry_enabled", False)
 
@@ -46,7 +50,7 @@ current_version = default("/hostLevelParams/current_version", None)
 
 host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 
-stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
+stack_version_unformatted = config['hostLevelParams']['stack_version']
 stack_version_formatted = format_stack_version(stack_version_unformatted)
 upgrade_direction = default("/commandParams/upgrade_direction", None)
 
@@ -57,7 +61,7 @@ downgrade_from_version = default("/commandParams/downgrade_from_version", None)
 hostname = config['hostname']
 
 # default kafka parameters
-kafka_home = '/usr/lib/kafka/'
+kafka_home = '/usr/lib/kafka'
 kafka_bin = kafka_home+'/bin/kafka'
 conf_dir = "/etc/kafka/conf"
 limits_conf_dir = "/etc/security/limits.d"
@@ -69,11 +73,10 @@ kafka_user_nofile_limit = config['configurations']['kafka-env']['kafka_user_nofi
 kafka_user_nproc_limit = config['configurations']['kafka-env']['kafka_user_nproc_limit']
 
 # parameters for 2.2+
-if Script.is_stack_greater_or_equal("2.2"):
-  kafka_home = '/usr/hdp/current/kafka-broker/'
-  kafka_bin = kafka_home+'bin/kafka'
-  conf_dir = "/usr/hdp/current/kafka-broker/config"
-
+if stack_version_formatted and check_stack_feature(StackFeature.ROLLING_UPGRADE, stack_version_formatted):
+  kafka_home = os.path.join(stack_root,  "current", "kafka-broker")
+  kafka_bin = os.path.join(kafka_home, "bin", "kafka")
+  conf_dir = os.path.join(kafka_home, "config")
 
 kafka_user = config['configurations']['kafka-env']['kafka_user']
 kafka_log_dir = config['configurations']['kafka-env']['kafka_log_dir']
@@ -124,7 +127,7 @@ if has_metric_collector:
       'metrics_collector_vip_port' in config['configurations']['cluster-env']:
     metric_collector_port = config['configurations']['cluster-env']['metrics_collector_vip_port']
   else:
-    metric_collector_web_address = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "0.0.0.0:6188")
+    metric_collector_web_address = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "localhost:6188")
     if metric_collector_web_address.find(':') != -1:
       metric_collector_port = metric_collector_web_address.split(':')[1]
     else:
@@ -136,10 +139,13 @@ if has_metric_collector:
   pass
 # Security-related params
 security_enabled = config['configurations']['cluster-env']['security_enabled']
-kafka_kerberos_enabled = ('security.inter.broker.protocol' in config['configurations']['kafka-broker'] and
-                          config['configurations']['kafka-broker']['security.inter.broker.protocol'] == "PLAINTEXTSASL")
+kafka_kerberos_enabled = (('security.inter.broker.protocol' in config['configurations']['kafka-broker']) and
+                         ((config['configurations']['kafka-broker']['security.inter.broker.protocol'] == "PLAINTEXTSASL") or
+                          (config['configurations']['kafka-broker']['security.inter.broker.protocol'] == "SASL_PLAINTEXT")))
 
-if security_enabled and stack_version_formatted != "" and 'kafka_principal_name' in config['configurations']['kafka-env'] and compare_versions(stack_version_formatted, '2.3') >= 0:
+
+if security_enabled and stack_version_formatted != "" and 'kafka_principal_name' in config['configurations']['kafka-env'] \
+  and check_stack_feature(StackFeature.KAFKA_KERBEROS, stack_version_formatted):
     _hostname_lowercase = config['hostname'].lower()
     _kafka_principal_name = config['configurations']['kafka-env']['kafka_principal_name']
     kafka_jaas_principal = _kafka_principal_name.replace('_HOST',_hostname_lowercase)
@@ -166,7 +172,6 @@ if has_ranger_admin and is_supported_kafka_ranger:
   enable_ranger_kafka = config['configurations']['ranger-kafka-plugin-properties']['ranger-kafka-plugin-enabled']
   enable_ranger_kafka = not is_empty(enable_ranger_kafka) and enable_ranger_kafka.lower() == 'yes'
   policymgr_mgr_url = config['configurations']['admin-properties']['policymgr_external_url']
-  sql_connector_jar = config['configurations']['admin-properties']['SQL_CONNECTOR_JAR']
   xa_audit_db_flavor = config['configurations']['admin-properties']['DB_FLAVOR']
   xa_audit_db_flavor = xa_audit_db_flavor.lower() if xa_audit_db_flavor else None
   xa_audit_db_name = config['configurations']['admin-properties']['audit_db_name']
@@ -177,7 +182,7 @@ if has_ranger_admin and is_supported_kafka_ranger:
 
   ranger_env = config['configurations']['ranger-env']
   ranger_plugin_properties = config['configurations']['ranger-kafka-plugin-properties']
-  
+
   ranger_kafka_audit = config['configurations']['ranger-kafka-audit']
   ranger_kafka_audit_attrs = config['configuration_attributes']['ranger-kafka-audit']
   ranger_kafka_security = config['configurations']['ranger-kafka-security']
@@ -186,7 +191,7 @@ if has_ranger_admin and is_supported_kafka_ranger:
   ranger_kafka_policymgr_ssl_attrs = config['configuration_attributes']['ranger-kafka-policymgr-ssl']
 
   policy_user = config['configurations']['ranger-kafka-plugin-properties']['policy_user']
-  
+
   ranger_plugin_config = {
     'username' : config['configurations']['ranger-kafka-plugin-properties']['REPOSITORY_CONFIG_USERNAME'],
     'password' : unicode(config['configurations']['ranger-kafka-plugin-properties']['REPOSITORY_CONFIG_PASSWORD']),
@@ -207,13 +212,11 @@ if has_ranger_admin and is_supported_kafka_ranger:
   jdk_location = config['hostLevelParams']['jdk_location']
   java_share_dir = '/usr/share/java'
   if xa_audit_db_flavor and xa_audit_db_flavor == 'mysql':
-    jdbc_symlink_name = "mysql-jdbc-driver.jar"
-    jdbc_jar_name = "mysql-connector-java.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_mysql_jdbc_name", None)
     audit_jdbc_url = format('jdbc:mysql://{xa_db_host}/{xa_audit_db_name}')
     jdbc_driver = "com.mysql.jdbc.Driver"
   elif xa_audit_db_flavor and xa_audit_db_flavor == 'oracle':
-    jdbc_jar_name = "ojdbc6.jar"
-    jdbc_symlink_name = "oracle-jdbc-driver.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_oracle_jdbc_name", None)
     colon_count = xa_db_host.count(':')
     if colon_count == 2 or colon_count == 0:
       audit_jdbc_url = format('jdbc:oracle:thin:@{xa_db_host}')
@@ -221,25 +224,22 @@ if has_ranger_admin and is_supported_kafka_ranger:
       audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
     jdbc_driver = "oracle.jdbc.OracleDriver"
   elif xa_audit_db_flavor and xa_audit_db_flavor == 'postgres':
-    jdbc_jar_name = "postgresql.jar"
-    jdbc_symlink_name = "postgres-jdbc-driver.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_postgres_jdbc_name", None)
     audit_jdbc_url = format('jdbc:postgresql://{xa_db_host}/{xa_audit_db_name}')
     jdbc_driver = "org.postgresql.Driver"
   elif xa_audit_db_flavor and xa_audit_db_flavor == 'mssql':
-    jdbc_jar_name = "sqljdbc4.jar"
-    jdbc_symlink_name = "mssql-jdbc-driver.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_mssql_jdbc_name", None)
     audit_jdbc_url = format('jdbc:sqlserver://{xa_db_host};databaseName={xa_audit_db_name}')
     jdbc_driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
   elif xa_audit_db_flavor and xa_audit_db_flavor == 'sqla':
-    jdbc_jar_name = "sajdbc4.jar"
-    jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
+    jdbc_jar_name = default("/hostLevelParams/custom_sqlanywhere_jdbc_name", None)
     audit_jdbc_url = format('jdbc:sqlanywhere:database={xa_audit_db_name};host={xa_db_host}')
     jdbc_driver = "sap.jdbc4.sqlanywhere.IDriver"
 
   downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 
-  driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
-  driver_curl_target = format("{kafka_home}libs/{jdbc_jar_name}")
+  driver_curl_source = format("{jdk_location}/{jdbc_jar_name}")
+  driver_curl_target = format("{kafka_home}/libs/{jdbc_jar_name}")
 
   ranger_audit_solr_urls = config['configurations']['ranger-admin-site']['ranger.audit.solr.urls']
   xa_audit_db_is_enabled = config['configurations']['ranger-kafka-audit']['xasecure.audit.destination.db'] if xml_configurations_supported else None
@@ -249,7 +249,7 @@ if has_ranger_admin and is_supported_kafka_ranger:
   credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None
 
   stack_version = get_stack_version('kafka-broker')
-  setup_ranger_env_sh_source = format('/usr/hdp/{stack_version}/ranger-kafka-plugin/install/conf.templates/enable/kafka-ranger-env.sh')
+  setup_ranger_env_sh_source = format('{stack_root}/{stack_version}/ranger-kafka-plugin/install/conf.templates/enable/kafka-ranger-env.sh')
   setup_ranger_env_sh_target = format("{conf_dir}/kafka-ranger-env.sh")
 
   #For SQLA explicitly disable audit to DB for Ranger

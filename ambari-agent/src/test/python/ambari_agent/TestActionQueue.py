@@ -59,7 +59,26 @@ class TestActionQueue(TestCase):
     'serviceName': u'HDFS',
     'hostLevelParams': {},
     'configurations':{'global' : {}},
-    'configurationTags':{'global' : { 'tag': 'v1' }}
+    'configurationTags':{'global' : { 'tag': 'v1' }},
+    'commandParams': {
+      'command_retry_enabled': 'true'
+    }
+  }
+
+  datanode_install_no_retry_command = {
+    'commandType': 'EXECUTION_COMMAND',
+    'role': u'DATANODE',
+    'roleCommand': u'INSTALL',
+    'commandId': '1-1',
+    'taskId': 3,
+    'clusterName': u'cc',
+    'serviceName': u'HDFS',
+    'hostLevelParams': {},
+    'configurations':{'global' : {}},
+    'configurationTags':{'global' : { 'tag': 'v1' }},
+    'commandParams': {
+      'command_retry_enabled': 'false'
+    }
   }
 
   datanode_auto_start_command = {
@@ -124,8 +143,11 @@ class TestActionQueue(TestCase):
     'taskId': 7,
     'clusterName': u'cc',
     'serviceName': u'HDFS',
-    'hostLevelParams': {}
+    'hostLevelParams': {},
+    'commandParams': {
+      'command_retry_enabled': 'true'
     }
+  }
 
   status_command = {
     "serviceName" : 'HDFS',
@@ -317,6 +339,49 @@ class TestActionQueue(TestCase):
     self.assertTrue(print_exc_mock.called)
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch.object(CustomServiceOrchestrator, "runCommand")
+  @patch("CommandStatusDict.CommandStatusDict")
+  @patch.object(ActionQueue, "status_update_callback")
+  def test_log_execution_commands(self, status_update_callback_mock,
+                                  command_status_dict_mock,
+                                  cso_runCommand_mock):
+    custom_service_orchestrator_execution_result_dict = {
+        'stdout': 'out',
+        'stderr': 'stderr',
+        'structuredOut' : '',
+        'exitcode' : 0
+    }
+    cso_runCommand_mock.return_value = custom_service_orchestrator_execution_result_dict
+
+    config = AmbariConfig()
+    tempdir = tempfile.gettempdir()
+    config.set('agent', 'prefix', tempdir)
+    config.set('agent', 'cache_dir', "/var/lib/ambari-agent/cache")
+    config.set('agent', 'tolerate_download_failures', "true")
+    config.set('logging', 'log_command_executes', 1)
+    dummy_controller = MagicMock()
+    actionQueue = ActionQueue(config, dummy_controller)
+    actionQueue.execute_command(self.datanode_restart_command)
+    report = actionQueue.result()
+    expected = {'status': 'COMPLETED',
+                'configurationTags': {'global': {'tag': 'v123'}},
+                'stderr': 'stderr',
+                'stdout': 'out',
+                'clusterName': u'cc',
+                'structuredOut': '""',
+                'roleCommand': u'CUSTOM_COMMAND',
+                'serviceName': u'HDFS',
+                'role': u'DATANODE',
+                'actionId': '1-1',
+                'taskId': 9,
+                'customCommand': 'RESTART',
+                'exitCode': 0}
+    # Agent caches configurationTags if custom_command RESTART completed
+    self.assertEqual(len(report['reports']), 1)
+    self.assertEqual(expected, report['reports'][0])
+
+
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch("__builtin__.open")
   @patch.object(ActionQueue, "status_update_callback")
   def test_auto_execute_command(self, status_update_callback_mock, open_mock):
@@ -337,7 +402,7 @@ class TestActionQueue(TestCase):
     config.set('agent', 'tolerate_download_failures', "true")
     dummy_controller = MagicMock()
     dummy_controller.recovery_manager = RecoveryManager(tempfile.mktemp())
-    dummy_controller.recovery_manager.update_config(5, 5, 1, 11, True, False, "")
+    dummy_controller.recovery_manager.update_config(5, 5, 1, 11, True, False, "", -1)
 
     actionQueue = ActionQueue(config, dummy_controller)
     unfreeze_flag = threading.Event()
@@ -840,6 +905,28 @@ class TestActionQueue(TestCase):
     self.assertEqual(2, process_command_mock.call_count)
     process_command_mock.assert_any_calls([call(self.datanode_install_command), call(self.hbase_install_command)])
 
+  @patch("threading.Thread")
+  @patch.object(AmbariConfig, "get_parallel_exec_option")
+  @patch.object(ActionQueue, "process_command")
+  @patch.object(CustomServiceOrchestrator, "__init__")
+  def test_parallel_exec_no_retry(self, CustomServiceOrchestrator_mock,
+                         process_command_mock, gpeo_mock, threading_mock):
+    CustomServiceOrchestrator_mock.return_value = None
+    dummy_controller = MagicMock()
+    config = MagicMock()
+    gpeo_mock.return_value = 1
+    config.get_parallel_exec_option = gpeo_mock
+    actionQueue = ActionQueue(config, dummy_controller)
+    actionQueue.put([self.datanode_install_no_retry_command, self.snamenode_install_command])
+    self.assertEqual(2, actionQueue.commandQueue.qsize())
+    actionQueue.start()
+    time.sleep(1)
+    actionQueue.stop()
+    actionQueue.join()
+    self.assertEqual(actionQueue.stopped(), True, 'Action queue is not stopped.')
+    self.assertEqual(1, process_command_mock.call_count)
+    self.assertEqual(0, threading_mock.call_count)
+    process_command_mock.assert_any_calls([call(self.datanode_install_command), call(self.hbase_install_command)])
 
   @not_for_platform(PLATFORM_LINUX)
   @patch("time.sleep")

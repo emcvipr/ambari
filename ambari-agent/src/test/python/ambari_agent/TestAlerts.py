@@ -23,6 +23,7 @@ import socket
 import sys
 import urllib2
 import tempfile
+from alerts.ams_alert import AmsAlert
 
 from ambari_agent.AlertSchedulerHandler import AlertSchedulerHandler
 from ambari_agent.RecoveryManager import RecoveryManager
@@ -405,6 +406,48 @@ class TestAlerts(TestCase):
     self.assertEquals('(Unit Tests) OK: 1 25 None', alerts[0]['text'])
 
 
+  @patch.object(AmsAlert, "_load_metric")
+  def test_ams_alert(self, ma_load_metric_mock):
+    definition_json = self._get_ams_alert_definition()
+    configuration = {'ams-site':
+      {'timeline.metrics.service.webapp.address': 'c6401.ambari.apache.org:6188'}
+    }
+
+    collector = AlertCollector()
+    cluster_configuration = self.__get_cluster_configuration()
+    self.__update_cluster_configuration(cluster_configuration, configuration)
+
+    alert = AmsAlert(definition_json, definition_json['source'], self.config)
+    alert.set_helpers(collector, cluster_configuration)
+    alert.set_cluster("c1", "c6401.ambari.apache.org")
+
+    # trip an OK
+    ma_load_metric_mock.return_value = ([{1:100,2:100,3:200,4:200}], None)
+
+    alert.collect()
+    alerts = collector.alerts()
+    self.assertEquals(0, len(collector.alerts()))
+    self.assertEquals('OK', alerts[0]['state'])
+    self.assertEquals('(Unit Tests) OK: the mean used heap size is 150 MB.', alerts[0]['text'])
+
+    # trip a warning
+    ma_load_metric_mock.return_value = ([{1:800,2:800,3:900,4:900}], None)
+
+    alert.collect()
+    alerts = collector.alerts()
+    self.assertEquals(0, len(collector.alerts()))
+    self.assertEquals('WARNING', alerts[0]['state'])
+    self.assertEquals('(Unit Tests) Warning: the mean used heap size is 850 MB.', alerts[0]['text'])
+
+    # trip a critical now
+    ma_load_metric_mock.return_value = ([{1:1000,2:1000,3:2000,4:2000}], None)
+
+    alert.collect()
+    alerts = collector.alerts()
+    self.assertEquals(0, len(collector.alerts()))
+    self.assertEquals('CRITICAL', alerts[0]['state'])
+    self.assertEquals('(Unit Tests) Critical: the mean used heap size is 1500 MB.', alerts[0]['text'])
+
   @patch.object(MetricAlert, "_load_jmx")
   def test_alert_uri_structure(self, ma_load_jmx_mock):
     definition_json = self._get_metric_alert_definition()
@@ -548,7 +591,7 @@ class TestAlerts(TestCase):
     configuration = {'hdfs-site' :
       { 'dfs.http.policy' : 'HTTPS_ONLY',
         'dfs.datanode.http.address' : 'c6401.ambari.apache.org:80',
-        'dfs.datanode.https.address' : 'c6401.ambari.apache.org:443' }
+        'dfs.datanode.https.address' : 'c6401.ambari.apache.org:443/test/path' }
     }
 
     self.__update_cluster_configuration(cluster_configuration, configuration)
@@ -565,7 +608,7 @@ class TestAlerts(TestCase):
     
     # SSL assertion
     self.assertEquals('CRITICAL', alerts[0]['state'])
-    self.assertEquals('(Unit Tests) critical: https://c6401.ambari.apache.org:443. error message', alerts[0]['text'])
+    self.assertEquals('(Unit Tests) critical: https://c6401.ambari.apache.org:443/test/path. error message', alerts[0]['text'])
 
   def test_reschedule(self):
     test_file_path = os.path.join('ambari_agent', 'dummy_files')
@@ -700,13 +743,16 @@ class TestAlerts(TestCase):
     alert.set_helpers(collector, cluster_configuration )
     alert.set_cluster("c1", "c6401.ambari.apache.org")
 
+    alert.collect()
+
     self.assertEquals(definition_json['source']['path'], alert.path)
     self.assertEquals(definition_json['source']['stacks_directory'], alert.stacks_dir)
     self.assertEquals(definition_json['source']['common_services_directory'], alert.common_services_dir)
     self.assertEquals(definition_json['source']['host_scripts_directory'], alert.host_scripts_dir)
 
-    # ensure that it was skipped
-    self.assertEquals(0,len(collector.alerts()))
+    # ensure that the skipped alert was still placed into the collector; it's up to
+    # the server to decide how to handle skipped alerts
+    self.assertEquals(1,len(collector.alerts()))
 
 
   def test_default_reporting_text(self):
@@ -1387,6 +1433,52 @@ class TestAlerts(TestCase):
           }
         }
       }
+    }
+
+  def _get_ams_alert_definition(self):
+    return {
+      "ignore_host": False,
+      "name": "namenode_mean_heapsize_used",
+      "componentName": "NAMENODE",
+      "interval": 1,
+      "clusterId": 2,
+      "uuid": "8a857295-ad11-4985-896e-d866dc27b963",
+      "label": "NameNode Mean Used Heap Size (Hourly)",
+      "definitionId": 28,
+      "source": {
+        "ams": {
+          "compute": "mean",
+          "interval": 30,
+          "app_id": "NAMENODE",
+          "value": "{0}",
+          "metric_list": [
+            "jvm.JvmMetrics.MemHeapUsedM"
+          ],
+          "minimum_value": -1
+        },
+        "reporting": {
+          "units": "#",
+          "warning": {
+            "text": "(Unit Tests) Warning: the mean used heap size is {0} MB.",
+            "value": 768
+          },
+          "ok": {
+            "text": "(Unit Tests) OK: the mean used heap size is {0} MB."
+          },
+          "critical": {
+            "text": "(Unit Tests) Critical: the mean used heap size is {0} MB.",
+            "value": 1024
+          }
+        },
+        "type": "AMS",
+        "uri": {
+          "http": "{{ams-site/timeline.metrics.service.webapp.address}}",
+          "https_property_value": "HTTPS_ONLY",
+          "https_property": "{{ams-site/timeline.metrics.service.http.policy}}",
+          "https": "{{ams-site/timeline.metrics.service.webapp.address}}",
+          "connection_timeout": 5.0
+        }
+      },
     }
 
   def _get_metric_alert_definition_with_float_division(self):

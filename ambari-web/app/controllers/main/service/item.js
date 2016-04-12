@@ -599,6 +599,45 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
     App.showAlertPopup(Em.I18n.t('services.service.actions.run.yarnRefreshQueues.error'), error);
   },
 
+  restartLLAP: function(event) {
+    var context = Em.I18n.t('services.service.actions.run.restartLLAP');
+    this.manageLLAP('RESTART_LLAP', context);
+  },
+  manageLLAP: function(command, context) {
+    var controller = this;
+    var host = App.HostComponent.find().findProperty('componentName', 'HIVE_SERVER_INTERACTIVE').get('hostName');
+    return App.showConfirmationPopup(function() {
+      App.ajax.send({
+        name: 'service.item.executeCustomCommand',
+        sender: controller,
+        data: {
+          command: command,
+          context: context,
+          hosts: host,
+          serviceName: "HIVE",
+          componentName: "HIVE_SERVER_INTERACTIVE"
+        },
+        success: 'manageLLAPSuccessCallback',
+        error: 'manageLLAPErrorCallback'
+      });
+    });
+  },
+  manageLLAPSuccessCallback : function(data, ajaxOptions, params) {
+    if (data.Requests.id) {
+      App.router.get('backgroundOperationsController').showPopup();
+    }
+  },
+  manageLLAPErrorCallback : function(data) {
+    var error = Em.I18n.t('services.service.actions.run.executeCustomCommand.error');
+    if (data && data.responseText) {
+      try {
+        var json = $.parseJSON(data.responseText);
+        error += json.message;
+      } catch (err) {}
+    }
+    App.showAlertPopup(Em.I18n.t('common.error'), error);
+  },
+
   /**
    * On click handler for rebalance Hdfs command from items menu
    */
@@ -1082,11 +1121,9 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
    * @param serviceNames
    */
   allowUninstallServices: function(serviceNames) {
-    return !App.Service.find().filter(function (service) {
+    return App.Service.find().filter(function (service) {
       return serviceNames.contains(service.get('serviceName'));
-    }).mapProperty('workStatus').some(function (workStatus) {
-      return !App.Service.allowUninstallStates.contains(workStatus);
-    });
+    }).everyProperty('allowToDelete');
   },
 
   /**
@@ -1313,12 +1350,17 @@ App.MainServiceItemController = Em.Controller.extend(App.SupportClientConfigsDow
     if (Em.isArray(data) && data.length) {
       this.putChangedConfigurations(data, 'onSaveConfigs');
     } else {
-      this.onSaveConfigs();
+      this.confirmServiceDeletion();
     }
   },
 
-  onSaveConfigs: function() {
-    window.location.reload();
+  confirmServiceDeletion: function() {
+    var msg = this.get('interDependentServices.length')
+      ? Em.I18n.t('services.service.delete.service.success.confirmation.plural').format(this.get('serviceNamesToDelete').join(','))
+      : Em.I18n.t('services.service.delete.service.success.confirmation').format(this.get('content.serviceName'));
+    return App.showAlertPopup(Em.I18n.t('popup.confirmation.commonHeader'), msg, function() {
+      window.location.reload();
+    })
   },
 
   /**

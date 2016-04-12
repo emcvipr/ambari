@@ -421,6 +421,15 @@ CREATE TABLE blueprint_configuration (
   config_attributes VARCHAR(3000),
   PRIMARY KEY(blueprint_name, type_name));
 
+CREATE TABLE blueprint_settings (
+  id BIGINT NOT NULL,
+  blueprint_name varchar(255) NOT NULL,
+  setting_name varchar(255) NOT NULL,
+  setting_data CLOB NOT NULL,
+  CONSTRAINT PK_blueprint_settings PRIMARY KEY (id),
+  CONSTRAINT UQ_blueprint_settings_name UNIQUE(blueprint_name,setting_name),
+  CONSTRAINT FK_blueprint_settings_name FOREIGN KEY (blueprint_name) REFERENCES blueprint(blueprint_name));
+
 CREATE TABLE hostgroup_configuration (
   blueprint_name VARCHAR(255) NOT NULL,
   hostgroup_name VARCHAR(255) NOT NULL,
@@ -689,6 +698,7 @@ CREATE TABLE upgrade (
   skip_failures SMALLINT DEFAULT 0 NOT NULL,
   skip_sc_failures SMALLINT DEFAULT 0 NOT NULL,
   downgrade_allowed SMALLINT DEFAULT 1 NOT NULL,
+  suspended SMALLINT DEFAULT 0 NOT NULL,
   PRIMARY KEY (upgrade_id),
   FOREIGN KEY (cluster_id) REFERENCES clusters(cluster_id),
   FOREIGN KEY (request_id) REFERENCES request(request_id)
@@ -868,6 +878,7 @@ CREATE TABLE alert_definition (
   component_name VARCHAR(255),
   scope VARCHAR(255) DEFAULT 'ANY' NOT NULL,
   label VARCHAR(255),
+  help_url VARCHAR(512),
   description VARCHAR(3000),
   enabled SMALLINT DEFAULT 1 NOT NULL,
   schedule_interval INTEGER NOT NULL,
@@ -875,6 +886,8 @@ CREATE TABLE alert_definition (
   alert_source VARCHAR(3000) NOT NULL,
   hash VARCHAR(64) NOT NULL,
   ignore_host SMALLINT DEFAULT 0 NOT NULL,
+  repeat_tolerance INTEGER DEFAULT 1 NOT NULL,
+  repeat_tolerance_enabled SMALLINT DEFAULT 0 NOT NULL,
   PRIMARY KEY (definition_id),
   FOREIGN KEY (cluster_id) REFERENCES clusters(cluster_id),
   CONSTRAINT uni_alert_def_name UNIQUE(cluster_id,definition_name)
@@ -905,6 +918,8 @@ CREATE TABLE alert_current (
   original_timestamp BIGINT NOT NULL,
   latest_timestamp BIGINT NOT NULL,
   latest_text VARCHAR(3000),
+  occurrences BIGINT NOT NULL DEFAULT 1,
+  firmness VARCHAR(255) NOT NULL DEFAULT 'HARD',
   PRIMARY KEY (alert_id),
   FOREIGN KEY (definition_id) REFERENCES alert_definition(definition_id),
   FOREIGN KEY (history_id) REFERENCES alert_history(alert_id)
@@ -1066,6 +1081,8 @@ INSERT INTO ambari_sequences (sequence_name, sequence_value)
   select 'servicecomponentdesiredstate_id_seq', 0 FROM SYSIBM.SYSDUMMY1
   union all
   select 'servicecomponent_history_id_seq', 0 FROM SYSIBM.SYSDUMMY1;
+  union all
+  select 'blueprint_settings_id_seq', 0 FROM SYSIBM.SYSDUMMY1;
 
 
 INSERT INTO adminresourcetype (resource_type_id, resource_type_name)

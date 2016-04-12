@@ -143,6 +143,8 @@ public class HeartBeatHandler {
   @Inject
   private AlertDefinitionHash alertDefinitionHash;
 
+  @Inject
+  private RecoveryConfigHelper recoveryConfigHelper;
 
   /**
    * KerberosIdentityDataFileReaderFactory used to create KerberosIdentityDataFileReader instances
@@ -267,6 +269,28 @@ public class HeartBeatHandler {
       return createRegisterCommand();
     }
 
+    /**
+     * A host can belong to only one cluster. Though getClustersForHost(hostname)
+     * returns a set of clusters, it will have only one entry.
+     *
+     *
+     * TODO: Handle the case when a host is a part of multiple clusters.
+     */
+    Set<Cluster> clusters = clusterFsm.getClustersForHost(hostname);
+
+    if (clusters.size() > 0) {
+      String clusterName = clusters.iterator().next().getClusterName();
+
+      if (recoveryConfigHelper.isConfigStale(clusterName, hostname, heartbeat.getRecoveryTimestamp())) {
+        RecoveryConfig rc = recoveryConfigHelper.getRecoveryConfig(clusterName, hostname);
+        response.setRecoveryConfig(rc);
+
+        if (response.getRecoveryConfig() != null) {
+          LOG.info("Recovery configuration set to {}", response.getRecoveryConfig().toString());
+        }
+      }
+    }
+
     heartbeatProcessor.addHeartbeat(heartbeat);
 
     // Send commands if node is active
@@ -305,6 +329,8 @@ public class HeartBeatHandler {
           case BACKGROUND_EXECUTION_COMMAND:
           case EXECUTION_COMMAND: {
             ExecutionCommand ec = (ExecutionCommand)ac;
+            LOG.info("HeartBeatHandler.sendCommands: sending ExecutionCommand for host {}, role {}, roleCommand {}, and command ID {}, task ID {}",
+                     ec.getHostname(), ec.getRole(), ec.getRoleCommand(), ec.getCommandId(), ec.getTaskId());
             Map<String, String> hlp = ec.getHostLevelParams();
             if (hlp != null) {
               String customCommand = hlp.get("custom_command");
@@ -462,45 +488,23 @@ public class HeartBeatHandler {
       LOG.debug("Agent configuration map set to " + response.getAgentConfig());
     }
 
-    //
-    // Filter the enabled components by maintenance mode
-    //
+    /**
+     * A host can belong to only one cluster. Though getClustersForHost(hostname)
+     * returns a set of clusters, it will have only one entry.
+     *
+     * TODO: Handle the case when a host is a part of multiple clusters.
+     */
+    Set<Cluster> clusters = clusterFsm.getClustersForHost(hostname);
 
-    // Build a map of component name => Service component host
-    // for easy look up of maintenance state by component name.
-    // As of now, a host can belong to only one cluster.
-    // Clusters::getClustersForHost(hostname) returns one item.
-    Map<String, ServiceComponentHost> schFromComponentName = new HashMap<>();
+    if (clusters.size() > 0) {
+      String clusterName = clusters.iterator().next().getClusterName();
 
-    for (Cluster cl : clusterFsm.getClustersForHost(hostname)) {
-      List<ServiceComponentHost> scHosts = cl.getServiceComponentHosts(hostname);
-      for (ServiceComponentHost sch : scHosts) {
-        schFromComponentName.put(sch.getServiceComponentName(), sch);
+      RecoveryConfig rc = recoveryConfigHelper.getRecoveryConfig(clusterName, hostname);
+      response.setRecoveryConfig(rc);
+
+      if(response.getRecoveryConfig() != null) {
+        LOG.info("Recovery configuration set to " + response.getRecoveryConfig().toString());
       }
-    }
-
-    // Keep only the components that have maintenance state set to OFF
-    List<String> enabledComponents = new ArrayList<>();
-    String[] confEnabledComponents = config.getEnabledComponents().split(",");
-
-    for (String componentName : confEnabledComponents) {
-      ServiceComponentHost sch = schFromComponentName.get(componentName);
-
-      // Append the component name only if it is
-      // in the host and  not in maintenance mode.
-      if (sch != null && sch.getMaintenanceState() == MaintenanceState.OFF) {
-        enabledComponents.add(componentName);
-      }
-    }
-
-    // Overwrite the pre-constructed RecoveryConfig's list of
-    // enabled components with the filtered list
-    RecoveryConfig rc = RecoveryConfig.getRecoveryConfig(config);
-    rc.setEnabledComponents(StringUtils.join(enabledComponents, ','));
-    response.setRecoveryConfig(rc);
-
-    if(response.getRecoveryConfig() != null) {
-      LOG.info("Recovery configuration set to " + response.getRecoveryConfig().toString());
     }
 
     Long requestId = 0L;

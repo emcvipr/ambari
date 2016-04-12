@@ -943,16 +943,14 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingM
    */
   saveServiceConfigGroups: function (stepController, isAddService) {
     var serviceConfigGroups = [],
-      isForInstalledService = false,
       hosts = isAddService ? App.router.get('addServiceController').getDBProperty('hosts') : this.getDBProperty('hosts');
     stepController.get('stepConfigs').forEach(function (service) {
       // mark group of installed service
-      if (service.get('selected') === false) isForInstalledService = true;
+      var isForInstalledService = service.get('selected') === false;
       service.get('configGroups').forEach(function (configGroup) {
         var properties = [];
         configGroup.get('properties').forEach(function (property) {
           properties.push({
-            isRequiredByAgent: property.get('isRequiredByAgent'),
             name: property.get('name'),
             value: property.get('value'),
             isFinal: property.get('isFinal'),
@@ -1270,16 +1268,11 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingM
       // Load stack configs before loading themes
       App.config.loadClusterConfigsFromStack().always(function() {
         App.config.loadConfigsFromStack(serviceNames).done(function () {
-          if (App.get('isClusterSupportsEnhancedConfigs')) {
-            self.loadConfigThemeForServices(serviceNames).always(function () {
-              self.set('stackConfigsLoaded', true);
-              App.themesMapper.generateAdvancedTabs(serviceNames);
-              dfd.resolve();
-            });
-          } else {
+          self.loadConfigThemeForServices(serviceNames).always(function () {
             self.set('stackConfigsLoaded', true);
+            App.themesMapper.generateAdvancedTabs(serviceNames);
             dfd.resolve();
-          }
+          });
         });
       });
     }
@@ -1355,5 +1348,30 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingM
 
   loadRecommendations: function () {
     this.set("content.recommendations", this.getDBProperty('recommendations'));
+  },
+
+  /**
+   * reset stored wizard data and reload App
+   * @param {App.WizardController} controller - wizard controller
+   * @param {string} route - preferable path to go after wizard finished
+   */
+  resetOnClose: function(controller, route) {
+    App.router.get('wizardWatcherController').resetUser();
+    controller.finish();
+    App.router.get('updateController').set('isWorking', true);
+    App.clusterStatus.setClusterStatus({
+      clusterName: App.get('clusterName'),
+      clusterState: 'DEFAULT',
+      localdb: App.db.data
+    },
+    {
+      alwaysCallback: function () {
+        controller.get('popup').hide();
+        App.router.transitionTo(route);
+        Em.run.next(function() {
+          location.reload();
+        });
+      }
+    });
   }
 });

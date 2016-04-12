@@ -31,7 +31,8 @@ from resource_management.core import shell
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import stack_select
 from resource_management.libraries.functions import Direction
-from resource_management.libraries.functions.version import compare_versions, format_stack_version
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.functions.security_commons import build_expectations, \
   cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties, \
@@ -68,7 +69,8 @@ except ImportError:
 class NameNode(Script):
 
   def get_stack_to_component(self):
-    return {"HDP": "hadoop-hdfs-namenode"}
+    import params
+    return {params.stack_name : "hadoop-hdfs-namenode"}
 
   def get_hdfs_binary(self):
     """
@@ -99,7 +101,14 @@ class NameNode(Script):
     env.set_params(params)
     self.configure(env)
     hdfs_binary = self.get_hdfs_binary()
-    namenode(action="start", hdfs_binary=hdfs_binary, upgrade_type=upgrade_type, env=env)
+    namenode(action="start", hdfs_binary=hdfs_binary, upgrade_type=upgrade_type,
+      upgrade_suspended=params.upgrade_suspended, env=env)
+
+    # after starting NN in an upgrade, touch the marker file
+    if upgrade_type is not None:
+      # place a file on the system indicating that we've submitting the command that
+      # instructs NN that it is now part of an upgrade
+      namenode_upgrade.create_upgrade_marker()
 
   def stop(self, env, upgrade_type=None):
     import params
@@ -190,7 +199,7 @@ class NameNodeDefault(NameNode):
     import params
     env.set_params(params)
 
-    if params.version and compare_versions(format_stack_version(params.version), '2.2.0.0') >= 0:
+    if params.version and check_stack_feature(StackFeature.ROLLING_UPGRADE, params.version):
       # When downgrading an Express Upgrade, the first thing we do is to revert the symlinks.
       # Therefore, we cannot call this code in that scenario.
       call_if = [("rolling", "upgrade"), ("rolling", "downgrade"), ("nonrolling", "upgrade")]

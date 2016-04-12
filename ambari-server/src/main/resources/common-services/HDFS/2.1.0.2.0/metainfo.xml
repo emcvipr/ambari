@@ -31,11 +31,20 @@
           <category>MASTER</category>
           <cardinality>1-2</cardinality>
           <versionAdvertised>true</versionAdvertised>
+          <reassignAllowed>true</reassignAllowed>
           <commandScript>
             <script>scripts/namenode.py</script>
             <scriptType>PYTHON</scriptType>
             <timeout>1800</timeout>
           </commandScript>
+          <logs>
+            <log>
+              <logId>hdfs_namenode</logId>
+            </log>
+            <log>
+              <logId>hdfs_audit</logId>
+            </log>
+          </logs>
           <customCommands>
             <customCommand>
               <name>DECOMMISSION</name>
@@ -62,11 +71,22 @@
           <category>SLAVE</category>
           <cardinality>1+</cardinality>
           <versionAdvertised>true</versionAdvertised>
+          <decommissionAllowed>true</decommissionAllowed>
           <commandScript>
             <script>scripts/datanode.py</script>
             <scriptType>PYTHON</scriptType>
             <timeout>1200</timeout>
           </commandScript>
+          <bulkCommands>
+            <displayName>DataNodes</displayName>
+            <!-- Used by decommission and recommission -->
+            <masterComponent>NAMENODE</masterComponent>
+          </bulkCommands>
+          <logs>
+            <log>
+              <logId>hdfs_datanode</logId>
+            </log>
+          </logs>
         </component>
 
         <component>
@@ -75,12 +95,18 @@
           <!-- TODO:  cardinality is conditional on HA usage -->
           <cardinality>1</cardinality>
           <versionAdvertised>true</versionAdvertised>
+          <reassignAllowed>true</reassignAllowed>
           <category>MASTER</category>
           <commandScript>
             <script>scripts/snamenode.py</script>
             <scriptType>PYTHON</scriptType>
             <timeout>1200</timeout>
           </commandScript>
+          <logs>
+            <log>
+              <logId>hdfs_secondarynamenode</logId>
+            </log>
+          </logs>
         </component>
 
         <component>
@@ -129,6 +155,11 @@
             <scriptType>PYTHON</scriptType>
             <timeout>1200</timeout>
           </commandScript>
+          <logs>
+            <log>
+              <logId>hdfs_journalnode</logId>
+            </log>
+          </logs>
           <dependencies>
             <dependency>
               <name>HDFS/HDFS_CLIENT</name>
@@ -152,6 +183,11 @@
             <scriptType>PYTHON</scriptType>
             <timeout>1200</timeout>
           </commandScript>
+          <logs>
+            <log>
+              <logId>hdfs_zkfc</logId>
+            </log>
+          </logs>
         </component>
       </components>
 

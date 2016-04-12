@@ -313,6 +313,9 @@ App.ServiceConfigProperty = Em.Object.extend({
       case 'directories':
         return App.ServiceConfigTextArea;
         break;
+      case 'directory':
+        return App.ServiceConfigTextField;
+        break;
       case 'content':
         return App.ServiceConfigTextAreaContent;
         break;
@@ -426,7 +429,7 @@ App.ServiceConfigProperty = Em.Object.extend({
           break;
         case 'supportTextConnection':
         case 'host':
-          var connectionProperties = ['kdc_host'];
+          var connectionProperties = ['kdc_hosts'];
           if ((validator.isNotTrimmed(value) && connectionProperties.contains(this.get('name')) || validator.isNotTrimmed(value))) {
             this.set('errorMessage', Em.I18n.t('host.trimspacesValidation'));
             isError = true;
@@ -492,12 +495,8 @@ App.ServiceConfigProperty = Em.Object.extend({
    * @returns {*|Boolean|boolean}
    */
   configSupportHeterogeneous: function() {
-    if (App.get('isHadoop22Stack')) {
-      return ['directories', 'directory'].contains(this.get('displayType')) && ['dfs.datanode.data.dir'].contains(this.get('name'));
-    } else {
-      return false;
-    }
-  }.property('displayType', 'name', 'App.isHadoop22Stack'),
+    return ['directories', 'directory'].contains(this.get('displayType')) && ['dfs.datanode.data.dir'].contains(this.get('name'));
+  }.property('displayType', 'name'),
 
   /**
    * Get override for selected group

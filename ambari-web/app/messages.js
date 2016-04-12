@@ -321,10 +321,12 @@ Em.I18n.translations = {
   'common.levels': 'Levels',
   'common.extension': 'Extension',
   'common.logs': 'Logs',
+  'common.warn.message': '<div class="alert alert-warn">{0}</div>',
 
   'models.alert_instance.tiggered.verbose': "Occurred on {0} <br> Checked on {1}",
   'models.alert_definition.triggered.verbose': "Occurred on {0}",
   'models.alert_definition.triggered.checked': "Status Changed: {0}\nLast Checked: {1}",
+  'models.alert_definition.check.retry': "Retried {0} out of {1} alerts before sending notifications",
 
   'passiveState.turnOn':'Turn On Maintenance Mode',
   'passiveState.turnOff':'Turn Off Maintenance Mode',
@@ -771,8 +773,12 @@ Em.I18n.translations = {
   'installer.step4.multipleDFS.popup.body':'You selected more than one file system. We will automatically select only {0}. Is this OK?',
   'installer.step4.serviceCheck.popup.header':'{0} Needed',
   'installer.step4.serviceCheck.popup.body':'You did not select {0}, but it is needed by other services you selected. We will automatically add {0}. Is this OK?',
-  'installer.step4.ambariMetricsCheck.popup.header':'Limited Functionality Warning',
+  'installer.step4.limitedFunctionality.popup.header':'Limited Functionality Warning',
   'installer.step4.ambariMetricsCheck.popup.body':'Ambari Metrics collects metrics from the cluster and makes them available to Ambari.  If you do not install Ambari Metrics service, metrics will not be accessible from Ambari.  Are you sure you want to proceed without Ambari Metrics?',
+  'installer.step4.smartSenseCheck.popup.body':'SmartSense securely collections diagnostic data from the cluster and ' +
+  'provides both recommendations as well as automated analysis for troubleshooting support cases. If you do not ' +
+  'install the SmartSense service, no recommendations will be provided and data must be gathered manually for ' +
+  'troubleshooting support cases. Are you sure you want to proceed without SmartSense?',
   'installer.step4.rangerRequirements.popup.header': 'Ranger Requirements',
   'installer.step4.rangerRequirements.popup.body.requirements': '<ol><li>You must have an <strong>MySQL/Oracle/Postgres/MSSQL/SQL Anywhere Server</strong> database instance running to be used by Ranger.</li>' +
     '<li>In Assign Masters step of this wizard, you will be prompted to specify which host for the Ranger Admin. On that host, you <strong>must have DB Client installed</strong> for Ranger to access to the database. (Note: This is applicable for only Ranger 0.4.0)</li>' +
@@ -791,6 +797,7 @@ Em.I18n.translations = {
   'installer.step5.hiveGroup':'HiveServer2, WebHCat Server, MySQL Server',
   'installer.step5.validationIssuesAttention.header': 'Validation Issues',
   'installer.step5.validationIssuesAttention': 'Master component assignments have issues that need attention.',
+  'installer.step5.error.host.invalid': 'The host you choose could (1) have an invalid host name; (2) be conflicting with another selection; or (3) be in maintenance mode',
 
   'installer.step6.header':'Assign Slaves and Clients',
   'installer.step6.body':'Assign slave and client components to hosts you want to run them on.<br/>Hosts that are assigned master components are shown with <i class=icon-asterisks>&#10037;</i>.',
@@ -836,6 +843,7 @@ Em.I18n.translations = {
   'installer.step7.popup.validation.request.failed.body': 'The configuration changes could not be validated for consistency due to an unknown error.  Your changes have not been saved yet.  Would you like to proceed and save the changes?',
   'installer.step7.popup.validation.warning.header': 'Configurations',
   'installer.step7.popup.validation.warning.body': 'Some service configurations are not configured properly. We recommend you review and change the highlighted configuration values. Are you sure you want to proceed without correcting configurations?',
+  'installer.step7.popup.validation.error.body': 'Service configurations resulted in validation errors. Please address them before proceeding.',
   'installer.step7.popup.oozie.derby.warning': 'Derby is not recommended for production use. With Derby, Oozie Server HA and concurrent connection support will not be available.',
   'installer.step7.oozie.database.new': 'New Derby Database',
   'installer.step7.hive.database.new.mysql': 'New MySQL Database',
@@ -853,7 +861,10 @@ Em.I18n.translations = {
   'installer.step7.preInstallChecks.checksPopup.header':'Pre Install Checks',
 
 
-  'installer.step7.assign.master.body':'Assign {0} to {1} you want to run {2} on.',
+  'installer.step7.assign.master.body':'Assign <strong>{0}</strong> to {1} you want to run {2} on.',
+  'installer.step7.assign.master.dependent.component.body':'If not present {0} will also be installed on the selected host. ',
+  'installer.step7.missing.service.header':'Missing Service',
+  'installer.step7.missing.service.body': '{0} service should be added to the cluster to {1}.',
 
 
   'installer.step8.header': 'Review',
@@ -990,6 +1001,17 @@ Em.I18n.translations = {
   'alerts.actions.manageGroups': 'Manage Alert Groups',
   'alerts.actions.manageNotifications': 'Manage Notifications',
   'alerts.actions.manageNotifications.info': 'You can manage notification methods and recipients.',
+  'alerts.actions.editRepeatTolerance.text': 'Manage global setting for alerts',
+  'alerts.actions.editRepeatTolerance.header': 'Edit Alert Check Retry Count',
+  'alerts.actions.editRepeatTolerance.body': 'This will override the global check retry count {0} for this alert.',
+  'alerts.actions.editRepeatTolerance.title': 'Alert Check Retries',
+  'alerts.actions.editRepeatTolerance.description': 'Set the amount of alert check retries to perform before dispatching a notification.' +
+    'If during an alert check a state change occurs, Ambari will retry this number of times before dispatching a notification. Increase this number if your environment experiences temporal issues.',
+  'alerts.actions.editRepeatTolerance.label': 'Retries:',
+  'alerts.actions.editRepeatTolerance.error':'Input should be a positive integer.',
+  'alerts.actions.manageSettings': 'Manage Alert Settings',
+  'alerts.actions.manageGlobalRepeatTolerance.tooltip': 'This value will be overriden, if specific repeat tolerance value is set for individual alert.',
+  'alerts.actions.manageSettings.error':'Error during remote command: ',
 
   'alerts.groups.successPopup.header': 'Alert Groups processing results',
   'alerts.groups.successPopup.body.created': 'New Alert Groups',
@@ -1003,6 +1025,8 @@ Em.I18n.translations = {
   'alerts.table.header.check.response': 'Response',
   'alerts.table.header.definitionName': 'Alert Definition Name',
   'alerts.table.header.notification': 'Notification',
+  'alerts.table.header.repeatTolerance': 'Alert Check Retry Count',
+  'alerts.table.header.repeatToleranceEnabled': 'Alert Check Retries',
   'alerts.table.state': 'State',
   'alerts.table.state.enabled': 'Enabled',
   'alerts.table.state.disabled': 'Disabled',
@@ -1012,6 +1036,10 @@ Em.I18n.translations = {
   'alerts.table.state.disabled.confirm.msg': 'You are about to Enable this alert definition.',
   'alerts.table.state.enabled.confirm.btn': 'Confirm Disable',
   'alerts.table.state.disabled.confirm.btn': 'Confirm Enable',
+  'alerts.table.repeatTolerance.enabled.tooltip': 'Click to disable alert check retries',
+  'alerts.table.repeatTolerance.disabled.tooltip': 'Click to enable alert check retries',
+  'alerts.table.repeatTolerance.enabled.confirm.msg': 'You are about to disable alert check retries. By disabling retries, on each state change, an alert notification will be dispatched.',
+  'alerts.table.repeatTolerance.disabled.confirm.msg': 'You are about to enable alert check retries. By enabling retries, on each state change, Ambari will retry the check {0} times before dispatching an alert notification.',
   'alerts.filters.filteredAlertsInfo': '{0} of {1} definitions showing',
   'alerts.definition.name': 'Alert Definition Name',
   'alerts.saveChanges': 'You have unsaved changes',
@@ -1031,6 +1059,8 @@ Em.I18n.translations = {
   'alerts.notifications.error.integer': 'Must be an integer',
   'alerts.notifications.error.host': 'Hosts must be a valid Fully Qualified Domain Name (FQDN)',
 
+  'alerts.notifications.error.SMTPUsername': 'Username is required',
+  'alerts.notifications.error.SMTPPassword': 'Password is required',
   'alerts.notifications.error.retypePassword': 'Password confirmation must match password',
 
   'alerts.notifications.addCustomPropertyPopup.header': 'Add Property',
@@ -1118,6 +1148,11 @@ Em.I18n.translations = {
   'admin.kerberos.wizard.step1.option.ad.condition.3': 'Active Directory User container for principals has been created and is on-hand (e.g. OU=Hadoop,OU=People,dc=apache,dc=org)',
   'admin.kerberos.wizard.step1.option.ad.condition.4': 'Active Directory administrative credentials with delegated control of “Create, delete, and manage user accounts” on the previously mentioned User container are on-hand.',
   'admin.kerberos.wizard.step1.option.ad.condition.5': 'The Java Cryptography Extensions (JCE) have been setup on the Ambari Server host and all hosts in the cluster.',
+  'admin.kerberos.wizard.step1.option.ipa': 'Existing IPA',
+  'admin.kerberos.wizard.step1.option.ipa.condition.1': 'Cluster hosts are joined to the IPA domain and hosts are registered in DNS',
+  'admin.kerberos.wizard.step1.option.ipa.condition.2': 'A password policy in place that sets no expiry for created principals or krbPasswordExpiry attribute is writable',
+  'admin.kerberos.wizard.step1.option.ipa.condition.3': 'The ipa managed krb5.conf sets default_ccache_name = /tmp/krb5cc_%{uid}',
+  'admin.kerberos.wizard.step1.option.ipa.condition.4': 'The Java Cryptography Extensions (JCE) have been setup on the Ambari Server host and all hosts in the cluster.',
   'admin.kerberos.wizard.step1.prerequisites.label': 'Following prerequisites needs to be checked to progress ahead in the wizard.',
   'admin.kerberos.wizard.step2.info.body': 'Please configure kerberos related properties.',
   'admin.kerberos.wizard.step3.task0.title': 'Install Kerberos Client',
@@ -1130,13 +1165,14 @@ Em.I18n.translations = {
   'admin.kerberos.wizard.step5.moreInfoNonManual.body': 'Using the <b>Download CSV button</b>, you can download a csv file which contains a list of the principals and keytabs that will automatically be created by Ambari.',
   'admin.kerberos.wizard.step5.moreInfoManual.body': 'Important: Use the <b>Download CSV</b> button to obtain a list of the <b>required</b> principals and keytabs that are needed by Ambari to enable Kerberos in the cluster. <b>Do not proceed</b> until you have manually created and distributed the principals and keytabs to the cluster hosts.',
   'admin.kerberos.wizard.step5.kdc_type.label': 'KDC Type',
-  'admin.kerberos.wizard.step5.kdc_host.label': 'KDC Host',
+  'admin.kerberos.wizard.step5.kdc_hosts.label': 'KDC Hosts',
   'admin.kerberos.wizard.step5.realm.label': 'Realm Name',
   'admin.kerberos.wizard.step5.ldap_url.label': 'LDAP URL',
   'admin.kerberos.wizard.step5.container_dn.label': 'Container DN',
   'admin.kerberos.wizard.step5.executable_search_paths.label': 'Executable path',
   'admin.kerberos.wizard.step5.exitWizard': 'Exit Wizard',
   'admin.kerberos.wizard.step5.downloadCSV': 'Download CSV',
+  'admin.kerberos.wizard.step5.group.label': 'Group user principals should be member of',
   'admin.kerberos.wizard.step6.task0.title' : 'Stop Services',
   'admin.kerberos.wizard.step6.task1.title' : 'Delete ATS',
   'admin.kerberos.wizard.step6.notice.inProgress': 'Please wait while services are being stopped.',
@@ -1582,6 +1618,13 @@ Em.I18n.translations = {
   'admin.stackUpgrade.doThisLater': "Do This Later",
   'admin.stackUpgrade.pauseUpgrade': "Pause Upgrade",
   'admin.stackUpgrade.pauseDowngrade': "Pause Downgrade",
+  'admin.stackUpgrade.pauseUpgrade.warning': "You are about to Pause the {0}. You can return to continue the {0} and finalize at a later time but while the upgrade is paused, you <strong style='color:red;'>SHOULD NOT</strong> perform any cluster changes. For example:" +
+  "<ul><li>DO NOT add / remove hosts on the cluster</li>" +
+  "<li>DO NOT add / remove services on the cluster</li>" +
+  "<li>DO NOT enable / disable Kerberos</li>" +
+  "<li>DO NOT enable / disable HA</li>" +
+  "<li>DO NOT make any drastic changes to service configurations</li></ul>" +
+  "You <strong>MUST</strong> continue the {0} and finalize <strong>BEFORE</strong> performing <strong>ANY</strong> significant changes to the cluster.",
   'admin.stackUpgrade.downgrade.proceed': "Proceed with Downgrade",
   'admin.stackUpgrade.downgrade.body': "Are you sure you wish to abort the upgrade process and downgrade to <b>{0}</b>?",
   'admin.stackUpgrade.downgrade.retry.body': "Are you sure you wish to retry downgrade to <b>{0}</b>?",
@@ -1709,6 +1752,10 @@ Em.I18n.translations = {
   'services.service.actions.run.stopLdapKnox.title':'Stop Demo LDAP Knox Gateway',
   'services.service.actions.run.stopLdapKnox.context':'Stop Demo LDAP',
   'services.service.actions.run.startStopLdapKnox.error': 'Error during remote command: ',
+
+  // LLAP Custom Command
+  'services.service.actions.run.restartLLAP':'Restart LLAP',
+
   'services.service.actions.run.immediateStopHawqService.context':'Stop HAWQ Service (Immediate Mode)',
   'services.service.actions.run.immediateStopHawqService.label':'Stop HAWQ Service (Immediate Mode)',
   'services.service.actions.run.immediateStopHawqSegment.label':'Stop (Immediate Mode)',
@@ -1725,18 +1772,20 @@ Em.I18n.translations = {
   'services.service.delete.configVersionNote.plural': 'Update configs after {0} have been removed',
   'services.service.delete.lastService.popup.body': 'The <b>{0}</b> service can\'t be deleted, at least one service must be installed.',
   'services.service.delete.popup.dependentServices': 'Prior to deleting <b>{0}</b>, you must delete the following dependent services:',
-  'services.service.delete.popup.mustBeStopped': 'Prior to deleting <b>{0}</b>, you must stop the service.',
+  'services.service.delete.popup.mustBeStopped': 'Prior to deleting <b>{0}</b>, you must stop the service and each slave and master component.',
   'services.service.delete.popup.mustBeStopped.dependent': ' Along with dependent service <b>{0}</b>.',
   'services.service.delete.popup.warning': 'The <b>{0} service will be removed from Ambari and all configurations' +
   ' and configuration history will be lost.</b>',
-  'services.service.delete.popup.warning.dependent': '<b>Note! {0} will be deleted too.</b>',
+  'services.service.delete.popup.warning.dependent': '<b> Note: The dependent {0} service will be removed too.</b>',
   'services.service.confirmDelete.popup.header': 'Confirm Delete',
   'services.service.confirmDelete.popup.body': 'You must confirm delete of <b>{0}</b> by typing "{1}"' +
   ' in the confirmation box. <b>This operation is not reversible and all configuration history will be lost.</b>',
   'services.service.confirmDelete.popup.body.type': 'Type "{0}" to confirm',
-
   'services.service.confirmDelete.popup.body.dependent': 'You must confirm delete of <b>{0}</b> and <b>{1}</b> by typing "{2}"' +
   ' in the confirmation box. <b>This operation is not reversible and all configuration history will be lost.</b>',
+  'services.service.delete.service.success.confirmation': 'Service {0} was successfully deleted',
+  'services.service.delete.service.success.confirmation.plural': 'Services {0} were successfully deleted',
+
   'services.service.summary.unknown':'unknown',
   'services.service.summary.notRunning':'Not Running',
   'services.service.summary.notAvailable':'n/a',
@@ -2025,6 +2074,7 @@ Em.I18n.translations = {
   'services.reassign.step4.tasks.installHostComponents.title':'Install {0}',
   'services.reassign.step4.tasks.startZooKeeperServers.title':'Start ZooKeeper Servers',
   'services.reassign.step4.tasks.startNameNode.title':'Start NameNode',
+  'services.reassign.step4.tasks.stopHostComponentsInMaintenanceMode.title':'Stop {0}',
   'services.reassign.step4.tasks.deleteHostComponents.title':'Delete disabled {0}',
   'services.reassign.step4.tasks.startRequiredServices.title':'Start Required Services',
   'services.reassign.step4.tasks.cleanMySqlServer.title':'Clean MYSQL Server',
@@ -2140,6 +2190,7 @@ Em.I18n.translations = {
   'services.reassign.step6.tasks.deleteHostComponents.title': 'Delete disabled {0}',
   'services.reassign.step6.tasks.startAllServices.title': 'Start All Services',
   'services.reassign.step6.tasks.stopMysqlService.title': 'Stop Mysql Server',
+  'services.reassign.step6.tasks.stopHostComponentsInMaintenanceMode.title': 'Stop {0}',
   'services.reassign.step6.status.success': 'Successfully moved <b>{0}</b> from <b>{1}</b> host to <b>{2}</b> host.',
   'services.reassign.step6.status.failed': 'Failed to move <b>{0}</b> from <b>{1}</b> host to <b>{2}</b> host.',
   'services.reassign.step6.status.info': 'Reassigning {0}. \nPlease wait for all tasks to be completed.',
@@ -2456,7 +2507,7 @@ Em.I18n.translations = {
   'hosts.passiveMode.popup':'Are you sure you want to <b>Turn {0} Maintenance Mode</b> for {1}?',
   'hosts.passiveMode.popup.version.mismatch': '{0} has components from a stack which is not current. Before bringing this host out of maintenance mode, it is recommended that you upgrade its components to {1}',
   'hosts.passiveMode.popup.version.mismatch.multiple': 'Some hosts have components from a stack which is not current. Before bringing these hosts out of maintenance mode, it is recommended that you upgrade their components to {0}',
-
+  'hosts.combo.search.placebolder': 'Filter by host and component attributes or search by keyword ...',
   'charts.horizon.chart.showText':'show',
   'charts.horizon.chart.hideText':'hide',
   'charts.horizon.chart.attributes.cpu':'CPU',
@@ -2633,6 +2684,8 @@ Em.I18n.translations = {
   'dashboard.services.yarn.memory.msg': '{0} used / {1} reserved / {2} available',
   'dashboard.services.yarn.queues': 'Queues',
   'dashboard.services.yarn.queues.msg': '{0} Queues',
+  'dashboard.services.hawq.hawqSegments':'HAWQ Segments',
+  'dashboard.services.pxf.pxfHosts':'PXF',
 
   'dashboard.services.flume.summary.title':'Flume installed on {0} host{1} ({2} agent{3})',
   'dashboard.services.flume.summary.configure':'Configure Agents',
@@ -3011,5 +3064,8 @@ Em.I18n.translations = {
   'admin.serviceAutoStart.save.popup.body': 'You are changing the auto-start configuration.' +
       'Click <b>Save</b> to commit the change or <b>Discard</b> to revert your changes',
   'admin.serviceAutoStart.save.popup.transition.title': 'Warning',
-  'admin.serviceAutoStart.save.popup.transition.body': 'You have unsaved changes'
+  'admin.serviceAutoStart.save.popup.transition.body': 'You have unsaved changes',
+
+  'reset.ui.states': 'Reset UI State',
+  'reset.ui.states.body': 'You should proceed only if the UI is misbehaving (such as incorrect navigation upon login, UI is stuck and won&apos;t load, etc.).  Are you sure you want to reset the UI state?'
 };

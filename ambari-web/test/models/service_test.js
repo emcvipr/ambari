@@ -25,32 +25,6 @@ var service,
   serviceData = {
     id: 'service'
   },
-  healthCases = [
-    {
-      status: 'STARTED',
-      health: 'green'
-    },
-    {
-      status: 'STARTING',
-      health: 'green-blinking'
-    },
-    {
-      status: 'INSTALLED',
-      health: 'red'
-    },
-    {
-      status: 'STOPPING',
-      health: 'red-blinking'
-    },
-    {
-      status: 'UNKNOWN',
-      health: 'yellow'
-    },
-    {
-      status: 'ANOTHER',
-      health: 'yellow'
-    }
-  ],
   statusPropertiesCases = [
     {
       status: 'INSTALLED',
@@ -104,6 +78,10 @@ var service,
     host0: ['service0', 'service1']
 };
 
+function getModel() {
+  return App.Service.createRecord(serviceData);
+}
+
 describe('App.Service', function () {
 
   beforeEach(function () {
@@ -125,14 +103,13 @@ describe('App.Service', function () {
     });
   });
 
-  describe('#healthStatus', function () {
-    healthCases.forEach(function (item) {
-      it('should be ' + item.health, function () {
-        service.set('workStatus', item.status);
-        expect(service.get('healthStatus')).to.equal(item.health);
-      });
-    });
-  });
+  App.TestAliases.testAsComputedGetByKey(getModel(), 'healthStatus', 'healthStatusMap', 'workStatus', {defaultValue: 'yellow', map: {
+    STARTED: 'green',
+    STARTING: 'green-blinking',
+    INSTALLED: 'red',
+    STOPPING: 'red-blinking',
+    UNKNOWN: 'yellow'
+  }});
 
   statusPropertiesCases.forEach(function (item) {
     var status = item.status,
@@ -210,5 +187,82 @@ describe('App.Service', function () {
     });
   });
 
+  describe('#allowToDelete', function () {
+
+    beforeEach(function () {
+      this.stub = sinon.stub(service, 'get');
+    });
+
+    afterEach(function () {
+      this.stub.restore();
+    });
+
+    Em.A([
+      {
+        m: 'may be deleted (1)',
+        slaveComponents: [{allowToDelete: true}],
+        masterComponents: [{allowToDelete: true}],
+        workStatus: 'INIT',
+        e: true
+      },
+      {
+        m: 'may be deleted (2)',
+        slaveComponents: [{allowToDelete: true}],
+        masterComponents: [{allowToDelete: true}],
+        workStatus: 'INSTALL_FAILED',
+        e: true
+      },
+      {
+        m: 'may be deleted (3)',
+        slaveComponents: [{allowToDelete: true}],
+        masterComponents: [{allowToDelete: true}],
+        workStatus: 'INSTALLED',
+        e: true
+      },
+      {
+        m: 'may be deleted (4)',
+        slaveComponents: [{allowToDelete: true}],
+        masterComponents: [{allowToDelete: true}],
+        workStatus: 'UNKNOWN',
+        e: true
+      },
+      {
+        m: 'deleting is not allowed (1)',
+        slaveComponents: [{allowToDelete: false}],
+        masterComponents: [{allowToDelete: true}],
+        workStatus: 'UNKNOWN',
+        e: false
+      },
+      {
+        m: 'deleting is not allowed (2)',
+        slaveComponents: [{allowToDelete: false}],
+        masterComponents: [{allowToDelete: false}],
+        workStatus: 'UNKNOWN',
+        e: false
+      },
+      {
+        m: 'deleting is not allowed (3)',
+        slaveComponents: [{allowToDelete: true}],
+        masterComponents: [{allowToDelete: false}],
+        workStatus: 'UNKNOWN',
+        e: false
+      },
+      {
+        m: 'deleting is not allowed (4)',
+        slaveComponents: [{allowToDelete: true}],
+        masterComponents: [{allowToDelete: true}],
+        workStatus: 'STARTED',
+        e: false
+      }
+    ]).forEach(function (test) {
+      it(test.m, function () {
+        this.stub.withArgs('workStatus').returns(test.workStatus);
+        this.stub.withArgs('slaveComponents').returns(test.slaveComponents);
+        this.stub.withArgs('masterComponents').returns(test.masterComponents);
+        expect(Em.get(service, 'allowToDelete')).to.be.equal(test.e);
+      });
+    });
+
+  });
 
 });

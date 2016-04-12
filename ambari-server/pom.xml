@@ -293,6 +293,7 @@
             <exclude>src/test/resources/TestAmbaryServer.samples/**</exclude>
             <exclude>src/test/resources/*.txt</exclude>
             <exclude>src/test/resources/users_for_dn_with_space.ldif</exclude>
+            <exclude>src/test/resources/users_with_duplicate_uid.ldif</exclude>
 
             <!--Velocity log -->
             <exclude>**/velocity.log*</exclude>
@@ -399,23 +400,64 @@
                 </source>
               </sources>
             </mapping>
+            <mapping>
+              <directory>/usr/sbin</directory>
+              <username>root</username>
+              <groupname>root</groupname>
+              <directoryIncluded>false</directoryIncluded> <!-- avoid managing /usr/sbin -->
+              <sources>
+                <source>
+                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/usr/sbin</location>
+                </source>
+              </sources>
+            </mapping>
       			<mapping>
-              <directory>/usr</directory>
+              <directory>/usr/lib/ambari-server</directory>
               <username>root</username>
               <groupname>root</groupname>
               <sources>
                 <source>
-                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/usr</location>
+                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/usr/lib/ambari-server</location>
                 </source>
               </sources>
             </mapping>
             <mapping>
-              <directory>/var</directory>
+              <directory>/var/lib/ambari-server</directory>
               <username>root</username>
               <groupname>root</groupname>
               <sources>
                 <source>
-                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/var</location>
+                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/var/lib/ambari-server</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
+              <directory>/usr/lib/python2.6/site-packages</directory>
+              <username>root</username>
+              <groupname>root</groupname>
+              <sources>
+                <source>
+                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/usr/lib/python2.6/site-packages</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
+              <directory>/var/log/ambari-server</directory>
+              <username>root</username>
+              <groupname>root</groupname>
+              <sources>
+                <source>
+                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/var/log/ambari-server</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
+              <directory>/var/run/ambari-server</directory>
+              <username>root</username>
+              <groupname>root</groupname>
+              <sources>
+                <source>
+                  <location>${project.build.directory}${dirsep}${project.artifactId}-${project.version}-dist/var/run/ambari-server</location>
                 </source>
               </sources>
             </mapping>
@@ -823,6 +865,46 @@
         </plugins>
       </build>
     </profile>
+    <profile>
+      <id>replaceBaseUrl</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+        <property>
+          <name>urlInfoPath</name>
+        </property>
+      </activation>
+      <properties>
+        <urlinfo_processor_script_location>${project.basedir}/../ambari-common/src/main/python/urlinfo_processor/urlinfo_processor.py</urlinfo_processor_script_location>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>1.2.1</version>
+            <executions>
+              <execution>
+                <configuration>
+                  <executable>${executable.python}</executable>
+                  <arguments>
+                    <argument>${urlinfo_processor_script_location}</argument>
+                    <argument>-u</argument>
+                    <argument>${urlInfoPath}</argument>
+                    <argument>-s</argument>
+                    <argument>${stacksSrcLocation}</argument>
+                  </arguments>
+                </configuration>
+                <id>replace-base-url</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
   </profiles>
   <dependencies>
     <dependency>
@@ -974,6 +1056,10 @@
     <dependency>
       <groupId>log4j</groupId>
       <artifactId>log4j</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>log4j</groupId>
+      <artifactId>apache-log4j-extras</artifactId>
     </dependency>
     <dependency>
       <groupId>org.eclipse.persistence</groupId>
@@ -1195,7 +1281,7 @@
           <groupId>c3p0</groupId>
           <artifactId>c3p0</artifactId>
         </exclusion>
-      </exclusions>      
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.quartz-scheduler</groupId>

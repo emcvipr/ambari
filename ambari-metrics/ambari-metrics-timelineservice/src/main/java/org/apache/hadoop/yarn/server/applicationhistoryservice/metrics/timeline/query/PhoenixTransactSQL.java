@@ -28,6 +28,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -261,7 +262,7 @@ public class PhoenixTransactSQL {
     "METRIC_SUM, METRIC_COUNT, METRIC_MAX, METRIC_MIN) " +
     "SELECT METRIC_NAME, HOSTNAME, APP_ID, INSTANCE_ID, %s AS SERVER_TIME, UNITS, " +
     "SUM(METRIC_SUM), SUM(METRIC_COUNT), MAX(METRIC_MAX), MIN(METRIC_MIN) " +
-    "FROM %s WHERE SERVER_TIME >= %s AND SERVER_TIME < %s " +
+    "FROM %s WHERE SERVER_TIME > %s AND SERVER_TIME <= %s " +
     "GROUP BY METRIC_NAME, HOSTNAME, APP_ID, INSTANCE_ID, UNITS";
 
   /**
@@ -271,9 +272,9 @@ public class PhoenixTransactSQL {
   public static final String GET_AGGREGATED_APP_METRIC_GROUPBY_SQL = "UPSERT %s " +
     "INTO %s (METRIC_NAME, APP_ID, INSTANCE_ID, SERVER_TIME, UNITS, " +
     "METRIC_SUM, METRIC_COUNT, METRIC_MAX, METRIC_MIN) SELECT METRIC_NAME, APP_ID, " +
-    "INSTANCE_ID, %s AS SERVER_TIME, UNITS, SUM(METRIC_SUM), SUM(%s), " +
-    "MAX(METRIC_MAX), MIN(METRIC_MIN) FROM %s WHERE SERVER_TIME >= %s AND " +
-    "SERVER_TIME < %s GROUP BY METRIC_NAME, APP_ID, INSTANCE_ID, UNITS";
+    "INSTANCE_ID, %s AS SERVER_TIME, UNITS, ROUND(AVG(METRIC_SUM),2), ROUND(AVG(%s)), " +
+    "MAX(METRIC_MAX), MIN(METRIC_MIN) FROM %s WHERE SERVER_TIME > %s AND " +
+    "SERVER_TIME <= %s GROUP BY METRIC_NAME, APP_ID, INSTANCE_ID, UNITS";
 
   public static final String METRICS_RECORD_TABLE_NAME = "METRIC_RECORD";
   public static final String METRICS_AGGREGATE_MINUTE_TABLE_NAME =
@@ -484,17 +485,23 @@ public class PhoenixTransactSQL {
         rowsPerMetric = TimeUnit.MILLISECONDS.toHours(range);
         break;
       case MINUTES:
-        rowsPerMetric = TimeUnit.MILLISECONDS.toMinutes(range)/2; //2 minute data in METRIC_AGGREGATE_MINUTE table.
+        rowsPerMetric = TimeUnit.MILLISECONDS.toMinutes(range)/5; //5 minute data in METRIC_AGGREGATE_MINUTE table.
         break;
       default:
         rowsPerMetric = TimeUnit.MILLISECONDS.toSeconds(range)/10; //10 second data in METRIC_AGGREGATE table
     }
 
-    long totalRowsRequested = rowsPerMetric * condition.getMetricNames().size();
+    List<String> hostNames = condition.getHostnames();
+    int numHosts = (hostNames == null || hostNames.isEmpty()) ? 1 : condition.getHostnames().size();
+
+    long totalRowsRequested = rowsPerMetric * condition.getMetricNames().size() * numHosts;
+
     if (totalRowsRequested > PhoenixHBaseAccessor.RESULTSET_LIMIT) {
-      throw new PrecisionLimitExceededException("Requested precision (" + precision + ") for given time range causes " +
-        "result set size of " + totalRowsRequested + ", which exceeds the limit - "
-        + PhoenixHBaseAccessor.RESULTSET_LIMIT + ". Please request higher precision.");
+      throw new PrecisionLimitExceededException("Requested " +  condition.getMetricNames().size() + " metrics for "
+        + numHosts + " hosts in " + precision +  " precision for the time range of " + range/1000
+        + " seconds. Estimated resultset size of " + totalRowsRequested + " is greater than the limit of "
+        + PhoenixHBaseAccessor.RESULTSET_LIMIT + ". Request lower precision or fewer number of metrics or hosts." +
+        " Alternatively, increase the limit value through ams-site:timeline.metrics.service.default.result.limit config");
     }
   }
 

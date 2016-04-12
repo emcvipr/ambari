@@ -94,7 +94,8 @@ class ActionQueue(threading.Thread):
     self.statusCommandQueue.queue.clear()
 
     for command in commands:
-      logger.info("Adding " + command['commandType'] + " for service " + \
+      logger.info("Adding " + command['commandType'] + " for component " + \
+                  command['componentName'] + " of service " + \
                   command['serviceName'] + " of cluster " + \
                   command['clusterName'] + " to the queue.")
       self.statusCommandQueue.put(command)
@@ -155,11 +156,23 @@ class ActionQueue(threading.Thread):
           # commands using separate threads
           while (True):
             command = self.commandQueue.get(True, self.EXECUTION_COMMAND_WAIT_TIME)
-            logger.info("Kicking off a thread for the command, id=" +
-                        str(command['commandId']) + " taskId=" + str(command['taskId']))
-            t = threading.Thread(target=self.process_command, args=(command,))
-            t.daemon = True
-            t.start()
+            # If command is not retry_enabled then do not start them in parallel
+            # checking just one command is enough as all commands for a stage is sent
+            # at the same time and retry is only enabled for initial start/install
+            retryAble = False
+            if 'command_retry_enabled' in command['commandParams']:
+              retryAble = command['commandParams']['command_retry_enabled'] == "true"
+            if retryAble:
+              logger.info("Kicking off a thread for the command, id=" +
+                          str(command['commandId']) + " taskId=" + str(command['taskId']))
+              t = threading.Thread(target=self.process_command, args=(command,))
+              t.daemon = True
+              t.start()
+            else:
+              self.process_command(command)
+              break;
+            pass
+          pass
       except (Queue.Empty):
         pass
 
@@ -226,10 +239,10 @@ class ActionQueue(threading.Thread):
     commandId = command['commandId']
     isCommandBackground = command['commandType'] == self.BACKGROUND_EXECUTION_COMMAND
     isAutoExecuteCommand = command['commandType'] == self.AUTO_EXECUTION_COMMAND
-    message = "Executing command with id = {commandId} for role = {role} of " \
+    message = "Executing command with id = {commandId}, taskId = {taskId} for role = {role} of " \
               "cluster {cluster}.".format(
-              commandId = str(commandId), role=command['role'],
-              cluster=clusterName)
+              commandId = str(commandId), taskId = str(command['taskId']),
+              role=command['role'], cluster=clusterName)
     logger.info(message)
 
     taskId = command['taskId']
@@ -311,6 +324,23 @@ class ActionQueue(threading.Thread):
       'exitCode': commandresult['exitcode'],
       'status': status,
     })
+
+    if self.config.has_option("logging","log_command_executes") and int(self.config.get("logging",
+                                                                                       "log_command_executes")) == 1:
+        if roleResult['stdout'] != '':
+            logger.info("Begin command output log for command with id = " + str(command['taskId']) + ", role = "
+                        + command['role'] + ", roleCommand = " + command['roleCommand'])
+            logger.info(roleResult['stdout'])
+            logger.info("End command output log for command with id = " + str(command['taskId']) + ", role = "
+                        + command['role'] + ", roleCommand = " + command['roleCommand'])
+
+        if roleResult['stderr'] != '':
+            logger.info("Begin command stderr log for command with id = " + str(command['taskId']) + ", role = "
+                        + command['role'] + ", roleCommand = " + command['roleCommand'])
+            logger.info(roleResult['stderr'])
+            logger.info("End command stderr log for command with id = " + str(command['taskId']) + ", role = "
+                        + command['role'] + ", roleCommand = " + command['roleCommand'])
+
     if roleResult['stdout'] == '':
       roleResult['stdout'] = 'None'
     if roleResult['stderr'] == '':
@@ -332,11 +362,13 @@ class ActionQueue(threading.Thread):
         if command['roleCommand'] == self.ROLE_COMMAND_START:
           self.controller.recovery_manager.update_current_status(command['role'], LiveStatus.LIVE_STATUS)
           self.controller.recovery_manager.update_config_staleness(command['role'], False)
-          logger.info("After EXECUTION_COMMAND (START), current state of " + command['role'] + " to " +
+          logger.info("After EXECUTION_COMMAND (START), with taskId=" + str(command['taskId']) +
+                      ", current state of " + command['role'] + " to " +
                        self.controller.recovery_manager.get_current_status(command['role']) )
         elif command['roleCommand'] == self.ROLE_COMMAND_STOP or command['roleCommand'] == self.ROLE_COMMAND_INSTALL:
           self.controller.recovery_manager.update_current_status(command['role'], LiveStatus.DEAD_STATUS)
-          logger.info("After EXECUTION_COMMAND (STOP/INSTALL), current state of " + command['role'] + " to " +
+          logger.info("After EXECUTION_COMMAND (STOP/INSTALL), with taskId=" + str(command['taskId']) +
+                      ", current state of " + command['role'] + " to " +
                        self.controller.recovery_manager.get_current_status(command['role']) )
         elif command['roleCommand'] == self.ROLE_COMMAND_CUSTOM_COMMAND:
           if command['hostLevelParams'].has_key('custom_command') and \

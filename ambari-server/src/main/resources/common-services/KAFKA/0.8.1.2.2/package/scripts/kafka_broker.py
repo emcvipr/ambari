@@ -25,6 +25,9 @@ from resource_management.libraries.functions import Direction
 from resource_management.libraries.functions.version import compare_versions, format_stack_version
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.functions.check_process_status import check_process_status
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
+from resource_management.libraries.functions.show_logs import show_logs
 from kafka import ensure_base_directories
 
 import upgrade
@@ -34,7 +37,8 @@ from setup_ranger_kafka import setup_ranger_kafka
 class KafkaBroker(Script):
 
   def get_stack_to_component(self):
-    return {"HDP": "kafka-broker"}
+    import params
+    return {params.stack_name : "kafka-broker"}
 
   def install(self, env):
     self.install_packages(env)
@@ -48,10 +52,10 @@ class KafkaBroker(Script):
     import params
     env.set_params(params)
 
-    if params.version and compare_versions(format_stack_version(params.version), '2.2.0.0') >= 0:
+    if params.version and check_stack_feature(StackFeature.ROLLING_UPGRADE, params.version):
       stack_select.select("kafka-broker", params.version)
 
-    if params.version and compare_versions(format_stack_version(params.version), '2.3.0.0') >= 0:
+    if params.version and check_stack_feature(StackFeature.CONFIG_VERSIONING, params.version):
       conf_select.select(params.stack_name, "kafka", params.version)
 
     # This is extremely important since it should only be called if crossing the HDP 2.3.4.0 boundary. 
@@ -65,6 +69,7 @@ class KafkaBroker(Script):
         src_version = format_stack_version(params.version)
         dst_version = format_stack_version(params.downgrade_from_version)
 
+      # TODO: How to handle the case of crossing stack version boundary in a stack agnostic way?
       if compare_versions(src_version, '2.3.4.0') < 0 and compare_versions(dst_version, '2.3.4.0') >= 0:
         # Calling the acl migration script requires the configs to be present.
         self.configure(env, upgrade_type=upgrade_type)
@@ -78,10 +83,14 @@ class KafkaBroker(Script):
       setup_ranger_kafka() #Ranger Kafka Plugin related call 
     daemon_cmd = format('source {params.conf_dir}/kafka-env.sh ; {params.kafka_bin} start')
     no_op_test = format('ls {params.kafka_pid_file} >/dev/null 2>&1 && ps -p `cat {params.kafka_pid_file}` >/dev/null 2>&1')
-    Execute(daemon_cmd,
-            user=params.kafka_user,
-            not_if=no_op_test
-    )
+    try:
+      Execute(daemon_cmd,
+              user=params.kafka_user,
+              not_if=no_op_test
+      )
+    except:
+      show_logs(params.kafka_log_dir, params.kafka_user)
+      raise
 
   def stop(self, env, upgrade_type=None):
     import params
@@ -91,9 +100,13 @@ class KafkaBroker(Script):
     # before attempting to stop Kafka Broker
     ensure_base_directories()
     daemon_cmd = format('source {params.conf_dir}/kafka-env.sh; {params.kafka_bin} stop')
-    Execute(daemon_cmd,
-            user=params.kafka_user,
-    )
+    try:
+      Execute(daemon_cmd,
+              user=params.kafka_user,
+      )
+    except:
+      show_logs(params.kafka_log_dir, params.kafka_user)
+      raise
     File(params.kafka_pid_file,
           action = "delete"
     )

@@ -118,6 +118,12 @@ def perform_grafana_post_call(url, payload, server):
 
       response = conn.getresponse()
       Logger.info("Http response: %s %s" % (response.status, response.reason))
+      if response.status == 401: #Intermittent error thrown from Grafana
+        if i < GRAFANA_CONNECT_TRIES - 1:
+          time.sleep(GRAFANA_CONNECT_TIMEOUT)
+          Logger.info("Connection to Grafana failed. Next retry in %s seconds."
+                  % (GRAFANA_CONNECT_TIMEOUT))
+          continue
       data = response.read()
       Logger.info("Http data: %s" % data)
       conn.close()
@@ -283,7 +289,12 @@ def create_ams_dashboards():
         if "id" in dashboard_def:
           dashboard_def['id'] = None
         # Set correct tags
-        dashboard_def['tags'] = [ 'builtin', version ]
+        if 'tags' in dashboard_def:
+          dashboard_def['tags'].append('builtin')
+          dashboard_def['tags'].append(version)
+        else:
+          dashboard_def['tags'] = [ 'builtin', version ]
+
         dashboard_def['overwrite'] = True
         
         for dashboard in existing_dashboards:

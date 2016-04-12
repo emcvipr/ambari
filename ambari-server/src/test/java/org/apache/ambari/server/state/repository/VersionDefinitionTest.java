@@ -19,8 +19,14 @@ package org.apache.ambari.server.state.repository;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.ambari.server.state.RepositoryType;
 import org.apache.ambari.server.state.ServiceInfo;
@@ -96,10 +102,132 @@ public class VersionDefinitionTest {
       }
     };
 
-    // the file does not define available services, which
+    // the file does not define available services
     assertEquals(4, xml.manifestServices.size());
     assertEquals(3, xml.getAvailableServices(stack).size());
   }
 
+  @Test
+  public void testStackManifest() throws Exception {
+
+    File f = new File("src/test/resources/version_definition_test_all_services.xml");
+
+    VersionDefinitionXml xml = VersionDefinitionXml.load(f.toURI().toURL());
+
+    StackInfo stack = new StackInfo() {
+      private Map<String, ServiceInfo> m_services = new HashMap<String, ServiceInfo>() {{
+        put("HDFS", makeService("HDFS"));
+        put("HBASE", makeService("HBASE"));
+        put("HIVE", makeService("HIVE"));
+        put("YARN", makeService("YARN"));
+      }};
+
+      @Override
+      public ServiceInfo getService(String name) {
+        return m_services.get(name);
+      }
+
+      @Override
+      public synchronized Collection<ServiceInfo> getServices() {
+        return m_services.values();
+      }
+
+    };
+
+    List<ManifestServiceInfo> stackServices = xml.getStackServices(stack);
+
+    // the file does not define available services
+    assertEquals(4, xml.manifestServices.size());
+    assertEquals(3, xml.getAvailableServices(stack).size());
+    assertEquals(4, stackServices.size());
+
+    boolean foundHdfs = false;
+    boolean foundYarn = false;
+    boolean foundHive = false;
+
+    for (ManifestServiceInfo msi : stackServices) {
+      if ("HDFS".equals(msi.m_name)) {
+        foundHdfs = true;
+        assertEquals("HDFS Display", msi.m_display);
+        assertEquals("HDFS Comment", msi.m_comment);
+        assertEquals(1, msi.m_versions.size());
+        assertEquals("2.7.1", msi.m_versions.iterator().next());
+      } else if ("YARN".equals(msi.m_name)) {
+        foundYarn = true;
+        assertEquals(1, msi.m_versions.size());
+        assertEquals("", msi.m_versions.iterator().next());
+      } else if ("HIVE".equals(msi.m_name)) {
+        foundHive = true;
+        assertEquals(2, msi.m_versions.size());
+        assertTrue(msi.m_versions.contains("1.1.0"));
+        assertTrue(msi.m_versions.contains("2.0.0"));
+      }
+    }
+
+    assertTrue(foundHdfs);
+    assertTrue(foundYarn);
+    assertTrue(foundHive);
+  }
+
+  @Test
+  public void testSerialization() throws Exception {
+
+    File f = new File("src/test/resources/version_definition_test_all_services.xml");
+
+    VersionDefinitionXml xml = VersionDefinitionXml.load(f.toURI().toURL());
+
+    String xmlString = xml.toXml();
+
+    xml = VersionDefinitionXml.load(xmlString);
+
+    assertNotNull(xml.release.build);
+    assertEquals("1234", xml.release.build);
+  }
+
+
+  @Test
+  public void testMerger() throws Exception {
+    File f = new File("src/test/resources/version_definition_test_all_services.xml");
+
+    VersionDefinitionXml xml1 = VersionDefinitionXml.load(f.toURI().toURL());
+    VersionDefinitionXml xml2 = VersionDefinitionXml.load(f.toURI().toURL());
+    xml2.release.version = "2.3.4.2";
+    xml2.release.build = "2468";
+
+    VersionDefinitionXml.Merger builder = new VersionDefinitionXml.Merger();
+    VersionDefinitionXml xml3 = builder.merge();
+
+    assertNull(xml3);
+
+    builder.add(xml1.release.version, xml1);
+    builder.add("", xml2);
+    xml3 = builder.merge();
+
+    assertNotNull(xml3);
+    assertNull("Merged definition cannot have a build", xml3.release.build);
+    assertEquals(xml3.release.version, "2.3.4.1");
+  }
+
+  private static ServiceInfo makeService(final String name) {
+    return new ServiceInfo() {
+      @Override
+      public String getName() {
+        return name;
+      }
+      @Override
+      public String getDisplayName() {
+        return name + " Display";
+      }
+      @Override
+      public String getVersion() {
+        return "1.1.1";
+      }
+      @Override
+      public String getComment() {
+        return name + " Comment";
+      }
+
+    };
+  }
 
 }

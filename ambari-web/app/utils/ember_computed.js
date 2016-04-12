@@ -1049,7 +1049,7 @@ computed.firstNotBlank = generateComputedWithValues(function (values) {
 computed.formatUnavailable = function(dependentKey) {
   return computed(dependentKey, function () {
     var value = smartGet(this, dependentKey);
-    return (value || value == 0) ? value : Em.I18n.t('services.service.summary.notAvailable');
+    return value || value == 0 ? value : Em.I18n.t('services.service.summary.notAvailable');
   });
 };
 
@@ -1090,3 +1090,81 @@ computed.countBasedMessage = function (dependentKey, zeroMsg, oneMsg, manyMsg) {
     return oneMsg;
   });
 };
+
+/**
+ * A computed property that returns property value according to the property key and object key
+ * App.*-keys are supported
+ * <pre>
+ *   var o = Em.Object.create({
+ *    p1: {a: 1, b: 2, c: 3},
+ *    p2: 'a',
+ *    p3: Em.computed.getByKey('p1', 'p2')
+ *   });
+ *   console.log(o.get('p3')); // 1
+ *   o.set('p2', 'b');
+ *   console.log(o.get('p3')); // 2
+ *   o.set('p2', 'c');
+ *   console.log(o.get('p3')); // 3
+ * </pre>
+ *
+ * With `defaultValue`
+ * <pre>
+ *   var o = Em.Object.create({
+ *    p1: {a: 1, b: 2, c: 3},
+ *    p2: 'd',
+ *    p3: Em.computed.getByKey('p1', 'p2', 100500)
+ *   });
+ *   console.log(o.get('p3')); // 100500 - default value is returned, because there is no key `d` in the `p1`
+ * </pre>
+ * <b>IMPORTANT!</b> This CP <b>SHOULD NOT</b> be used with for object with values equal to the views (like <code>{a: App.MyViewA, b: App.MyViewB}</code>)
+ * This restriction exists because views may be undefined on the moment when this CP is calculated (files are not `required` yet)
+ *
+ * @param {string} objectKey
+ * @param {string} propertyKey
+ * @param {*} [defaultValue]
+ * @returns {Ember.ComputedProperty}
+ */
+computed.getByKey = function (objectKey, propertyKey, defaultValue) {
+  return computed(objectKey, propertyKey, function () {
+    var object = smartGet(this, objectKey);
+    var property = smartGet(this, propertyKey);
+    if (!object) {
+      return null;
+    }
+    return object.hasOwnProperty(property) ? object[property] : defaultValue;
+  });
+}
+
+/**
+ * A computed property that returns dependent value truncated to the `reduceTo`-size if its length is greater than `maxLength`
+ * Truncated part may be replaced with `replacer` if it's provided ('...' by default)
+ * <pre>
+ *   var o = Em.Object.create({
+ *     p1: Em.computed.truncate('p2', 8, 5, '###'),
+ *     p2: 'some string',
+ *     p3: Em.computed.truncate('p2', 8, 5)
+ *   });
+ *   console.log(o.get('p1')); // 'some ###'
+ *   console.log(o.get('p3')); // 'some ...'
+ *   o.set('p2', '123456789');
+ *   console.log(o.get('p1')); // '12345###'
+ *   console.log(o.get('p3')); // '12345...'
+ * </pre>
+ *
+ * @param {string} dependentKey
+ * @param {number} maxLength
+ * @param {number} reduceTo
+ * @param {string} [replacer] default - '...'
+ * @returns {Ember.ComputedProperty}
+ */
+computed.truncate = function (dependentKey, maxLength, reduceTo, replacer) {
+  Em.assert('`reduceTo` should be <=`maxLength`', reduceTo <= maxLength);
+  var _replacer = arguments.length > 3 ? replacer : '...';
+  return computed(dependentKey, function () {
+    var value = smartGet(this, dependentKey) || '';
+    if (value.length > maxLength) {
+      return value.substr(0, reduceTo) + _replacer;
+    }
+    return value;
+  });
+}

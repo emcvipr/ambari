@@ -84,11 +84,24 @@ public class ComponentModule extends BaseModule<ComponentModule, ComponentInfo> 
         componentInfo.setCardinality(parentInfo.getCardinality());
       }
       componentInfo.setVersionAdvertised(parentInfo.isVersionAdvertised());
+
+      if(componentInfo.getDecommissionAllowed() == null) {
+        componentInfo.setDecommissionAllowed(parentInfo.getDecommissionAllowed());
+      }
+
       if (componentInfo.getAutoDeploy() == null) {
         componentInfo.setAutoDeploy(parentInfo.getAutoDeploy());
       }
 
       componentInfo.setRecoveryEnabled(parentInfo.isRecoveryEnabled());
+
+      if(componentInfo.getBulkCommandDefinition() == null){
+        componentInfo.setBulkCommands(parentInfo.getBulkCommandDefinition());
+      }
+
+      if(componentInfo.getReassignAllowed() == null) {
+        componentInfo.setReassignAllowed(parentInfo.getReassignAllowed());
+      }
 
       mergeComponentDependencies(parentInfo.getDependencies(),
               componentInfo.getDependencies());

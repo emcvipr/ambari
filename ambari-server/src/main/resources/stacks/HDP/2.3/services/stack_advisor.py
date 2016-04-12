@@ -17,6 +17,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 import os
+import re
 import fnmatch
 import socket
 
@@ -28,6 +29,7 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
     hostsList = [host["Hosts"]["host_name"] for host in hosts["items"]]
     hostGroups = parentComponentLayoutRecommendations["blueprint"]["host_groups"]
     servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    componentsList = [component for service in services["services"] for component in service["components"]]
 
     if "HAWQ" in servicesList:
       # remove HAWQSTANDBY on a single node
@@ -36,19 +38,26 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
         components = [component for component in components if component["name"] != 'HAWQSTANDBY']
         parentComponentLayoutRecommendations["blueprint"]["host_groups"][0]["components"] = components
 
-      # co-locate HAWQSEGMENT with DATANODE
-      for host_group in hostGroups:
-        if {"name": "DATANODE"} in host_group["components"] and {"name": "HAWQSEGMENT"} not in host_group["components"]:
-          host_group["components"].append({"name": "HAWQSEGMENT"})
-        if {"name": "DATANODE"} not in host_group["components"] and {"name": "HAWQSEGMENT"} in host_group["components"]:
-          host_group["components"].remove({"name": "HAWQSEGMENT"})
+      # co-locate HAWQSEGMENT with DATANODE, if no hosts have been allocated for HAWQSEGMENT
+      hawqSegment = [component for component in componentsList if component["StackServiceComponents"]["component_name"] == "HAWQSEGMENT"][0]
+      if not self.isComponentHostsPopulated(hawqSegment):
+        for host_group in hostGroups:
+          if {"name": "DATANODE"} in host_group["components"] and {"name": "HAWQSEGMENT"} not in host_group["components"]:
+            host_group["components"].append({"name": "HAWQSEGMENT"})
+          if {"name": "DATANODE"} not in host_group["components"] and {"name": "HAWQSEGMENT"} in host_group["components"]:
+            host_group["components"].remove({"name": "HAWQSEGMENT"})
 
-    # co-locate PXF with NAMENODE and DATANODE
     if "PXF" in servicesList:
-      for host_group in hostGroups:
-        if ({"name": "NAMENODE"} in host_group["components"] or {"name": "DATANODE"} in host_group["components"]) \
-            and {"name": "PXF"} not in host_group["components"]:
-          host_group["components"].append({"name": "PXF"})
+      # co-locate PXF with NAMENODE and DATANODE, if no hosts have been allocated for PXF
+      pxf = [component for component in componentsList if component["StackServiceComponents"]["component_name"] == "PXF"][0]
+      if not self.isComponentHostsPopulated(pxf):
+        for host_group in hostGroups:
+          if ({"name": "NAMENODE"} in host_group["components"] or {"name": "DATANODE"} in host_group["components"]) \
+              and {"name": "PXF"} not in host_group["components"]:
+            host_group["components"].append({"name": "PXF"})
+          if ({"name": "NAMENODE"} not in host_group["components"] and {"name": "DATANODE"} not in host_group["components"]) \
+              and {"name": "PXF"} in host_group["components"]:
+            host_group["components"].remove({"name": "PXF"})
 
     return parentComponentLayoutRecommendations
 
@@ -452,20 +461,13 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
     servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
     putRangerKmsDbksProperty = self.putProperty(configurations, "dbks-site", services)
     putRangerKmsProperty = self.putProperty(configurations, "kms-properties", services)
+    kmsEnvProperties = getSiteProperties(services['configurations'], 'kms-env')
+    putCoreSiteProperty = self.putProperty(configurations, "core-site", services)
+    putCoreSitePropertyAttribute = self.putPropertyAttribute(configurations, "core-site")
 
     if 'kms-properties' in services['configurations'] and ('DB_FLAVOR' in services['configurations']['kms-properties']['properties']):
 
       rangerKmsDbFlavor = services['configurations']["kms-properties"]["properties"]["DB_FLAVOR"]
-      ranger_kms_sql_connector_dict = {
-        'MYSQL': '/usr/share/java/mysql-connector-java.jar',
-        'ORACLE': '/usr/share/java/ojdbc6.jar',
-        'POSTGRES': '/usr/share/java/postgresql.jar',
-        'MSSQL': '/usr/share/java/sqljdbc4.jar',
-        'SQLA': '/path_to_driver/sqla-client-jdbc.tar.gz'
-      }
-
-      rangerKmsSqlConnectorProperty = ranger_kms_sql_connector_dict.get(rangerKmsDbFlavor, ranger_kms_sql_connector_dict['MYSQL'])
-      putRangerKmsProperty('SQL_CONNECTOR_JAR', rangerKmsSqlConnectorProperty)
 
       if ('db_host' in services['configurations']['kms-properties']['properties']) and ('db_name' in services['configurations']['kms-properties']['properties']):
 
@@ -483,6 +485,15 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
         rangerKmsDbProperties = ranger_kms_db_url_dict.get(rangerKmsDbFlavor, ranger_kms_db_url_dict['MYSQL'])
         for key in rangerKmsDbProperties:
           putRangerKmsDbksProperty(key, rangerKmsDbProperties.get(key))
+
+    if kmsEnvProperties and self.checkSiteProperties(kmsEnvProperties, 'kms_user') and 'KERBEROS' in servicesList:
+      kmsUser = kmsEnvProperties['kms_user']
+      kmsUserOld = getOldValue(self, services, 'kms-env', 'kms_user')
+      putCoreSiteProperty('hadoop.proxyuser.{0}.groups'.format(kmsUser), '*')
+      if kmsUserOld is not None and kmsUser != kmsUserOld:
+        putCoreSitePropertyAttribute("hadoop.proxyuser.{0}.groups".format(kmsUserOld), 'delete', 'true')
+        services["forced-configurations"].append({"type" : "core-site", "name" : "hadoop.proxyuser.{0}.groups".format(kmsUserOld)})
+        services["forced-configurations"].append({"type" : "core-site", "name" : "hadoop.proxyuser.{0}.groups".format(kmsUser)})
 
   def recommendRangerConfigurations(self, configurations, clusterData, services, hosts):
     super(HDP23StackAdvisor, self).recommendRangerConfigurations(configurations, clusterData, services, hosts)
@@ -672,31 +683,51 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
 
 
   def recommendHAWQConfigurations(self, configurations, clusterData, services, hosts):
-    if "hawq-site" not in services["configurations"]:
-      return
-    hawq_site = services["configurations"]["hawq-site"]["properties"]
-    putHawqSiteProperty = self.putProperty(configurations, "hawq-site", services)
-    componentsListList = [service["components"] for service in services["services"]]
-    componentsList = [item["StackServiceComponents"] for sublist in componentsListList for item in sublist]
-    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    if any(x in services["configurations"] for x in ["hawq-site", "hdfs-client"]):
+      componentsListList = [service["components"] for service in services["services"]]
+      componentsList = [item["StackServiceComponents"] for sublist in componentsListList for item in sublist]
+      servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+      numSegments = len(self.__getHosts(componentsList, "HAWQSEGMENT"))
 
-    # remove master port when master is colocated with Ambari server
-    if self.isHawqMasterComponentOnAmbariServer(services) and "hawq_master_address_port" in hawq_site:
+    if "hawq-site" in services["configurations"]:
+      hawq_site = services["configurations"]["hawq-site"]["properties"]
+      putHawqSiteProperty = self.putProperty(configurations, "hawq-site", services)
+
+      # remove master port when master is colocated with Ambari server
+      if self.isHawqMasterComponentOnAmbariServer(services) and "hawq_master_address_port" in hawq_site:
         putHawqSiteProperty('hawq_master_address_port', '')
 
-    # calculate optimal number of virtual segments
-    numSegments = len(self.__getHosts(componentsList, "HAWQSEGMENT"))
-    # update default if segments are deployed
-    if numSegments and "default_segment_num" in hawq_site:
-      factor = 6 if numSegments < 50 else 4
-      putHawqSiteProperty('default_segment_num', numSegments * factor)
+      # update query limits if segments are deployed
+      if numSegments and "default_hash_table_bucket_number" in hawq_site and "hawq_rm_nvseg_perquery_limit" in hawq_site:
+        factor_min = 1
+        factor_max = 6
+        limit = int(hawq_site["hawq_rm_nvseg_perquery_limit"])
+        factor = limit / numSegments
+        # if too many segments or default limit is too low --> stick with the limit
+        if factor < factor_min:
+          buckets = limit
+        # if the limit is large and results in factor > max --> limit factor to max
+        elif factor > factor_max:
+          buckets = factor_max * numSegments
+        else:
+          buckets = factor * numSegments
+        putHawqSiteProperty('default_hash_table_bucket_number', buckets)
 
-    # update YARN RM urls with the values from yarn-site if YARN is installed
-    if "YARN" in servicesList and "yarn-site" in services["configurations"]:
-      yarn_site = services["configurations"]["yarn-site"]["properties"]
-      for hs_prop, ys_prop in self.getHAWQYARNPropertyMapping().items():
-        if hs_prop in hawq_site and ys_prop in yarn_site:
-          putHawqSiteProperty(hs_prop, yarn_site[ys_prop])
+      # update YARN RM urls with the values from yarn-site if YARN is installed
+      if "YARN" in servicesList and "yarn-site" in services["configurations"]:
+        yarn_site = services["configurations"]["yarn-site"]["properties"]
+        for hs_prop, ys_prop in self.getHAWQYARNPropertyMapping().items():
+          if hs_prop in hawq_site and ys_prop in yarn_site:
+            putHawqSiteProperty(hs_prop, yarn_site[ys_prop])
+
+    # set output.replace-datanode-on-failure in HAWQ hdfs-client depending on the cluster size
+    if "hdfs-client" in services["configurations"]:
+      hdfs_client = services["configurations"]["hdfs-client"]["properties"]
+      if "output.replace-datanode-on-failure" in hdfs_client:
+        propertyValue = "true" if numSegments > 3 else "false"
+        putHdfsClientProperty = self.putProperty(configurations, "hdfs-client", services)
+        putHdfsClientProperty("output.replace-datanode-on-failure", propertyValue)
+
 
   def getServiceConfigurationValidators(self):
     parentValidators = super(HDP23StackAdvisor, self).getServiceConfigurationValidators()
@@ -707,7 +738,8 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
       "HBASE": {"hbase-site": self.validateHBASEConfigurations},
       "KAKFA": {"kafka-broker": self.validateKAFKAConfigurations},
       "YARN": {"yarn-site": self.validateYARNConfigurations},
-      "HAWQ": {"hawq-site": self.validateHAWQConfigurations}
+      "HAWQ": {"hawq-site": self.validateHAWQSiteConfigurations,
+               "hdfs-client": self.validateHAWQHdfsClientConfigurations}
     }
     self.mergeValidators(parentValidators, childValidators)
     return parentValidators
@@ -925,7 +957,15 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
                               "It is not advisable to have " + display_name + " at " + root_dir +". Consider creating a sub directory for HAWQ")})
 
 
-  def validateHAWQConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
+  def checkForMultipleDirs(self, properties, validationItems, prop_name, display_name):
+    # check for delimiters space, comma, colon and semi-colon
+    if prop_name in properties and len(re.sub(r'[,;:]', ' ', properties[prop_name]).split(' ')) > 1:
+      validationItems.append({"config-name": prop_name,
+                              "item": self.getErrorItem(
+                              "Multiple directories for " + display_name + " are not allowed.")})
+
+
+  def validateHAWQSiteConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
     hawq_site = properties
     validationItems = []
 
@@ -948,6 +988,14 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
     for property_name, display_name in directories.iteritems():
       self.validateIfRootDir(properties, validationItems, property_name, display_name)
 
+    # 2.1 Check if any master or segment directories has multiple values
+    directories = {
+                    'hawq_master_directory': 'HAWQ Master directory',
+                    'hawq_segment_directory': 'HAWQ Segment directory'
+                  }
+    for property_name, display_name in directories.iteritems():
+      self.checkForMultipleDirs(properties, validationItems, property_name, display_name)
+
     # 3. Check YARN RM address properties
     YARN = "YARN"
     servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
@@ -964,9 +1012,39 @@ class HDP23StackAdvisor(HDP22StackAdvisor):
       message = "{0} must be set to none if YARN service is not installed".format(HAWQ_GLOBAL_RM_TYPE)
       validationItems.append({"config-name": HAWQ_GLOBAL_RM_TYPE, "item": self.getErrorItem(message)})
 
+    # 5. Check query limits
+    if ("default_hash_table_bucket_number" in hawq_site and
+        "hawq_rm_nvseg_perquery_limit"     in hawq_site and
+        int(hawq_site["default_hash_table_bucket_number"]) > int(hawq_site["hawq_rm_nvseg_perquery_limit"])):
+      message = "Default buckets for Hash Distributed tables parameter value should not be greater than the value of Virtual Segments Limit per Query (Total) parameter, currently set to {0}.".format(hawq_site["hawq_rm_nvseg_perquery_limit"])
+      validationItems.append({"config-name": "default_hash_table_bucket_number", "item": self.getErrorItem(message)})
+
     return self.toConfigurationValidationProblems(validationItems, "hawq-site")
-  
-  
+
+  def validateHAWQHdfsClientConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
+    hdfs_client = properties
+    validationItems = []
+
+    # check HAWQ hdfs-client output.replace-datanode-on-failure property
+    PROP_NAME = "output.replace-datanode-on-failure"
+    if PROP_NAME in hdfs_client:
+      value = hdfs_client[PROP_NAME].upper()
+      componentsListList = [service["components"] for service in services["services"]]
+      componentsList = [item["StackServiceComponents"] for sublist in componentsListList for item in sublist]
+      numSegments = len(self.__getHosts(componentsList, "HAWQSEGMENT"))
+
+      message = None
+      limit = 3
+      if numSegments > limit and value != 'TRUE':
+        message = "{0} should be set to true (checked) for clusters with more than {1} HAWQ Segments"
+      elif numSegments <= limit and value != 'FALSE':
+        message = "{0} should be set to false (unchecked) for clusters with {1} or less HAWQ Segments"
+
+      if message:
+        validationItems.append({"config-name": PROP_NAME, "item": self.getWarnItem(message.format(PROP_NAME, str(limit)))})
+
+    return self.toConfigurationValidationProblems(validationItems, "hdfs-client")
+
   def isComponentUsingCardinalityForLayout(self, componentName):
     return componentName in ['NFS_GATEWAY', 'PHOENIX_QUERY_SERVER', 'SPARK_THRIFTSERVER']
 

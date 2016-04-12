@@ -32,6 +32,8 @@ public enum CheckDescription {
   CLIENT_RETRY(PrereqCheckType.SERVICE,
       "Client Retry Properties",
       new HashMap<String, String>() {{
+        put(ClientRetryPropertyCheck.HDFS_CLIENT_RETRY_DISABLED_KEY,
+            "The hdfs-site.xml property dfs.client.retry.policy.enabled should be set to \"false\" to failover quickly.");
         put(ClientRetryPropertyCheck.HIVE_CLIENT_RETRY_MISSING_KEY,
           "The hive-site.xml property hive.metastore.failure.retries should be set to a positive value.");
         put(ClientRetryPropertyCheck.OOZIE_CLIENT_RETRY_MISSING_KEY,
@@ -248,7 +250,15 @@ public enum CheckDescription {
             "The response from Ranger was malformed. %s. Request: %s");
         put(RangerPasswordCheck.KEY_RANGER_CONFIG_MISSING,
             "Could not check credentials.  Missing property %s/%s");
-      }});
+      }}),
+
+  KAFKA_KERBEROS_CHECK(PrereqCheckType.SERVICE,
+    "Kafka upgrade on Kerberized cluster",
+    new HashMap<String, String>() {{
+      put(AbstractCheckDescriptor.DEFAULT,
+        "Kafka is currently not Kerberized, but your cluster is. After upgrading, Kafka will automatically be Kerberized for you.");
+    }}
+  );
 
 
   private PrereqCheckType m_type;

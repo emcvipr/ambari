@@ -19,7 +19,6 @@
 package org.apache.ambari.server.agent;
 
 import com.google.gson.annotations.SerializedName;
-import org.apache.ambari.server.configuration.Configuration;
 
 
 /**
@@ -50,6 +49,9 @@ public class RecoveryConfig {
 
   @SerializedName("components")
   private String enabledComponents;
+
+  @SerializedName("recoveryTimestamp")
+  private long recoveryTimestamp;
 
   public String getEnabledComponents() {
     return enabledComponents;
@@ -99,15 +101,22 @@ public class RecoveryConfig {
     this.maxLifetimeCount = maxLifetimeCount;
   }
 
-  public static RecoveryConfig getRecoveryConfig(Configuration conf) {
-    RecoveryConfig rc = new RecoveryConfig();
-    rc.setMaxCount(conf.getNodeRecoveryMaxCount());
-    rc.setMaxLifetimeCount(conf.getNodeRecoveryLifetimeMaxCount());
-    rc.setRetryGap(conf.getNodeRecoveryRetryGap());
-    rc.setType(conf.getNodeRecoveryType());
-    rc.setWindowInMinutes(conf.getNodeRecoveryWindowInMin());
-    rc.setEnabledComponents(conf.getEnabledComponents());
-    return rc;
+  /**
+   * Timestamp when the recovery values were last updated.
+   *
+   * @return - Timestamp.
+   */
+  public long getRecoveryTimestamp() {
+    return recoveryTimestamp;
+  }
+
+  /**
+   * Set the timestamp when the recovery values were last updated.
+   *
+   * @param recoveryTimestamp
+   */
+  public void setRecoveryTimestamp(long recoveryTimestamp) {
+    this.recoveryTimestamp = recoveryTimestamp;
   }
 
   @Override
@@ -119,6 +128,7 @@ public class RecoveryConfig {
     buffer.append(", retryGap=").append(retryGap);
     buffer.append(", maxLifetimeCount=").append(maxLifetimeCount);
     buffer.append(", components=").append(enabledComponents);
+    buffer.append(", recoveryTimestamp=").append(recoveryTimestamp);
     buffer.append('}');
     return buffer.toString();
   }

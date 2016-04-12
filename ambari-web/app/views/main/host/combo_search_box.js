@@ -23,6 +23,15 @@ App.MainHostComboSearchBoxView = Em.View.extend({
   didInsertElement: function () {
     this.initVS();
     this.restoreComboFilterQuery();
+    this.showHideClearButton();
+  },
+
+  showHideClearButton: function() {
+    if(visualSearch.searchQuery.toJSON().length > 0) {
+      $('.VS-cancel-search-box').removeClass('hide');
+    } else {
+      $('.VS-cancel-search-box').addClass('hide');
+    }
   },
 
   restoreComboFilterQuery: function() {
@@ -68,6 +77,7 @@ App.MainHostComboSearchBoxView = Em.View.extend({
       query: '',
       showFacets: true,
       delay: 1000,
+      placeholder: Em.I18n.t('hosts.combo.search.placebolder'),
       unquotable: [
         'text'
       ],
@@ -79,10 +89,11 @@ App.MainHostComboSearchBoxView = Em.View.extend({
         },
 
         facetMatches: function (callback) {
+          self.showHideClearButton();
           var list = [
             {label: 'Host Name', category: 'Host'},
             {label: 'IP', category: 'Host'},
-            {label: 'Heath Status', category: 'Host'},
+            {label: 'Host Status', category: 'Host'},
             {label: 'Cores', category: 'Host'},
             {label: 'RAM', category: 'Host'},
             {label: 'Stack Version', category: 'Host'},
@@ -93,7 +104,7 @@ App.MainHostComboSearchBoxView = Em.View.extend({
           var map = App.router.get('mainHostController.labelValueMap');
           map['Host Name'] = 'hostName';
           map['IP'] = 'ip';
-          map['Heath Status'] = 'healthClass';
+          map['Host Status'] = 'healthClass';
           map['Cores'] = 'cpu';
           map['RAM'] = 'memoryFormatted';
           map['Stack Version'] = 'version';
@@ -113,6 +124,7 @@ App.MainHostComboSearchBoxView = Em.View.extend({
         },
 
         valueMatches: function (facet, searchTerm, callback) {
+          self.showHideClearButton();
           var map = App.router.get('mainHostController.labelValueMap');
           var facetValue = map[facet] || facet;
           if (controller.isComponentStateFacet(facetValue)) {
@@ -168,10 +180,13 @@ App.MainHostComboSearchBoxView = Em.View.extend({
               map['All'] = 'ALL';
               var currentComponentFacets = self.getComponentStateFacets(null, true);
               if (currentComponentFacets.length == 0) {
-                list = list.concat(App.HostComponentStatus.getStatusesList().map(function (status) {
-                  map[App.HostComponentStatus.getTextStatus(status)] = status;
-                  return App.HostComponentStatus.getTextStatus(status);
-                })).concat([
+                list = list.concat(App.HostComponentStatus.getStatusesList()
+                .reject(function(status){return status == "UPGRADE_FAILED"}) // take out 'UPGRADE_FAILED'
+                .map(function (status) {
+                    map[App.HostComponentStatus.getTextStatus(status)] = status;
+                    return App.HostComponentStatus.getTextStatus(status);
+                }))
+                .concat([
                     "Inservice",
                     "Decommissioned",
                     "Decommissioning",

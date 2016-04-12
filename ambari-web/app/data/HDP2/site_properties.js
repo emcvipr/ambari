@@ -349,7 +349,7 @@ var hdp2properties = [
         hidden: false
       },
       {
-        displayName: 'Existing MySQL Database',
+        displayName: 'Existing MySQL / MariaDB Database',
         hidden: false
       },
       {
@@ -445,7 +445,7 @@ var hdp2properties = [
         hidden: false
       },
       {
-        displayName: 'Existing MySQL Database',
+        displayName: 'Existing MySQL / MariaDB Database',
         hidden: false
       },
       {
@@ -1357,7 +1357,7 @@ var hdp2properties = [
     "index": 0
   },
   {
-    "name": "kdc_host",
+    "name": "kdc_hosts",
     "displayType": "supportTextConnection",
     "serviceName": "KERBEROS",
     "filename": "kerberos-env.xml",
@@ -1498,6 +1498,14 @@ var hdp2properties = [
     "index" : 14
   },
   {
+    "id": "puppet var",
+    "name": "group",
+    "serviceName": "KERBEROS",
+    "filename": "kerberos-env.xml",
+    "category": "Advanced kerberos-env",
+    "index": 15
+  },
+  {
     "name": "admin_server_host",
     "serviceName": "KERBEROS",
     "filename": "kerberos-env.xml",
@@ -1505,6 +1513,7 @@ var hdp2properties = [
     "index": 0
   },
   {
+    "id": "puppet var",
     "name": "manage_krb5_conf",
     "dependentConfigPattern": "CATEGORY",
     "serviceName": "KERBEROS",
@@ -2001,9 +2010,7 @@ var atsProperties = [
   }
 ];
 
-if (!App.get('isHadoop20Stack')) {
-  hdp2properties.pushObjects(atsProperties);
-}
+hdp2properties.pushObjects(atsProperties);
 
 module.exports =
 {

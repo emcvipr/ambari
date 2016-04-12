@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -48,6 +49,7 @@ import org.apache.ambari.server.ParentObjectNotFoundException;
 import org.apache.ambari.server.ServiceComponentHostNotFoundException;
 import org.apache.ambari.server.ServiceComponentNotFoundException;
 import org.apache.ambari.server.ServiceNotFoundException;
+import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.AmbariSessionManager;
@@ -56,7 +58,9 @@ import org.apache.ambari.server.controller.ConfigurationResponse;
 import org.apache.ambari.server.controller.MaintenanceStateHelper;
 import org.apache.ambari.server.controller.RootServiceResponseFactory.Services;
 import org.apache.ambari.server.controller.ServiceConfigVersionResponse;
+import org.apache.ambari.server.controller.internal.UpgradeResourceProvider;
 import org.apache.ambari.server.events.AmbariEvent.AmbariEventType;
+import org.apache.ambari.server.events.ClusterConfigChangedEvent;
 import org.apache.ambari.server.events.ClusterEvent;
 import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.orm.RequiresSession;
@@ -68,6 +72,7 @@ import org.apache.ambari.server.orm.dao.ClusterStateDAO;
 import org.apache.ambari.server.orm.dao.ClusterVersionDAO;
 import org.apache.ambari.server.orm.dao.HostConfigMappingDAO;
 import org.apache.ambari.server.orm.dao.HostDAO;
+import org.apache.ambari.server.orm.dao.HostRoleCommandDAO;
 import org.apache.ambari.server.orm.dao.HostVersionDAO;
 import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
 import org.apache.ambari.server.orm.dao.ServiceConfigDAO;
@@ -83,6 +88,7 @@ import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
 import org.apache.ambari.server.orm.entities.ConfigGroupEntity;
 import org.apache.ambari.server.orm.entities.HostComponentStateEntity;
 import org.apache.ambari.server.orm.entities.HostEntity;
+import org.apache.ambari.server.orm.entities.HostRoleCommandEntity;
 import org.apache.ambari.server.orm.entities.HostVersionEntity;
 import org.apache.ambari.server.orm.entities.PermissionEntity;
 import org.apache.ambari.server.orm.entities.PrivilegeEntity;
@@ -93,6 +99,8 @@ import org.apache.ambari.server.orm.entities.ServiceConfigEntity;
 import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.orm.entities.TopologyRequestEntity;
 import org.apache.ambari.server.orm.entities.UpgradeEntity;
+import org.apache.ambari.server.orm.entities.UpgradeGroupEntity;
+import org.apache.ambari.server.orm.entities.UpgradeItemEntity;
 import org.apache.ambari.server.security.authorization.AuthorizationException;
 import org.apache.ambari.server.security.authorization.AuthorizationHelper;
 import org.apache.ambari.server.state.Cluster;
@@ -125,6 +133,7 @@ import org.apache.ambari.server.state.configgroup.ConfigGroupFactory;
 import org.apache.ambari.server.state.fsm.InvalidStateTransitionException;
 import org.apache.ambari.server.state.scheduler.RequestExecution;
 import org.apache.ambari.server.state.scheduler.RequestExecutionFactory;
+import org.apache.ambari.server.state.stack.upgrade.Direction;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostSummary;
 import org.apache.ambari.server.topology.TopologyRequest;
 import org.apache.commons.lang.StringUtils;
@@ -138,6 +147,7 @@ import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
+import com.google.common.eventbus.Subscribe;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
 import com.google.inject.assistedinject.Assisted;
@@ -153,7 +163,7 @@ public class ClusterImpl implements Cluster {
    */
   private static final String CLUSTER_SESSION_ATTRIBUTES_PREFIX = "cluster_session_attributes:";
   private static final Set<RepositoryVersionState> ALLOWED_REPOSITORY_STATES =
-      EnumSet.of(RepositoryVersionState.INSTALLING);
+      EnumSet.of(RepositoryVersionState.INIT, RepositoryVersionState.INSTALLING);
 
   @Inject
   private Clusters clusters;
@@ -210,6 +220,9 @@ public class ClusterImpl implements Cluster {
 
   @Inject
   private ClusterVersionDAO clusterVersionDAO;
+
+  @Inject
+  private HostRoleCommandDAO hostRoleCommandDAO;
 
   @Inject
   private HostDAO hostDAO;
@@ -276,15 +289,21 @@ public class ClusterImpl implements Cluster {
   private volatile Multimap<String, String> serviceConfigTypes;
 
   /**
-   * Used to publish events relating to cluster CRUD operations.
+   * Used to publish events relating to cluster CRUD operations and to receive
+   * information about cluster operations.
    */
-  @Inject
   private AmbariEventPublisher eventPublisher;
 
+  /**
+   * A simple cache for looking up {@code cluster-env} properties for a cluster.
+   * This map is changed whenever {{cluster-env}} is changed and we receive a
+   * {@link ClusterConfigChangedEvent}.
+   */
+  private Map<String, String> m_clusterPropertyCache = new ConcurrentHashMap<>();
 
   @Inject
   public ClusterImpl(@Assisted ClusterEntity clusterEntity,
-                     Injector injector) throws AmbariException {
+      Injector injector, AmbariEventPublisher eventPublisher) throws AmbariException {
     injector.injectMembers(this);
 
     clusterId = clusterEntity.getClusterId();
@@ -302,6 +321,13 @@ public class ClusterImpl implements Cluster {
       StringUtils.isEmpty(desiredStackVersion.getStackVersion())) {
       loadServiceConfigTypes();
     }
+
+    // Load any active stack upgrades.
+    loadStackUpgrade();
+
+    // register to receive stuff
+    eventPublisher.register(this);
+    this.eventPublisher = eventPublisher;
   }
 
 
@@ -318,6 +344,24 @@ public class ClusterImpl implements Cluster {
       throw e;
     }
     LOG.info("Service config types loaded: {}", serviceConfigTypes);
+  }
+
+  /**
+   * When a cluster is first loaded, determine if it has a stack upgrade in progress.
+   */
+  private void loadStackUpgrade() {
+    clusterGlobalLock.writeLock().lock();
+
+    try {
+      UpgradeEntity activeUpgrade = getUpgradeInProgress();
+      if (activeUpgrade != null) {
+        setUpgradeEntity(activeUpgrade);
+      }
+    } catch (AmbariException e) {
+      LOG.error("Unable to load active stack upgrade. Error: " + e.getMessage());
+    } finally {
+      clusterGlobalLock.writeLock().unlock();
+    }
   }
 
   /**
@@ -1140,12 +1184,106 @@ public class ClusterImpl implements Cluster {
     Collection<ClusterVersionEntity> clusterVersionEntities = getClusterEntity().getClusterVersionEntities();
     for (ClusterVersionEntity clusterVersionEntity : clusterVersionEntities) {
       if (clusterVersionEntity.getState() == RepositoryVersionState.CURRENT) {
-//      TODO assuming there's only 1 current version, return 1st found, exception was expected in previous implementation
+        // TODO assuming there's only 1 current version, return 1st found, exception was expected in previous implementation
         return clusterVersionEntity;
       }
     }
     return null;
-//    return clusterVersionDAO.findByClusterAndStateCurrent(getClusterName());
+  }
+
+  /**
+   * Get any stack upgrade currently in progress.
+   * @return
+   */
+  private UpgradeEntity getUpgradeInProgress() {
+    UpgradeEntity mostRecentUpgrade = upgradeDAO.findLastUpgradeOrDowngradeForCluster(getClusterId());
+    if (mostRecentUpgrade != null) {
+      List<HostRoleStatus> UNFINISHED_STATUSES = new ArrayList();
+      UNFINISHED_STATUSES.add(HostRoleStatus.PENDING);
+      UNFINISHED_STATUSES.add(HostRoleStatus.ABORTED);
+
+      List<HostRoleCommandEntity> commands = hostRoleCommandDAO.findByRequestIdAndStatuses(mostRecentUpgrade.getRequestId(), UNFINISHED_STATUSES);
+      if (!commands.isEmpty()) {
+        return mostRecentUpgrade;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * If no RU/EU is in progress, get the ClusterVersionEntity object whose state is CURRENT.
+   * If RU/EU is in progress, based on the direction and desired stack, determine which version to use.
+   * Assuming upgrading from HDP 2.2.0.0-1 to 2.3.0.0-2, then
+   * RU Upgrade: 2.3.0.0-2 (desired stack id)
+   * RU Downgrade: 2.2.0.0-1 (desired stack id)
+   * EU Upgrade: while stopping services and before changing desired stack, use 2.2.0.0-1, after, use 2.3.0.0-2
+   * EU Downgrade: while stopping services and before changing desired stack, use 2.3.0.0-2, after, use 2.2.0.0-1
+   * @return
+   */
+  @Override
+  public ClusterVersionEntity getEffectiveClusterVersion() throws AmbariException {
+    // This is not reliable. Need to find the last upgrade request.
+    UpgradeEntity upgradeInProgress = getUpgradeEntity();
+    if (upgradeInProgress == null) {
+      return getCurrentClusterVersion();
+    }
+
+    String effectiveVersion = null;
+    switch (upgradeInProgress.getUpgradeType()) {
+      case NON_ROLLING:
+        if (upgradeInProgress.getDirection() == Direction.UPGRADE) {
+          boolean pastChangingStack = isNonRollingUpgradePastUpgradingStack(upgradeInProgress);
+          effectiveVersion = pastChangingStack ? upgradeInProgress.getToVersion() : upgradeInProgress.getFromVersion();
+        } else {
+          // Should be the lower value during a Downgrade.
+          effectiveVersion = upgradeInProgress.getToVersion();
+        }
+        break;
+      case ROLLING:
+      default:
+        // Version will be higher on upgrade and lower on downgrade directions.
+        effectiveVersion = upgradeInProgress.getToVersion();
+        break;
+    }
+
+    if (effectiveVersion == null) {
+      throw new AmbariException("Unable to determine which version to use during Stack Upgrade, effectiveVersion is null.");
+    }
+
+    // Find the first cluster version whose repo matches the expected version.
+    Collection<ClusterVersionEntity> clusterVersionEntities = getClusterEntity().getClusterVersionEntities();
+    for (ClusterVersionEntity clusterVersionEntity : clusterVersionEntities) {
+      if (clusterVersionEntity.getRepositoryVersion().getVersion().equals(effectiveVersion)) {
+        return clusterVersionEntity;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Given a NonRolling stack upgrade, determine if it has already crossed the point of using the newer version.
+   * @param upgrade Stack Upgrade
+   * @return Return true if should be using to_version, otherwise, false to mean the from_version.
+   */
+  private boolean isNonRollingUpgradePastUpgradingStack(UpgradeEntity upgrade) {
+    for (UpgradeGroupEntity group : upgrade.getUpgradeGroups()) {
+      if (group.getName().equalsIgnoreCase(UpgradeResourceProvider.CONST_UPGRADE_GROUP_NAME)) {
+        for (UpgradeItemEntity item : group.getItems()) {
+          List<Long> taskIds = hostRoleCommandDAO.findTaskIdsByStage(upgrade.getRequestId(), item.getStageId());
+          List<HostRoleCommandEntity> commands = hostRoleCommandDAO.findByPKs(taskIds);
+          for (HostRoleCommandEntity command : commands) {
+            if (command.getCustomCommandName() != null &&
+                command.getCustomCommandName().equalsIgnoreCase(UpgradeResourceProvider.CONST_CUSTOM_COMMAND_NAME) &&
+                command.getStatus() == HostRoleStatus.COMPLETED) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+    }
+    return false;
   }
 
   /**
@@ -1446,11 +1584,13 @@ public class ClusterImpl implements Cluster {
           return;
         }
       }
+
       // Ignore if cluster version is CURRENT or UPGRADE_FAILED
       if (clusterVersion.getState() != RepositoryVersionState.INSTALL_FAILED &&
               clusterVersion.getState() != RepositoryVersionState.OUT_OF_SYNC &&
               clusterVersion.getState() != RepositoryVersionState.INSTALLING &&
-              clusterVersion.getState() != RepositoryVersionState.INSTALLED) {
+              clusterVersion.getState() != RepositoryVersionState.INSTALLED &&
+              clusterVersion.getState() != RepositoryVersionState.INIT) {
         // anything else is not supported as of now
         return;
       }
@@ -1524,6 +1664,7 @@ public class ClusterImpl implements Cluster {
       }
 
       RepositoryVersionState effectiveClusterVersionState = getEffectiveState(stateToHosts);
+
       if (effectiveClusterVersionState != null
           && effectiveClusterVersionState != clusterVersion.getState()) {
         // Any mismatch will be caught while transitioning, and raise an
@@ -1734,6 +1875,9 @@ public class ClusterImpl implements Cluster {
             break;
           case OUT_OF_SYNC:
             allowedStates.add(RepositoryVersionState.INSTALLING);
+            break;
+          case INIT:
+            allowedStates.add(RepositoryVersionState.CURRENT);
             break;
         }
 
@@ -2384,6 +2528,7 @@ public class ClusterImpl implements Cluster {
     return serviceName;
   }
 
+  @Override
   public String getServiceByConfigType(String configType) {
     for (Entry<String, String> entry : serviceConfigTypes.entries()) {
       String serviceName = entry.getKey();
@@ -3488,5 +3633,74 @@ public class ClusterImpl implements Cluster {
     } finally {
       clusterGlobalLock.writeLock().unlock();
     }
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public boolean isUpgradeSuspended() {
+    UpgradeEntity lastUpgradeItemForCluster = upgradeDAO.findLastUpgradeForCluster(clusterId);
+    if (null != lastUpgradeItemForCluster) {
+      return lastUpgradeItemForCluster.isSuspended();
+    }
+
+    return false;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public String getClusterProperty(String propertyName, String defaultValue) {
+    String cachedValue = m_clusterPropertyCache.get(propertyName);
+    if (null != cachedValue) {
+      return cachedValue;
+    }
+
+    // start with the default
+    cachedValue = defaultValue;
+
+    Config clusterEnv = getDesiredConfigByType(ConfigHelper.CLUSTER_ENV);
+    if (null != clusterEnv) {
+      Map<String, String> clusterEnvProperties = clusterEnv.getProperties();
+      if (clusterEnvProperties.containsKey(propertyName)) {
+        String value = clusterEnvProperties.get(propertyName);
+        if (null != value) {
+          cachedValue = value;
+        }
+      }
+    }
+
+    // cache the value and return it
+    m_clusterPropertyCache.put(propertyName, cachedValue);
+    return cachedValue;
+  }
+
+  /**
+   * Gets whether the specified cluster property is already cached.
+   *
+   * @param propertyName
+   *          the property to check.
+   * @return {@code true} if the property is cached.
+   */
+  boolean isClusterPropertyCached(String propertyName) {
+    return m_clusterPropertyCache.containsKey(propertyName);
+  }
+
+  /**
+   * Handles {@link ClusterConfigChangedEvent} which means that the
+   * {{cluster-env}} may have changed.
+   *
+   * @param event
+   *          the change event.
+   */
+  @Subscribe
+  public void handleClusterEnvConfigChangedEvent(ClusterConfigChangedEvent event) {
+    if (!StringUtils.equals(event.getConfigType(), ConfigHelper.CLUSTER_ENV)) {
+      return;
+    }
+
+    m_clusterPropertyCache.clear();
   }
 }

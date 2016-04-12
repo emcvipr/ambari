@@ -17,17 +17,26 @@
  */
 package org.apache.ambari.server.security.authorization;
 
+import com.google.common.collect.Lists;
 import com.google.inject.Singleton;
+
+import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.orm.dao.ClusterDAO;
+import org.apache.ambari.server.orm.dao.ViewInstanceDAO;
 import org.apache.ambari.server.orm.entities.PermissionEntity;
 import org.apache.ambari.server.orm.entities.PrivilegeEntity;
 import org.apache.ambari.server.orm.entities.ResourceEntity;
 import org.apache.ambari.server.orm.entities.RoleAuthorizationEntity;
+import org.apache.ambari.server.state.Clusters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.*;
 
@@ -42,7 +51,7 @@ public class AuthorizationHelper {
    * Converts collection of RoleEntities to collection of GrantedAuthorities
    */
   public Collection<GrantedAuthority> convertPrivilegesToAuthorities(Collection<PrivilegeEntity> privilegeEntities) {
-    Set<GrantedAuthority> authorities = new HashSet<GrantedAuthority>(privilegeEntities.size());
+    Set<GrantedAuthority> authorities = new HashSet<>(privilegeEntities.size());
 
     for (PrivilegeEntity privilegeEntity : privilegeEntities) {
       authorities.add(new AmbariGrantedAuthority(privilegeEntity));
@@ -160,9 +169,6 @@ public class AuthorizationHelper {
         if (ResourceType.AMBARI == privilegeResourceType) {
           // This resource type indicates administrative access
           resourceOK = true;
-        } else if (ResourceType.VIEW == privilegeResourceType) {
-          // For a VIEW USER.
-          resourceOK = true;
         } else if ((resourceType == null) || (resourceType == privilegeResourceType)) {
           resourceOK = (resourceId == null) || resourceId.equals(privilegeResource.getId());
         } else {
@@ -250,4 +256,60 @@ public class AuthorizationHelper {
     SecurityContext context = SecurityContextHolder.getContext();
     return (context == null) ? null : context.getAuthentication();
   }
+
+  /**
+   * There are cases when users log-in with a login name that is
+   * define in LDAP and which do not correspond to the user name stored
+   * locally in ambari. These external login names act as an alias to
+   * ambari users name. This method stores in the current http session a mapping
+   * of alias user name to local ambari user name to make possible resolving
+   * login alias to ambari user name.
+   * @param ambariUserName ambari user name for which the alias is to be stored in the session
+   * @param loginAlias the alias for the ambari user name.
+   */
+  public static void addLoginNameAlias(String ambariUserName, String loginAlias) {
+    ServletRequestAttributes attr = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+    if (attr != null) {
+      LOG.info("Adding login alias '{}' for user name '{}'", loginAlias, ambariUserName);
+      attr.setAttribute(loginAlias, ambariUserName, RequestAttributes.SCOPE_SESSION);
+    }
+  }
+
+  /**
+   * Looks up the provided loginAlias in the current http session and return the ambari
+   * user name that the alias is defined for.
+   * @param loginAlias the login alias to resolve to ambari user name
+   * @return the ambari user name if the alias is found otherwise returns the passed in loginAlias
+   */
+  public static String resolveLoginAliasToUserName(String loginAlias) {
+    ServletRequestAttributes attr = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+    if (attr != null && attr.getAttribute(loginAlias, RequestAttributes.SCOPE_SESSION) != null) {
+      return (String)attr.getAttribute(loginAlias, RequestAttributes.SCOPE_SESSION);
+    }
+
+    return loginAlias;
+  }
+
+  /**
+   * Retrieve authorization names based on the details of the authenticated user
+   * @param authentication the authenticated user and associated access privileges
+   * @return human readable role authorizations
+   */
+  public static List<String> getAuthorizationNames(Authentication authentication) {
+    List<String> authorizationNames = Lists.newArrayList();
+    if (authentication.getAuthorities() != null) {
+      for (GrantedAuthority grantedAuthority : authentication.getAuthorities()) {
+        AmbariGrantedAuthority ambariGrantedAuthority = (AmbariGrantedAuthority) grantedAuthority;
+
+        PrivilegeEntity privilegeEntity = ambariGrantedAuthority.getPrivilegeEntity();
+        Collection<RoleAuthorizationEntity> roleAuthorizationEntities =
+          privilegeEntity.getPermission().getAuthorizations();
+        for (RoleAuthorizationEntity entity : roleAuthorizationEntities) {
+          authorizationNames.add(entity.getAuthorizationName());
+        }
+      }
+    }
+    return authorizationNames;
+  }
+
 }

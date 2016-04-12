@@ -28,16 +28,19 @@ App.MainServiceItemView = Em.View.extend({
   isPassive: Em.computed.equal('controller.content.passiveState', 'ON'),
 
   /**
-   * Some custom commands need custom logic to be executed
+   * Some custom commands need custom logic to be execute.
+   * Typically, these services already have Custom Commands, so we must exclude the default ones
+   * in order to make more changes to them like icons and rules.
    */
   mastersExcludedCommands: {
     'NAMENODE': ['DECOMMISSION', 'REBALANCEHDFS'],
     'RESOURCEMANAGER': ['DECOMMISSION', 'REFRESHQUEUES'],
     'HBASE_MASTER': ['DECOMMISSION'],
     'KNOX_GATEWAY': ['STARTDEMOLDAP','STOPDEMOLDAP'],
-    'HAWQMASTER': ['IMMEDIATE_STOP_HAWQ_SERVICE', 'RUN_HAWQ_CHECK', 'HAWQ_CLEAR_CACHE', 'REMOVE_HAWQ_STANDBY'],
+    'HAWQMASTER': ['IMMEDIATE_STOP_HAWQ_SERVICE', 'RUN_HAWQ_CHECK', 'HAWQ_CLEAR_CACHE', 'REMOVE_HAWQ_STANDBY', 'RESYNC_HAWQ_STANDBY'],
     'HAWQSEGMENT': ['IMMEDIATE_STOP_HAWQ_SEGMENT'],
-    'HAWQSTANDBY' : ['RESYNC_HAWQ_STANDBY','ACTIVATE_HAWQ_STANDBY']
+    'HAWQSTANDBY': ['ACTIVATE_HAWQ_STANDBY'],
+    'HIVE_SERVER_INTERACTIVE' : ["RESTART_LLAP"]
   },
 
    addActionMap: function() {
@@ -52,15 +55,13 @@ App.MainServiceItemView = Em.View.extend({
          cssClass: 'icon-plus',
          'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.hive.metastore')),
          service: 'HIVE',
-         component: 'HIVE_METASTORE',
-         isHidden: !App.get('isHadoop22Stack')
+         component: 'HIVE_METASTORE'
        },
        {
          cssClass: 'icon-plus',
          'label': '{0} {1}'.format(Em.I18n.t('add'), Em.I18n.t('dashboard.services.hive.server2')),
          service: 'HIVE',
-         component: 'HIVE_SERVER',
-         isHidden: !App.get('isHadoop22Stack')
+         component: 'HIVE_SERVER'
        },
        {
          cssClass: 'icon-plus',
@@ -180,12 +181,13 @@ App.MainServiceItemView = Em.View.extend({
       }
       options.push(actionMap.TOGGLE_PASSIVE);
       var serviceName = service.get('serviceName');
-      var nnComponent = App.StackServiceComponent.find().findProperty('componentName','NAMENODE');
-      var knoxGatewayComponent = App.StackServiceComponent.find().findProperty('componentName','KNOX_GATEWAY');
+      var nnComponent = App.StackServiceComponent.find().findProperty('componentName', 'NAMENODE');
+      var knoxGatewayComponent = App.StackServiceComponent.find().findProperty('componentName', 'KNOX_GATEWAY');
       if (serviceName === 'HDFS' && nnComponent) {
         var namenodeCustomCommands = nnComponent.get('customCommands');
-        if (namenodeCustomCommands && namenodeCustomCommands.contains('REBALANCEHDFS'))
-        options.push(actionMap.REBALANCEHDFS);
+        if (namenodeCustomCommands && namenodeCustomCommands.contains('REBALANCEHDFS')) {
+          options.push(actionMap.REBALANCEHDFS);
+        }
       }
 
       if (serviceName === 'KNOX' && knoxGatewayComponent) {
@@ -197,14 +199,26 @@ App.MainServiceItemView = Em.View.extend({
         });
       }
 
+      if (serviceName === 'HIVE') {
+        var hiveServerInteractiveComponent = App.StackServiceComponent.find().findProperty('componentName', 'HIVE_SERVER_INTERACTIVE');
+        var isHiveInteractiveServerPresent = allMasters.contains('HIVE_SERVER_INTERACTIVE');
+        if (hiveServerInteractiveComponent && isHiveInteractiveServerPresent) {
+          var LLAPCustomCommands = hiveServerInteractiveComponent.get('customCommands');
+          LLAPCustomCommands.forEach(function (command) {
+            if (actionMap[command]) {
+              options.push(actionMap[command]);
+            }
+          });
+        }
+      }
+
       /**
        * Display all custom commands of Master and StandBy on Service page.
        **/
       if(serviceName === 'HAWQ') {
         var hawqMasterComponent = App.StackServiceComponent.find().findProperty('componentName','HAWQMASTER');
         var hawqStandByComponent = App.StackServiceComponent.find().findProperty('componentName','HAWQSTANDBY');
-        components = [hawqMasterComponent,hawqStandByComponent]
-        components.forEach(function(component){
+        [hawqMasterComponent,hawqStandByComponent].forEach(function(component){
           component.get('customCommands').forEach(function(command){
             options.push(self.createOption(actionMap[command], {
               context: {
@@ -241,12 +255,12 @@ App.MainServiceItemView = Em.View.extend({
         var commands = component.get('customCommands');
 
         if (!commands.length) {
-          return false;
+          return;
         }
 
         commands.forEach(function(command) {
           if (excludedCommands[master] && excludedCommands[master].contains(command)){
-            return false;
+            return;
           }
 
           options.push(self.createOption(actionMap.MASTER_CUSTOM_COMMAND, {
@@ -270,12 +284,12 @@ App.MainServiceItemView = Em.View.extend({
 
     if (this.get('maintenance.length')) {
       this.get('maintenance').forEach(function(option, index) {
-        if (JSON.stringify(option) != JSON.stringify(options[index])) {
+        if (JSON.stringify(option) !== JSON.stringify(options[index])) {
           self.get('maintenance').removeAt(index).insertAt(index, options[index]);
         }
       });
       options.forEach(function(opt, index) {
-        if (JSON.stringify(opt) != JSON.stringify(self.get('maintenance')[index])) {
+        if (JSON.stringify(opt) !== JSON.stringify(self.get('maintenance')[index])) {
           self.get('maintenance').pushObject(opt);
         }
       });

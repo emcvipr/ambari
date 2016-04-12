@@ -93,6 +93,19 @@ class HDP21StackAdvisor(HDP206StackAdvisor):
         dbConnection = self.getDBConnectionString(hiveEnvProperties['hive_database']).format(hiveMSHost['Hosts']['host_name'], hiveSiteProperties['ambari.hive.db.schema.name'])
         putHiveProperty('javax.jdo.option.ConnectionURL', dbConnection)
 
+    servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
+    if "PIG" in servicesList:
+        ambari_user = self.getAmbariUser(services)
+        webHcatSiteProperty = self.putProperty(configurations, "webhcat-site", services)
+        webHcatSiteProperty("webhcat.proxyuser.{0}.hosts".format(ambari_user), "*")
+        webHcatSiteProperty("webhcat.proxyuser.{0}.groups".format(ambari_user), "*")
+        old_ambari_user = self.getOldAmbariUser(services)
+        if old_ambari_user is not None:
+            webHcatSitePropertyAttributes = self.putPropertyAttribute(configurations, "webhcat-site")
+            webHcatSitePropertyAttributes("webhcat.proxyuser.{0}.hosts".format(old_ambari_user), 'delete', 'true')
+            webHcatSitePropertyAttributes("webhcat.proxyuser.{0}.groups".format(old_ambari_user), 'delete', 'true')
+
+
   def recommendTezConfigurations(self, configurations, clusterData, services, hosts):
     putTezProperty = self.putProperty(configurations, "tez-site")
     putTezProperty("tez.am.resource.memory.mb", int(clusterData['amMemory']))
@@ -147,6 +160,7 @@ class HDP21StackAdvisor(HDP206StackAdvisor):
       'NEW MYSQL DATABASE': 'com.mysql.jdbc.Driver',
       'NEW DERBY DATABASE': 'org.apache.derby.jdbc.EmbeddedDriver',
       'EXISTING MYSQL DATABASE': 'com.mysql.jdbc.Driver',
+      'EXISTING MYSQL / MARIADB DATABASE': 'com.mysql.jdbc.Driver',
       'EXISTING POSTGRESQL DATABASE': 'org.postgresql.Driver',
       'EXISTING ORACLE DATABASE': 'oracle.jdbc.driver.OracleDriver',
       'EXISTING SQL ANYWHERE DATABASE': 'sap.jdbc4.sqlanywhere.IDriver'
@@ -158,6 +172,7 @@ class HDP21StackAdvisor(HDP206StackAdvisor):
       'NEW MYSQL DATABASE': 'jdbc:mysql://{0}/{1}?createDatabaseIfNotExist=true',
       'NEW DERBY DATABASE': 'jdbc:derby:${{oozie.data.dir}}/${{oozie.db.schema.name}}-db;create=true',
       'EXISTING MYSQL DATABASE': 'jdbc:mysql://{0}/{1}',
+      'EXISTING MYSQL / MARIADB DATABASE': 'jdbc:mysql://{0}/{1}',
       'EXISTING POSTGRESQL DATABASE': 'jdbc:postgresql://{0}:5432/{1}',
       'EXISTING ORACLE DATABASE': 'jdbc:oracle:thin:@//{0}:1521/{1}',
       'EXISTING SQL ANYWHERE DATABASE': 'jdbc:sqlanywhere:host={0};database={1}'
@@ -168,6 +183,7 @@ class HDP21StackAdvisor(HDP206StackAdvisor):
     driverDict = {
       'NEW MYSQL DATABASE': 'mysql',
       'NEW DERBY DATABASE': 'derby',
+      'EXISTING MYSQL / MARIADB DATABASE': 'mysql',
       'EXISTING MYSQL DATABASE': 'mysql',
       'EXISTING POSTGRESQL DATABASE': 'postgres',
       'EXISTING ORACLE DATABASE': 'oracle',

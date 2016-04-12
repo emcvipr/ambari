@@ -19,6 +19,7 @@ package org.apache.ambari.server.state.repository;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.io.StringWriter;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -28,9 +29,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import javax.xml.XMLConstants;
 import javax.xml.bind.JAXBContext;
+import javax.xml.bind.Marshaller;
 import javax.xml.bind.Unmarshaller;
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
@@ -45,7 +48,9 @@ import javax.xml.validation.Schema;
 import javax.xml.validation.SchemaFactory;
 
 import org.apache.ambari.server.state.ComponentInfo;
+import org.apache.ambari.server.state.RepositoryType;
 import org.apache.ambari.server.state.ServiceInfo;
+import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.StackInfo;
 import org.apache.ambari.server.state.repository.AvailableVersion.Component;
 import org.apache.ambari.server.state.stack.RepositoryXml;
@@ -94,10 +99,15 @@ public class VersionDefinitionXml {
   @XmlTransient
   private Map<String, AvailableService> availableMap;
 
+  @XmlTransient
+  private List<ManifestServiceInfo> m_manifest = null;
+
 
   /**
    * @param stack the stack info needed to lookup service and component display names
-   * @return a collection of AvailableServices used for web service consumption
+   * @return a collection of AvailableServices used for web service consumption.  This
+   * collection is either the subset of the manifest, or the manifest if no services
+   * are specified as "available".
    */
   public Collection<AvailableService> getAvailableServices(StackInfo stack) {
     if (null == availableMap) {
@@ -120,6 +130,43 @@ public class VersionDefinitionXml {
 
     return availableMap.values();
   }
+
+  /**
+   * Gets the list of stack services, applying information from the version definition.
+   * @param stack the stack for which to get the information
+   * @return the list of {@code ManifestServiceInfo} instances for each service in the stack
+   */
+  public List<ManifestServiceInfo> getStackServices(StackInfo stack) {
+
+    if (null != m_manifest) {
+      return m_manifest;
+    }
+
+    Map<String, Set<String>> manifestVersions = new HashMap<>();
+
+    for (ManifestService manifest : manifestServices) {
+      String name = manifest.serviceName;
+
+      if (!manifestVersions.containsKey(name)) {
+        manifestVersions.put(manifest.serviceName, new TreeSet<String>());
+      }
+
+      manifestVersions.get(manifest.serviceName).add(manifest.version);
+    }
+
+    m_manifest = new ArrayList<>();
+
+    for (ServiceInfo si : stack.getServices()) {
+      Set<String> versions = manifestVersions.containsKey(si.getName()) ?
+          manifestVersions.get(si.getName()) : Collections.singleton("");
+
+      m_manifest.add(new ManifestServiceInfo(si.getName(), si.getDisplayName(),
+          si.getComment(), versions));
+    }
+
+    return m_manifest;
+  }
+
 
   /**
    * Helper method to use a {@link ManifestService} to generate the available services structure
@@ -171,6 +218,36 @@ public class VersionDefinitionXml {
     return set;
   }
 
+  /**
+   * Returns the XML representation of this instance.
+   */
+  public String toXml() throws Exception {
+
+    JAXBContext ctx = JAXBContext.newInstance(VersionDefinitionXml.class);
+    Marshaller marshaller = ctx.createMarshaller();
+    SchemaFactory factory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
+
+    InputStream xsdStream = VersionDefinitionXml.class.getClassLoader().getResourceAsStream(xsdLocation);
+
+    if (null == xsdStream) {
+      throw new Exception(String.format("Could not load XSD identified by '%s'", xsdLocation));
+    }
+
+    try {
+      Schema schema = factory.newSchema(new StreamSource(xsdStream));
+      marshaller.setSchema(schema);
+      marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE);
+      marshaller.setProperty("jaxb.noNamespaceSchemaLocation", xsdLocation);
+
+      StringWriter w = new StringWriter();
+      marshaller.marshal(this, w);
+
+      return w.toString();
+    } finally {
+      IOUtils.closeQuietly(xsdStream);
+    }
+  }
+
 
 
   /**
@@ -215,8 +292,10 @@ public class VersionDefinitionXml {
     JAXBContext ctx = JAXBContext.newInstance(VersionDefinitionXml.class);
     Unmarshaller unmarshaller = ctx.createUnmarshaller();
 
+    InputStream xsdStream = null;
+
     if (null != xsdName) {
-      InputStream xsdStream = VersionDefinitionXml.class.getClassLoader().getResourceAsStream(xsdName);
+      xsdStream = VersionDefinitionXml.class.getClassLoader().getResourceAsStream(xsdName);
 
       if (null == xsdStream) {
         throw new Exception(String.format("Could not load XSD identified by '%s'", xsdName));
@@ -227,13 +306,63 @@ public class VersionDefinitionXml {
       unmarshaller.setSchema(schema);
     }
 
-    VersionDefinitionXml xml = (VersionDefinitionXml) unmarshaller.unmarshal(xmlReader);
-    xml.xsdLocation = xsdName;
-
-    return xml;
+    try {
+      VersionDefinitionXml xml = (VersionDefinitionXml) unmarshaller.unmarshal(xmlReader);
+      xml.xsdLocation = xsdName;
+      return xml;
+    } finally {
+      IOUtils.closeQuietly(xsdStream);
+    }
   }
 
+  /**
+   * Used to facilitate merging when multiple version definitions are provided.  Ambari
+   * represents them as a unified entity.  Since there is no knowledge of which one is
+   * "correct" - the first one is used for the release meta-info.
+   */
+  public static class Merger {
+    private VersionDefinitionXml m_xml = new VersionDefinitionXml();
+    private boolean m_seeded = false;
 
+    public Merger() {
+      m_xml.release = new Release();
+      m_xml.repositoryInfo = new RepositoryXml();
+    }
 
+    /**
+     * Adds definition to this one.
+     * @param version the version the definition represents
+     * @param xml the definition object
+     */
+    public void add(String version, VersionDefinitionXml xml) {
+      if (!m_seeded) {
+        m_xml.xsdLocation = xml.xsdLocation;
+
+        StackId stackId = new StackId(xml.release.stackId);
+
+        m_xml.release.build = null; // could be combining builds, so this is invalid
+        m_xml.release.compatibleWith = xml.release.compatibleWith;
+        m_xml.release.display = stackId.getStackName() + "-" + xml.release.version;
+        m_xml.release.packageVersion = null; // could be combining, so this is invalid
+        m_xml.release.repositoryType = RepositoryType.STANDARD; // assumption since merging only done for new installs
+        m_xml.release.releaseNotes = xml.release.releaseNotes;
+        m_xml.release.stackId = xml.release.stackId;
+        m_xml.release.version = version;
+        m_xml.manifestServices.addAll(xml.manifestServices);
+
+        m_seeded = true;
+      }
+
+      m_xml.repositoryInfo.getOses().addAll(xml.repositoryInfo.getOses());
+    }
+
+    /**
+     * @return the merged definition file
+     */
+    public VersionDefinitionXml merge() {
+      return m_seeded ? m_xml : null;
+    }
+
+  }
 
 }

@@ -79,7 +79,8 @@ class TestHDP206StackAdvisor(TestCase):
     }
     self.assertHostLayout(expectedComponentsHostsMap, result)
 
-  def test_recommendationAssignmentNotChanged(self):
+  def test_recommendOnAllHosts(self):
+    """ Recommend on all hosts for cardinality ALL even if the component has been installed in the cluster before """
     servicesInfo = [
       {
         "name": "GANGLIA",
@@ -510,7 +511,7 @@ class TestHDP206StackAdvisor(TestCase):
 
   def test_recommendYARNConfigurations(self):
     configurations = {}
-    services = {"configurations": configurations}
+    services = {"configurations": configurations, "services": []}
     clusterData = {
       "containers" : 5,
       "ramPerContainer": 256
@@ -665,23 +666,22 @@ class TestHDP206StackAdvisor(TestCase):
     servicesList = ["HBASE"]
     configurations = {}
     components = []
+    host_item = {
+      "Hosts" : {
+        "cpu_count" : 6,
+        "total_mem" : 50331648,
+        "disk_info" : [
+          {"mountpoint" : "/"},
+          {"mountpoint" : "/dev/shm"},
+          {"mountpoint" : "/vagrant"},
+          {"mountpoint" : "/"},
+          {"mountpoint" : "/dev/shm"},
+          {"mountpoint" : "/vagrant"}
+        ]
+      }
+    }
     hosts = {
-      "items" : [
-        {
-          "Hosts" : {
-            "cpu_count" : 6,
-            "total_mem" : 50331648,
-            "disk_info" : [
-              {"mountpoint" : "/"},
-              {"mountpoint" : "/dev/shm"},
-              {"mountpoint" : "/vagrant"},
-              {"mountpoint" : "/"},
-              {"mountpoint" : "/dev/shm"},
-              {"mountpoint" : "/vagrant"}
-            ]
-          }
-        }
-      ]
+      "items" : [host_item for i in range(1, 300)]
     }
     services = {
       "services" : [
@@ -707,7 +707,7 @@ class TestHDP206StackAdvisor(TestCase):
       },
       "hbase-env": {
         "properties": {
-          "hbase_master_heapsize": "8192",
+          "hbase_master_heapsize": "4096",
           "hbase_regionserver_heapsize": "8192",
           }
       }
@@ -716,7 +716,7 @@ class TestHDP206StackAdvisor(TestCase):
     clusterData = self.stackAdvisor.getConfigurationClusterSummary(servicesList, hosts, components, None)
     self.assertEquals(clusterData['hbaseRam'], 8)
 
-    self.stackAdvisor.recommendHbaseConfigurations(configurations, clusterData, services, None)
+    self.stackAdvisor.recommendHbaseConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
 
 
@@ -773,8 +773,7 @@ class TestHDP206StackAdvisor(TestCase):
     expected = {
       "admin-properties": {
         "properties": {
-          "SQL_CONNECTOR_JAR": "/usr/share/java/mysql-connector-java.jar",
-          "policymgr_external_url": "http://host1:7777",
+          "policymgr_external_url": "http://host1:7777"
         }
       }
     }
@@ -801,8 +800,7 @@ class TestHDP206StackAdvisor(TestCase):
     expected = {
       "admin-properties": {
         "properties": {
-          "SQL_CONNECTOR_JAR": "/usr/share/java/postgresql.jar",
-          "policymgr_external_url": "https://host1:7777",
+          "policymgr_external_url": "https://host1:7777"
           }
       }
     }
@@ -828,8 +826,7 @@ class TestHDP206StackAdvisor(TestCase):
     expected = {
       "admin-properties": {
         "properties": {
-          "SQL_CONNECTOR_JAR": "/usr/share/java/ojdbc6.jar",
-          "policymgr_external_url": "https://host1:8888",
+          "policymgr_external_url": "https://host1:8888"
           }
       },
       "ranger-env": {"properties": {}}
@@ -1055,7 +1052,8 @@ class TestHDP206StackAdvisor(TestCase):
             "hostnames": ["c6401.ambari.apache.org", "c6402.ambari.apache.org"]
           }, }]
         }],
-      "configurations": configurations
+      "configurations": configurations,
+      "ambari-server-properties": {"ambari-server.user":"ambari_user"}
     }
 
     clusterData = {
@@ -1066,7 +1064,9 @@ class TestHDP206StackAdvisor(TestCase):
                      {'oozie_user': 'oozie'}},
                 'core-site':
                   {'properties':
-                     {'hadoop.proxyuser.oozie.groups': '*',
+                     {'hadoop.proxyuser.ambari_user.groups': '*',
+                      'hadoop.proxyuser.ambari_user.hosts': '*',
+                      'hadoop.proxyuser.oozie.groups': '*',
                       'hadoop.proxyuser.hive.groups': '*',
                       'hadoop.proxyuser.webhcat.hosts': 'c6401.ambari.apache.org,c6402.ambari.apache.org',
                       'hadoop.proxyuser.falcon.hosts': '*',
@@ -1111,7 +1111,9 @@ class TestHDP206StackAdvisor(TestCase):
                   {'properties':
                      {'oozie_user': 'oozie'}},
                 'core-site': {'properties':
-                                {'hadoop.proxyuser.oozie.groups': '*',
+                                {'hadoop.proxyuser.ambari_user.groups': '*',
+                                 'hadoop.proxyuser.ambari_user.hosts': '*',
+                                 'hadoop.proxyuser.oozie.groups': '*',
                                  'hadoop.proxyuser.hive.groups': '*',
                                  'hadoop.proxyuser.hdfs1.groups': '*',
                                  'hadoop.proxyuser.hdfs1.hosts': '*',

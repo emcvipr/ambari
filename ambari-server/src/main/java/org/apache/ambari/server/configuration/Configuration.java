@@ -39,6 +39,7 @@ import org.apache.ambari.server.state.stack.OsFamily;
 import org.apache.ambari.server.utils.AmbariPath;
 import org.apache.ambari.server.utils.Parallel;
 import org.apache.ambari.server.utils.ShellCommandUtil;
+import org.apache.commons.collections.ListUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.RandomStringUtils;
 import org.apache.commons.lang.StringUtils;
@@ -131,6 +132,7 @@ public class Configuration {
   public static final String RESOURCES_DIR_KEY = "resources.dir";
   public static final String METADATA_DIR_PATH = "metadata.path";
   public static final String COMMON_SERVICES_DIR_PATH = "common.services.path";
+  public static final String MPACKS_STAGING_DIR_PATH = "mpacks.staging.path";
   public static final String SERVER_VERSION_FILE = "server.version.file";
   public static final String SERVER_VERSION_KEY = "version";
   public static final String JAVA_HOME_KEY = "java.home";
@@ -187,6 +189,30 @@ public class Configuration {
   public static final String LDAP_GROUP_NAMING_ATTR_KEY = "authentication.ldap.groupNamingAttr";
   public static final String LDAP_GROUP_MEMEBERSHIP_ATTR_KEY = "authentication.ldap.groupMembershipAttr";
   public static final String LDAP_ADMIN_GROUP_MAPPING_RULES_KEY = "authorization.ldap.adminGroupMappingRules";
+  /**
+   * When authentication through LDAP is enabled then Ambari Server uses this filter to lookup
+   * the user in LDAP based on the provided ambari user name.
+   *
+   * If it is not set then the default {@link #LDAP_USER_SEARCH_FILTER_DEFAULT} is used.
+   */
+  public static final String LDAP_USER_SEARCH_FILTER_KEY = "authentication.ldap.userSearchFilter";
+
+  /**
+   * When authentication through LDAP is enabled there might be cases when {@link #LDAP_USER_SEARCH_FILTER_KEY}
+   * may match multiple users in LDAP. In such cases the user is prompted to provide additional info, e.g. the domain
+   * he or she wants ot log in upon login beside the username. This filter will be used by Ambari Server to lookup
+   * users in LDAP if the login name the user logs in contains additional information beside ambari user name.
+   *
+   * If it is not not set then the default {@link #LDAP_ALT_USER_SEARCH_FILTER_DEFAULT} is used.
+   *
+   * <p>
+   *   Note: Currently this filter will only be used by Ambari Server if the user login name
+   *   is in the username@domain format (e.g. user1@x.y.com) which is the userPrincipalName
+   *   format used in AD.
+   * </p>
+   */
+  public static final String LDAP_ALT_USER_SEARCH_FILTER_KEY = "authentication.ldap.alternateUserSearchFilter"; //TODO: we'll need a more generic solution to support any login name format
+
   public static final String LDAP_GROUP_SEARCH_FILTER_KEY = "authorization.ldap.groupSearchFilter";
   public static final String LDAP_REFERRAL_KEY = "authentication.ldap.referral";
   public static final String LDAP_PAGINATION_ENABLED_KEY = "authentication.ldap.pagination.enabled";
@@ -210,8 +236,40 @@ public class Configuration {
   // Properties for stack upgrade (Rolling, Express)
   public static final String ROLLING_UPGRADE_SKIP_PACKAGES_PREFIXES_KEY = "rolling.upgrade.skip.packages.prefixes";
   public static final String ROLLING_UPGRADE_SKIP_PACKAGES_PREFIXES_DEFAULT = "";
+
   public static final String STACK_UPGRADE_BYPASS_PRECHECKS_KEY = "stack.upgrade.bypass.prechecks";
   public static final String STACK_UPGRADE_BYPASS_PRECHECKS_DEFAULT = "false";
+
+  /**
+   * If a host is shutdown or ambari-agent is stopped, then Ambari Server will still keep waiting til the task timesout,
+   * say 10-20 mins. If the host comes back online and ambari-agent is started, then need this retry property
+   * to be greater; ideally, it should be greater than 2 * command_timeout in order to retry at least
+   * 3 times in that amount of mins.
+   * Suggested value is 15-30 mins.
+   */
+  public static final String STACK_UPGRADE_AUTO_RETRY_TIMEOUT_MINS_KEY = "stack.upgrade.auto.retry.timeout.mins";
+  public static final String STACK_UPGRADE_AUTO_RETRY_TIMEOUT_MINS_DEFAULT = "0";
+
+  /**
+   * If the stack.upgrade.auto.retry.timeout.mins property is positive, then run RetryUpgradeActionService every x
+   * seconds.
+   */
+  public static final String STACK_UPGRADE_AUTO_RETRY_CHECK_INTERVAL_SECS_KEY = "stack.upgrade.auto.retry.check.interval.secs";
+  public static final String STACK_UPGRADE_AUTO_RETRY_CHECK_INTERVAL_SECS_DEFAULT = "20";
+
+  /**
+   * If auto-retry during stack upgrade is enabled, skip any tasks whose custom command name contains at least one
+   * of the strings in the following CSV property. Note that values have to be enclosed in quotes and separated by commas.
+   */
+  public static final String STACK_UPGRADE_AUTO_RETRY_CUSTOM_COMMAND_NAMES_TO_IGNORE_KEY = "stack.upgrade.auto.retry.command.names.to.ignore";
+  public static final String STACK_UPGRADE_AUTO_RETRY_CUSTOM_COMMAND_NAMES_TO_IGNORE_DEFAULT = "\"ComponentVersionCheckAction\",\"FinalizeUpgradeAction\"";
+
+  /**
+   * If auto-retry during stack upgrade is enabled, skip any tasks whose command details contains at least one
+   * of the strings in the following CSV property. Note that values have to be enclosed in quotes and separated by commas.
+   */
+  public static final String STACK_UPGRADE_AUTO_RETRY_COMMAND_DETAILS_TO_IGNORE_KEY = "stack.upgrade.auto.retry.command.details.to.ignore";
+  public static final String STACK_UPGRADE_AUTO_RETRY_COMMAND_DETAILS_TO_IGNORE_DEFAULT = "\"Execute HDFS Finalize\"";
 
   public static final String JWT_AUTH_ENBABLED = "authentication.jwt.enabled";
   public static final String JWT_AUTH_PROVIDER_URL = "authentication.jwt.providerUrl";
@@ -236,6 +294,8 @@ public class Configuration {
   public static final String OPERATIONS_RETRY_ATTEMPTS_KEY = "server.operations.retry-attempts";
   public static final String OPERATIONS_RETRY_ATTEMPTS_DEFAULT = "0";
   public static final int RETRY_ATTEMPTS_LIMIT = 10;
+
+  public static final String AMBARI_SERVER_USER = "ambari-server.user";
 
   public static final String SERVER_JDBC_RCA_USER_NAME_KEY = "server.jdbc.rca.user.name";
   public static final String SERVER_JDBC_RCA_USER_PASSWD_KEY = "server.jdbc.rca.user.passwd";
@@ -339,22 +399,6 @@ public class Configuration {
   public static final String KERBEROS_CHECK_JAAS_CONFIGURATION_DEFAULT = "false";
 
   /**
-   * Recovery related configuration
-   */
-  public static final String RECOVERY_TYPE_KEY = "recovery.type";
-  public static final String RECOVERY_TYPE_DEFAULT = "DEFAULT";
-  public static final String RECOVERY_LIFETIME_MAX_COUNT_KEY = "recovery.lifetime_max_count";
-  public static final String RECOVERY_LIFETIME_MAX_COUNT_DEFAULT = "12";
-  public static final String RECOVERY_MAX_COUNT_KEY = "recovery.max_count";
-  public static final String RECOVERY_MAX_COUNT_DEFAULT = "6";
-  public static final String RECOVERY_WINDOW_IN_MIN_KEY = "recovery.window_in_minutes";
-  public static final String RECOVERY_WINDOW_IN_MIN_DEFAULT = "60";
-  public static final String RECOVERY_RETRY_GAP_KEY = "recovery.retry_interval";
-  public static final String RECOVERY_RETRY_GAP_DEFAULT = "5";
-  public static final String RECOVERY_DISABLED_COMPONENTS_KEY = "recovery.disabled_components";
-  public static final String RECOVERY_ENABLED_COMPONENTS_KEY = "recovery.enabled_components";
-
-  /**
    * Allow proxy calls to these hosts and ports only
    */
   public static final String PROXY_ALLOWED_HOST_PORTS = "proxy.allowed.hostports";
@@ -442,6 +486,25 @@ public class Configuration {
   private static final String LDAP_GROUP_NAMING_ATTR_DEFAULT = "cn";
   private static final String LDAP_GROUP_MEMBERSHIP_ATTR_DEFAULT = "member";
   private static final String LDAP_ADMIN_GROUP_MAPPING_RULES_DEFAULT = "Ambari Administrators";
+  /**
+   * When authentication through LDAP is enabled then Ambari Server uses this filter by default to lookup
+   * the user in LDAP if one not provided in the config via {@link #LDAP_USER_SEARCH_FILTER_KEY}.
+   */
+  protected static final String LDAP_USER_SEARCH_FILTER_DEFAULT = "(&({usernameAttribute}={0})(objectClass={userObjectClass}))";
+
+  /**
+   * When authentication through LDAP is enabled Ambari Server uses this filter by default to lookup
+   * the user in LDAP when the user provides beside user name additional information.
+   * This filter can be overridden through {@link #LDAP_ALT_USER_SEARCH_FILTER_KEY}.
+   *
+   * <p>
+   *   Note: Currently the use of alternate user search filter is triggered only if the user login name
+   *   is in the username@domain format (e.g. user1@x.y.com) which is the userPrincipalName
+   *   format used in AD.
+   * </p>
+   */
+  protected static final String LDAP_ALT_USER_SEARCH_FILTER_DEFAULT = "(&(userPrincipalName={0})(objectClass={userObjectClass}))"; //TODO: we'll need a more generic solution to support any login name format
+
   private static final String LDAP_GROUP_SEARCH_FILTER_DEFAULT = "";
   private static final String LDAP_REFERRAL_DEFAULT = "follow";
 
@@ -613,6 +676,17 @@ public class Configuration {
   private static final Set<String> dbConnectorPropertyNames = new HashSet<String>(Arrays.asList("custom.mysql.jdbc.name",
           "custom.oracle.jdbc.name", "custom.postgres.jdbc.name", "custom.mssql.jdbc.name", "custom.hsqldb.jdbc.name",
           "custom.sqlanywhere.jdbc.name"));
+
+  /**
+   * Main switch for audit log feature
+   */
+  private static final String AUDIT_LOG_ENABLED = "auditlog.enabled";
+
+  /**
+   * Audit logger capacity
+   */
+  private static final String AUDIT_LOGGER_CAPACITY = "auditlog.logger.capacity";
+  private static final int AUDIT_LOGGER_CAPACITY_DEFAULT = 10000;
 
   private static final Logger LOG = LoggerFactory.getLogger(
     Configuration.class);
@@ -1126,6 +1200,82 @@ public class Configuration {
   }
 
   /**
+   * During stack upgrade, can auto-retry failures for up to x mins. This is useful to improve the robustness in unstable environments.
+   * Suggested value is 0-30 mins.
+   * @return
+   */
+  public int getStackUpgradeAutoRetryTimeoutMins() {
+    Integer result = NumberUtils.toInt(properties.getProperty(STACK_UPGRADE_AUTO_RETRY_TIMEOUT_MINS_KEY, STACK_UPGRADE_AUTO_RETRY_TIMEOUT_MINS_DEFAULT));
+    return result >= 0 ? result : 0;
+  }
+
+  /**
+   * If the stack.upgrade.auto.retry.timeout.mins property is positive, then run RetryUpgradeActionService every x
+   * seconds.
+   * @return Number of seconds between runs of {@link org.apache.ambari.server.state.services.RetryUpgradeActionService}
+   */
+  public int getStackUpgradeAutoRetryCheckIntervalSecs() {
+    Integer result = NumberUtils.toInt(properties.getProperty(STACK_UPGRADE_AUTO_RETRY_CHECK_INTERVAL_SECS_KEY, STACK_UPGRADE_AUTO_RETRY_CHECK_INTERVAL_SECS_DEFAULT));
+    return result >= 0 ? result : 0;
+  }
+
+  /**
+   * If auto-retry during stack upgrade is enabled, skip any tasks whose custom command name contains at least one
+   * of the strings in the following CSV property. Note that values have to be enclosed in quotes and separated by commas.
+   * @return
+   */
+  public List<String> getStackUpgradeAutoRetryCustomCommandNamesToIgnore() {
+    String value = properties.getProperty(STACK_UPGRADE_AUTO_RETRY_CUSTOM_COMMAND_NAMES_TO_IGNORE_KEY, STACK_UPGRADE_AUTO_RETRY_CUSTOM_COMMAND_NAMES_TO_IGNORE_DEFAULT);
+    List<String> list = convertCSVwithQuotesToList(value);
+    listToLowerCase(list);
+    return list;
+  }
+
+  /**
+   * If auto-retry during stack upgrade is enabled, skip any tasks whose command details contains at least one
+   * of the strings in the following CSV property. Note that values have to be enclosed in quotes and separated by commas.
+   * @return
+   */
+  public List<String> getStackUpgradeAutoRetryCommandDetailsToIgnore() {
+    String value = properties.getProperty(STACK_UPGRADE_AUTO_RETRY_COMMAND_DETAILS_TO_IGNORE_KEY, STACK_UPGRADE_AUTO_RETRY_COMMAND_DETAILS_TO_IGNORE_DEFAULT);
+    List<String> list = convertCSVwithQuotesToList(value);
+    listToLowerCase(list);
+    return list;
+  }
+
+  /**
+   * Convert quoted elements separated by commas into a list. Values cannot contain double quotes or commas.
+   * @param value, e.g., String with value "a","b","c" => ["a", "b", "c"]
+   * @return List of parsed values, or empty list if no values exist.
+   */
+  private List<String> convertCSVwithQuotesToList(String value) {
+    List<String> list = new ArrayList<>();
+    if (StringUtils.isNotEmpty(value)) {
+      if (value.indexOf(",") >= 0) {
+        for (String e : value.split(",")) {
+          e = StringUtils.stripStart(e, "\"");
+          e = StringUtils.stripEnd(e, "\"");
+          list.add(e);
+        }
+      } else {
+        list.add(value);
+      }
+    }
+    return list;
+  }
+
+  /**
+   * Convert the elements of a list to lowercase.
+   * @param list
+   */
+  private void listToLowerCase(List<String> list) {
+    if (list == null) return;
+    for (int i = 0; i < list.size(); i++) {
+      list.set(i, list.get(i).toLowerCase());
+    }
+  }
+
+  /**
    * Get the map with server config parameters.
    * Keys - public constants of this class
    * @return the map with server config parameters
@@ -1206,6 +1356,15 @@ public class Configuration {
   public String getCommonServicesPath() {
     return properties.getProperty(COMMON_SERVICES_DIR_PATH);
   }
+
+  /**
+   * Gets ambari management packs staging directory
+   * @return String
+   */
+  public String getMpacksStagingPath() {
+    return properties.getProperty(MPACKS_STAGING_DIR_PATH);
+  }
+
 
   public String getServerVersionFilePath() {
     return properties.getProperty(SERVER_VERSION_FILE);
@@ -1445,12 +1604,17 @@ public class Configuration {
   public String getDatabasePassword() {
     String passwdProp = properties.getProperty(SERVER_JDBC_USER_PASSWD_KEY);
     String dbpasswd = null;
+    boolean isPasswordAlias = false;
     if (CredentialProvider.isAliasString(passwdProp)) {
       dbpasswd = readPasswordFromStore(passwdProp);
+      isPasswordAlias =true;
     }
 
     if (dbpasswd != null) {
       return dbpasswd;
+    } else if (dbpasswd == null && isPasswordAlias) {
+      LOG.error("Can't read db password from keystore. Please, check master key was set correctly.");
+      throw new RuntimeException("Can't read db password from keystore. Please, check master key was set correctly.");
     } else {
       return readPasswordFromFile(passwdProp, SERVER_JDBC_USER_PASSWD_DEFAULT);
     }
@@ -1568,6 +1732,10 @@ public class Configuration {
       getProperty(LDAP_GROUP_NAMING_ATTR_KEY, LDAP_GROUP_NAMING_ATTR_DEFAULT));
     ldapServerProperties.setAdminGroupMappingRules(properties.getProperty(
       LDAP_ADMIN_GROUP_MAPPING_RULES_KEY, LDAP_ADMIN_GROUP_MAPPING_RULES_DEFAULT));
+    ldapServerProperties.setUserSearchFilter(properties.getProperty(
+      LDAP_USER_SEARCH_FILTER_KEY, LDAP_USER_SEARCH_FILTER_DEFAULT));
+    ldapServerProperties.setAlternateUserSearchFilter(properties.getProperty(
+      LDAP_ALT_USER_SEARCH_FILTER_KEY, LDAP_ALT_USER_SEARCH_FILTER_DEFAULT));
     ldapServerProperties.setGroupSearchFilter(properties.getProperty(
       LDAP_GROUP_SEARCH_FILTER_KEY, LDAP_GROUP_SEARCH_FILTER_DEFAULT));
     ldapServerProperties.setReferralMethod(properties.getProperty(
@@ -2208,64 +2376,6 @@ public class Configuration {
   }
 
   /**
-   * Get the node recovery type DEFAULT|AUTO_START|FULL
-   * @return
-   */
-  public String getNodeRecoveryType() {
-    return properties.getProperty(RECOVERY_TYPE_KEY, RECOVERY_TYPE_DEFAULT);
-  }
-
-  /**
-   * Get configured max count of recovery attempt allowed per host component in a window
-   * This is reset when agent is restarted.
-   * @return
-   */
-  public String getNodeRecoveryMaxCount() {
-    return properties.getProperty(RECOVERY_MAX_COUNT_KEY, RECOVERY_MAX_COUNT_DEFAULT);
-  }
-
-  /**
-   * Get configured max lifetime count of recovery attempt allowed per host component.
-   * This is reset when agent is restarted.
-   * @return
-   */
-  public String getNodeRecoveryLifetimeMaxCount() {
-    return properties.getProperty(RECOVERY_LIFETIME_MAX_COUNT_KEY, RECOVERY_LIFETIME_MAX_COUNT_DEFAULT);
-  }
-
-  /**
-   * Get configured window size in minutes
-   * @return
-   */
-  public String getNodeRecoveryWindowInMin() {
-    return properties.getProperty(RECOVERY_WINDOW_IN_MIN_KEY, RECOVERY_WINDOW_IN_MIN_DEFAULT);
-  }
-
-  /**
-   * Get the components for which recovery is disabled
-   * @return
-   */
-  public String getDisabledComponents() {
-    return properties.getProperty(RECOVERY_DISABLED_COMPONENTS_KEY, "");
-  }
-
-  /**
-   * Get the components for which recovery is enabled
-   * @return
-   */
-  public String getEnabledComponents() {
-    return properties.getProperty(RECOVERY_ENABLED_COMPONENTS_KEY, "");
-  }
-
-  /**
-   * Get the configured retry gap between tries per host component
-   * @return
-   */
-  public String getNodeRecoveryRetryGap() {
-    return properties.getProperty(RECOVERY_RETRY_GAP_KEY, RECOVERY_RETRY_GAP_DEFAULT);
-  }
-
-  /**
    * Gets the default KDC port to use when no port is specified in KDC hostname
    *
    * @return the default KDC port to use.
@@ -2755,5 +2865,18 @@ public class Configuration {
 
   public String isAgentStackRetryOnInstallEnabled(){
     return properties.getProperty(AGENT_STACK_RETRY_ON_REPO_UNAVAILABILITY_KEY, AGENT_STACK_RETRY_ON_REPO_UNAVAILABILITY_DEFAULT);
+  }
+
+  public boolean isAuditLogEnabled() {
+    return Boolean.parseBoolean(properties.getProperty(AUDIT_LOG_ENABLED,Boolean.TRUE.toString()));
+  }
+
+  /**
+   * @return the capacity of async audit logger
+   */
+  public int getAuditLoggerCapacity() {
+    return NumberUtils.toInt(
+      properties.getProperty(AUDIT_LOGGER_CAPACITY),
+      AUDIT_LOGGER_CAPACITY_DEFAULT);
   }
 }

@@ -22,6 +22,9 @@
   <target-stack>HDP-2.4</target-stack>
   <type>NON_ROLLING</type>
   <prerequisite-checks>
+    <!-- List of additional pre-req checks to run in addition to the required pre-reqs -->
+    <check>org.apache.ambari.server.checks.KafkaKerberosCheck</check>
+
     <configuration>
       <!-- Configuration properties for all pre-reqs including required pre-reqs -->
       <check-properties name="org.apache.ambari.server.checks.HiveDynamicServiceDiscoveryCheck">
@@ -145,7 +148,7 @@
 
       <execute-stage service="OOZIE" component="OOZIE_SERVER" title="Backup Oozie Database">
         <task xsi:type="manual">
-          <message>Before continuing, please backup the Oozie Server database on {{hosts.all}}.</message>
+          <message>Before continuing, please backup the Oozie Server database referenced by the Oozie server located on {{hosts.all}}.</message>
         </task>
       </execute-stage>
 
@@ -233,13 +236,13 @@
 
       <execute-stage service="OOZIE" component="OOZIE_SERVER" title="Restore Oozie Database">
         <task xsi:type="manual">
-          <message>Before continuing, please restore the Oozie Server database on {{hosts.all}}.</message>
+          <message>Before continuing, please restore the Oozie Server database referenced by the Oozie server located on {{hosts.all}}.</message>
         </task>
       </execute-stage>
 
       <execute-stage service="HIVE" component="HIVE_METASTORE" title="Restore Hive Metastore">
         <task xsi:type="manual">
-          <message>Before continuing, please restore the Hive Metastore database located on the following host(s): {{hosts.all}}.</message>
+          <message>Before continuing, please restore the Hive Metastore database referenced by the Hive Metastore service(s) located on the following host(s): {{hosts.all}}.</message>
         </task>
       </execute-stage>
 

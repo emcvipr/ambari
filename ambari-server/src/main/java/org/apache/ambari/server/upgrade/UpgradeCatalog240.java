@@ -23,16 +23,18 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.AmbariManagementController;
-import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.DBAccessor.DBColumnInfo;
 import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
 import org.apache.ambari.server.orm.dao.PermissionDAO;
@@ -41,8 +43,11 @@ import org.apache.ambari.server.orm.dao.RoleAuthorizationDAO;
 import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
 import org.apache.ambari.server.orm.entities.PermissionEntity;
 import org.apache.ambari.server.orm.entities.RoleAuthorizationEntity;
+import org.apache.ambari.server.state.AlertFirmness;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.Config;
+import org.apache.ambari.server.state.ConfigHelper;
 import org.apache.ambari.server.state.RepositoryType;
 import org.apache.ambari.server.state.State;
 import org.slf4j.Logger;
@@ -65,9 +70,17 @@ import com.google.inject.persist.Transactional;
 public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
 
   protected static final String ADMIN_PERMISSION_TABLE = "adminpermission";
+  protected static final String ALERT_DEFINITION_TABLE = "alert_definition";
+  protected static final String ALERT_CURRENT_TABLE = "alert_current";
+  protected static final String ALERT_CURRENT_OCCURRENCES_COLUMN = "occurrences";
+  protected static final String ALERT_CURRENT_FIRMNESS_COLUMN = "firmness";
+  protected static final String HELP_URL_COLUMN = "help_url";
+  protected static final String REPEAT_TOLERANCE_COLUMN = "repeat_tolerance";
+  protected static final String REPEAT_TOLERANCE_ENABLED_COLUMN = "repeat_tolerance_enabled";
   protected static final String PERMISSION_ID_COL = "permission_name";
   protected static final String SORT_ORDER_COL = "sort_order";
   protected static final String REPO_VERSION_TABLE = "repo_version";
+  protected static final String HOST_ROLE_COMMAND_TABLE = "host_role_command";
   protected static final String SERVICE_COMPONENT_DS_TABLE = "servicecomponentdesiredstate";
   protected static final String HOST_COMPONENT_DS_TABLE = "hostcomponentdesiredstate";
   protected static final String HOST_COMPONENT_STATE_TABLE = "hostcomponentstate";
@@ -77,7 +90,12 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
   protected static final String CLUSTER_TABLE = "clusters";
   protected static final String CLUSTER_UPGRADE_ID_COLUMN = "upgrade_id";
   public static final String DESIRED_VERSION_COLUMN_NAME = "desired_version";
-
+  public static final String BLUEPRINT_SETTING_TABLE = "blueprint_setting";
+  public static final String BLUEPRINT_NAME_COL = "blueprint_name";
+  public static final String SETTING_NAME_COL = "setting_name";
+  public static final String SETTING_DATA_COL = "setting_data";
+  public static final String ID = "id";
+  public static final String BLUEPRINT_TABLE = "blueprint";
 
   @Inject
   PermissionDAO permissionDAO;
@@ -90,7 +108,6 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
    */
   private static final Logger LOG = LoggerFactory.getLogger(UpgradeCatalog240.class);
 
-  private static final String ID = "id";
   private static final String SETTING_TABLE = "setting";
 
   protected static final String SERVICE_COMPONENT_DESIRED_STATE_TABLE = "servicecomponentdesiredstate";
@@ -139,13 +156,17 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
     updateServiceComponentDesiredStateTableDDL();
     createServiceComponentHistoryTable();
     updateClusterTableDDL();
+    updateAlertDefinitionTable();
+    updateAlertCurrentTable();
+    createBlueprintSettingTable();
+    updateHostRoleCommandTableDDL();
   }
 
   private void updateClusterTableDDL() throws SQLException {
     dbAccessor.addColumn(CLUSTER_TABLE, new DBColumnInfo(CLUSTER_UPGRADE_ID_COLUMN, Long.class, null, null, true));
 
     dbAccessor.addFKConstraint(CLUSTER_TABLE, "FK_clusters_upgrade_id",
-        CLUSTER_UPGRADE_ID_COLUMN, UPGRADE_TABLE, "upgrade_id", false);
+      CLUSTER_UPGRADE_ID_COLUMN, UPGRADE_TABLE, "upgrade_id", false);
   }
 
   @Override
@@ -160,6 +181,11 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
     setRoleSortOrder();
     addSettingPermission();
     addManageUserPersistedDataPermission();
+    updateHDFSConfigs();
+    updateAMSConfigs();
+    updateClusterEnv();
+    updateHostRoleCommandTableDML();
+    updateKerberosConfigs();
   }
 
   private void createSettingTable() throws SQLException {
@@ -191,7 +217,7 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
     String administratorPermissionId = permissionDAO.findPermissionByNameAndType("AMBARI.ADMINISTRATOR",
         resourceTypeDAO.findByName("AMBARI")).getId().toString();
     dbAccessor.insertRowIfMissing("permission_roleauthorization", new String[]{"permission_id", "authorization_id"},
-      new String[]{"'" + administratorPermissionId + "'", "'AMBARI.MANAGE_SETTINGS'"}, false);
+            new String[]{"'" + administratorPermissionId + "'", "'AMBARI.MANAGE_SETTINGS'"}, false);
   }
 
   /**
@@ -230,7 +256,7 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
     permissionId = permissionDAO.findPermissionByNameAndType("CLUSTER.OPERATOR",
       resourceTypeDAO.findByName("CLUSTER")).getId().toString();
     dbAccessor.insertRowIfMissing("permission_roleauthorization", new String[]{"permission_id", "authorization_id"},
-      new String[]{"'" + permissionId + "'", "'CLUSTER.MANAGE_USER_PERSISTED_DATA'"}, false);
+            new String[]{"'" + permissionId + "'", "'CLUSTER.MANAGE_USER_PERSISTED_DATA'"}, false);
 
     permissionId = permissionDAO.findPermissionByNameAndType("AMBARI.ADMINISTRATOR",
       resourceTypeDAO.findByName("AMBARI")).getId().toString();
@@ -245,6 +271,148 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
   }
 
   protected void updateAlerts() {
+    // map of alert_name -> property_name -> visibility_value
+    final Map<String, String> hdfsVisibilityMap = new HashMap<String, String>(){{
+      put("mergeHaMetrics", "HIDDEN");
+      put("appId", "HIDDEN");
+      put("metricName", "HIDDEN");
+    }};
+    final Map<String, String> defaultKeytabVisibilityMap = new HashMap<String, String>(){{
+      put("default.smoke.principal", "HIDDEN");
+      put("default.smoke.keytab", "HIDDEN");
+    }};
+
+    final Map<String, String> percentParameterMap = new HashMap<String, String>(){{
+      put("units", "%");
+      put("type", "PERCENT");
+    }};
+
+    Map<String, Map<String, String>> visibilityMap = new HashMap<String, Map<String, String>>(){{
+      put("hive_webhcat_server_status", new HashMap<String, String>(){{
+        put("default.smoke.user", "HIDDEN");
+      }});
+      put("hive_metastore_process", defaultKeytabVisibilityMap);
+      put("hive_server_process", defaultKeytabVisibilityMap);
+      put("namenode_service_rpc_queue_latency_hourly", hdfsVisibilityMap);
+      put("namenode_client_rpc_queue_latency_hourly", hdfsVisibilityMap);
+      put("namenode_service_rpc_processing_latency_hourly", hdfsVisibilityMap);
+      put("namenode_client_rpc_processing_latency_hourly", hdfsVisibilityMap);
+      put("increase_nn_heap_usage_daily", hdfsVisibilityMap);
+      put("namenode_service_rpc_processing_latency_daily", hdfsVisibilityMap);
+      put("namenode_client_rpc_processing_latency_daily", hdfsVisibilityMap);
+      put("namenode_service_rpc_queue_latency_daily", hdfsVisibilityMap);
+      put("namenode_client_rpc_queue_latency_daily", hdfsVisibilityMap);
+      put("namenode_increase_in_storage_capacity_usage_daily", hdfsVisibilityMap);
+      put("increase_nn_heap_usage_weekly", hdfsVisibilityMap);
+      put("namenode_increase_in_storage_capacity_usage_weekly", hdfsVisibilityMap);
+    }};
+
+    Map<String, Map<String, String>> reportingPercentMap = new HashMap<String, Map<String, String>>(){{
+      put("hawq_segment_process_percent", percentParameterMap);
+      put("mapreduce_history_server_cpu", percentParameterMap);
+      put("yarn_nodemanager_webui_percent", percentParameterMap);
+      put("yarn_resourcemanager_cpu", percentParameterMap);
+      put("datanode_process_percent", percentParameterMap);
+      put("datanode_storage_percent", percentParameterMap);
+      put("journalnode_process_percent", percentParameterMap);
+      put("namenode_cpu", percentParameterMap);
+      put("namenode_hdfs_capacity_utilization", percentParameterMap);
+      put("datanode_storage", percentParameterMap);
+      put("datanode_heap_usage", percentParameterMap);
+      put("storm_supervisor_process_percent", percentParameterMap);
+      put("hbase_regionserver_process_percent", percentParameterMap);
+      put("hbase_master_cpu", percentParameterMap);
+      put("zookeeper_server_process_percent", percentParameterMap);
+      put("metrics_monitor_process_percent", percentParameterMap);
+      put("ams_metrics_collector_hbase_master_cpu", percentParameterMap);
+    }};
+
+    Map<String, Map<String, Integer>> reportingMultiplierMap = new HashMap<String, Map<String, Integer>>(){{
+      put("hawq_segment_process_percent", new HashMap<String, Integer>() {{
+        put("warning", 100);
+        put("critical", 100);
+      }});
+      put("yarn_nodemanager_webui_percent", new HashMap<String, Integer>() {{
+        put("warning", 100);
+        put("critical", 100);
+      }});
+      put("datanode_process_percent", new HashMap<String, Integer>() {{
+        put("warning", 100);
+        put("critical", 100);
+      }});
+      put("datanode_storage_percent", new HashMap<String, Integer>() {{
+        put("warning", 100);
+        put("critical", 100);
+      }});
+      put("journalnode_process_percent", new HashMap<String, Integer>() {{
+        put("warning", 100);
+        put("critical", 100);
+      }});
+      put("storm_supervisor_process_percent", new HashMap<String, Integer>() {{
+        put("warning", 100);
+        put("critical", 100);
+      }});
+      put("hbase_regionserver_process_percent", new HashMap<String, Integer>() {{
+        put("warning", 100);
+        put("critical", 100);
+      }});
+      put("zookeeper_server_process_percent", new HashMap<String, Integer>() {{
+        put("warning", 100);
+        put("critical", 100);
+      }});
+      put("metrics_monitor_process_percent", new HashMap<String, Integer>() {{
+        put("warning", 100);
+        put("critical", 100);
+      }});
+    }};
+
+    Map<String, Map<String, Integer>> scriptAlertMultiplierMap = new HashMap<String, Map<String, Integer>>(){{
+      put("ambari_agent_disk_usage", new HashMap<String, Integer>() {{
+        put("percent.used.space.warning.threshold", 100);
+        put("percent.free.space.critical.threshold", 100);
+      }});
+      put("namenode_last_checkpoint", new HashMap<String, Integer>() {{
+        put("checkpoint.time.warning.threshold", 100);
+        put("checkpoint.time.critical.threshold", 100);
+      }});
+    }};
+
+
+    // list of alerts that need to get property updates
+    Set<String> alertNamesForPropertyUpdates = new HashSet<String>() {{
+      add("namenode_service_rpc_queue_latency_hourly");
+      add("namenode_client_rpc_queue_latency_hourly");
+      add("namenode_service_rpc_processing_latency_hourly");
+      add("namenode_client_rpc_processing_latency_hourly");
+      add("increase_nn_heap_usage_daily");
+      add("namenode_service_rpc_processing_latency_daily");
+      add("namenode_client_rpc_processing_latency_daily");
+      add("namenode_service_rpc_queue_latency_daily");
+      add("namenode_client_rpc_queue_latency_daily");
+      add("namenode_increase_in_storage_capacity_usage_daily");
+      add("increase_nn_heap_usage_weekly");
+      add("namenode_increase_in_storage_capacity_usage_weekly");
+      add("hawq_segment_process_percent");
+      add("mapreduce_history_server_cpu");
+      add("yarn_nodemanager_webui_percent");
+      add("yarn_resourcemanager_cpu");
+      add("datanode_process_percent");
+      add("datanode_storage_percent");
+      add("journalnode_process_percent");
+      add("namenode_cpu");
+      add("namenode_hdfs_capacity_utilization");
+      add("datanode_storage");
+      add("datanode_heap_usage");
+      add("storm_supervisor_process_percent");
+      add("hbase_regionserver_process_percent");
+      add("hbase_master_cpu");
+      add("zookeeper_server_process_percent");
+      add("metrics_monitor_process_percent");
+      add("ams_metrics_collector_hbase_master_cpu");
+      add("ambari_agent_disk_usage");
+      add("namenode_last_checkpoint");
+    }};
+
     LOG.info("Updating alert definitions.");
     AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
     AlertDefinitionDAO alertDefinitionDAO = injector.getInstance(AlertDefinitionDAO.class);
@@ -254,6 +422,7 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
     for (final Cluster cluster : clusterMap.values()) {
       long clusterID = cluster.getClusterId();
 
+      // here goes alerts that need get new properties
       final AlertDefinitionEntity namenodeLastCheckpointAlertDefinitionEntity = alertDefinitionDAO.findByName(
               clusterID, "namenode_last_checkpoint");
       final AlertDefinitionEntity namenodeHAHealthAlertDefinitionEntity = alertDefinitionDAO.findByName(
@@ -289,16 +458,72 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
       checkedPutToMap(alertDefinitionParams, flumeAgentStatusAlertDefinitionEntity,
               Lists.newArrayList("run.directory"));
 
+      List<AlertDefinitionEntity> definitionsForPropertyUpdates = new ArrayList<>();
+
+      // adding new properties
       for(Map.Entry<AlertDefinitionEntity, List<String>> entry : alertDefinitionParams.entrySet()){
         AlertDefinitionEntity alertDefinition = entry.getKey();
         String source = alertDefinition.getSource();
-
         alertDefinition.setSource(addParam(source, entry.getValue()));
-        alertDefinition.setHash(UUID.randomUUID().toString());
-
-        alertDefinitionDAO.merge(alertDefinition);
+        definitionsForPropertyUpdates.add(alertDefinition);
       }
 
+      // here goes alerts that need update for existing properties
+      for(String name : alertNamesForPropertyUpdates) {
+        AlertDefinitionEntity alertDefinition = alertDefinitionDAO.findByName(clusterID, name);
+        if(alertDefinition != null) {
+          definitionsForPropertyUpdates.add(alertDefinition);
+        }
+      }
+
+      // updating old and new properties, best way to use map like visibilityMap.
+      for(AlertDefinitionEntity alertDefinition : definitionsForPropertyUpdates) {
+        // here goes property updates
+        if(visibilityMap.containsKey(alertDefinition.getDefinitionName())) {
+          for(Map.Entry<String, String> entry : visibilityMap.get(alertDefinition.getDefinitionName()).entrySet()){
+            String paramName = entry.getKey();
+            String visibilityValue = entry.getValue();
+            String source = alertDefinition.getSource();
+            alertDefinition.setSource(addParamOption(source, paramName, "visibility", visibilityValue));
+          }
+        }
+        // update percent script alerts param values from 0.x to 0.x * 100 values
+        if(scriptAlertMultiplierMap.containsKey(alertDefinition.getDefinitionName())) {
+          for(Map.Entry<String, Integer> entry : scriptAlertMultiplierMap.get(alertDefinition.getDefinitionName()).entrySet()){
+            String paramName = entry.getKey();
+            Integer multiplier = entry.getValue();
+            String source = alertDefinition.getSource();
+            Float oldValue = getParamFloatValue(source, paramName);
+            Integer newValue = Math.round(oldValue * multiplier);
+            alertDefinition.setSource(setParamIntegerValue(source, paramName, newValue));
+          }
+        }
+
+        // update reporting alerts(aggregate and metrics) values from 0.x to 0.x * 100 values
+        if(reportingMultiplierMap.containsKey(alertDefinition.getDefinitionName())) {
+          for(Map.Entry<String, Integer> entry : reportingMultiplierMap.get(alertDefinition.getDefinitionName()).entrySet()){
+            String reportingName = entry.getKey();
+            Integer multiplier = entry.getValue();
+            String source = alertDefinition.getSource();
+            Float oldValue = getReportingFloatValue(source, reportingName);
+            Integer newValue = Math.round(oldValue * multiplier);
+            alertDefinition.setSource(setReportingIntegerValue(source, reportingName, newValue));
+          }
+        }
+
+        if(reportingPercentMap.containsKey(alertDefinition.getDefinitionName())) {
+          for(Map.Entry<String, String> entry : reportingPercentMap.get(alertDefinition.getDefinitionName()).entrySet()){
+            String paramName = entry.getKey();
+            String paramValue = entry.getValue();
+            String source = alertDefinition.getSource();
+            alertDefinition.setSource(addReportingOption(source, paramName, paramValue));
+          }
+        }
+
+        // regeneration of hash and writing modified alerts to database, must go after all modifications finished
+        alertDefinition.setHash(UUID.randomUUID().toString());
+        alertDefinitionDAO.merge(alertDefinition);
+      }
     }
   }
 
@@ -310,6 +535,114 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
     if (alertDefinitionEntity != null) {
       alertDefinitionParams.put(alertDefinitionEntity, params);
     }
+  }
+
+  /**
+   * Add option to script parameter.
+   * @param source json string of script source
+   * @param paramName parameter name
+   * @param optionName option name
+   * @param optionValue option value
+   * @return modified source
+   */
+  protected String addParamOption(String source, String paramName, String optionName, String optionValue){
+    JsonObject sourceJson = new JsonParser().parse(source).getAsJsonObject();
+    JsonArray parametersJson = sourceJson.getAsJsonArray("parameters");
+    if(parametersJson != null && !parametersJson.isJsonNull()) {
+      for(JsonElement param : parametersJson) {
+        if(param.isJsonObject()) {
+          JsonObject paramObject = param.getAsJsonObject();
+          if(paramObject.has("name") && paramObject.get("name").getAsString().equals(paramName)){
+            paramObject.add(optionName, new JsonPrimitive(optionValue));
+          }
+        }
+      }
+    }
+    return sourceJson.toString();
+  }
+
+  /**
+   * Returns param value as float.
+   * @param source source of script alert
+   * @param paramName param name
+   * @return param value as float
+   */
+  protected Float getParamFloatValue(String source, String paramName){
+    JsonObject sourceJson = new JsonParser().parse(source).getAsJsonObject();
+    JsonArray parametersJson = sourceJson.getAsJsonArray("parameters");
+    if(parametersJson != null && !parametersJson.isJsonNull()) {
+      for(JsonElement param : parametersJson) {
+        if(param.isJsonObject()) {
+          JsonObject paramObject = param.getAsJsonObject();
+          if(paramObject.has("name") && paramObject.get("name").getAsString().equals(paramName)){
+            if(paramObject.has("value")) {
+              return paramObject.get("value").getAsFloat();
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Set integer param value.
+   * @param source source of script alert
+   * @param paramName param name
+   * @param value new param value
+   * @return modified source
+   */
+  protected String setParamIntegerValue(String source, String paramName, Integer value){
+    JsonObject sourceJson = new JsonParser().parse(source).getAsJsonObject();
+    JsonArray parametersJson = sourceJson.getAsJsonArray("parameters");
+    if(parametersJson != null && !parametersJson.isJsonNull()) {
+      for(JsonElement param : parametersJson) {
+        if(param.isJsonObject()) {
+          JsonObject paramObject = param.getAsJsonObject();
+          if(paramObject.has("name") && paramObject.get("name").getAsString().equals(paramName)){
+            paramObject.add("value", new JsonPrimitive(value));
+          }
+        }
+      }
+    }
+    return sourceJson.toString();
+  }
+
+  /**
+   * Returns reporting value as float.
+   * @param source source of aggregate or metric alert
+   * @param reportingName reporting name, must be "warning" or "critical"
+   * @return reporting value as float
+   */
+  protected Float getReportingFloatValue(String source, String reportingName){
+    JsonObject sourceJson = new JsonParser().parse(source).getAsJsonObject();
+    return sourceJson.getAsJsonObject("reporting").getAsJsonObject(reportingName).get("value").getAsFloat();
+  }
+
+  /**
+   * Set integer value of reporting.
+   * @param source source of aggregate or metric alert
+   * @param reportingName reporting name, must be "warning" or "critical"
+   * @param value new value
+   * @return modified source
+   */
+  protected String setReportingIntegerValue(String source, String reportingName, Integer value){
+    JsonObject sourceJson = new JsonParser().parse(source).getAsJsonObject();
+    sourceJson.getAsJsonObject("reporting").getAsJsonObject(reportingName).add("value", new JsonPrimitive(value));
+    return sourceJson.toString();
+  }
+
+  /**
+   * Add option to reporting
+   * @param source source of aggregate or metric alert
+   * @param optionName option name
+   * @param value option value
+   * @return modified source
+   */
+  protected String addReportingOption(String source, String optionName, String value){
+    JsonObject sourceJson = new JsonParser().parse(source).getAsJsonObject();
+    sourceJson.getAsJsonObject("reporting").add(optionName, new JsonPrimitive(value));
+    return sourceJson.toString();
   }
 
   protected String addParam(String source, List<String> params) {
@@ -442,6 +775,44 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
         new DBColumnInfo(SORT_ORDER_COL, Short.class, null, 1, false));
   }
 
+  /**
+   * Updates the {@value #ALERT_DEFINITION_TABLE} in the following ways:
+   * <ul>
+   * <li>Craetes the {@value #HELP_URL_COLUMN} column</li>
+   * <li>Craetes the {@value #REPEAT_TOLERANCE_COLUMN} column</li>
+   * <li>Craetes the {@value #REPEAT_TOLERANCE_ENABLED_COLUMN} column</li>
+   * </ul>
+   *
+   * @throws SQLException
+   */
+  protected void updateAlertDefinitionTable() throws SQLException {
+    dbAccessor.addColumn(ALERT_DEFINITION_TABLE,
+        new DBColumnInfo(HELP_URL_COLUMN, String.class, 512, null, true));
+
+    dbAccessor.addColumn(ALERT_DEFINITION_TABLE,
+        new DBColumnInfo(REPEAT_TOLERANCE_COLUMN, Integer.class, null, 1, false));
+
+    dbAccessor.addColumn(ALERT_DEFINITION_TABLE,
+        new DBColumnInfo(REPEAT_TOLERANCE_ENABLED_COLUMN, Short.class, null, 0, false));
+  }
+
+  /**
+   * Updates the {@value #ALERT_CURRENT_TABLE} in the following ways:
+   * <ul>
+   * <li>Creates the {@value #ALERT_CURRENT_OCCURRENCES_COLUMN} column</li>
+   * <li>Creates the {@value #ALERT_CURRENT_FIRMNESS_COLUMN} column</li>
+   * </ul>
+   *
+   * @throws SQLException
+   */
+  protected void updateAlertCurrentTable() throws SQLException {
+    dbAccessor.addColumn(ALERT_CURRENT_TABLE,
+        new DBColumnInfo(ALERT_CURRENT_OCCURRENCES_COLUMN, Long.class, null, 1, false));
+
+    dbAccessor.addColumn(ALERT_CURRENT_TABLE, new DBColumnInfo(ALERT_CURRENT_FIRMNESS_COLUMN,
+        String.class, 255, AlertFirmness.HARD.name(), false));
+  }
+
   protected void setRoleSortOrder() throws SQLException {
     String updateStatement = "UPDATE " + ADMIN_PERMISSION_TABLE + " SET " + SORT_ORDER_COL + "=%d WHERE " + PERMISSION_ID_COL + "='%s'";
 
@@ -451,15 +822,15 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
     dbAccessor.executeUpdate(String.format(updateStatement,
         2, PermissionEntity.CLUSTER_ADMINISTRATOR_PERMISSION_NAME));
     dbAccessor.executeUpdate(String.format(updateStatement,
-        3, PermissionEntity.CLUSTER_OPERATOR_PERMISSION_NAME));
+            3, PermissionEntity.CLUSTER_OPERATOR_PERMISSION_NAME));
     dbAccessor.executeUpdate(String.format(updateStatement,
-        4, PermissionEntity.SERVICE_ADMINISTRATOR_PERMISSION_NAME));
+            4, PermissionEntity.SERVICE_ADMINISTRATOR_PERMISSION_NAME));
     dbAccessor.executeUpdate(String.format(updateStatement,
-        5, PermissionEntity.SERVICE_OPERATOR_PERMISSION_NAME));
+            5, PermissionEntity.SERVICE_OPERATOR_PERMISSION_NAME));
     dbAccessor.executeUpdate(String.format(updateStatement,
-        6, PermissionEntity.CLUSTER_USER_PERMISSION_NAME));
+            6, PermissionEntity.CLUSTER_USER_PERMISSION_NAME));
     dbAccessor.executeUpdate(String.format(updateStatement,
-        7, PermissionEntity.VIEW_USER_PERMISSION_NAME));
+            7, PermissionEntity.VIEW_USER_PERMISSION_NAME));
   }
 
   /**
@@ -494,7 +865,7 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
    * <ul>
    * <li>id BIGINT NOT NULL</li>
    * <li>Drops FKs on {@value #HOST_COMPONENT_DS_TABLE} and {@value #HOST_COMPONENT_STATE_TABLE}</li>
-   * <li>Populates {@value #SQLException#ID} in {@value #SERVICE_COMPONENT_DS_TABLE}</li>
+   * <li>Populates ID in {@value #SERVICE_COMPONENT_DS_TABLE}</li>
    * <li>Creates {@code UNIQUE} constraint on {@value #HOST_COMPONENT_DS_TABLE}</li>
    * <li>Adds FKs on {@value #HOST_COMPONENT_DS_TABLE} and {@value #HOST_COMPONENT_STATE_TABLE}</li>
    * <li>Adds new sequence value of {@code servicecomponentdesiredstate_id_seq}</li>
@@ -613,7 +984,7 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
         "from_stack_id", STACK_TABLE, "stack_id", false);
 
     dbAccessor.addFKConstraint(SERVICE_COMPONENT_HISTORY_TABLE, "FK_sc_history_to_stack_id",
-        "to_stack_id", STACK_TABLE, "stack_id", false);
+            "to_stack_id", STACK_TABLE, "stack_id", false);
 
     addSequence("servicecomponent_history_id_seq", 0L, false);
   }
@@ -629,6 +1000,196 @@ public class UpgradeCatalog240 extends AbstractUpgradeCatalog {
             new DBColumnInfo(RECOVERY_ENABLED_COL, Short.class, null, 0, false));
 
     dbAccessor.addColumn(SERVICE_COMPONENT_DESIRED_STATE_TABLE,
-      new DBColumnInfo(DESIRED_VERSION_COLUMN_NAME, String.class, 255, State.UNKNOWN.toString(), false));
+            new DBColumnInfo(DESIRED_VERSION_COLUMN_NAME, String.class, 255, State.UNKNOWN.toString(), false));
   }
+
+  /**
+   * Alter host_role_command table to add original_start_time, which is needed because the start_time column now
+   * allows overriding the value in ActionScheduler.java
+   * @throws SQLException
+   */
+  private void updateHostRoleCommandTableDDL() throws SQLException {
+    final String columnName = "original_start_time";
+    DBColumnInfo originalStartTimeColumn = new DBColumnInfo(columnName, Long.class, null, -1L, true);
+    dbAccessor.addColumn(HOST_ROLE_COMMAND_TABLE, originalStartTimeColumn);
+  }
+
+  /**
+   * Alter host_role_command table to update original_start_time with values and make it non-nullable
+   * @throws SQLException
+   */
+  protected void updateHostRoleCommandTableDML() throws SQLException {
+    final String columnName = "original_start_time";
+    dbAccessor.executeQuery("UPDATE " + HOST_ROLE_COMMAND_TABLE + " SET original_start_time = start_time", false);
+    dbAccessor.executeQuery("UPDATE " + HOST_ROLE_COMMAND_TABLE + " SET original_start_time=-1 WHERE original_start_time IS NULL");
+    dbAccessor.setColumnNullable(HOST_ROLE_COMMAND_TABLE, columnName, false);
+  }
+
+  /**
+   * In hdfs-site, set dfs.client.retry.policy.enabled=false
+   * This is needed for Rolling/Express upgrade so that clients don't keep retrying, which exhausts the retries and
+   * doesn't allow for a graceful failover, which is expected.
+   * @throws AmbariException
+   */
+  protected void updateHDFSConfigs() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    Clusters clusters = ambariManagementController.getClusters();
+
+    if (clusters != null) {
+      Map<String, Cluster> clusterMap = clusters.getClusters();
+
+      if (clusterMap != null && !clusterMap.isEmpty()) {
+        for (final Cluster cluster : clusterMap.values()) {
+          Set<String> installedServices = cluster.getServices().keySet();
+
+          if (installedServices.contains("HDFS")) {
+            Config hdfsSite = cluster.getDesiredConfigByType("hdfs-site");
+            if (hdfsSite != null) {
+              String clientRetryPolicyEnabled = hdfsSite.getProperties().get("dfs.client.retry.policy.enabled");
+              if (null != clientRetryPolicyEnabled && Boolean.parseBoolean(clientRetryPolicyEnabled)) {
+                updateConfigurationProperties("hdfs-site", Collections.singletonMap("dfs.client.retry.policy.enabled", "false"), true, false);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  protected void updateAMSConfigs() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    Clusters clusters = ambariManagementController.getClusters();
+
+    if (clusters != null) {
+      Map<String, Cluster> clusterMap = clusters.getClusters();
+
+      if (clusterMap != null && !clusterMap.isEmpty()) {
+        for (final Cluster cluster : clusterMap.values()) {
+
+          Config amsEnv = cluster.getDesiredConfigByType("ams-env");
+          if (amsEnv != null) {
+            String content = amsEnv.getProperties().get("content");
+            if (content != null && !content.contains("AMS_INSTANCE_NAME")) {
+              String newContent = content + "\n # AMS instance name\n" +
+                      "export AMS_INSTANCE_NAME={{hostname}}\n";
+
+              updateConfigurationProperties("ams-env", Collections.singletonMap("content", newContent), true, true);
+            }
+          }
+
+          Config amsHBaseEnv = cluster.getDesiredConfigByType("ams-hbase-env");
+          if (amsHBaseEnv != null) {
+            String content = amsHBaseEnv.getProperties().get("content");
+            Map<String, String> newProperties = new HashMap<>();
+
+            if (content != null && !content.contains("HBASE_HOME=")) {
+              String newContent = content + "\n # Explicitly Setting HBASE_HOME for AMS HBase so that there is no conflict\n" +
+                "export HBASE_HOME={{ams_hbase_home_dir}}\n";
+              newProperties.put("content", newContent);
+            }
+
+            updateConfigurationPropertiesForCluster(cluster, "ams-hbase-env", newProperties, true, true);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Create blueprint_setting table for storing the "settings" section
+   * in the blueprint. Auto start information is specified in the "settings" section.
+   *
+   * @throws SQLException
+   */
+  private void createBlueprintSettingTable() throws SQLException {
+    List<DBColumnInfo> columns = new ArrayList<>();
+
+    //  Add blueprint_setting table
+    LOG.info("Creating " + BLUEPRINT_SETTING_TABLE + " table");
+
+    columns.add(new DBColumnInfo(ID, Long.class, null, null, false));
+    columns.add(new DBColumnInfo(BLUEPRINT_NAME_COL, String.class, 255, null, false));
+    columns.add(new DBColumnInfo(SETTING_NAME_COL, String.class, 255, null, false));
+    columns.add(new DBColumnInfo(SETTING_DATA_COL, char[].class, null, null, false));
+    dbAccessor.createTable(BLUEPRINT_SETTING_TABLE, columns);
+
+    dbAccessor.addPKConstraint(BLUEPRINT_SETTING_TABLE, "PK_blueprint_setting", ID);
+    dbAccessor.addUniqueConstraint(BLUEPRINT_SETTING_TABLE, "UQ_blueprint_setting_name", BLUEPRINT_NAME_COL, SETTING_NAME_COL);
+    dbAccessor.addFKConstraint(BLUEPRINT_SETTING_TABLE, "FK_blueprint_setting_name",
+            BLUEPRINT_NAME_COL, BLUEPRINT_TABLE, BLUEPRINT_NAME_COL, false);
+
+    addSequence("blueprint_setting_id_seq", 0L, false);
+  }
+
+  /**
+   * Updates {@code cluster-env} in the following ways:
+   * <ul>
+   * <li>Adds {@link ConfigHelper#CLUSTER_ENV_ALERT_REPEAT_TOLERANCE} = 1</li>
+   * </ul>
+   *
+   * @throws Exception
+   */
+  protected void updateClusterEnv() throws AmbariException {
+    Map<String, String> propertyMap = new HashMap<>();
+    propertyMap.put(ConfigHelper.CLUSTER_ENV_ALERT_REPEAT_TOLERANCE, "1");
+
+    AmbariManagementController ambariManagementController = injector.getInstance(
+        AmbariManagementController.class);
+
+    Clusters clusters = ambariManagementController.getClusters();
+
+    Map<String, Cluster> clusterMap = getCheckedClusterMap(clusters);
+    for (final Cluster cluster : clusterMap.values()) {
+      updateConfigurationPropertiesForCluster(cluster, ConfigHelper.CLUSTER_ENV, propertyMap, true,
+          true);
+    }
+  }
+
+  /**
+   * Updates the Kerberos-related configurations for the clusters managed by this Ambari
+   * <p/>
+   * Performs the following updates:
+   * <ul>
+   * <li>Rename <code>kerberos-env/kdc_host</code> to
+   * <code>kerberos-env/kdc_hosts</li>
+   * <li>If krb5-conf/content was not changed from the original stack default, update it to the new
+   * stack default</li>
+   * </ul>
+   *
+   * @throws AmbariException if an error occurs while updating the configurations
+   */
+  protected void updateKerberosConfigs() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    Clusters clusters = ambariManagementController.getClusters();
+    Map<String, Cluster> clusterMap = getCheckedClusterMap(clusters);
+
+    for (final Cluster cluster : clusterMap.values()) {
+      Config config;
+
+      config = cluster.getDesiredConfigByType("kerberos-env");
+      if (config != null) {
+        // Rename kdc_host to kdc_hosts
+        String value = config.getProperties().get("kdc_host");
+        Map<String, String> updates = Collections.singletonMap("kdc_hosts", value);
+        Set<String> removes = Collections.singleton("kdc_host");
+
+        updateConfigurationPropertiesForCluster(cluster, "kerberos-env", updates, removes, true, false);
+      }
+
+      config = cluster.getDesiredConfigByType("krb5-conf");
+      if (config != null) {
+        String value = config.getProperties().get("content");
+        String oldDefault = "\n[libdefaults]\n  renew_lifetime \u003d 7d\n  forwardable \u003d true\n  default_realm \u003d {{realm}}\n  ticket_lifetime \u003d 24h\n  dns_lookup_realm \u003d false\n  dns_lookup_kdc \u003d false\n  #default_tgs_enctypes \u003d {{encryption_types}}\n  #default_tkt_enctypes \u003d {{encryption_types}}\n\n{% if domains %}\n[domain_realm]\n{% for domain in domains.split(\u0027,\u0027) %}\n  {{domain|trim}} \u003d {{realm}}\n{% endfor %}\n{% endif %}\n\n[logging]\n  default \u003d FILE:/var/log/krb5kdc.log\n  admin_server \u003d FILE:/var/log/kadmind.log\n  kdc \u003d FILE:/var/log/krb5kdc.log\n\n[realms]\n  {{realm}} \u003d {\n    admin_server \u003d {{admin_server_host|default(kdc_host, True)}}\n    kdc \u003d {{kdc_host}}\n  }\n\n{# Append additional realm declarations below #}";
+
+        // if the content is the same as the old stack default, update to the new stack default;
+        // else leave it alone since the user may have changed it for a reason.
+        if(oldDefault.equalsIgnoreCase(value)) {
+          String newDefault ="[libdefaults]\n  renew_lifetime = 7d\n  forwardable = true\n  default_realm = {{realm}}\n  ticket_lifetime = 24h\n  dns_lookup_realm = false\n  dns_lookup_kdc = false\n  #default_tgs_enctypes = {{encryption_types}}\n  #default_tkt_enctypes = {{encryption_types}}\n{% if domains %}\n[domain_realm]\n{%- for domain in domains.split(',') %}\n  {{domain|trim()}} = {{realm}}\n{%- endfor %}\n{% endif %}\n[logging]\n  default = FILE:/var/log/krb5kdc.log\n  admin_server = FILE:/var/log/kadmind.log\n  kdc = FILE:/var/log/krb5kdc.log\n\n[realms]\n  {{realm}} = {\n{%- if kdc_hosts > 0 -%}\n{%- set kdc_host_list = kdc_hosts.split(',')  -%}\n{%- if kdc_host_list and kdc_host_list|length > 0 %}\n    admin_server = {{admin_server_host|default(kdc_host_list[0]|trim(), True)}}\n{%- if kdc_host_list -%}\n{% for kdc_host in kdc_host_list %}\n    kdc = {{kdc_host|trim()}}\n{%- endfor -%}\n{% endif %}\n{%- endif %}\n{%- endif %}\n  }\n\n{# Append additional realm declarations below #}";
+          Map<String, String> updates = Collections.singletonMap("content", newDefault);
+          updateConfigurationPropertiesForCluster(cluster, "krb5-conf", updates, null, true, false);
+        }
+      }
+    }
+  }
+
 }

@@ -121,6 +121,24 @@ var urls = {
     }
   },
 
+  'common.host.host_components.create': {
+    'real': '/clusters/{clusterName}/hosts',
+    'mock': '',
+    'type': 'POST',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          RequestInfo: {
+            "query": data.query
+          },
+          Body: {
+            "host_components": data.host_components
+          }
+        })
+      }
+    }
+  },
+
   'common.host.host_components.update': {
     'real': '/clusters/{clusterName}/hosts/{hostName}/host_components?{urlParams}',
     'mock': '',
@@ -340,6 +358,10 @@ var urls = {
   'common.delete.request_schedule': {
     'real': '/clusters/{clusterName}/request_schedules/{request_schedule_id}',
     'type': 'DELETE'
+  },
+  'common.get.request.status': {
+    'real': '/clusters/{clusterName}/requests/{requestId}?fields=Requests/request_status',
+    'type': 'GET'
   },
   'alerts.load_alert_groups': {
     'real': '/clusters/{clusterName}/alert_groups?fields=*',
@@ -1523,11 +1545,15 @@ var urls = {
     'mock': '/data/wizard/kerberos/stack_descriptors.json'
   },
   'admin.kerberize.stack_descriptor': {
-    'real': '/stacks/{stackName}/versions/{stackVersionNumber}/artifacts/kerberos_descriptor?fields=artifact_data',
+    'real': '/clusters/{clusterName}/kerberos_descriptors/STACK',
+    'mock': '/data/wizard/kerberos/stack_descriptors.json'
+  },
+  'admin.kerberize.cluster_descriptor_artifact': {
+    'real': '/clusters/{clusterName}/artifacts/kerberos_descriptor?fields=artifact_data',
     'mock': '/data/wizard/kerberos/stack_descriptors.json'
   },
   'admin.kerberize.cluster_descriptor': {
-    'real': '/clusters/{clusterName}/artifacts/kerberos_descriptor?fields=artifact_data',
+    'real': '/clusters/{clusterName}/kerberos_descriptors/COMPOSITE',
     'mock': '/data/wizard/kerberos/stack_descriptors.json'
   },
   'admin.kerberos.cluster.artifact.create': {
@@ -1602,6 +1628,7 @@ var urls = {
     'real': '/clusters/{clusterName}/upgrades/{id}?upgrade_groups/UpgradeGroup/status!=PENDING&fields=' +
     'Upgrade/progress_percent,Upgrade/request_context,Upgrade/request_status,Upgrade/direction,Upgrade/downgrade_allowed,' +
     'upgrade_groups/UpgradeGroup,' +
+    'Upgrade/*,' +
     'upgrade_groups/upgrade_items/UpgradeItem/status,' +
     'upgrade_groups/upgrade_items/UpgradeItem/display_status,' +
     'upgrade_groups/upgrade_items/UpgradeItem/context,' +
@@ -1615,7 +1642,7 @@ var urls = {
     'mock': '/data/stack_versions/upgrade.json'
   },
   'admin.upgrade.state': {
-    'real': '/clusters/{clusterName}/upgrades/{id}?fields=Upgrade',
+    'real': '/clusters/{clusterName}/upgrades/{id}?fields=Upgrade/*',
     'mock': '/data/stack_versions/upgrade.json'
   },
   'admin.upgrade.finalizeContext': {
@@ -1695,7 +1722,26 @@ var urls = {
             "downgrade": data.isDowngrade
           },
           "Upgrade": {
-            "request_status": "ABORTED"
+            "request_status": "ABORTED",
+            "suspended": "false"
+          }
+        })
+      }
+    }
+  },
+  'admin.upgrade.suspend': {
+    'real': '/clusters/{clusterName}/upgrades/{upgradeId}',
+    'mock': '',
+    'type': 'PUT',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          "RequestInfo": {
+            "downgrade": data.isDowngrade
+          },
+          "Upgrade": {
+            "request_status": "ABORTED",
+            "suspended": "true"
           }
         })
       }
@@ -1824,12 +1870,7 @@ var urls = {
   },
   'wizard.service_components': {
     'real': '{stackUrl}/services?fields=StackServices/*,components/*,components/dependencies/Dependencies/scope,artifacts/Artifacts/artifact_name',
-    'mock': '/data/stacks/HDP-2.1/service_components.json',
-    'format': function (data) {
-      return {
-        timeout: 10000
-      };
-    }
+    'mock': '/data/stacks/HDP-2.1/service_components.json'
   },
   'wizard.step9.installer.get_host_status': {
     'real': '/clusters/{cluster}/hosts?fields=Hosts/host_state,host_components/HostRoles/state',
@@ -2578,6 +2619,10 @@ var urls = {
   },
   'service.serviceConfigVersions.get.current': {
     real: '/clusters/{clusterName}/configurations/service_config_versions?service_name.in({serviceNames})&is_current=true&fields=*',
+    mock: '/data/configurations/service_versions.json'
+  },
+  'service.serviceConfigVersions.get.current.not.default': {
+    real: '/clusters/{clusterName}/configurations/service_config_versions?is_current=true&group_id>0&fields=*',
     mock: '/data/configurations/service_versions.json'
   },
   'service.serviceConfigVersions.get.total': {

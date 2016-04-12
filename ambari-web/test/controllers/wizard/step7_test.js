@@ -261,31 +261,6 @@ describe('App.InstallerStep7Controller', function () {
     });
   });
 
-  describe('#_createSiteToTagMap', function () {
-    it('should return filtered map', function () {
-      var desiredConfigs = {
-        site1: {
-          tag: "tag1"
-        },
-        site2: {
-          tag: "tag2"
-        },
-        site3: {
-          tag: "tag3"
-        }
-      };
-      var sites = {
-        site1: true,
-        site3: true
-      };
-      var siteToTagMap = installerStep7Controller._createSiteToTagMap(desiredConfigs,sites);
-      expect(siteToTagMap).to.eql({
-        site1: "tag1",
-        site3: "tag3"
-      });
-    });
-  });
-
   describe('#checkDatabaseConnectionTest', function () {
 
     beforeEach(function () {
@@ -435,15 +410,6 @@ describe('App.InstallerStep7Controller', function () {
     });
   });
 
-  describe('#loadInstalledServicesConfigGroups', function () {
-    it('should do ajax request for each received service name', function () {
-      var serviceNames = ['s1', 's2', 's3'];
-      installerStep7Controller.loadInstalledServicesConfigGroups(serviceNames);
-      var args = testHelpers.filterAjaxRequests('name', 'config.tags_and_groups');
-      expect(args).to.have.property('length').equal(serviceNames.length);
-    });
-  });
-
   describe('#getConfigTags', function () {
     it('should do ajax-request', function () {
       installerStep7Controller.getConfigTags();
@@ -458,19 +424,19 @@ describe('App.InstallerStep7Controller', function () {
     });
     it('should add new groups to groupsToDelete', function () {
       var groupsToDelete = [
-          {id: '1'},
-          {id: '2'}
+          {configGroupId: '1'},
+          {configGroupId: '2'}
         ],
         groups = [
-          Em.Object.create({id: '3'}),
+          Em.Object.create({configGroupId: '3'}),
           Em.Object.create(),
-          Em.Object.create({id: '5'})
+          Em.Object.create({configGroupId: '5'})
         ],
         expected = [
-          {id: "1"},
-          {id: "2"},
-          {id: "3"},
-          {id: "5"}
+          {configGroupId: "1"},
+          {configGroupId: "2"},
+          {configGroupId: "3"},
+          {configGroupId: "5"}
         ];
       installerStep7Controller.set('groupsToDelete', groupsToDelete);
       installerStep7Controller.setGroupsToDelete(groups);
@@ -982,84 +948,6 @@ describe('App.InstallerStep7Controller', function () {
 
   });
 
-  describe('#checkHostOverrideInstaller', function () {
-    beforeEach(function () {
-      sinon.stub(installerStep7Controller, 'loadConfigGroups', Em.K);
-      sinon.stub(installerStep7Controller, 'loadInstalledServicesConfigGroups', Em.K);
-      sinon.stub(App, 'get', function (k) {
-        if (k === 'supports.hostOverridesInstaller') return false;
-        return Em.get(App, k);
-      });
-    });
-    afterEach(function () {
-      installerStep7Controller.loadConfigGroups.restore();
-      installerStep7Controller.loadInstalledServicesConfigGroups.restore();
-      App.get.restore();
-    });
-    Em.A([
-        {
-          installedServiceNames: [],
-          m: 'installedServiceNames is empty',
-          e: {
-            loadConfigGroups: true,
-            loadInstalledServicesConfigGroups: false
-          }
-        },
-        {
-          installedServiceNames: ['s1', 's2', 's3'],
-          areInstalledConfigGroupsLoaded: false,
-          m: 'installedServiceNames isn\'t empty, config groups not yet loaded',
-          e: {
-            loadConfigGroups: true,
-            loadInstalledServicesConfigGroups: true
-          }
-        },
-        {
-          installedServiceNames: ['s1', 's2', 's3'],
-          areInstalledConfigGroupsLoaded: true,
-          m: 'installedServiceNames isn\'t empty, config groups already loaded',
-          e: {
-            loadConfigGroups: true,
-            loadInstalledServicesConfigGroups: false
-          }
-        }
-      ]).forEach(function (test) {
-        describe(test.m, function () {
-
-          beforeEach(function () {
-            installerStep7Controller.reopen({
-              installedServiceNames: test.installedServiceNames,
-              wizardController: {
-                areInstalledConfigGroupsLoaded: test.areInstalledConfigGroupsLoaded
-              }
-            });
-            installerStep7Controller.checkHostOverrideInstaller();
-          });
-
-          if (test.e.loadConfigGroups) {
-            it('loadConfigGroups is called once', function () {
-              expect(installerStep7Controller.loadConfigGroups.calledOnce).to.equal(true);
-            });
-          }
-          else {
-            it('loadConfigGroups is not called', function () {
-              expect(installerStep7Controller.loadConfigGroups.called).to.equal(false);
-            });
-          }
-          if (test.e.loadInstalledServicesConfigGroups) {
-            it('loadInstalledServicesConfigGroups is called once', function () {
-              expect(installerStep7Controller.loadInstalledServicesConfigGroups.calledOnce).to.equal(true);
-            });
-          }
-          else {
-            it('loadInstalledServicesConfigGroups is not called', function () {
-              expect(installerStep7Controller.loadInstalledServicesConfigGroups.called).to.equal(false);
-            });
-          }
-        });
-      });
-  });
-
   describe('#loadStep', function () {
     beforeEach(function () {
       installerStep7Controller.reopen({
@@ -1234,91 +1122,6 @@ describe('App.InstallerStep7Controller', function () {
           expect(serviceConfigProperty.get('isEditable')).to.equal(test.e);
         });
       });
-  });
-
-  describe('#_updateOverridesForConfig', function () {
-
-    it('should set empty array', function () {
-      var serviceConfigProperty = Em.Object.create({
-        overrides: null
-      }), component = Em.Object.create();
-      installerStep7Controller._updateOverridesForConfig(serviceConfigProperty, component);
-      expect(serviceConfigProperty.get('overrides')).to.eql(Em.A([]));
-    });
-
-    describe('host overrides not supported', function () {
-      var serviceConfigProperty = Em.Object.create({
-        overrides: [
-          {value: 'new value'}
-        ]
-      });
-      var component = Em.Object.create({selectedConfigGroup: {isDefault: false}});
-
-      beforeEach(function () {
-        installerStep7Controller._updateOverridesForConfig(serviceConfigProperty, component);
-      });
-      it('there is 1 override', function () {
-        expect(serviceConfigProperty.get('overrides').length).to.equal(1);
-      });
-      it('override value is valid', function () {
-        expect(serviceConfigProperty.get('overrides.firstObject.value')).to.equal('new value');
-      });
-      it('override is not original SCP', function () {
-        expect(serviceConfigProperty.get('overrides.firstObject.isOriginalSCP')).to.equal(false);
-      });
-      it('override is linked to parent', function () {
-        expect(serviceConfigProperty.get('overrides.firstObject.parentSCP')).to.eql(serviceConfigProperty);
-      });
-    });
-
-    describe('host overrides supported', function () {
-      var serviceConfigProperty;
-      var component;
-      beforeEach(function () {
-        sinon.stub(App, 'get', function (k) {
-          if (k === 'supports.hostOverrides') return true;
-          return Em.get(App, k);
-        });
-        serviceConfigProperty = Em.Object.create({
-          overrides: [
-            {value: 'new value', group: Em.Object.create({name: 'n1'})}
-          ]
-        });
-        component = Em.Object.create({
-          selectedConfigGroup: {isDefault: true},
-          configGroups: Em.A([
-            Em.Object.create({name: 'n1', properties: []})
-          ])
-        });
-        installerStep7Controller._updateOverridesForConfig(serviceConfigProperty, component);
-      });
-
-      afterEach(function () {
-        App.get.restore();
-      });
-      it('there is 1 override', function () {
-        expect(serviceConfigProperty.get('overrides').length).to.equal(1);
-      });
-      it('override.value is valid', function () {
-        expect(serviceConfigProperty.get('overrides.firstObject.value')).to.equal('new value');
-      });
-      it('override is not original SCP', function () {
-        expect(serviceConfigProperty.get('overrides.firstObject.isOriginalSCP')).to.equal(false);
-      });
-      it('override.parentSCP is valid', function () {
-        expect(serviceConfigProperty.get('overrides.firstObject.parentSCP')).to.eql(serviceConfigProperty);
-      });
-      it('there is 1 property in the config group', function () {
-        expect(component.get('configGroups.firstObject.properties').length).to.equal(1);
-      });
-      it('property in the config group is not editable', function () {
-        expect(component.get('configGroups.firstObject.properties.firstObject.isEditable')).to.equal(false);
-      });
-      it('property in the config group is linked to it', function () {
-        expect(component.get('configGroups.firstObject.properties.firstObject.group')).to.be.object;
-      });
-    });
-
   });
 
   describe('#setInstalledServiceConfigs', function () {
@@ -2145,143 +1948,6 @@ describe('App.InstallerStep7Controller', function () {
 
   });
 
-  describe('#loadServiceConfigGroupOverrides', function () {
-
-    var serviceConfigs = [
-      {filename: 'f1', name: 'n1'}
-    ];
-
-    var configGroups = [
-      {
-        "name": "Default",
-        "description": "desc",
-        "isDefault": true,
-        "hosts": ['h1', 'h2', 'h3'],
-        "parentConfigGroup": null,
-        "service": {"id": "YARN"},
-        "serviceName": "YARN",
-        "configSiteTags": [],
-        "clusterHosts": []
-      }
-    ];
-
-    var loadedGroupToOverrideSiteToTagMap = {
-      Default: {
-        type1: 'tag1',
-        type2: 'tag2',
-        type3: 'tag3'
-      }
-    };
-
-    beforeEach(function () {
-      installerStep7Controller.loadServiceConfigGroupOverrides(serviceConfigs, loadedGroupToOverrideSiteToTagMap, configGroups);
-      this.args = testHelpers.findAjaxRequest('name', 'config.host_overrides')[0].data;
-    });
-
-    it('url params are valid', function () {
-      expect(this.args.params).to.be.equal('(type=type1&tag=tag1)|(type=type2&tag=tag2)|(type=type3&tag=tag3)');
-    });
-
-    it('configKeyToConfigMap is valid', function () {
-      var expected = {
-        "f1": {
-          "n1": {
-            "filename": "f1",
-            "name": "n1"
-          }
-        }
-      };
-      expect(this.args.configKeyToConfigMap).to.be.eql(expected);
-    });
-
-    describe('typeTagToGroupMap is valid', function () {
-
-      it('type1///tag1', function () {
-        var expected = {
-          "name": "Default",
-          "description": "desc",
-          "isDefault": true,
-          "hosts": [
-            "h1",
-            "h2",
-            "h3"
-          ],
-          "parentConfigGroup": null,
-          "service": {
-            "id": "YARN"
-          },
-          "serviceName": "YARN",
-          "configSiteTags": [],
-          "clusterHosts": []
-        };
-
-        expect(this.args.typeTagToGroupMap['type1///tag1']).to.be.eql(expected);
-
-      });
-
-      it('type2///tag2', function () {
-        var expected = {
-          "name": "Default",
-          "description": "desc",
-          "isDefault": true,
-          "hosts": [
-            "h1",
-            "h2",
-            "h3"
-          ],
-          "parentConfigGroup": null,
-          "service": {
-            "id": "YARN"
-          },
-          "serviceName": "YARN",
-          "configSiteTags": [],
-          "clusterHosts": []
-        };
-
-        expect(this.args.typeTagToGroupMap['type2///tag2']).to.be.eql(expected);
-
-      });
-
-      it('type3///tag3', function () {
-        var expected = {
-          "name": "Default",
-          "description": "desc",
-          "isDefault": true,
-          "hosts": [
-            "h1",
-            "h2",
-            "h3"
-          ],
-          "parentConfigGroup": null,
-          "service": {
-            "id": "YARN"
-          },
-          "serviceName": "YARN",
-          "configSiteTags": [],
-          "clusterHosts": []
-        };
-
-        expect(this.args.typeTagToGroupMap['type3///tag3']).to.be.eql(expected);
-
-      });
-
-    });
-
-    it('serviceConfigs is valid', function () {
-
-      var expected = [
-        {
-          "filename": "f1",
-          "name": "n1"
-        }
-      ];
-
-      expect(this.args.serviceConfigs).to.be.eql(expected);
-
-    });
-
-  });
-
   describe('#updateHostOverrides', function () {
 
     var configProperty;
@@ -2377,104 +2043,6 @@ describe('App.InstallerStep7Controller', function () {
     it('true if it is not installer or addService', function () {
       installerStep7Controller.set('wizardController', {name: 'some'});
       expect(installerStep7Controller.allowUpdateProperty([], '', '')).to.be.true;
-    });
-
-  });
-
-  describe('#loadServiceConfigGroupOverridesSuccess', function () {
-
-    var data = {
-      items: [
-        {
-          type: 'type1',
-          tag: 'tag1',
-          properties: {
-            p1: 'v1',
-            p3: 'v3'
-          },
-          properties_attributes: {
-            final: {
-              p1: true,
-              p3: true
-            }
-          }
-        },
-        {
-          type: 'type2',
-          tag: 'tag1',
-          properties: {
-            p2: 'v2',
-            p4: 'v4'
-          },
-          properties_attributes: {}
-        }
-      ]
-    };
-
-    var params;
-
-    beforeEach(function () {
-      params = {
-        serviceConfigs: [],
-        typeTagToGroupMap: {
-          'type1///tag1': Em.Object.create({
-            name: 't1t1'
-          }),
-          'type2///tag1': Em.Object.create({
-            name: 't2t1'
-          })
-        },
-        configKeyToConfigMap: {
-          type1: {},
-          type2: {
-            p4: {}
-          }
-        }
-      };
-      sinon.stub(installerStep7Controller, 'onLoadOverrides', Em.K);
-      sinon.stub(App.config, 'getOriginalFileName', function (type) {return type;});
-      sinon.stub(App.config, 'formatPropertyValue', function (serviceConfigProperty, originalValue) {
-        return Em.isNone(originalValue) ? Em.get(serviceConfigProperty, 'value') : originalValue;
-      });
-      installerStep7Controller.loadServiceConfigGroupOverridesSuccess(data, {}, params);
-      this.serviceConfigs = installerStep7Controller.onLoadOverrides.args[0][0];
-    });
-
-    afterEach(function () {
-      installerStep7Controller.onLoadOverrides.restore();
-      App.config.getOriginalFileName.restore();
-      App.config.formatPropertyValue.restore();
-    });
-
-    it('type2/p4 is mapped to the params.configKeyToConfigMap', function () {
-      expect(params).to.have.deep.property('configKeyToConfigMap.type2.p4').that.is.an('object').with.deep.property('overrides');
-    });
-
-    it('type2/p4 has 1 override', function () {
-      expect(params.configKeyToConfigMap.type2.p4.overrides).to.have.property('length').equal(1);
-    });
-
-    it('type2/p4 override is valid', function () {
-      var override = params.configKeyToConfigMap.type2.p4.overrides[0];
-      expect(override.value).to.be.equal('v4');
-      expect(override.group.name).to.be.equal('t2t1');
-      expect(override.isFinal).to.be.false;
-    });
-
-    it('onLoadOverrides is called for 3 configs', function () {
-      expect(this.serviceConfigs).to.have.property('length').equal(3);
-    });
-
-    it('serviceConfigs ids are valid', function () {
-      expect(this.serviceConfigs.mapProperty('id')).to.be.eql(['p1__type1', 'p3__type1', 'p2__type2']);
-    });
-
-    it('serviceConfigs groups are valid', function () {
-      expect(this.serviceConfigs.mapProperty('group.name')).to.be.eql(['t1t1', 't1t1', 't2t1']);
-    });
-
-    it('serviceConfigs filenames are valid', function () {
-      expect(this.serviceConfigs.mapProperty('filename')).to.be.eql(['type1', 'type1', 'type2']);
     });
 
   });

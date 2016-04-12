@@ -229,6 +229,7 @@ CREATE TABLE host_role_command (
   role_command VARCHAR2(255) NULL,
   stage_id NUMBER(19) NOT NULL,
   start_time NUMBER(19) NOT NULL,
+  original_start_time NUMBER(19) NOT NULL,
   end_time NUMBER(19),
   status VARCHAR2(255) NULL,
   auto_skip_on_failure NUMBER(1) DEFAULT 0 NOT NULL,
@@ -419,6 +420,15 @@ CREATE TABLE blueprint_configuration (
   config_data CLOB NOT NULL,
   config_attributes CLOB,
   PRIMARY KEY(blueprint_name, type_name));
+
+CREATE TABLE blueprint_setting (
+  id NUMBER(19) NOT NULL,
+  blueprint_name VARCHAR2(255) NOT NULL,
+  setting_name VARCHAR2(255) NOT NULL,
+  setting_data CLOB NOT NULL,
+  CONSTRAINT PK_blueprint_setting PRIMARY KEY (id),
+  CONSTRAINT UQ_blueprint_setting_name UNIQUE(blueprint_name,setting_name),
+  CONSTRAINT FK_blueprint_setting_name FOREIGN KEY (blueprint_name) REFERENCES blueprint(blueprint_name));
 
 CREATE TABLE hostgroup_configuration (
   blueprint_name VARCHAR2(255) NOT NULL,
@@ -625,6 +635,7 @@ CREATE TABLE topology_host_info (
   id NUMBER(19) NOT NULL,
   group_id NUMBER(19) NOT NULL,
   fqdn VARCHAR(255),
+  host_id NUMBER(19),
   host_count INTEGER,
   predicate VARCHAR(2048),
   rack_info VARCHAR(255),
@@ -686,6 +697,7 @@ CREATE TABLE upgrade (
   skip_failures NUMBER(1) DEFAULT 0 NOT NULL,
   skip_sc_failures NUMBER(1) DEFAULT 0 NOT NULL,
   downgrade_allowed NUMBER(1) DEFAULT 1 NOT NULL,
+  suspended NUMBER(1) DEFAULT 0 NOT NULL,
   PRIMARY KEY (upgrade_id),
   FOREIGN KEY (cluster_id) REFERENCES clusters(cluster_id),
   FOREIGN KEY (request_id) REFERENCES request(request_id)
@@ -817,6 +829,7 @@ ALTER TABLE widget_layout_user_widget ADD CONSTRAINT FK_widget_id FOREIGN KEY (w
 ALTER TABLE topology_request ADD CONSTRAINT FK_topology_request_cluster_id FOREIGN KEY (cluster_id) REFERENCES clusters(cluster_id);
 ALTER TABLE topology_hostgroup ADD CONSTRAINT FK_hostgroup_req_id FOREIGN KEY (request_id) REFERENCES topology_request(id);
 ALTER TABLE topology_host_info ADD CONSTRAINT FK_hostinfo_group_id FOREIGN KEY (group_id) REFERENCES topology_hostgroup(id);
+ALTER TABLE topology_host_info ADD CONSTRAINT FK_hostinfo_host_id FOREIGN KEY (host_id) REFERENCES hosts(host_id);
 ALTER TABLE topology_logical_request ADD CONSTRAINT FK_logicalreq_req_id FOREIGN KEY (request_id) REFERENCES topology_request(id);
 ALTER TABLE topology_host_request ADD CONSTRAINT FK_hostreq_logicalreq_id FOREIGN KEY (logical_request_id) REFERENCES topology_logical_request(id);
 ALTER TABLE topology_host_request ADD CONSTRAINT FK_hostreq_group_id FOREIGN KEY (group_id) REFERENCES topology_hostgroup(id);
@@ -868,6 +881,7 @@ CREATE TABLE alert_definition (
   component_name VARCHAR2(255),
   scope VARCHAR2(255) DEFAULT 'ANY' NOT NULL,
   label VARCHAR2(255),
+  help_url VARCHAR2(512),
   description CLOB,
   enabled NUMBER(1) DEFAULT 1 NOT NULL,
   schedule_interval NUMBER(10) NOT NULL,
@@ -875,6 +889,8 @@ CREATE TABLE alert_definition (
   alert_source CLOB NOT NULL,
   hash VARCHAR2(64) NOT NULL,
   ignore_host NUMBER(1) DEFAULT 0 NOT NULL,
+  repeat_tolerance NUMBER(10) DEFAULT 1 NOT NULL,
+  repeat_tolerance_enabled NUMBER(1) DEFAULT 0 NOT NULL,
   PRIMARY KEY (definition_id),
   FOREIGN KEY (cluster_id) REFERENCES clusters(cluster_id),
   CONSTRAINT uni_alert_def_name UNIQUE(cluster_id,definition_name)
@@ -905,6 +921,8 @@ CREATE TABLE alert_current (
   original_timestamp NUMBER(19) NOT NULL,
   latest_timestamp NUMBER(19) NOT NULL,
   latest_text CLOB,
+  occurrences NUMBER(19) DEFAULT 1 NOT NULL,
+  firmness VARCHAR2(255) DEFAULT 'HARD' NOT NULL,
   PRIMARY KEY (alert_id),
   FOREIGN KEY (definition_id) REFERENCES alert_definition(definition_id),
   FOREIGN KEY (history_id) REFERENCES alert_history(alert_id)
@@ -1019,6 +1037,7 @@ INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('setting_id_
 INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('hostcomponentstate_id_seq', 0);
 INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('servicecomponentdesiredstate_id_seq', 0);
 INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('servicecomponent_history_id_seq', 0);
+INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('blueprint_setting_id_seq', 0);
 
 INSERT INTO metainfo("metainfo_key", "metainfo_value") values ('version', '${ambariSchemaVersion}');
 

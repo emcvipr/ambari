@@ -43,11 +43,14 @@ from resource_management.core.resources.packaging import Package
 from resource_management.libraries.functions.version_select_util import get_component_version
 from resource_management.libraries.functions.version import compare_versions
 from resource_management.libraries.functions.version import format_stack_version
+from resource_management.libraries.functions import stack_tools
 from resource_management.libraries.functions.constants import Direction
 from resource_management.libraries.functions import packages_analyzer
 from resource_management.libraries.script.config_dictionary import ConfigDictionary, UnknownConfiguration
 from resource_management.core.resources.system import Execute
 from contextlib import closing
+from resource_management.libraries.functions.stack_features import check_stack_feature
+from resource_management.libraries.functions.constants import StackFeature
 
 import ambari_simplejson as json # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 
@@ -70,7 +73,6 @@ USAGE = """Usage: {0} <COMMAND> <JSON_CONFIG> <BASEDIR> <STROUTPUT> <LOGGING_LEV
 """
 
 _PASSWORD_MAP = {"/configurations/cluster-env/hadoop.user.name":"/configurations/cluster-env/hadoop.user.password"}
-DISTRO_SELECT_PACKAGE_NAME = "hdp-select"
 STACK_VERSION_PLACEHOLDER = "${stack_version}"
 
 def get_path_from_configuration(name, configuration):
@@ -98,6 +100,7 @@ class Script(object):
   3 path to service metadata dir (Directory "package" inside service directory)
   4 path to file with structured command output (file will be created)
   """
+  config = None
   stack_version_from_distro_select = None
   structuredOut = {}
   command_data_file = ""
@@ -178,7 +181,7 @@ class Script(object):
     from resource_management.libraries.functions.default import default
     stack_version_unformatted = str(default("/hostLevelParams/stack_version", ""))
     stack_version_formatted = format_stack_version(stack_version_unformatted)
-    if stack_version_formatted != "" and compare_versions(stack_version_formatted, '2.2') >= 0:
+    if stack_version_formatted and check_stack_feature(StackFeature.ROLLING_UPGRADE, stack_version_formatted):
       if command_name.lower() == "status":
         request_version = default("/commandParams/request_version", None)
         if request_version is not None:
@@ -267,18 +270,36 @@ class Script(object):
       from resource_management.libraries.functions import stack_select
       Script.stack_version_from_distro_select = stack_select.get_stack_version_before_install(component_name)
       
-    # if hdp-select has not yet been done (situations like first install), we can use hdp-select version itself.
+    # If <stack-selector-tool> has not yet been done (situations like first install),
+    # we can use <stack-selector-tool> version itself.
     if not Script.stack_version_from_distro_select:
-      Script.stack_version_from_distro_select = packages_analyzer.getInstalledPackageVersion(DISTRO_SELECT_PACKAGE_NAME)
+      Script.stack_version_from_distro_select = packages_analyzer.getInstalledPackageVersion(
+              stack_tools.get_stack_tool_package(stack_tools.STACK_SELECTOR_NAME))
       
     return Script.stack_version_from_distro_select
   
   def format_package_name(self, name):
+    from resource_management.libraries.functions.default import default
     """
-    This function replaces ${stack_version} placeholder into actual version.
+    This function replaces ${stack_version} placeholder into actual version.  If the package
+    version is passed from the server, use that as an absolute truth.
     """
+
+    # two different command types put things in different objects.  WHY.
+    # package_version is the form W_X_Y_Z_nnnn
+    package_version = default("roleParams/package_version", None)
+    if not package_version:
+      package_version = default("hostLevelParams/package_version", None)
+
     package_delimiter = '-' if OSCheck.is_ubuntu_family() else '_'
-    stack_version_package_formatted = self.get_stack_version_before_packages_installed().replace('.', package_delimiter).replace('-', package_delimiter) if STACK_VERSION_PLACEHOLDER in name else name
+
+    if package_version:
+      stack_version_package_formatted = package_version
+      if OSCheck.is_ubuntu_family():
+        stack_version_package_formatted = package_version.replace('_', package_delimiter)
+    else:
+      stack_version_package_formatted = self.get_stack_version_before_packages_installed().replace('.', package_delimiter).replace('-', package_delimiter) if STACK_VERSION_PLACEHOLDER in name else name
+
     package_name = name.replace(STACK_VERSION_PLACEHOLDER, stack_version_package_formatted)
     
     return package_name
@@ -307,7 +328,7 @@ class Script(object):
   @staticmethod
   def get_component_from_role(role_directory_map, default_role):
     """
-    Gets the /usr/hdp/current/<component> component given an Ambari role,
+    Gets the <stack-root>/current/<component> component given an Ambari role,
     such as DATANODE or HBASE_MASTER.
     :return:  the component name, such as hbase-master
     """
@@ -326,19 +347,25 @@ class Script(object):
     :return: a stack name or None
     """
     from resource_management.libraries.functions.default import default
-    return default("/hostLevelParams/stack_name", None)
+    return default("/hostLevelParams/stack_name", "HDP")
+
+  @staticmethod
+  def get_stack_root():
+    """
+    Get the stack-specific install root directory
+    :return: stack_root
+    """
+    from resource_management.libraries.functions.default import default
+    stack_name = Script.get_stack_name()
+    return default("/configurations/cluster-env/stack_root", "/usr/{0}".format(stack_name.lower()))
 
   @staticmethod
   def get_stack_version():
     """
-    Gets the normalized version of the HDP stack in the form #.#.#.# if it is
+    Gets the normalized version of the stack in the form #.#.#.# if it is
     present on the configurations sent.
-    :return: a normalized HDP stack version or None
+    :return: a normalized stack version or None
     """
-    stack_name = Script.get_stack_name()
-    if stack_name is None or stack_name.upper() not in ["HDP", "HDPWIN"]:
-      return None
-
     config = Script.get_config()
     if 'hostLevelParams' not in config or 'stack_version' not in config['hostLevelParams']:
       return None
@@ -349,7 +376,6 @@ class Script(object):
       return None
 
     return format_stack_version(stack_version_unformatted)
-
 
   @staticmethod
   def in_stack_upgrade():

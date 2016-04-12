@@ -25,15 +25,14 @@ from resource_management.core.source import DownloadSource
 from resource_management.core.source import InlineTemplate
 from resource_management.core.source import Template
 from resource_management.libraries.functions.format import format
-from resource_management.libraries.functions.version import compare_versions
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
+from resource_management.libraries.functions.oozie_prepare_war import prepare_war
 from resource_management.libraries.resources.xml_config import XmlConfig
 from resource_management.libraries.script.script import Script
 from resource_management.core.resources.packaging import Package
 from resource_management.core.shell import as_user
 from resource_management.core.shell import as_sudo
-from resource_management.core import shell
-from resource_management.core.exceptions import Fail
-from resource_management.core.logger import Logger
 
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from ambari_commons import OSConst
@@ -146,7 +145,7 @@ def oozie(is_server=False):
       owner=params.oozie_user
     )
 
-  if params.stack_version_formatted != "" and compare_versions(params.stack_version_formatted, '2.2') >= 0:
+  if params.stack_version_formatted and check_stack_feature(StackFeature.OOZIE_ADMIN_USER, params.stack_version_formatted):
     File(format("{params.conf_dir}/adminusers.txt"),
       mode=0644,
       group=params.user_group,
@@ -195,54 +194,6 @@ def oozie_ownership():
     owner = params.oozie_user,
     group = params.user_group
   )
-
-
-def prepare_war():
-  """
-  Attempt to call prepare-war command if the marker file doesn't exist or its content doesn't equal the expected command.
-  The marker file is stored in /usr/hdp/current/oozie-server/.prepare_war_cmd
-  """
-  import params
-
-  prepare_war_cmd_file = format("{oozie_home}/.prepare_war_cmd")
-
-  # DON'T CHANGE THE VALUE SINCE IT'S USED TO DETERMINE WHETHER TO RUN THE COMMAND OR NOT BY READING THE MARKER FILE.
-  # Oozie tmp dir should be /var/tmp/oozie and is already created by a function above.
-  command = format("cd {oozie_tmp_dir} && {oozie_setup_sh} prepare-war {oozie_secure}")
-  command = command.strip()
-
-  run_prepare_war = False
-  if os.path.exists(prepare_war_cmd_file):
-    cmd = ""
-    with open(prepare_war_cmd_file, "r") as f:
-      cmd = f.readline().strip()
-
-    if command != cmd:
-      run_prepare_war = True
-      Logger.info(format("Will run prepare war cmd since marker file {prepare_war_cmd_file} has contents which differ.\n" \
-      "Expected: {command}.\nActual: {cmd}."))
-  else:
-    run_prepare_war = True
-    Logger.info(format("Will run prepare war cmd since marker file {prepare_war_cmd_file} is missing."))
-
-  if run_prepare_war:
-    # Time-consuming to run
-    return_code, output = shell.call(command, user=params.oozie_user)
-    if output is None:
-      output = ""
-
-    if return_code != 0 or "New Oozie WAR file with added".lower() not in output.lower():
-      message = "Unexpected Oozie WAR preparation output {0}".format(output)
-      Logger.error(message)
-      raise Fail(message)
-
-    # Generate marker file
-    File(prepare_war_cmd_file,
-         content=command,
-         mode=0644,
-    )
-  else:
-    Logger.info(format("No need to run prepare-war since marker file {prepare_war_cmd_file} already exists."))
 
 def oozie_server_specific():
   import params
@@ -312,13 +263,13 @@ def oozie_server_specific():
       not_if  = no_op_test,
     )
 
-  prepare_war()
+  prepare_war(params)
 
   File(hashcode_file,
        mode = 0644,
   )
 
-  if params.stack_version_formatted != "" and compare_versions(params.stack_version_formatted, '2.2') >= 0:
+  if params.stack_version_formatted and check_stack_feature(StackFeature.OOZIE_CREATE_HIVE_TEZ_CONFIGS, params.stack_version_formatted):
     # Create hive-site and tez-site configs for oozie
     Directory(params.hive_conf_dir,
         create_parents = True,

@@ -27,6 +27,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.ClusterResponse;
 import org.apache.ambari.server.controller.ServiceConfigVersionResponse;
+import org.apache.ambari.server.events.ClusterConfigChangedEvent;
 import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
 import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.HostVersionEntity;
@@ -132,9 +133,16 @@ public interface Cluster {
 
   /**
    * Get the ClusterVersionEntity object whose state is CURRENT.
-   * @return
+   * @return Cluster Version entity to whose state is CURRENT.
    */
   ClusterVersionEntity getCurrentClusterVersion();
+
+  /**
+   * If no RU/EU is in progress, get the ClusterVersionEntity object whose state is CURRENT.
+   * If RU/EU is in progress, based on the direction and desired stack, determine which version to use.
+   * @return Cluster Version entity to use.
+   */
+  ClusterVersionEntity getEffectiveClusterVersion() throws AmbariException;
 
   /**
    * Get all of the ClusterVersionEntity objects for the cluster.
@@ -238,7 +246,8 @@ public interface Cluster {
    * Create a cluster version for the given stack and version, whose initial
    * state must either be either {@link RepositoryVersionState#UPGRADING} (if no
    * other cluster version exists) or {@link RepositoryVersionState#INSTALLING}
-   * (if at exactly one CURRENT cluster version already exists).
+   * (if at exactly one CURRENT cluster version already exists) or {@link RepositoryVersionState#INIT}
+   * (if the cluster is being created using a specific repository version).
    *
    * @param stackId
    *          Stack ID
@@ -652,4 +661,39 @@ public interface Cluster {
    * @throws AmbariException
    */
   void setUpgradeEntity(UpgradeEntity upgradeEntity) throws AmbariException;
+
+  /**
+   * Gets whether there is an upgrade which has been suspended and not yet
+   * finalized.
+   *
+   * @return {@code true} if the last upgrade is in the
+   *         {@link UpgradeState#SUSPENDED}.
+   */
+  boolean isUpgradeSuspended();
+
+  /**
+   * Returns the name of the service that the passed config type belongs to.
+   * @param configType the config type to look up the service by
+   * @return returns the name of the service that the config type belongs to if there is any
+   *         otherwise returns null.
+   */
+  String getServiceByConfigType(String configType);
+
+  /**
+   * Gets the most recent value of {@code cluster-env/propertyName} where
+   * {@code propertyName} is the paramter specified to the method. This will use
+   * the desired configuration for {@code cluster-env}.
+   * <p/>
+   * The value is cached on this {@link Cluster} instance, so subsequent calls
+   * will not inclur a lookup penalty. This class also responds to
+   * {@link ClusterConfigChangedEvent} in order to clear the cache.
+   *
+   * @param propertyName
+   *          the property to lookup in {@code cluster-env} (not {@code null}).
+   * @param defaultValue
+   *          a default value to cache return if none exists (may be
+   *          {@code null}).
+   * @return
+   */
+  String getClusterProperty(String propertyName, String defaultValue);
 }

@@ -18,6 +18,32 @@
 
 package org.apache.ambari.server.controller.internal;
 
+
+import static org.apache.ambari.server.controller.internal.HostComponentResourceProvider.HOST_COMPONENT_STALE_CONFIGS_PROPERTY_ID;
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.capture;
+import static org.easymock.EasyMock.createMock;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.eq;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.newCapture;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.reset;
+import static org.easymock.EasyMock.verify;
+
+import java.lang.reflect.Field;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.actionmanager.ActionManager;
 import org.apache.ambari.server.actionmanager.HostRoleCommand;
@@ -25,6 +51,7 @@ import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.actionmanager.Stage;
 import org.apache.ambari.server.api.services.BaseRequest;
 import org.apache.ambari.server.controller.AmbariManagementController;
+import org.apache.ambari.server.controller.AmbariServer;
 import org.apache.ambari.server.controller.ExecuteActionRequest;
 import org.apache.ambari.server.controller.RequestStatusResponse;
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
@@ -44,8 +71,11 @@ import org.apache.ambari.server.security.TestAuthenticationFactory;
 import org.apache.ambari.server.security.authorization.AuthorizationException;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.topology.ClusterTopology;
+import org.apache.ambari.server.topology.HostGroupInfo;
 import org.apache.ambari.server.topology.LogicalRequest;
 import org.apache.ambari.server.topology.TopologyManager;
+import org.apache.ambari.server.topology.TopologyRequest;
 import org.easymock.Capture;
 import org.easymock.EasyMock;
 import org.junit.After;
@@ -58,29 +88,9 @@ import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import java.lang.reflect.Field;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import static org.apache.ambari.server.controller.internal.HostComponentResourceProvider.HOST_COMPONENT_STALE_CONFIGS_PROPERTY_ID;
-import static org.easymock.EasyMock.anyObject;
-import static org.easymock.EasyMock.capture;
-import static org.easymock.EasyMock.createMock;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.eq;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.newCapture;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.reset;
-import static org.easymock.EasyMock.verify;
+
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
 
 /**
  * RequestResourceProvider tests.
@@ -100,17 +110,19 @@ public class RequestResourceProviderTest {
     hrcDAO = createNiceMock(HostRoleCommandDAO.class);
     topologyManager = createNiceMock(TopologyManager.class);
 
+    reset(topologyManager);
+
     //todo: add assertions for topology manager interactions
     expect(topologyManager.getStageSummaries(EasyMock.<Long>anyObject())).andReturn(
-        Collections.<Long, HostRoleCommandStatusSummaryDTO>emptyMap()).anyTimes();
+      Collections.<Long, HostRoleCommandStatusSummaryDTO>emptyMap()).anyTimes();
 
     expect(topologyManager.getRequests(EasyMock.<Collection<Long>>anyObject())).andReturn(
-        Collections.<LogicalRequest>emptyList()).anyTimes();
+      Collections.<LogicalRequest>emptyList()).anyTimes();
 
     replay(topologyManager);
 
 
-        // !!! don't mess with injectors for this test
+    // !!! don't mess with injectors for this test
     Field field = RequestResourceProvider.class.getDeclaredField("s_requestDAO");
     field.setAccessible(true);
     field.set(null, requestDAO);
@@ -141,10 +153,10 @@ public class RequestResourceProviderTest {
     replay(managementController, response);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     // add the property map to a set for the request.  add more maps for multiple creates
     Set<Map<String, Object>> propertySet = new LinkedHashSet<Map<String, Object>>();
@@ -175,7 +187,6 @@ public class RequestResourceProviderTest {
     Resource.Type type = Resource.Type.Request;
 
     expect(requestDAO.findByPks(Collections.<Long> emptyList(), true)).andReturn(Collections.<RequestEntity>emptyList()).anyTimes();
-    replay(requestDAO);
 
     ActionManager actionManager = createNiceMock(ActionManager.class);
 
@@ -186,12 +197,9 @@ public class RequestResourceProviderTest {
     Clusters clusters = createNiceMock(Clusters.class);
     expect(clusters.getCluster("foo_cluster")).andReturn(cluster).anyTimes();
 
-    AmbariManagementController managementController =
-      createMock(AmbariManagementController.class);
-    expect(managementController.getActionManager()).andReturn(actionManager)
-      .anyTimes();
+    AmbariManagementController managementController = createMock(AmbariManagementController.class);
+    expect(managementController.getActionManager()).andReturn(actionManager).anyTimes();
     expect(managementController.getClusters()).andReturn(clusters).anyTimes();
-
     replay(managementController, clusters, cluster);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(type,
@@ -210,35 +218,31 @@ public class RequestResourceProviderTest {
       .toPredicate();
 
     request = PropertyHelper.getReadRequest(new HashSet<String>(),
-        requestInfoProperties, null, null, null);
+      requestInfoProperties, null, null, null);
 
-    expect(actionManager.getRequestsByStatus(null, BaseRequest.DEFAULT_PAGE_SIZE, false))
-      .andReturn(Collections.<Long> emptyList());
+    expect(requestDAO.findAllRequestIds(BaseRequest.DEFAULT_PAGE_SIZE, false, 1L)).andReturn(Collections.<Long> emptyList()).anyTimes();
+    replay(requestDAO);
 
-    replay(actionManager);
     provider.getResources(request, predicate);
-    verify(actionManager);
-    reset(actionManager);
+    verify(requestDAO);
 
     requestInfoProperties.put(BaseRequest.PAGE_SIZE_PROPERTY_KEY, "20");
     request = PropertyHelper.getReadRequest(new HashSet<String>(),
-        requestInfoProperties, null, null, null);
-    expect(actionManager.getRequestsByStatus(null, 20, false))
-      .andReturn(Collections.<Long> emptyList());
-    replay(actionManager);
+      requestInfoProperties, null, null, null);
     provider.getResources(request, predicate);
-    verify(actionManager);
-    reset(actionManager);
+    verify(requestDAO);
+
+    reset(requestDAO);
 
     requestInfoProperties.put(BaseRequest.ASC_ORDER_PROPERTY_KEY, "true");
     request = PropertyHelper.getReadRequest(new HashSet<String>(),
-        requestInfoProperties, null, null, null);
-    expect(actionManager.getRequestsByStatus(null, 20, true))
-      .andReturn(Collections.<Long> emptyList());
-    replay(actionManager);
+      requestInfoProperties, null, null, null);
+    expect(requestDAO.findByPks(Collections.<Long> emptyList(), true)).andReturn(Collections.<RequestEntity>emptyList()).anyTimes();
+    expect(requestDAO.findAllRequestIds(BaseRequest.DEFAULT_PAGE_SIZE, true, 1L)).andReturn(Collections.<Long> emptyList()).anyTimes();
+    replay(requestDAO);
+
     provider.getResources(request, predicate);
-    verify(actionManager);
-    reset(actionManager);
+    verify(requestDAO);
   }
 
   @Test
@@ -265,10 +269,10 @@ public class RequestResourceProviderTest {
     replay(managementController, actionManager, requestDAO, hrcDAO, requestMock);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     Set<String> propertyIds = new HashSet<String>();
 
@@ -276,7 +280,7 @@ public class RequestResourceProviderTest {
     propertyIds.add(RequestResourceProvider.REQUEST_STATUS_PROPERTY_ID);
 
     Predicate predicate = new PredicateBuilder().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
-        toPredicate();
+      toPredicate();
     Request request = PropertyHelper.getReadRequest(propertyIds);
     Set<Resource> resources = provider.getResources(request, predicate);
 
@@ -315,10 +319,10 @@ public class RequestResourceProviderTest {
     replay(managementController, actionManager, requestDAO, hrcDAO, requestMock);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     Set<String> propertyIds = new HashSet<String>();
 
@@ -328,7 +332,7 @@ public class RequestResourceProviderTest {
 
 
     Predicate predicate = new PredicateBuilder().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
-        toPredicate();
+      toPredicate();
     Request request = PropertyHelper.getReadRequest(propertyIds);
     Set<Resource> resources = provider.getResources(request, predicate);
 
@@ -368,10 +372,10 @@ public class RequestResourceProviderTest {
     replay(managementController, actionManager, requestMock, requestDAO, hrcDAO);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     Set<String> propertyIds = new HashSet<String>();
 
@@ -381,7 +385,7 @@ public class RequestResourceProviderTest {
 
 
     Predicate predicate = new PredicateBuilder().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
-        toPredicate();
+      toPredicate();
     Request request = PropertyHelper.getReadRequest(propertyIds);
     Set<Resource> resources = provider.getResources(request, predicate);
 
@@ -429,10 +433,10 @@ public class RequestResourceProviderTest {
     replay(managementController, actionManager, clusters, cluster, requestMock, requestDAO, hrcDAO);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     Set<String> propertyIds = new HashSet<String>();
 
@@ -440,9 +444,9 @@ public class RequestResourceProviderTest {
     propertyIds.add(RequestResourceProvider.REQUEST_STATUS_PROPERTY_ID);
 
     Predicate predicate = new PredicateBuilder().
-        property(RequestResourceProvider.REQUEST_CLUSTER_NAME_PROPERTY_ID).equals("c1").and().
-        property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
-        toPredicate();
+      property(RequestResourceProvider.REQUEST_CLUSTER_NAME_PROPERTY_ID).equals("c1").and().
+      property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
+      toPredicate();
     Request request = PropertyHelper.getReadRequest(propertyIds);
     Set<Resource> resources = provider.getResources(request, predicate);
 
@@ -454,9 +458,9 @@ public class RequestResourceProviderTest {
 
     // try again with a bad cluster name
     predicate = new PredicateBuilder().
-        property(RequestResourceProvider.REQUEST_CLUSTER_NAME_PROPERTY_ID).equals("bad-cluster").and().
-        property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
-        toPredicate();
+      property(RequestResourceProvider.REQUEST_CLUSTER_NAME_PROPERTY_ID).equals("bad-cluster").and().
+      property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
+      toPredicate();
     try {
       provider.getResources(request, predicate);
     } catch (NoSuchParentResourceException e) {
@@ -487,7 +491,7 @@ public class RequestResourceProviderTest {
     // set expectations
     expect(managementController.getActionManager()).andReturn(actionManager).anyTimes();
     expect(requestDAO.findByPks(capture(requestIdsCapture), eq(true))).
-        andReturn(Arrays.asList(requestMock, requestMock1)).anyTimes();
+      andReturn(Arrays.asList(requestMock, requestMock1)).anyTimes();
     expect(hrcDAO.findAggregateCounts((Long) anyObject())).andReturn(new HashMap<Long, HostRoleCommandStatusSummaryDTO>(){{
       put(1L, HostRoleCommandStatusSummaryDTO.create().inProgress(1));
     }}).anyTimes();
@@ -506,8 +510,8 @@ public class RequestResourceProviderTest {
     propertyIds.add(RequestResourceProvider.REQUEST_ID_PROPERTY_ID);
 
     Predicate predicate = new PredicateBuilder().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
-        or().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("101").
-        toPredicate();
+      or().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("101").
+      toPredicate();
     Request request = PropertyHelper.getReadRequest(propertyIds);
     Set<Resource> resources = provider.getResources(request, predicate);
 
@@ -550,10 +554,10 @@ public class RequestResourceProviderTest {
     replay(managementController, actionManager, requestMock0, requestMock1, requestDAO, hrcDAO);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     Set<String> propertyIds = new HashSet<String>();
 
@@ -565,7 +569,7 @@ public class RequestResourceProviderTest {
     propertyIds.add(RequestResourceProvider.REQUEST_PROGRESS_PERCENT_ID);
 
     Predicate predicate = new PredicateBuilder().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").or().
-        property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("101").toPredicate();
+      property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("101").toPredicate();
     Request request = PropertyHelper.getReadRequest(propertyIds);
     Set<Resource> resources = provider.getResources(request, predicate);
 
@@ -621,10 +625,10 @@ public class RequestResourceProviderTest {
     replay(managementController, actionManager, requestMock0, requestMock1, requestDAO, hrcDAO);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     Set<String> propertyIds = new HashSet<String>();
 
@@ -637,7 +641,7 @@ public class RequestResourceProviderTest {
     propertyIds.add(RequestResourceProvider.REQUEST_PROGRESS_PERCENT_ID);
 
     Predicate predicate = new PredicateBuilder().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").or().
-        property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("101").toPredicate();
+      property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("101").toPredicate();
     Request request = PropertyHelper.getReadRequest(propertyIds);
     Set<Resource> resources = provider.getResources(request, predicate);
 
@@ -702,10 +706,10 @@ public class RequestResourceProviderTest {
     replay(managementController, actionManager, requestMock0, requestMock1, requestDAO, hrcDAO);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     Set<String> propertyIds = new HashSet<String>();
 
@@ -719,7 +723,7 @@ public class RequestResourceProviderTest {
     propertyIds.add(RequestResourceProvider.REQUEST_PROGRESS_PERCENT_ID);
 
     Predicate predicate = new PredicateBuilder().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").or().
-        property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("101").toPredicate();
+      property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("101").toPredicate();
     Request request = PropertyHelper.getReadRequest(propertyIds);
     Set<Resource> resources = provider.getResources(request, predicate);
 
@@ -734,7 +738,7 @@ public class RequestResourceProviderTest {
         Assert.assertEquals(0, resource.getPropertyValue(RequestResourceProvider.REQUEST_ABORTED_TASK_CNT_ID));
         Assert.assertEquals(0, resource.getPropertyValue(RequestResourceProvider.REQUEST_TIMED_OUT_TASK_CNT_ID));
       } else {
-        Assert.assertEquals("ABORTED", resource.getPropertyValue(RequestResourceProvider.REQUEST_STATUS_PROPERTY_ID));
+        Assert.assertEquals("TIMEDOUT", resource.getPropertyValue(RequestResourceProvider.REQUEST_STATUS_PROPERTY_ID));
         Assert.assertEquals(0, resource.getPropertyValue(RequestResourceProvider.REQUEST_FAILED_TASK_CNT_ID));
         Assert.assertEquals(1, resource.getPropertyValue(RequestResourceProvider.REQUEST_ABORTED_TASK_CNT_ID));
         Assert.assertEquals(1, resource.getPropertyValue(RequestResourceProvider.REQUEST_TIMED_OUT_TASK_CNT_ID));
@@ -764,7 +768,7 @@ public class RequestResourceProviderTest {
     stages.add(stage);
 
     org.apache.ambari.server.actionmanager.Request requestMock =
-            createNiceMock(org.apache.ambari.server.actionmanager.Request.class);
+      createNiceMock(org.apache.ambari.server.actionmanager.Request.class);
     expect(requestMock.getCommands()).andReturn(hostRoleCommands).anyTimes();
     expect(requestMock.getStages()).andReturn(stages).anyTimes();
 
@@ -775,7 +779,7 @@ public class RequestResourceProviderTest {
     // set expectations
     expect(managementController.getActionManager()).andReturn(actionManager).anyTimes();
     expect(actionManager.getRequests(capture(requestIdsCapture))).
-            andReturn(Collections.singletonList(requestMock)).anyTimes();
+      andReturn(Collections.singletonList(requestMock)).anyTimes();
     expect(hostRoleCommand.getStatus()).andReturn(HostRoleStatus.IN_PROGRESS).anyTimes();
 
     RequestStatusResponse response = createNiceMock(RequestStatusResponse.class);
@@ -784,10 +788,10 @@ public class RequestResourceProviderTest {
     replay(managementController, actionManager, hostRoleCommand, clusters, requestMock, response, stage);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     // TEST CASE: Check update request validation (abort reason not specified)
     // add the property map to a set for the request.
@@ -795,7 +799,7 @@ public class RequestResourceProviderTest {
     // create the request
     Request request = PropertyHelper.getUpdateRequest(properties, null);
     Predicate predicate = new PredicateBuilder().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).
-        equals("100").toPredicate();
+      equals("100").toPredicate();
 
     try {
       provider.updateResources(request, predicate);
@@ -822,7 +826,7 @@ public class RequestResourceProviderTest {
     try {
       provider.updateResources(request, predicate);
       Assert.fail("Expected an java.lang.IllegalArgumentException: COMPLETED is wrong value. " +
-              "The only allowed value for updating request status is ABORTED");
+        "The only allowed value for updating request status is ABORTED");
     } catch (IllegalArgumentException e) {
       // expected
     }
@@ -836,16 +840,16 @@ public class RequestResourceProviderTest {
       replay(hostRoleCommand);
       request = PropertyHelper.getUpdateRequest(properties, null);
       if (status == HostRoleStatus.IN_PROGRESS ||
-          status == HostRoleStatus.PENDING ||
-          status == HostRoleStatus.HOLDING ||
-          status == HostRoleStatus.HOLDING_FAILED ||
-          status == HostRoleStatus.HOLDING_TIMEDOUT ||
-          status == HostRoleStatus.COMPLETED ||
-          status == HostRoleStatus.ABORTED ||
-          status == HostRoleStatus.FAILED ||
-          status == HostRoleStatus.TIMEDOUT ||
-          status == HostRoleStatus.QUEUED ||
-          status == HostRoleStatus.SKIPPED_FAILED) { // the only valid cases
+        status == HostRoleStatus.PENDING ||
+        status == HostRoleStatus.HOLDING ||
+        status == HostRoleStatus.HOLDING_FAILED ||
+        status == HostRoleStatus.HOLDING_TIMEDOUT ||
+        status == HostRoleStatus.COMPLETED ||
+        status == HostRoleStatus.ABORTED ||
+        status == HostRoleStatus.FAILED ||
+        status == HostRoleStatus.TIMEDOUT ||
+        status == HostRoleStatus.QUEUED ||
+        status == HostRoleStatus.SKIPPED_FAILED) { // the only valid cases
         provider.updateResources(request, predicate);
       } else {  // In other cases, should error out
         try {
@@ -870,13 +874,13 @@ public class RequestResourceProviderTest {
     replay(managementController);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     Predicate predicate = new PredicateBuilder().property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).
-        equals("Request100").toPredicate();
+      equals("Request100").toPredicate();
     try {
       provider.deleteResources(predicate);
       Assert.fail("Expected an UnsupportedOperationException");
@@ -931,7 +935,7 @@ public class RequestResourceProviderTest {
 
     expect(managementController.getClusters()).andReturn(clusters).anyTimes();
     expect(managementController.createAction(capture(actionRequest), capture(propertyMap)))
-        .andReturn(response).anyTimes();
+      .andReturn(response).anyTimes();
     expect(response.getMessage()).andReturn("Message").anyTimes();
 
     // replay
@@ -963,10 +967,10 @@ public class RequestResourceProviderTest {
     // create the request
     Request request = PropertyHelper.getCreateRequest(propertySet, requestInfoProperties);
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     provider.createResources(request);
     ExecuteActionRequest capturedRequest = actionRequest.getValue();
@@ -1028,7 +1032,7 @@ public class RequestResourceProviderTest {
 
     expect(managementController.getClusters()).andReturn(clusters).anyTimes();
     expect(managementController.createAction(capture(actionRequest), capture(propertyMap)))
-        .andReturn(response).anyTimes();
+      .andReturn(response).anyTimes();
     expect(response.getMessage()).andReturn("Message").anyTimes();
     // replay
     replay(cluster, clusters, managementController, response);
@@ -1066,10 +1070,10 @@ public class RequestResourceProviderTest {
     // create the request
     Request request = PropertyHelper.getCreateRequest(propertySet, requestInfoProperties);
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     // Neither action nor commands are specified
     try {
@@ -1232,7 +1236,7 @@ public class RequestResourceProviderTest {
 
     expect(managementController.getClusters()).andReturn(clusters).anyTimes();
     expect(managementController.createAction(capture(actionRequest), capture(propertyMap)))
-            .andReturn(response).anyTimes();
+      .andReturn(response).anyTimes();
     expect(response.getMessage()).andReturn("Message").anyTimes();
 
     // replay
@@ -1267,7 +1271,7 @@ public class RequestResourceProviderTest {
     requestInfoProperties.put(RequestResourceProvider.COMMAND_ID, "RESTART");
 
     requestInfoProperties.put(RequestOperationLevel.OPERATION_LEVEL_ID,
-            host_component);
+      host_component);
     requestInfoProperties.put(RequestOperationLevel.OPERATION_CLUSTER_ID, c1);
     requestInfoProperties.put(RequestOperationLevel.OPERATION_SERVICE_ID,
       service_id);
@@ -1308,7 +1312,7 @@ public class RequestResourceProviderTest {
     RequestStatusResponse response = createNiceMock(RequestStatusResponse.class);
 
     expect(managementController.createAction(capture(actionRequest), capture(propertyMap)))
-        .andReturn(response).anyTimes();
+      .andReturn(response).anyTimes();
     expect(response.getMessage()).andReturn("Message").anyTimes();
 
     // replay
@@ -1334,10 +1338,10 @@ public class RequestResourceProviderTest {
     // create the request
     Request request = PropertyHelper.getCreateRequest(propertySet, requestInfoProperties);
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
     provider.createResources(request);
     ExecuteActionRequest capturedRequest = actionRequest.getValue();
 
@@ -1353,7 +1357,7 @@ public class RequestResourceProviderTest {
     Assert.assertNotNull(capturedResourceFilter.getHostNames());
     Assert.assertEquals(2, capturedResourceFilter.getHostNames().size());
     Assert.assertEquals(0, actionRequest.getValue().getParameters().size());
-    }
+  }
 
   @Test
   public void testGetResourcesWithoutCluster() throws Exception {
@@ -1384,10 +1388,10 @@ public class RequestResourceProviderTest {
     replay(managementController, actionManager, clusters, requestMock, requestDAO, hrcDAO);
 
     ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
-        type,
-        PropertyHelper.getPropertyIds(type),
-        PropertyHelper.getKeyPropertyIds(type),
-        managementController);
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
 
     Set<String> propertyIds = new HashSet<String>();
 
@@ -1395,8 +1399,8 @@ public class RequestResourceProviderTest {
     propertyIds.add(RequestResourceProvider.REQUEST_STATUS_PROPERTY_ID);
 
     Predicate predicate = new PredicateBuilder().
-        property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
-        toPredicate();
+      property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
+      toPredicate();
     Request request = PropertyHelper.getReadRequest(propertyIds);
     Set<Resource> resources = provider.getResources(request, predicate);
 
@@ -1464,5 +1468,104 @@ public class RequestResourceProviderTest {
 
     // verify
     verify(managementController, actionManager, clusters, requestMock, requestDAO, hrcDAO);
+  }
+
+  @Test
+  @PrepareForTest(AmbariServer.class)
+  public void testGetLogicalRequestStatusWithNoTasks() throws Exception {
+    // Given
+    Resource.Type type = Resource.Type.Request;
+
+    AmbariManagementController managementController = createMock(AmbariManagementController.class);
+    ActionManager actionManager = createNiceMock(ActionManager.class);
+
+    Clusters clusters = createNiceMock(Clusters.class);
+
+    RequestEntity requestMock = createNiceMock(RequestEntity.class);
+
+    expect(requestMock.getRequestContext()).andReturn("this is a context").anyTimes();
+    expect(requestMock.getRequestId()).andReturn(100L).anyTimes();
+    Capture<Collection<Long>> requestIdsCapture = Capture.newInstance();
+
+
+    ClusterTopology topology = createNiceMock(ClusterTopology.class);
+    expect(topology.getClusterId()).andReturn(2L).anyTimes();
+
+    Long clusterId = 2L;
+    String clusterName = "cluster1";
+    Cluster cluster = createNiceMock(Cluster.class);
+    expect(cluster.getClusterId()).andReturn(clusterId).anyTimes();
+    expect(cluster.getClusterName()).andReturn(clusterName).anyTimes();
+
+    expect(managementController.getActionManager()).andReturn(actionManager).anyTimes();
+    expect(managementController.getClusters()).andReturn(clusters).anyTimes();
+    expect(clusters.getCluster(eq(clusterName))).andReturn(cluster).anyTimes();
+    expect(clusters.getClusterById(clusterId)).andReturn(cluster).anyTimes();
+    expect(requestDAO.findByPks(capture(requestIdsCapture), eq(true))).andReturn(Lists.newArrayList(requestMock));
+    expect(hrcDAO.findAggregateCounts((Long) anyObject())).andReturn(
+      Collections.<Long, HostRoleCommandStatusSummaryDTO>emptyMap()).anyTimes();
+
+    TopologyRequest topologyRequest = createNiceMock(TopologyRequest.class);
+    expect(topologyRequest.getHostGroupInfo()).andReturn(Collections.<String, HostGroupInfo>emptyMap()).anyTimes();
+    expect(topologyRequest.getBlueprint()).andReturn(null).anyTimes();
+
+
+
+    PowerMock.mockStatic(AmbariServer.class);
+    expect(AmbariServer.getController()).andReturn(managementController).anyTimes();
+
+    PowerMock.replayAll(
+      topologyRequest,
+      topology,
+      managementController,
+      clusters);
+
+
+    LogicalRequest logicalRequest = new LogicalRequest(200L, topologyRequest, topology);
+
+    reset(topologyManager);
+
+    expect(topologyManager.getRequest(100L)).andReturn(logicalRequest).anyTimes();
+    expect(topologyManager.getRequests(eq(Collections.singletonList(100L)))).andReturn(
+      Collections.singletonList(logicalRequest)).anyTimes();
+    expect(topologyManager.getStageSummaries(EasyMock.<Long>anyObject())).andReturn(
+      Collections.<Long, HostRoleCommandStatusSummaryDTO>emptyMap()).anyTimes();
+
+    replay(actionManager, requestMock, requestDAO, hrcDAO, topologyManager);
+
+    ResourceProvider provider = AbstractControllerResourceProvider.getResourceProvider(
+      type,
+      PropertyHelper.getPropertyIds(type),
+      PropertyHelper.getKeyPropertyIds(type),
+      managementController);
+
+    Set<String> propertyIds = ImmutableSet.of(
+      RequestResourceProvider.REQUEST_ID_PROPERTY_ID,
+      RequestResourceProvider.REQUEST_STATUS_PROPERTY_ID,
+      RequestResourceProvider.REQUEST_PROGRESS_PERCENT_ID
+    );
+
+    Predicate predicate = new PredicateBuilder().
+      property(RequestResourceProvider.REQUEST_ID_PROPERTY_ID).equals("100").
+      toPredicate();
+
+    Request request = PropertyHelper.getReadRequest(propertyIds);
+
+    // When
+    Set<Resource> resources = provider.getResources(request, predicate);
+
+    // Then
+
+
+    // verify
+    PowerMock.verifyAll();
+    verify(actionManager, requestMock, requestDAO, hrcDAO, topologyManager);
+
+    Assert.assertEquals(1, resources.size());
+    for (Resource resource : resources) {
+      Assert.assertEquals(100L, (long)(Long) resource.getPropertyValue(RequestResourceProvider.REQUEST_ID_PROPERTY_ID));
+      Assert.assertEquals("PENDING", resource.getPropertyValue(RequestResourceProvider.REQUEST_STATUS_PROPERTY_ID));
+      Assert.assertEquals(0.0, resource.getPropertyValue(RequestResourceProvider.REQUEST_PROGRESS_PERCENT_ID));
+    }
   }
 }

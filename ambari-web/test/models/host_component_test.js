@@ -180,47 +180,13 @@ describe('App.HostComponent', function() {
     });
   });
 
-  describe('#statusIconClass', function () {
-    var testCases = [
-      {
-        statusClass: 'STARTED',
-        result: 'icon-ok-sign'
-      },
-      {
-        statusClass: 'STARTING',
-        result: 'icon-ok-sign'
-      },
-      {
-        statusClass: 'INSTALLED',
-        result: 'icon-warning-sign'
-      },
-      {
-        statusClass: 'STOPPING',
-        result: 'icon-warning-sign'
-      },
-      {
-        statusClass: 'UNKNOWN',
-        result: 'icon-question-sign'
-      },
-      {
-        statusClass: '',
-        result: ''
-      }
-    ];
-
-    beforeEach(function () {
-      hc.reopen({
-        statusClass: ''
-      });
-    });
-    testCases.forEach(function (test) {
-      it('statusClass - ' + test.statusClass, function () {
-        hc.set('statusClass', test.statusClass);
-        hc.propertyDidChange('statusIconClass');
-        expect(hc.get('statusIconClass')).to.equal(test.result);
-      });
-    });
-  });
+  App.TestAliases.testAsComputedGetByKey(hc, 'statusIconClass', 'statusIconClassMap', 'statusClass', {defaultValue: '', map: {
+    STARTED: App.healthIconClassGreen,
+    STARTING: App.healthIconClassGreen,
+    INSTALLED: App.healthIconClassRed,
+    STOPPING: App.healthIconClassRed,
+    UNKNOWN: App.healthIconClassYellow
+  }});
 
   describe('#componentTextStatus', function () {
     before(function () {
@@ -364,6 +330,10 @@ describe('App.HostComponent', function() {
     });
   });
 
+
+  App.TestAliases.testAsComputedTruncate(hc, 'serviceDisplayName', 'service.displayName', 14, 11);
+  App.TestAliases.testAsComputedTruncate(hc, 'getDisplayName', 'displayName', 19, 16);
+  App.TestAliases.testAsComputedTruncate(hc, 'getDisplayNameAdvanced', 'displayNameAdvanced', 19, 16);
 
   describe("#serviceDisplayName",function(){
     var testCases = [

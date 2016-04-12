@@ -97,28 +97,28 @@ class TestHookAfterInstall(RMFTestCase):
                             to = '/usr/hdp/current/hive-server2-hive2/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/zookeeper/conf', '/etc/zookeeper/conf.backup'),
-        not_if = 'test -e /etc/zookeeper/conf.backup',
-        sudo = True)
+                              not_if = 'test -e /etc/zookeeper/conf.backup',
+                              sudo = True)
     self.assertResourceCalled('Directory', '/etc/zookeeper/conf',
-        action = ['delete'])
+                              action = ['delete'])
     self.assertResourceCalled('Link', '/etc/zookeeper/conf',
-        to = '/usr/hdp/current/zookeeper-client/conf')
+                              to = '/usr/hdp/current/zookeeper-client/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/pig/conf', '/etc/pig/conf.backup'),
-        not_if = 'test -e /etc/pig/conf.backup',
-        sudo = True,)
+                              not_if = 'test -e /etc/pig/conf.backup',
+                              sudo = True,)
     self.assertResourceCalled('Directory', '/etc/pig/conf',
-        action = ['delete'],)
+                            action = ['delete'],)
     self.assertResourceCalled('Link', '/etc/pig/conf',
-        to = '/usr/hdp/current/pig-client/conf',)
+                            to = '/usr/hdp/current/pig-client/conf',)
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/tez/conf', '/etc/tez/conf.backup'),
-        not_if = 'test -e /etc/tez/conf.backup',
-        sudo = True)
+                              not_if = 'test -e /etc/tez/conf.backup',
+                              sudo = True)
     self.assertResourceCalled('Directory', '/etc/tez/conf',
-        action = ['delete'])
+                              action = ['delete'])
     self.assertResourceCalled('Link', '/etc/tez/conf',
-        to = '/usr/hdp/current/tez-client/conf')
+                              to = '/usr/hdp/current/tez-client/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/hive-webhcat/conf', '/etc/hive-webhcat/conf.backup'),
         not_if = 'test -e /etc/hive-webhcat/conf.backup',
@@ -145,29 +145,30 @@ class TestHookAfterInstall(RMFTestCase):
     self.assertResourceCalled('Link', '/etc/hbase/conf',
         to = '/usr/hdp/current/hbase-client/conf')
 
-    self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/knox/conf', '/etc/knox/conf.backup'),
-        not_if = 'test -e /etc/knox/conf.backup',
-        sudo = True)
-    self.assertResourceCalled('Directory', '/etc/knox/conf',
-        action = ['delete'])
-    self.assertResourceCalled('Link', '/etc/knox/conf',
-        to = '/usr/hdp/current/knox-server/conf')
+    self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/ranger/tagsync/conf', '/etc/ranger/tagsync/conf.backup'),
+                              not_if = 'test -e /etc/ranger/tagsync/conf.backup',
+                              sudo = True,)
+    self.assertResourceCalled('Directory', '/etc/ranger/tagsync/conf',
+                              action = ['delete'],)
+    self.assertResourceCalled('Link', '/etc/ranger/tagsync/conf',
+                              to = '/usr/hdp/current/ranger-tagsync/conf',)
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/ranger/usersync/conf', '/etc/ranger/usersync/conf.backup'),
-        not_if = 'test -e /etc/ranger/usersync/conf.backup',
-        sudo = True)
+                              not_if = 'test -e /etc/ranger/usersync/conf.backup',
+                              sudo = True)
     self.assertResourceCalled('Directory', '/etc/ranger/usersync/conf',
-        action = ['delete'])
+                              action = ['delete'])
     self.assertResourceCalled('Link', '/etc/ranger/usersync/conf',
-        to = '/usr/hdp/current/ranger-usersync/conf')
+                              to = '/usr/hdp/current/ranger-usersync/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/hadoop/conf', '/etc/hadoop/conf.backup'),
-        not_if = 'test -e /etc/hadoop/conf.backup',
-        sudo = True)
+                              not_if = 'test -e /etc/hadoop/conf.backup',
+                              sudo = True)
     self.assertResourceCalled('Directory', '/etc/hadoop/conf',
-        action = ['delete'])
+                              action = ['delete'])
     self.assertResourceCalled('Link', '/etc/hadoop/conf',
-        to = '/usr/hdp/current/hadoop-client/conf')
+                              to = '/usr/hdp/current/hadoop-client/conf')
+
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/mahout/conf', '/etc/mahout/conf.backup'),
         not_if = 'test -e /etc/mahout/conf.backup',
@@ -202,12 +203,12 @@ class TestHookAfterInstall(RMFTestCase):
         to = '/usr/hdp/current/flume-server/conf',)
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/sqoop/conf', '/etc/sqoop/conf.backup'),
-        not_if = 'test -e /etc/sqoop/conf.backup',
-        sudo = True)
+                              not_if = 'test -e /etc/sqoop/conf.backup',
+                              sudo = True)
     self.assertResourceCalled('Directory', '/etc/sqoop/conf',
-        action = ['delete'])
+                              action = ['delete'])
     self.assertResourceCalled('Link', '/etc/sqoop/conf',
-        to = '/usr/hdp/current/sqoop-client/conf')
+                              to = '/usr/hdp/current/sqoop-client/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/accumulo/conf', '/etc/accumulo/conf.backup'),
         not_if = 'test -e /etc/accumulo/conf.backup',
@@ -257,22 +258,21 @@ class TestHookAfterInstall(RMFTestCase):
     self.assertResourceCalled('Link', '/etc/falcon/conf',
         to = '/usr/hdp/current/falcon-client/conf')
 
-
-    self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/spark/conf', '/etc/spark/conf.backup'),
-        not_if = 'test -e /etc/spark/conf.backup',
-        sudo = True)
-    self.assertResourceCalled('Directory', '/etc/spark/conf',
-        action = ['delete'])
-    self.assertResourceCalled('Link', '/etc/spark/conf',
-        to = '/usr/hdp/current/spark-client/conf')
+    self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/knox/conf', '/etc/knox/conf.backup'),
+                              not_if = 'test -e /etc/knox/conf.backup',
+                              sudo = True)
+    self.assertResourceCalled('Directory', '/etc/knox/conf',
+                              action = ['delete'])
+    self.assertResourceCalled('Link', '/etc/knox/conf',
+                              to = '/usr/hdp/current/knox-server/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/kafka/conf', '/etc/kafka/conf.backup'),
-        not_if = 'test -e /etc/kafka/conf.backup',
-        sudo = True)
+                              not_if = 'test -e /etc/kafka/conf.backup',
+                              sudo = True)
     self.assertResourceCalled('Directory', '/etc/kafka/conf',
-        action = ['delete'])
+                              action = ['delete'])
     self.assertResourceCalled('Link', '/etc/kafka/conf',
-        to = '/usr/hdp/current/kafka-broker/conf')
+                              to = '/usr/hdp/current/kafka-broker/conf') 
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/hive/conf', '/etc/hive/conf.backup'),
         not_if = 'test -e /etc/hive/conf.backup',
@@ -281,6 +281,14 @@ class TestHookAfterInstall(RMFTestCase):
         action = ['delete'])
     self.assertResourceCalled('Link', '/etc/hive/conf',
         to = '/usr/hdp/current/hive-client/conf')
+
+    self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/spark/conf', '/etc/spark/conf.backup'),
+        not_if = 'test -e /etc/spark/conf.backup',
+        sudo = True)
+    self.assertResourceCalled('Directory', '/etc/spark/conf',
+        action = ['delete'])
+    self.assertResourceCalled('Link', '/etc/spark/conf',
+        to = '/usr/hdp/current/spark-client/conf')
 
     self.assertNoMoreResources()
 
@@ -346,14 +354,12 @@ class TestHookAfterInstall(RMFTestCase):
                               to = '/usr/hdp/current/hive-server2-hive2/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/zookeeper/conf', '/etc/zookeeper/conf.backup'),
-        not_if = 'test -e /etc/zookeeper/conf.backup',
-        sudo = True)
-
+                              not_if = 'test -e /etc/zookeeper/conf.backup',
+                              sudo = True)
     self.assertResourceCalled('Directory', '/etc/zookeeper/conf',
-        action = ['delete'])
-
+                              action = ['delete'])
     self.assertResourceCalled('Link', '/etc/zookeeper/conf',
-        to = '/usr/hdp/current/zookeeper-client/conf')
+                              to = '/usr/hdp/current/zookeeper-client/conf')    
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/pig/conf', '/etc/pig/conf.backup'),
         not_if = 'test -e /etc/pig/conf.backup',
@@ -407,25 +413,25 @@ class TestHookAfterInstall(RMFTestCase):
     self.assertResourceCalled('Link', '/etc/hbase/conf',
         to = '/usr/hdp/current/hbase-client/conf')
 
-    self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/knox/conf', '/etc/knox/conf.backup'),
-        not_if = 'test -e /etc/knox/conf.backup',
-        sudo = True)
+    self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/ranger/tagsync/conf', '/etc/ranger/tagsync/conf.backup'),
+                              not_if = 'test -e /etc/ranger/tagsync/conf.backup',
+                              sudo = True,)
 
-    self.assertResourceCalled('Directory', '/etc/knox/conf',
-        action = ['delete'])
+    self.assertResourceCalled('Directory', '/etc/ranger/tagsync/conf',
+                              action = ['delete'],)
 
-    self.assertResourceCalled('Link', '/etc/knox/conf',
-        to = '/usr/hdp/current/knox-server/conf')
+    self.assertResourceCalled('Link', '/etc/ranger/tagsync/conf',
+                              to = '/usr/hdp/current/ranger-tagsync/conf',)
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/ranger/usersync/conf', '/etc/ranger/usersync/conf.backup'),
-        not_if = 'test -e /etc/ranger/usersync/conf.backup',
-        sudo = True)
+                              not_if = 'test -e /etc/ranger/usersync/conf.backup',
+                              sudo = True)
 
     self.assertResourceCalled('Directory', '/etc/ranger/usersync/conf',
-        action = ['delete'])
+                              action = ['delete'])
 
     self.assertResourceCalled('Link', '/etc/ranger/usersync/conf',
-        to = '/usr/hdp/current/ranger-usersync/conf')
+                              to = '/usr/hdp/current/ranger-usersync/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/hadoop/conf', '/etc/hadoop/conf.backup'),
         not_if = 'test -e /etc/hadoop/conf.backup',
@@ -478,14 +484,12 @@ class TestHookAfterInstall(RMFTestCase):
         to = '/usr/hdp/current/flume-server/conf',)
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/sqoop/conf', '/etc/sqoop/conf.backup'),
-        not_if = 'test -e /etc/sqoop/conf.backup',
-        sudo = True)
-
+                              not_if = 'test -e /etc/sqoop/conf.backup',
+                              sudo = True)
     self.assertResourceCalled('Directory', '/etc/sqoop/conf',
-        action = ['delete'])
-
+                            action = ['delete'])
     self.assertResourceCalled('Link', '/etc/sqoop/conf',
-        to = '/usr/hdp/current/sqoop-client/conf')
+                            to = '/usr/hdp/current/sqoop-client/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/accumulo/conf', '/etc/accumulo/conf.backup'),
         not_if = 'test -e /etc/accumulo/conf.backup',
@@ -546,25 +550,23 @@ class TestHookAfterInstall(RMFTestCase):
     self.assertResourceCalled('Link', '/etc/falcon/conf',
         to = '/usr/hdp/current/falcon-client/conf')
 
-    self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/spark/conf', '/etc/spark/conf.backup'),
-        not_if = 'test -e /etc/spark/conf.backup',
-        sudo = True)
-
-    self.assertResourceCalled('Directory', '/etc/spark/conf',
-        action = ['delete'])
-
-    self.assertResourceCalled('Link', '/etc/spark/conf',
-        to = '/usr/hdp/current/spark-client/conf')
+    self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/knox/conf', '/etc/knox/conf.backup'),
+                              not_if = 'test -e /etc/knox/conf.backup',
+                              sudo = True)
+    self.assertResourceCalled('Directory', '/etc/knox/conf',
+                              action = ['delete'])
+    self.assertResourceCalled('Link', '/etc/knox/conf',
+                              to = '/usr/hdp/current/knox-server/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/kafka/conf', '/etc/kafka/conf.backup'),
-        not_if = 'test -e /etc/kafka/conf.backup',
-        sudo = True)
+                              not_if = 'test -e /etc/kafka/conf.backup',
+                              sudo = True)
 
     self.assertResourceCalled('Directory', '/etc/kafka/conf',
-        action = ['delete'])
+                              action = ['delete'])
 
     self.assertResourceCalled('Link', '/etc/kafka/conf',
-        to = '/usr/hdp/current/kafka-broker/conf')
+                              to = '/usr/hdp/current/kafka-broker/conf')
 
     self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/hive/conf', '/etc/hive/conf.backup'),
         not_if = 'test -e /etc/hive/conf.backup',
@@ -576,6 +578,16 @@ class TestHookAfterInstall(RMFTestCase):
     self.assertResourceCalled('Link', '/etc/hive/conf',
         to = '/usr/hdp/current/hive-client/conf')
 
+    self.assertResourceCalled('Execute', ('cp', '-R', '-p', '/etc/spark/conf', '/etc/spark/conf.backup'),
+        not_if = 'test -e /etc/spark/conf.backup',
+        sudo = True)
+
+    self.assertResourceCalled('Directory', '/etc/spark/conf',
+        action = ['delete'])
+
+    self.assertResourceCalled('Link', '/etc/spark/conf',
+        to = '/usr/hdp/current/spark-client/conf')
+
     self.assertNoMoreResources()
 
 
@@ -586,7 +598,7 @@ class TestHookAfterInstall(RMFTestCase):
   @patch("shutil.rmtree")
   def test_hook_default_stack_select_specific_version(self, rmtree_mock, symlink_mock, conf_select_select_mock, conf_select_create_mock):
     """
-    Tests that hdp-select set all on a specific version, not a 2.3* wildcard is used when
+    Tests that <stack-selector-tool> set all on a specific version, not a 2.3* wildcard is used when
     installing a component when the cluster version is already set.
 
     :param rmtree_mock:

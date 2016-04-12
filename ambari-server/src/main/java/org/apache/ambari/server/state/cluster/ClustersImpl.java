@@ -18,10 +18,20 @@
 
 package org.apache.ambari.server.state.cluster;
 
-import com.google.common.collect.Sets;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+import javax.persistence.RollbackException;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ClusterNotFoundException;
 import org.apache.ambari.server.DuplicateResourceException;
@@ -45,6 +55,7 @@ import org.apache.ambari.server.orm.dao.RequestOperationLevelDAO;
 import org.apache.ambari.server.orm.dao.ResourceTypeDAO;
 import org.apache.ambari.server.orm.dao.ServiceConfigDAO;
 import org.apache.ambari.server.orm.dao.StackDAO;
+import org.apache.ambari.server.orm.dao.TopologyHostInfoDAO;
 import org.apache.ambari.server.orm.dao.TopologyHostRequestDAO;
 import org.apache.ambari.server.orm.dao.TopologyLogicalTaskDAO;
 import org.apache.ambari.server.orm.dao.TopologyRequestDAO;
@@ -81,18 +92,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.GrantedAuthority;
 
-import javax.persistence.RollbackException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import com.google.common.collect.Sets;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+import com.google.inject.persist.Transactional;
 
 @Singleton
 public class ClustersImpl implements Clusters {
@@ -151,6 +154,8 @@ public class ClustersImpl implements Clusters {
   private TopologyHostRequestDAO topologyHostRequestDAO;
   @Inject
   private TopologyRequestDAO topologyRequestDAO;
+  @Inject
+  private TopologyHostInfoDAO topologyHostInfoDAO;
 
   /**
    * Data access object for stacks.
@@ -375,6 +380,23 @@ public class ClustersImpl implements Clusters {
     return hosts.containsKey(hostname);
   }
 
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public boolean isHostMappedToCluster(String clusterName, String hostName) {
+    checkLoaded();
+
+    Set<Cluster> clusters = hostClusterMap.get(hostName);
+    for (Cluster cluster : clusters) {
+      if (clusterName.equals(cluster.getClusterName())) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   @Override
   public Host getHostById(Long hostId) throws AmbariException {
     checkLoaded();
@@ -556,7 +578,7 @@ public class ClustersImpl implements Clusters {
           + " support host's os type" + ", clusterName=" + clusterName
           + ", clusterStackId=" + cluster.getDesiredStackVersion().getStackId()
           + ", hostname=" + hostname + ", hostOsFamily=" + host.getOsFamily();
-      LOG.warn(message);
+      LOG.error(message);
       throw new AmbariException(message);
     }
 
@@ -818,6 +840,10 @@ public class ClustersImpl implements Clusters {
     // a copy of this to ensure that we can pass in the original set of
     // clusters that the host belonged to to the host removal event
     Set<Cluster> clusters = hostClusterMap.get(hostname);
+    if (clusters == null) {
+      throw new HostNotFoundException(hostname);
+    }
+
     Set<Cluster> hostsClusters = new HashSet<>(clusters);
 
     deleteHostEntityRelationships(hostname);
@@ -857,8 +883,9 @@ public class ClustersImpl implements Clusters {
       // This will also remove from kerberos_principal_hosts, hostconfigmapping, and configgrouphostmapping
       Set<Cluster> clusters = hostClusterMap.get(hostname);
       Set<Long> clusterIds = Sets.newHashSet();
-      for (Cluster cluster: clusters)
+      for (Cluster cluster: clusters) {
         clusterIds.add(cluster.getClusterId());
+      }
 
 
 
@@ -900,6 +927,7 @@ public class ClustersImpl implements Clusters {
       hostConfigMappingDAO.removeByHostId(entity.getHostId());
       serviceConfigDAO.removeHostFromServiceConfigs(entity.getHostId());
       requestOperationLevelDAO.removeByHostId(entity.getHostId());
+      topologyHostInfoDAO.removeByHost(entity);
 
       // Remove from dictionaries
       hosts.remove(hostname);

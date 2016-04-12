@@ -544,8 +544,8 @@ App.UpdateController = Em.Controller.extend({
   updateAlertDefinitions: function (callback) {
     var testUrl = '/data/alerts/alertDefinitions.json';
     var realUrl = '/alert_definitions?fields=' +
-      'AlertDefinition/component_name,AlertDefinition/description,AlertDefinition/enabled,AlertDefinition/id,' +
-      'AlertDefinition/ignore_host,AlertDefinition/interval,AlertDefinition/label,AlertDefinition/name,' +
+      'AlertDefinition/component_name,AlertDefinition/description,AlertDefinition/enabled,AlertDefinition/repeat_tolerance,AlertDefinition/repeat_tolerance_enabled,' +
+      'AlertDefinition/id,AlertDefinition/ignore_host,AlertDefinition/interval,AlertDefinition/label,AlertDefinition/name,' +
       'AlertDefinition/scope,AlertDefinition/service_name,AlertDefinition/source';
     var url = this.getUrl(testUrl, realUrl);
 
@@ -560,7 +560,7 @@ App.UpdateController = Em.Controller.extend({
     var realUrl = '/alerts?fields=' +
       'Alert/component_name,Alert/definition_id,Alert/definition_name,Alert/host_name,Alert/id,Alert/instance,' +
       'Alert/label,Alert/latest_timestamp,Alert/maintenance_state,Alert/original_timestamp,Alert/scope,' +
-      'Alert/service_name,Alert/state,Alert/text' +
+      'Alert/service_name,Alert/state,Alert/text,Alert/repeat_tolerance,Alert/repeat_tolerance_remaining' +
       '&Alert/state.in(CRITICAL,WARNING)&Alert/maintenance_state.in(OFF)&from=' + queryParams.from + '&page_size=' + queryParams.page_size;
     var url = this.getUrl(testUrl, realUrl);
 

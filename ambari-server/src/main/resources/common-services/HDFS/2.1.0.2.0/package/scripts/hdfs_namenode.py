@@ -41,6 +41,7 @@ from resource_management.core.logger import Logger
 from utils import service, safe_zkfc_op, is_previous_fs_image
 from setup_ranger_hdfs import setup_ranger_hdfs, create_ranger_audit_hdfs_directories
 
+import namenode_upgrade
 
 def wait_for_safemode_off(hdfs_binary, afterwait_sleep=0, execute_kinit=False):
   """
@@ -77,7 +78,9 @@ def wait_for_safemode_off(hdfs_binary, afterwait_sleep=0, execute_kinit=False):
     Logger.error("NameNode is still in safemode, please be careful with commands that need safemode OFF.")
 
 @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
-def namenode(action=None, hdfs_binary=None, do_format=True, upgrade_type=None, env=None):
+def namenode(action=None, hdfs_binary=None, do_format=True, upgrade_type=None,
+    upgrade_suspended=False, env=None):
+
   if action is None:
     raise Fail('"action" parameter is required for function namenode().')
 
@@ -125,17 +128,23 @@ def namenode(action=None, hdfs_binary=None, do_format=True, upgrade_type=None, e
         options = "-rollingUpgrade started"
       elif params.upgrade_direction == Direction.DOWNGRADE:
         options = "-rollingUpgrade downgrade"
-        
     elif upgrade_type == "nonrolling":
       is_previous_image_dir = is_previous_fs_image()
-      Logger.info(format("Previous file system image dir present is {is_previous_image_dir}"))
+      Logger.info("Previous file system image dir present is {0}".format(str(is_previous_image_dir)))
 
       if params.upgrade_direction == Direction.UPGRADE:
         options = "-rollingUpgrade started"
       elif params.upgrade_direction == Direction.DOWNGRADE:
         options = "-rollingUpgrade downgrade"
+    elif upgrade_type is None and upgrade_suspended is True:
+      # the rollingUpgrade flag must be passed in during a suspended upgrade when starting NN
+      if os.path.exists(namenode_upgrade.get_upgrade_in_progress_marker()):
+        options = "-rollingUpgrade started"
+      else:
+        Logger.info("The NameNode upgrade marker file {0} does not exist, yet an upgrade is currently suspended. "
+                    "Assuming that the upgrade of NameNode has not occurred yet.".format(namenode_upgrade.get_upgrade_in_progress_marker()))
 
-    Logger.info(format("Option for start command: {options}"))
+    Logger.info("Options for start command are: {0}".format(options))
 
     service(
       action="start",
@@ -216,7 +225,9 @@ def namenode(action=None, hdfs_binary=None, do_format=True, upgrade_type=None, e
     decommission()
 
 @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
-def namenode(action=None, hdfs_binary=None, do_format=True, upgrade_type=None, env=None):
+def namenode(action=None, hdfs_binary=None, do_format=True, upgrade_type=None,
+    upgrade_suspended=False, env=None):
+
   if action is None:
     raise Fail('"action" parameter is required for function namenode().')
 
@@ -312,11 +323,20 @@ def format_namenode(force=None):
                       bin_dir=params.hadoop_bin_dir,
                       conf_dir=hadoop_conf_dir)
       else:
+        nn_name_dirs = params.dfs_name_dir.split(',')
         if not is_namenode_formatted(params):
-          Execute(format("yes Y | hdfs --config {hadoop_conf_dir} namenode -format"),
-                  user = params.hdfs_user,
-                  path = [params.hadoop_bin_dir]
-          )
+          try:
+            Execute(format("yes Y | hdfs --config {hadoop_conf_dir} namenode -format"),
+                    user = params.hdfs_user,
+                    path = [params.hadoop_bin_dir]
+            )
+          except Fail:
+            # We need to clean-up mark directories, so we can re-run format next time.
+            for nn_name_dir in nn_name_dirs:
+              Execute(format("rm -rf {nn_name_dir}/*"),
+                      user = params.hdfs_user,
+              )
+            raise
           for m_dir in mark_dir:
             Directory(m_dir,
               create_parents = True
@@ -331,7 +351,7 @@ def is_namenode_formatted(params):
   for mark_dir in mark_dirs:
     if os.path.isdir(mark_dir):
       marked = True
-      print format("{mark_dir} exists. Namenode DFS already formatted")
+      Logger.info(format("{mark_dir} exists. Namenode DFS already formatted"))
     
   # Ensure that all mark dirs created for all name directories
   if marked:
@@ -368,9 +388,9 @@ def is_namenode_formatted(params):
       Execute(format("ls {name_dir} | wc -l  | grep -q ^0$"),
       )
       marked = False
-    except Exception:
+    except Fail:
       marked = True
-      print format("ERROR: Namenode directory(s) is non empty. Will not format the namenode. List of non-empty namenode dirs {nn_name_dirs}")
+      Logger.info(format("ERROR: Namenode directory(s) is non empty. Will not format the namenode. List of non-empty namenode dirs {nn_name_dirs}"))
       break
        
   return marked

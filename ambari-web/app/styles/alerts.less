@@ -43,9 +43,10 @@
 
 .alert-state-single-host {
   display: inline-block;
-  width: 70px;
+  width: 115px;
   text-align: center;
   line-height: 20px;
+  margin-bottom: 4px;
 }
 
 .groups-filter {
@@ -655,7 +656,10 @@
   }
 }
 /*****end styles for alert popup*****/
-.enable-disable-button::before {
-  font-family: FontAwesome;
-  content: "\f011";
+.enable-disable-button,
+.repeat-tolerance-button {
+  &::before {
+    font-family: FontAwesome;
+    content: "\f011";
+  }
 }

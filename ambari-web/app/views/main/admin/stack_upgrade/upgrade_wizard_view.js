@@ -27,12 +27,12 @@ App.upgradeWizardView = Em.View.extend({
   /**
    * @type {Array}
    */
-  failedStatuses: ['HOLDING_FAILED', 'HOLDING_TIMEDOUT', 'FAILED', 'TIMED_OUT'],
+  failedStatuses: ['HOLDING_FAILED', 'HOLDING_TIMEDOUT', 'FAILED', 'TIMED_OUT', 'ABORTED'],
 
   /**
    * @type {Array}
    */
-  activeStatuses: ['HOLDING_FAILED', 'HOLDING_TIMEDOUT', 'FAILED', 'TIMED_OUT', 'HOLDING', 'IN_PROGRESS'],
+  activeStatuses: ['HOLDING_FAILED', 'HOLDING_TIMEDOUT', 'FAILED', 'TIMED_OUT', 'HOLDING', 'IN_PROGRESS', 'ABORTED'],
 
   /**
    * update timer
@@ -91,6 +91,7 @@ App.upgradeWizardView = Em.View.extend({
    * @type {object|undefined}
    */
   activeGroup: function () {
+    if (App.get('upgradeSuspended')) return;
     return this.get('upgradeGroups').find(function (item) {
       return this.get('activeStatuses').contains(item.get('status'));
     }, this);
@@ -142,7 +143,8 @@ App.upgradeWizardView = Em.View.extend({
    * @type {boolean}
    */
   isHoldingState: function () {
-    return Boolean(this.get('failedItem.status') && this.get('failedItem.status').contains('HOLDING'));
+    return Boolean(this.get('failedItem.status') &&
+                  this.get('failedItem.status').contains('HOLDING') || this.get('failedItem.status') === 'ABORTED');
   }.property('failedItem.status'),
 
   /**
@@ -413,8 +415,44 @@ App.upgradeWizardView = Em.View.extend({
   },
 
   pauseUpgrade: function() {
-    this.get('controller').suspendUpgrade();
-    this.get('parentView').closeWizard();
+    var self = this;
+    this.get('controller').suspendUpgrade().done(function() {
+      self.get('parentView').closeWizard();
+    });
+  },
+
+  /**
+   * pause upgrade confirmation popup
+   * @param {object} event
+   */
+  confirmPauseUpgrade: function () {
+    var self = this;
+    return App.showConfirmationPopup(
+        function() {
+          self.pauseUpgrade();
+        },
+        Em.I18n.t('admin.stackUpgrade.pauseUpgrade.warning').format("upgrade"),
+        null,
+        Em.I18n.t('common.warning'),
+        Em.I18n.t('admin.stackUpgrade.pauseUpgrade')
+    );
+  },
+
+  /**
+   * pause downgrade confirmation popup
+   * @param {object} event
+   */
+  confirmPauseDowngrade: function () {
+    var self = this;
+    return App.showConfirmationPopup(
+        function() {
+          self.pauseUpgrade();
+        },
+        Em.I18n.t('admin.stackUpgrade.pauseUpgrade.warning').format("downgrade"),
+        null,
+        Em.I18n.t('common.warning'),
+        Em.I18n.t('admin.stackUpgrade.pauseDowngrade')
+    );
   },
 
   /**

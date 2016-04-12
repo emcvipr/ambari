@@ -21,10 +21,13 @@ from resource_management.libraries.functions.version import format_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions.get_kinit_path import get_kinit_path
 from resource_management.libraries.script import Script
+from resource_management.libraries.functions.format import format
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
 import os
 
 # a map of the Ambari role to the component name
-# for use with /usr/hdp/current/<component>
+# for use with <stack-root>/current/<component>
 SERVER_ROLE_DIRECTORY_MAP = {
   'SQOOP' : 'sqoop-client'
 }
@@ -32,6 +35,7 @@ SERVER_ROLE_DIRECTORY_MAP = {
 component_directory = Script.get_component_from_role(SERVER_ROLE_DIRECTORY_MAP, "SQOOP")
 
 config = Script.get_config()
+stack_root = Script.get_stack_root()
 
 cluster_name = config['clusterName']
 
@@ -39,7 +43,7 @@ ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 
 stack_name = default("/hostLevelParams/stack_name", None)
 
-stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
+stack_version_unformatted = config['hostLevelParams']['stack_version']
 stack_version_formatted = format_stack_version(stack_version_unformatted)
 
 # New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade
@@ -54,15 +58,15 @@ hive_home = "/usr/lib/hive"
 sqoop_bin_dir = "/usr/bin"
 zoo_conf_dir = "/etc/zookeeper"
 
-# HDP 2.2+ params
-if Script.is_stack_greater_or_equal("2.2"):
-  sqoop_conf_dir = '/usr/hdp/current/sqoop-client/conf'
-  sqoop_lib = '/usr/hdp/current/sqoop-client/lib'
-  hadoop_home = '/usr/hdp/current/hbase-client'
-  hbase_home = '/usr/hdp/current/hbase-client'
-  hive_home = '/usr/hdp/current/hive-client'
-  sqoop_bin_dir = '/usr/hdp/current/sqoop-client/bin/'
-  zoo_conf_dir = "/usr/hdp/current/zookeeper-client/conf"
+# For stack versions supporting rolling upgrade
+if stack_version_formatted and check_stack_feature(StackFeature.ROLLING_UPGRADE, stack_version_formatted):
+  sqoop_conf_dir = format("{stack_root}/current/sqoop-client/conf")
+  sqoop_lib = format("{stack_root}/current/sqoop-client/lib")
+  hadoop_home = format("{stack_root}/current/hbase-client")
+  hbase_home = format("{stack_root}/current/hbase-client")
+  hive_home = format("{stack_root}/current/hive-client")
+  sqoop_bin_dir = format("{stack_root}/current/sqoop-client/bin/")
+  zoo_conf_dir = format("{stack_root}/current/zookeeper-client/conf")
 
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 smokeuser = config['configurations']['cluster-env']['smokeuser']
@@ -114,6 +118,7 @@ atlas_hosts = default('/clusterHostInfo/atlas_server_hosts', [])
 has_atlas = len(atlas_hosts) > 0
 
 if has_atlas:
-  atlas_home_dir = os.environ['METADATA_HOME_DIR'] if 'METADATA_HOME_DIR' in os.environ else '/usr/hdp/current/atlas-server'
+  atlas_conf_file = config['configurations']['atlas-env']['metadata_conf_file']
+  atlas_home_dir = os.environ['METADATA_HOME_DIR'] if 'METADATA_HOME_DIR' in os.environ else format("{stack_root}/current/atlas-server")
   atlas_conf_dir = os.environ['METADATA_CONF'] if 'METADATA_CONF' in os.environ else '/etc/atlas/conf'
   job_data_publish_class = 'org.apache.atlas.sqoop.hook.SqoopHook'

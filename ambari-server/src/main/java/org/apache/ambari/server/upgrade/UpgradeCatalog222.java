@@ -18,15 +18,21 @@
 
 package org.apache.ambari.server.upgrade;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.google.gson.reflect.TypeToken;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
+import java.io.File;
+import java.io.FileReader;
+import java.lang.reflect.Type;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.controller.AmbariManagementController;
+import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
 import org.apache.ambari.server.orm.dao.DaoUtils;
 import org.apache.ambari.server.orm.dao.WidgetDAO;
@@ -35,6 +41,7 @@ import org.apache.ambari.server.orm.entities.WidgetEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
+import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponentHost;
 import org.apache.ambari.server.state.ServiceInfo;
 import org.apache.ambari.server.state.StackId;
@@ -45,13 +52,13 @@ import org.apache.ambari.server.utils.VersionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.FileReader;
-import java.lang.reflect.Type;
-import java.sql.SQLException;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import com.google.common.reflect.TypeToken;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
+
 
 /**
  * Upgrade catalog for version 2.2.2.
@@ -66,6 +73,7 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
    */
   private static final Logger LOG = LoggerFactory.getLogger(UpgradeCatalog222.class);
   private static final String AMS_SITE = "ams-site";
+  private static final String AMS_HBASE_SITE = "ams-hbase-site";
   private static final String HIVE_SITE_CONFIG = "hive-site";
   private static final String ATLAS_APPLICATION_PROPERTIES_CONFIG = "application-properties";
   private static final String ATLAS_HOOK_HIVE_MINTHREADS_PROPERTY = "atlas.hook.hive.minThreads";
@@ -76,18 +84,28 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
   private static final String ATLAS_SERVER_HTTPS_PORT_PROPERTY = "atlas.server.https.port";
   private static final String ATLAS_REST_ADDRESS_PROPERTY = "atlas.rest.address";
 
-  private static final String HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER =
-    "timeline.metrics.host.aggregator.daily.checkpointCutOffMultiplier";
-  private static final String CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER =
-    "timeline.metrics.cluster.aggregator.daily.checkpointCutOffMultiplier";
-  private static final String TIMELINE_METRICS_SERVICE_WATCHER_DISBALED = "timeline.metrics.service.watcher.disabled";
-  private static final String AMS_MODE = "timeline.metrics.service.operation.mode";
-  public static final String PRECISION_TABLE_TTL = "timeline.metrics.host.aggregator.ttl";
-  public static final String CLUSTER_SECOND_TABLE_TTL = "timeline.metrics.cluster.aggregator.second.ttl";
-  public static final String CLUSTER_MINUTE_TABLE_TTL = "timeline.metrics.cluster.aggregator.minute.ttl";
+  private static final String UPGRADE_TABLE = "upgrade";
+  private static final String UPGRADE_SUSPENDED_COLUMN = "suspended";
 
-  private static final String[] HDFS_WIDGETS_TO_UPDATE = new String[] {
-    "NameNode RPC", "NN Connection Load" };
+  private static final String HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER_PROPERTY =
+    "timeline.metrics.host.aggregator.daily.checkpointCutOffMultiplier";
+  private static final String CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER_PROPERTY =
+    "timeline.metrics.cluster.aggregator.daily.checkpointCutOffMultiplier";
+  private static final String TIMELINE_METRICS_SERVICE_WATCHER_DISBALED_PROPERTY = "timeline.metrics.service.watcher.disabled";
+  private static final String AMS_MODE_PROPERTY = "timeline.metrics.service.operation.mode";
+  public static final String PRECISION_TABLE_TTL_PROPERTY = "timeline.metrics.host.aggregator.ttl";
+  public static final String CLUSTER_SECOND_TABLE_TTL_PROPERTY = "timeline.metrics.cluster.aggregator.second.ttl";
+  public static final String CLUSTER_MINUTE_TABLE_TTL_PROPERTY = "timeline.metrics.cluster.aggregator.minute.ttl";
+  public static final String AMS_WEBAPP_ADDRESS_PROPERTY = "timeline.metrics.service.webapp.address";
+  public static final String HBASE_CLIENT_SCANNER_TIMEOUT_PERIOD_PROPERTY = "hbase.client.scanner.timeout.period";
+  public static final String HBASE_RPC_TIMEOUT_PROPERTY = "hbase.rpc.timeout";
+  public static final String PHOENIX_QUERY_TIMEOUT_PROPERTY = "phoenix.query.timeoutMs";
+  public static final String PHOENIX_QUERY_KEEPALIVE_PROPERTY = "phoenix.query.keepAliveMs";
+  public static final String TIMELINE_METRICS_CLUSTER_AGGREGATOR_INTERPOLATION_ENABLED
+    = "timeline.metrics.cluster.aggregator.interpolation.enabled";
+
+  public static final String AMS_SERVICE_NAME = "AMBARI_METRICS";
+  public static final String AMS_COLLECTOR_COMPONENT_NAME = "METRICS_COLLECTOR";
 
   protected static final String WIDGET_TABLE = "widget";
   protected static final String WIDGET_DESCRIPTION = "description";
@@ -139,7 +157,12 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
 
   @Override
   protected void executeDDLUpdates() throws AmbariException, SQLException {
-    //To change body of implemented methods use File | Settings | File Templates.
+    DBAccessor.DBColumnInfo columnInfo = new DBAccessor.DBColumnInfo("host_id", Long.class);
+    dbAccessor.addColumn("topology_host_info", columnInfo);
+    dbAccessor.addFKConstraint("topology_host_info", "FK_hostinfo_host_id", "host_id", "hosts", "host_id", true);
+    dbAccessor.executeUpdate("update topology_host_info set host_id = (select hosts.host_id from hosts where hosts.host_name = topology_host_info.fqdn)");
+
+    updateUpgradeTable();
   }
 
   @Override
@@ -156,7 +179,50 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
     updateHiveConfig();
     updateHostRoleCommands();
     updateHDFSWidgetDefinition();
+    updateYARNWidgetDefinition();
+    updateHBASEWidgetDefinition();
     updateCorruptedReplicaWidget();
+    updateZookeeperConfigs();
+    createNewSliderConfigVersion();
+    initializeStromAndKafkaWidgets();
+  }
+
+  protected void createNewSliderConfigVersion() {
+    // Here we are creating new service config version for SLIDER, to link slider-client
+    // config to SLIDER service, in serviceconfigmapping table. It could be not mapped because
+    // of bug which we had a long time ago.
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    Map<String, Cluster> clusterMap = getCheckedClusterMap(ambariManagementController.getClusters());
+
+    for (final Cluster cluster : clusterMap.values()) {
+      Service sliderService = null;
+      try {
+        sliderService = cluster.getService("SLIDER");
+      } catch(AmbariException ambariException) {
+        LOG.info("SLIDER service not found in cluster while creating new serviceconfig version for SLIDER service.");
+      }
+      if (sliderService != null) {
+        cluster.createServiceConfigVersion("SLIDER", AUTHENTICATED_USER_NAME, "Creating new service config version for SLIDER service.", null);
+      }
+    }
+  }
+
+  protected void updateZookeeperConfigs() throws  AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    Map<String, Cluster> clusterMap = getCheckedClusterMap(ambariManagementController.getClusters());
+
+    for (final Cluster cluster : clusterMap.values()) {
+      Config zooEnv = cluster.getDesiredConfigByType("zookeeper-env");
+      if (zooEnv != null && zooEnv.getProperties().containsKey("zk_server_heapsize")) {
+        String heapSizeValue = zooEnv.getProperties().get("zk_server_heapsize");
+        if(!heapSizeValue.endsWith("m")) {
+          Map<String, String> updates = new HashMap<String, String>();
+          updates.put("zk_server_heapsize", heapSizeValue+"m");
+          updateConfigurationPropertiesForCluster(cluster, "zookeeper-env", updates, true, false);
+        }
+
+      }
+    }
   }
 
   protected void updateStormConfigs() throws  AmbariException {
@@ -229,8 +295,8 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
 
   }
 
-  protected void updateHostRoleCommands() throws SQLException{
-    dbAccessor.createIndex("idx_hrc_status", "host_role_command", "status", "role");
+  protected void updateHostRoleCommands() throws SQLException {
+    dbAccessor.createIndex("idx_hrc_status_role", "host_role_command", "status", "role");
   }
 
   protected void updateAMSConfigs() throws AmbariException {
@@ -248,69 +314,112 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
             Map<String, String> amsSiteProperties = amsSite.getProperties();
             Map<String, String> newProperties = new HashMap<>();
 
-            if (amsSiteProperties.containsKey(HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER) &&
-              amsSiteProperties.get(HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER).equals("1")) {
+            if (amsSiteProperties.containsKey(AMS_WEBAPP_ADDRESS_PROPERTY)) {
+              Set<String> collectorHostNames = cluster.getHosts(AMS_SERVICE_NAME, AMS_COLLECTOR_COMPONENT_NAME);
+              for (String collector: collectorHostNames) {
+                String currentValue = amsSiteProperties.get(AMS_WEBAPP_ADDRESS_PROPERTY);
 
-              LOG.info("Setting value of " + HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER + " : 2");
-              newProperties.put(HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER, String.valueOf(2));
+                if (currentValue.startsWith("0.0.0.0")) {
+                  newProperties.put(AMS_WEBAPP_ADDRESS_PROPERTY, currentValue.replace("0.0.0.0", collector));
+                } else if (currentValue.startsWith("localhost")) {
+                  newProperties.put(AMS_WEBAPP_ADDRESS_PROPERTY, currentValue.replace("localhost", collector));
+                }
+              }
+            }
+
+            if (amsSiteProperties.containsKey(HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER_PROPERTY) &&
+              amsSiteProperties.get(HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER_PROPERTY).equals("1")) {
+
+              LOG.info("Setting value of " + HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER_PROPERTY + " : 2");
+              newProperties.put(HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER_PROPERTY, String.valueOf(2));
 
             }
 
-            if (amsSiteProperties.containsKey(CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER) &&
-              amsSiteProperties.get(CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER).equals("1")) {
+            if (amsSiteProperties.containsKey(CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER_PROPERTY) &&
+              amsSiteProperties.get(CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER_PROPERTY).equals("1")) {
 
-              LOG.info("Setting value of " + CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER + " : 2");
-              newProperties.put(CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER, String.valueOf(2));
+              LOG.info("Setting value of " + CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER_PROPERTY + " : 2");
+              newProperties.put(CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER_PROPERTY, String.valueOf(2));
 
             }
 
-            if (!amsSiteProperties.containsKey(TIMELINE_METRICS_SERVICE_WATCHER_DISBALED)) {
-              LOG.info("Add config  " + TIMELINE_METRICS_SERVICE_WATCHER_DISBALED + " = false");
-              newProperties.put(TIMELINE_METRICS_SERVICE_WATCHER_DISBALED, String.valueOf(false));
+            if (!amsSiteProperties.containsKey(TIMELINE_METRICS_SERVICE_WATCHER_DISBALED_PROPERTY)) {
+              LOG.info("Add config  " + TIMELINE_METRICS_SERVICE_WATCHER_DISBALED_PROPERTY + " = false");
+              newProperties.put(TIMELINE_METRICS_SERVICE_WATCHER_DISBALED_PROPERTY, String.valueOf(false));
             }
 
             boolean isDistributed = false;
-            if ("distributed".equals(amsSite.getProperties().get(AMS_MODE))) {
+            if ("distributed".equals(amsSite.getProperties().get(AMS_MODE_PROPERTY))) {
               isDistributed = true;
             }
 
-            if (amsSiteProperties.containsKey(PRECISION_TABLE_TTL)) {
-              String oldTtl = amsSiteProperties.get(PRECISION_TABLE_TTL);
+            if (amsSiteProperties.containsKey(PRECISION_TABLE_TTL_PROPERTY)) {
+              String oldTtl = amsSiteProperties.get(PRECISION_TABLE_TTL_PROPERTY);
               String newTtl = oldTtl;
               if (isDistributed) {
                 if ("86400".equals(oldTtl)) {
-                  newTtl = String.valueOf(7 * 86400); // 7 days
+                  newTtl = String.valueOf(3 * 86400); // 3 days
                 }
               }
-              newProperties.put(PRECISION_TABLE_TTL, newTtl);
-              LOG.info("Setting value of " + PRECISION_TABLE_TTL + " : " + newTtl);
+              newProperties.put(PRECISION_TABLE_TTL_PROPERTY, newTtl);
+              LOG.info("Setting value of " + PRECISION_TABLE_TTL_PROPERTY + " : " + newTtl);
             }
 
-            if (amsSiteProperties.containsKey(CLUSTER_SECOND_TABLE_TTL)) {
-              String oldTtl = amsSiteProperties.get(CLUSTER_SECOND_TABLE_TTL);
+            if (amsSiteProperties.containsKey(CLUSTER_SECOND_TABLE_TTL_PROPERTY)) {
+              String oldTtl = amsSiteProperties.get(CLUSTER_SECOND_TABLE_TTL_PROPERTY);
               String newTtl = oldTtl;
 
               if ("2592000".equals(oldTtl)) {
                 newTtl = String.valueOf(7 * 86400); // 7 days
               }
 
-              newProperties.put(CLUSTER_SECOND_TABLE_TTL, newTtl);
-              LOG.info("Setting value of " + CLUSTER_SECOND_TABLE_TTL + " : " + newTtl);
+              newProperties.put(CLUSTER_SECOND_TABLE_TTL_PROPERTY, newTtl);
+              LOG.info("Setting value of " + CLUSTER_SECOND_TABLE_TTL_PROPERTY + " : " + newTtl);
             }
 
-            if (amsSiteProperties.containsKey(CLUSTER_MINUTE_TABLE_TTL)) {
-              String oldTtl = amsSiteProperties.get(CLUSTER_MINUTE_TABLE_TTL);
+            if (amsSiteProperties.containsKey(CLUSTER_MINUTE_TABLE_TTL_PROPERTY)) {
+              String oldTtl = amsSiteProperties.get(CLUSTER_MINUTE_TABLE_TTL_PROPERTY);
               String newTtl = oldTtl;
 
               if ("7776000".equals(oldTtl)) {
                 newTtl = String.valueOf(30 * 86400); // 30 days
               }
 
-              newProperties.put(CLUSTER_MINUTE_TABLE_TTL, newTtl);
-              LOG.info("Setting value of " + CLUSTER_MINUTE_TABLE_TTL + " : " + newTtl);
+              newProperties.put(CLUSTER_MINUTE_TABLE_TTL_PROPERTY, newTtl);
+              LOG.info("Setting value of " + CLUSTER_MINUTE_TABLE_TTL_PROPERTY + " : " + newTtl);
+            }
+
+            if (!amsSiteProperties.containsKey(TIMELINE_METRICS_CLUSTER_AGGREGATOR_INTERPOLATION_ENABLED)) {
+              LOG.info("Add config  " + TIMELINE_METRICS_CLUSTER_AGGREGATOR_INTERPOLATION_ENABLED + " = true");
+              newProperties.put(TIMELINE_METRICS_CLUSTER_AGGREGATOR_INTERPOLATION_ENABLED, String.valueOf(true));
             }
 
             updateConfigurationPropertiesForCluster(cluster, AMS_SITE, newProperties, true, true);
+          }
+
+          Config amsHbaseSite = cluster.getDesiredConfigByType(AMS_HBASE_SITE);
+          if (amsHbaseSite != null) {
+            Map<String, String> amsHbaseSiteProperties = amsHbaseSite.getProperties();
+            Map<String, String> newProperties = new HashMap<>();
+
+            if (!amsHbaseSiteProperties.containsKey(HBASE_RPC_TIMEOUT_PROPERTY)) {
+              newProperties.put(HBASE_RPC_TIMEOUT_PROPERTY, String.valueOf(300000));
+            }
+
+            if (!amsHbaseSiteProperties.containsKey(PHOENIX_QUERY_KEEPALIVE_PROPERTY)) {
+              newProperties.put(PHOENIX_QUERY_KEEPALIVE_PROPERTY, String.valueOf(300000));
+            }
+
+            if (!amsHbaseSiteProperties.containsKey(HBASE_CLIENT_SCANNER_TIMEOUT_PERIOD_PROPERTY) ||
+              amsHbaseSiteProperties.get(HBASE_CLIENT_SCANNER_TIMEOUT_PERIOD_PROPERTY).equals("900000")) {
+              amsHbaseSiteProperties.put(HBASE_CLIENT_SCANNER_TIMEOUT_PERIOD_PROPERTY, String.valueOf(300000));
+            }
+
+            if (!amsHbaseSiteProperties.containsKey(PHOENIX_QUERY_TIMEOUT_PROPERTY) ||
+              amsHbaseSiteProperties.get(PHOENIX_QUERY_TIMEOUT_PROPERTY).equals("1200000")) {
+              amsHbaseSiteProperties.put(PHOENIX_QUERY_TIMEOUT_PROPERTY, String.valueOf(300000));
+            }
+            updateConfigurationPropertiesForCluster(cluster, AMS_HBASE_SITE, newProperties, true, true);
           }
 
         }
@@ -320,6 +429,57 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
 
   protected void updateHDFSWidgetDefinition() throws AmbariException {
     LOG.info("Updating HDFS widget definition.");
+
+    Map<String, List<String>> widgetMap = new HashMap<>();
+    Map<String, String> sectionLayoutMap = new HashMap<>();
+
+    List<String> hdfsSummaryWidgets = new ArrayList<>(Arrays.asList("NameNode RPC", "NN Connection Load",
+      "NameNode GC count", "NameNode GC time"));
+    widgetMap.put("HDFS_SUMMARY", hdfsSummaryWidgets);
+    sectionLayoutMap.put("HDFS_SUMMARY", "default_hdfs_dashboard");
+
+    List<String> hdfsHeatmapWidgets = new ArrayList<>(Arrays.asList("HDFS Bytes Read", "HDFS Bytes Written",
+      "DataNode Process Disk I/O Utilization", "DataNode Process Network I/O Utilization"));
+    widgetMap.put("HDFS_HEATMAPS", hdfsHeatmapWidgets);
+    sectionLayoutMap.put("HDFS_HEATMAPS", "default_hdfs_heatmap");
+
+    updateWidgetDefinitionsForService("HDFS", widgetMap, sectionLayoutMap);
+  }
+
+  protected void updateYARNWidgetDefinition() throws AmbariException {
+    LOG.info("Updating YARN widget definition.");
+
+    Map<String, List<String>> widgetMap = new HashMap<>();
+    Map<String, String> sectionLayoutMap = new HashMap<>();
+
+    List<String> yarnSummaryWidgets = new ArrayList<>(Arrays.asList("Container Failures", "App Failures"));
+    widgetMap.put("YARN_SUMMARY", yarnSummaryWidgets);
+    sectionLayoutMap.put("YARN_SUMMARY", "default_yarn_dashboard");
+
+    List<String> yarnHeatmapWidgets = new ArrayList<>(Arrays.asList("Container Failures"));
+    widgetMap.put("YARN_HEATMAPS", yarnHeatmapWidgets);
+    sectionLayoutMap.put("YARN_HEATMAPS", "default_yarn_heatmap");
+
+    updateWidgetDefinitionsForService("YARN", widgetMap, sectionLayoutMap);
+
+  }
+
+  protected void updateHBASEWidgetDefinition() throws AmbariException {
+
+    LOG.info("Updating HBASE widget definition.");
+
+    Map<String, List<String>> widgetMap = new HashMap<>();
+    Map<String, String> sectionLayoutMap = new HashMap<>();
+
+    List<String> hbaseSummaryWidgets = new ArrayList<>(Arrays.asList("Reads and Writes", "Blocked Updates"));
+    widgetMap.put("HBASE_SUMMARY", hbaseSummaryWidgets);
+    sectionLayoutMap.put("HBASE_SUMMARY", "default_hbase_dashboard");
+
+    updateWidgetDefinitionsForService("HBASE", widgetMap, sectionLayoutMap);
+  }
+
+  private void updateWidgetDefinitionsForService(String serviceName, Map<String, List<String>> widgetMap,
+                                                 Map<String, String> sectionLayoutMap) throws AmbariException {
     AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
     AmbariMetaInfo ambariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
     Type widgetLayoutType = new TypeToken<Map<String, List<WidgetLayout>>>(){}.getType();
@@ -335,61 +495,64 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
       StackId stackId = cluster.getDesiredStackVersion();
       Map<String, Object> widgetDescriptor = null;
       StackInfo stackInfo = ambariMetaInfo.getStack(stackId.getStackName(), stackId.getStackVersion());
-      ServiceInfo serviceInfo = stackInfo.getService("HDFS");
+      ServiceInfo serviceInfo = stackInfo.getService(serviceName);
       if (serviceInfo == null) {
-        LOG.info("Skipping updating HDFS widget definition, because HDFS service is not present in cluster " +
+        LOG.info("Skipping updating widget definition, because " + serviceName +  " service is not present in cluster " +
           "cluster_name= " + cluster.getClusterName());
         continue;
       }
 
-      for (String widgetName : HDFS_WIDGETS_TO_UPDATE) {
-        List<WidgetEntity> widgetEntities = widgetDAO.findByName(clusterID,
-          widgetName, "ambari", "HDFS_SUMMARY");
+      for (String section : widgetMap.keySet()) {
+        List<String> widgets = widgetMap.get(section);
+        for (String widgetName : widgets) {
+          List<WidgetEntity> widgetEntities = widgetDAO.findByName(clusterID,
+            widgetName, "ambari", section);
 
-        if (widgetEntities != null && widgetEntities.size() > 0) {
-          WidgetEntity entityToUpdate = null;
-          if (widgetEntities.size() > 1) {
-            LOG.info("Found more that 1 entity with name = "+ widgetName +
-              " for cluster = " + cluster.getClusterName() + ", skipping update.");
-          } else {
-            entityToUpdate = widgetEntities.iterator().next();
-          }
-          if (entityToUpdate != null) {
-            LOG.info("Updating widget: " + entityToUpdate.getWidgetName());
-            // Get the definition from widgets.json file
-            WidgetLayoutInfo targetWidgetLayoutInfo = null;
-            File widgetDescriptorFile = serviceInfo.getWidgetsDescriptorFile();
-            if (widgetDescriptorFile != null && widgetDescriptorFile.exists()) {
-              try {
-                widgetDescriptor = gson.fromJson(new FileReader(widgetDescriptorFile), widgetLayoutType);
-              } catch (Exception ex) {
-                String msg = "Error loading widgets from file: " + widgetDescriptorFile;
-                LOG.error(msg, ex);
-                widgetDescriptor = null;
-              }
+          if (widgetEntities != null && widgetEntities.size() > 0) {
+            WidgetEntity entityToUpdate = null;
+            if (widgetEntities.size() > 1) {
+              LOG.info("Found more that 1 entity with name = "+ widgetName +
+                " for cluster = " + cluster.getClusterName() + ", skipping update.");
+            } else {
+              entityToUpdate = widgetEntities.iterator().next();
             }
-            if (widgetDescriptor != null) {
-              LOG.debug("Loaded widget descriptor: " + widgetDescriptor);
-              for (Object artifact : widgetDescriptor.values()) {
-                List<WidgetLayout> widgetLayouts = (List<WidgetLayout>) artifact;
-                for (WidgetLayout widgetLayout : widgetLayouts) {
-                  if (widgetLayout.getLayoutName().equals("default_hdfs_dashboard")) {
-                    for (WidgetLayoutInfo layoutInfo : widgetLayout.getWidgetLayoutInfoList()) {
-                      if (layoutInfo.getWidgetName().equals(widgetName)) {
-                        targetWidgetLayoutInfo = layoutInfo;
+            if (entityToUpdate != null) {
+              LOG.info("Updating widget: " + entityToUpdate.getWidgetName());
+              // Get the definition from widgets.json file
+              WidgetLayoutInfo targetWidgetLayoutInfo = null;
+              File widgetDescriptorFile = serviceInfo.getWidgetsDescriptorFile();
+              if (widgetDescriptorFile != null && widgetDescriptorFile.exists()) {
+                try {
+                  widgetDescriptor = gson.fromJson(new FileReader(widgetDescriptorFile), widgetLayoutType);
+                } catch (Exception ex) {
+                  String msg = "Error loading widgets from file: " + widgetDescriptorFile;
+                  LOG.error(msg, ex);
+                  widgetDescriptor = null;
+                }
+              }
+              if (widgetDescriptor != null) {
+                LOG.debug("Loaded widget descriptor: " + widgetDescriptor);
+                for (Object artifact : widgetDescriptor.values()) {
+                  List<WidgetLayout> widgetLayouts = (List<WidgetLayout>) artifact;
+                  for (WidgetLayout widgetLayout : widgetLayouts) {
+                    if (widgetLayout.getLayoutName().equals(sectionLayoutMap.get(section))) {
+                      for (WidgetLayoutInfo layoutInfo : widgetLayout.getWidgetLayoutInfoList()) {
+                        if (layoutInfo.getWidgetName().equals(widgetName)) {
+                          targetWidgetLayoutInfo = layoutInfo;
+                        }
                       }
                     }
                   }
                 }
               }
-            }
-            if (targetWidgetLayoutInfo != null) {
-              entityToUpdate.setMetrics(gson.toJson(targetWidgetLayoutInfo.getMetricsInfo()));
-              entityToUpdate.setWidgetValues(gson.toJson(targetWidgetLayoutInfo.getValues()));
-              widgetDAO.merge(entityToUpdate);
-            } else {
-              LOG.warn("Unable to find widget layout info for " + widgetName +
-                " in the stack: " + stackId);
+              if (targetWidgetLayoutInfo != null) {
+                entityToUpdate.setMetrics(gson.toJson(targetWidgetLayoutInfo.getMetricsInfo()));
+                entityToUpdate.setWidgetValues(gson.toJson(targetWidgetLayoutInfo.getValues()));
+                widgetDAO.merge(entityToUpdate);
+              } else {
+                LOG.warn("Unable to find widget layout info for " + widgetName +
+                  " in the stack: " + stackId);
+              }
             }
           }
         }
@@ -444,6 +607,47 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
       WIDGET_VALUES, widgetValues,
       WIDGET_NAME, WIDGET_CORRUPT_BLOCKS
     ));
+  }
+
+  /**
+   * Updates the {@value #UPGRADE_TABLE} in the following ways:
+   * <ul>
+   * <li>{value {@link #UPGRADE_SUSPENDED_COLUMN} is added</li>
+   * </ul>
+   *
+   * @throws AmbariException
+   * @throws SQLException
+   */
+  protected void updateUpgradeTable() throws AmbariException, SQLException {
+    dbAccessor.addColumn(UPGRADE_TABLE,
+      new DBAccessor.DBColumnInfo(UPGRADE_SUSPENDED_COLUMN, Short.class, 1, 0, false));
+  }
+
+  /**
+   * Copy cluster & service widgets for Storm and Kafka from stack to DB.
+   */
+  protected void initializeStromAndKafkaWidgets() throws AmbariException {
+    AmbariManagementController controller = injector.getInstance(AmbariManagementController.class);
+    Clusters clusters = controller.getClusters();
+    if (clusters == null) {
+      return;
+    }
+
+    Map<String, Cluster> clusterMap = clusters.getClusters();
+
+    if (clusterMap != null && !clusterMap.isEmpty()) {
+      for (Cluster cluster : clusterMap.values()) {
+
+        Map<String, Service> serviceMap = cluster.getServices();
+        if (serviceMap != null && !serviceMap.isEmpty()) {
+          for (Service service : serviceMap.values()) {
+            if ("STORM".equals(service.getName()) || "KAFKA".equals(service.getName())) {
+              controller.initializeWidgetsAndLayouts(cluster, service);
+            }
+          }
+        }
+      }
+    }
   }
 
 }

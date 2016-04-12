@@ -17,14 +17,14 @@
  */
 package org.apache.ambari.server.events.listeners.alerts;
 
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.EagerSingleton;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.MaintenanceStateHelper;
+import org.apache.ambari.server.controller.RootServiceResponseFactory.Components;
 import org.apache.ambari.server.controller.RootServiceResponseFactory.Services;
 import org.apache.ambari.server.events.AlertEvent;
 import org.apache.ambari.server.events.AlertReceivedEvent;
@@ -38,11 +38,15 @@ import org.apache.ambari.server.orm.entities.AlertCurrentEntity;
 import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
 import org.apache.ambari.server.orm.entities.AlertHistoryEntity;
 import org.apache.ambari.server.state.Alert;
+import org.apache.ambari.server.state.AlertFirmness;
 import org.apache.ambari.server.state.AlertState;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.ConfigHelper;
 import org.apache.ambari.server.state.MaintenanceState;
+import org.apache.ambari.server.state.alert.SourceType;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.math.NumberUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -121,13 +125,15 @@ public class AlertReceivedListener {
       LOG.debug(event.toString());
     }
 
-    //play around too many commits
+    // process the list of alerts inside of a single transaction to prevent too
+    // many transactions/commits
     List<Alert> alerts = event.getAlerts();
 
-    Map<Alert, AlertCurrentEntity> toCreate = new HashMap<Alert, AlertCurrentEntity>();
-    Map<Alert, AlertCurrentEntity> toMerge = new HashMap<Alert, AlertCurrentEntity>();
-    Map<Alert, AlertCurrentEntity> toCreateHistoryAndMerge = new HashMap<Alert, AlertCurrentEntity>();
-    Map<Alert, AlertState> oldStates = new HashMap<Alert, AlertState>();
+    List<AlertCurrentEntity> toCreate = new ArrayList<>();
+    List<AlertCurrentEntity> toMerge = new ArrayList<>();
+    List<AlertCurrentEntity> toCreateHistoryAndMerge = new ArrayList<>();
+
+    List<AlertEvent> alertEvents = new ArrayList<>(20);
 
     for (Alert alert : alerts) {
       // jobs that were running when a service/component/host was changed
@@ -136,9 +142,10 @@ public class AlertReceivedListener {
         continue;
       }
 
-      Long clusterId = getClusterIdByName(alert.getCluster());
+      String clusterName = alert.getCluster();
+      Long clusterId = getClusterIdByName(clusterName);
       if (clusterId == null) {
-        //check event
+        // check event
         clusterId = event.getClusterId();
       }
 
@@ -164,6 +171,7 @@ public class AlertReceivedListener {
       }
 
       AlertCurrentEntity current;
+      AlertState alertState = alert.getState();
 
       if (StringUtils.isBlank(alert.getHostName()) || definition.isHostIgnored()) {
         current = m_alertsDao.findCurrentByNameNoHost(clusterId, alert.getName());
@@ -173,6 +181,12 @@ public class AlertReceivedListener {
       }
 
       if (null == current) {
+        // if there is no current alert and the state is skipped, then simple
+        // skip over this one as there is nothing to update in the databse
+        if (alertState == AlertState.SKIPPED) {
+          continue;
+        }
+
         AlertHistoryEntity history = createHistory(clusterId, definition, alert);
 
         // this new alert must reflect the correct MM state for the
@@ -191,13 +205,45 @@ public class AlertReceivedListener {
         current.setLatestTimestamp(alert.getTimestamp());
         current.setOriginalTimestamp(alert.getTimestamp());
 
-        toCreate.put(alert, current);
+        // brand new alert instances being received are always HARD
+        current.setFirmness(AlertFirmness.HARD);
 
-      } else if (alert.getState() == current.getAlertHistory().getAlertState()) {
+        // store the entity for creation later
+        toCreate.add(current);
+
+        // create the event to fire later
+        alertEvents.add(new InitialAlertEvent(clusterId, alert, current));
+
+      } else if (alertState == current.getAlertHistory().getAlertState()
+          || alertState == AlertState.SKIPPED) {
+
+        // update the timestamp no matter what
         current.setLatestTimestamp(alert.getTimestamp());
-        current.setLatestText(alert.getText());
-        toMerge.put(alert, current);
 
+        // only update some fields if the alert isn't SKIPPED
+        if (alertState != AlertState.SKIPPED) {
+          current.setLatestText(alert.getText());
+
+          // ++ the occurrences (should be safe enough since we should ever only
+          // be handling unique alert events concurrently
+          long occurrences = current.getOccurrences() + 1;
+          current.setOccurrences(occurrences);
+
+          // ensure that if we've met the repeat tolerance and the alert is
+          // still SOFT, then we transition it to HARD - we also need to fire an
+          // event
+          AlertFirmness currentFirmness = current.getFirmness();
+          int repeatTolerance = getRepeatTolerance(definition, clusterName);
+          if (currentFirmness == AlertFirmness.SOFT && occurrences >= repeatTolerance) {
+            current.setFirmness(AlertFirmness.HARD);
+
+            // create the event to fire later
+            alertEvents.add(new AlertStateChangeEvent(clusterId, alert, current, alertState));
+          }
+        }
+
+        // store the entity for merging later
+        toMerge.add(current);
       } else {
         if (LOG.isDebugEnabled()) {
           LOG.debug(
@@ -220,8 +266,40 @@ public class AlertReceivedListener {
 
         current.setAlertHistory(history);
 
-        toCreateHistoryAndMerge.put(alert, current);
-        oldStates.put(alert, oldState);
+        // figure out how to set the occurrences correctly
+        switch (alertState) {
+          // an OK state always resets, regardless of what the old one was
+          case OK:
+            current.setOccurrences(1);
+            break;
+          case CRITICAL:
+          case SKIPPED:
+          case UNKNOWN:
+          case WARNING:
+            // OK -> non-OK is a reset
+            if (oldState == AlertState.OK) {
+              current.setOccurrences(1);
+            } else {
+              // non-OK -> non-OK is a continuation
+              current.setOccurrences(current.getOccurrences() + 1);
+            }
+            break;
+          default:
+            break;
+        }
+
+        // set the firmness of the new alert state based on the state, type,
+        // occurrences, and repeat tolerance
+        AlertFirmness firmness = calculateFirmnessForStateChange(clusterName, definition,
+            alertState, current.getOccurrences());
+
+        current.setFirmness(firmness);
+
+        // store the entity for merging later
+        toCreateHistoryAndMerge.add(current);
+
+        // create the event to fire later
+        alertEvents.add(new AlertStateChangeEvent(clusterId, alert, current, oldState));
       }
     }
 
@@ -229,42 +307,10 @@ public class AlertReceivedListener {
     // transaction
     saveEntities(toCreate, toMerge, toCreateHistoryAndMerge);
 
-    //broadcast events
-    for (Map.Entry<Alert, AlertCurrentEntity> entry : toCreate.entrySet()) {
-      Alert alert = entry.getKey();
-      AlertCurrentEntity entity = entry.getValue();
-      Long clusterId = getClusterIdByName(alert.getCluster());
-      if (clusterId == null) {
-        //super rare case, cluster was removed after isValid() check
-        LOG.error("Unable to process alert {} for an invalid cluster named {}",
-          alert.getName(), alert.getCluster());
-        continue;
-      }
-
-      InitialAlertEvent initialAlertEvent = new InitialAlertEvent(
-        clusterId, alert, entity);
-
-      m_alertEventPublisher.publish(initialAlertEvent);
-
+    // broadcast events
+    for (AlertEvent eventToFire : alertEvents) {
+      m_alertEventPublisher.publish(eventToFire);
     }
-
-    for (Map.Entry<Alert, AlertCurrentEntity> entry : toCreateHistoryAndMerge.entrySet()) {
-      Alert alert = entry.getKey();
-      AlertCurrentEntity entity = entry.getValue();
-      Long clusterId = getClusterIdByName(alert.getCluster());
-      if (clusterId == null) {
-        //super rare case, cluster was removed after isValid() check
-        LOG.error("Unable to process alert {} for an invalid cluster named {}",
-          alert.getName(), alert.getCluster());
-        continue;
-      }
-
-      AlertStateChangeEvent alertChangedEvent = new AlertStateChangeEvent(clusterId, alert, entity,
-        oldStates.get(alert));
-
-      m_alertEventPublisher.publish(alertChangedEvent);
-    }
-
   }
 
   /**
@@ -289,20 +335,17 @@ public class AlertReceivedListener {
    * @param toCreateHistoryAndMerge - create new history, merge alert
    */
   @Transactional
-  void saveEntities(Map<Alert, AlertCurrentEntity> toCreate,
-      Map<Alert, AlertCurrentEntity> toMerge,
-      Map<Alert, AlertCurrentEntity> toCreateHistoryAndMerge) {
-    for (Map.Entry<Alert, AlertCurrentEntity> entry : toCreate.entrySet()) {
-      AlertCurrentEntity entity = entry.getValue();
+  void saveEntities(List<AlertCurrentEntity> toCreate, List<AlertCurrentEntity> toMerge,
+      List<AlertCurrentEntity> toCreateHistoryAndMerge) {
+    for (AlertCurrentEntity entity : toCreate) {
       m_alertsDao.create(entity);
     }
 
-    for (AlertCurrentEntity entity : toMerge.values()) {
+    for (AlertCurrentEntity entity : toMerge) {
       m_alertsDao.merge(entity, m_configuration.isAlertCacheEnabled());
     }
 
-    for (Map.Entry<Alert, AlertCurrentEntity> entry : toCreateHistoryAndMerge.entrySet()) {
-      AlertCurrentEntity entity = entry.getValue();
+    for (AlertCurrentEntity entity : toCreateHistoryAndMerge) {
       m_alertsDao.create(entity.getAlertHistory());
       m_alertsDao.merge(entity);
 
@@ -318,9 +361,15 @@ public class AlertReceivedListener {
 
   /**
    * Gets whether the specified alert is valid for its reported cluster,
-   * service, component, and host. This method is necessary for the case where a
-   * component has been removed from a host, but the alert data is going to be
-   * returned before the agent alert job can be unscheduled.
+   * service, component, and host. This method is necessary for the following
+   * cases
+   * <ul>
+   * <li>A service/component is removed, but an alert queued for reporting is
+   * received after that event.</li>
+   * <li>A host is removed from the cluster but the agent is still running and
+   * reporting</li>
+   * <li>A cluster is renamed</li>
+   * </ul>
    *
    * @param alert
    *          the alert.
@@ -333,18 +382,36 @@ public class AlertReceivedListener {
     String componentName = alert.getComponent();
     String hostName = alert.getHostName();
 
-    // if the alert is not bound to a cluster, then it's most likely a
-    // host alert and is always valid
-    if( null == clusterName ){
-      return true;
-    }
-
-    // AMBARI is always a valid service
+    // AMBARI/AMBARI_SERVER is always a valid service/component combination
     String ambariServiceName = Services.AMBARI.name();
-    if (ambariServiceName.equals(serviceName)) {
+    String ambariServerComponentName = Components.AMBARI_SERVER.name();
+    String ambariAgentComponentName = Components.AMBARI_AGENT.name();
+    if (ambariServiceName.equals(serviceName) && ambariServerComponentName.equals(componentName)) {
       return true;
     }
 
+    // if the alert is not bound to a cluster, then it's most likely a
+    // host alert and is always valid as long as the host exists
+    if (StringUtils.isBlank(clusterName)) {
+      // no cluster, no host; return true out of respect for the unknown alert
+      if (StringUtils.isBlank(hostName)) {
+        return true;
+      }
+
+      // if a host is reported, it must be registered to some cluster somewhere
+      if (!m_clusters.get().hostExists(hostName)) {
+        LOG.error("Unable to process alert {} for an invalid host named {}",
+            alert.getName(), hostName);
+        return false;
+      }
+
+      // no cluster, valid host; return true
+      return true;
+    }
+
+    // at this point the following criteria is guaranteed, so get the cluster
+    // - a cluster exists
+    // - this is not for AMBARI_SERVER component
     final Cluster cluster;
     try {
       cluster = m_clusters.get().getCluster(clusterName);
@@ -366,24 +433,50 @@ public class AlertReceivedListener {
       return false;
     }
 
+    // at this point the following criteria is guaranteed
+    // - a cluster exists
+    // - this is not for AMBARI_SERVER component
+    //
+    // if the alert is for AMBARI/AMBARI_AGENT, then it's valid IFF
+    // the agent's host is still a part of the reported cluster
+    if (ambariServiceName.equals(serviceName) && ambariAgentComponentName.equals(componentName)) {
+      // agents MUST report a hostname
+      if (StringUtils.isBlank(hostName) || !m_clusters.get().hostExists(hostName)
+          || !m_clusters.get().isHostMappedToCluster(clusterName, hostName)) {
+        LOG.warn(
+            "Unable to process alert {} for cluster {} and host {} because the host is not a part of the cluster.",
+            alert.getName(), clusterName, hostName);
+
+        return false;
+      }
+
+      // AMBARI/AMBARI_AGENT and valid host; return true
+      return true;
+    }
+
+    // at this point the following criteria is guaranteed
+    // - a cluster exists
+    // - not for the AMBARI service
     if (StringUtils.isNotBlank(hostName)) {
       // if valid hostname
       if (!m_clusters.get().hostExists(hostName)) {
-        LOG.error("Unable to process alert {} for an invalid host named {}",
+        LOG.warn("Unable to process alert {} for an invalid host named {}",
             alert.getName(), hostName);
         return false;
       }
+
       if (!cluster.getServices().containsKey(serviceName)) {
-        LOG.error("Unable to process alert {} for an invalid service named {}",
+        LOG.warn("Unable to process alert {} for an invalid service named {}",
             alert.getName(), serviceName);
 
         return false;
       }
+
       // if the alert is for a host/component then verify that the component
       // is actually installed on that host
       if (null != componentName &&
           !cluster.getHosts(serviceName, componentName).contains(hostName)) {
-        LOG.error(
+        LOG.warn(
             "Unable to process alert {} for an invalid service {} and component {} on host {}",
             alert.getName(), serviceName, componentName, hostName);
         return false;
@@ -394,7 +487,7 @@ public class AlertReceivedListener {
   }
 
   /**
-   * Convenience to create a new alert.
+   * Convenience method to create a new historical alert.
    *
    * @param clusterId
    *          the cluster id
@@ -408,6 +501,7 @@ public class AlertReceivedListener {
       AlertDefinitionEntity definition, Alert alert) {
     AlertHistoryEntity history = new AlertHistoryEntity();
     history.setAlertDefinition(definition);
+    history.setAlertDefinitionId(definition.getDefinitionId());
     history.setAlertLabel(definition.getLabel());
     history.setAlertInstance(alert.getInstance());
     history.setAlertState(alert.getState());
@@ -425,5 +519,83 @@ public class AlertReceivedListener {
     }
 
     return history;
+  }
+
+  /**
+   * Gets the firmness for an {@link AlertCurrentEntity}. The following rules
+   * apply:
+   * <ul>
+   * <li>If an alert is {@link AlertState#OK}, then the firmness is always
+   * {@link AlertFirmness#HARD}.</li>
+   * <li>If an alert is {@link SourceType#AGGREGATE}, then the firmness is
+   * always {@link AlertFirmness#HARD}.</li>
+   * <li>Otherwise, the firmness will be {@link AlertFirmness#SOFT} unless the
+   * repeat tolerance has been met.</li>
+   * </ul>
+   *
+   * @param definition
+   *          the definition to read any repeat tolerance overrides from.
+   * @param state
+   *          the state of the {@link AlertCurrentEntity}.
+   * @param the
+   *          occurrences of the alert in the current state (used for
+   *          calculation firmness when moving between non-OK states)
+   * @return
+   */
+  private AlertFirmness calculateFirmnessForStateChange(String clusterName, AlertDefinitionEntity definition,
+      AlertState state, long occurrences) {
+    // OK is always HARD since the alert has fulfilled the conditions
+    if (state == AlertState.OK) {
+      return AlertFirmness.HARD;
+    }
+
+    // aggregate alerts are always HARD since they only react to HARD alerts
+    if (definition.getSourceType() == SourceType.AGGREGATE) {
+      return AlertFirmness.HARD;
+    }
+
+    int tolerance = getRepeatTolerance(definition, clusterName);
+    if (tolerance <= 1) {
+      return AlertFirmness.HARD;
+    }
+
+    if (tolerance <= occurrences) {
+      return AlertFirmness.HARD;
+    }
+
+    return AlertFirmness.SOFT;
+  }
+
+  /**
+   * Gets the repeat tolerance value for the specified definition. This method
+   * will return the override from the definition if
+   * {@link AlertDefinitionEntity#isRepeatToleranceEnabled()} is {@code true}.
+   * Otherwise, it uses {@link ConfigHelper#CLUSTER_ENV_ALERT_REPEAT_TOLERANCE},
+   * defaulting to {@code 1} if not found.
+   *
+   * @param definition
+   *          the definition (not {@code null}).
+   * @param clusterName
+   *          the name of the cluster (not {@code null}).
+   * @return the repeat tolerance for the alert
+   */
+  private int getRepeatTolerance(AlertDefinitionEntity definition, String clusterName) {
+
+    // if the definition overrides the global value, then use that
+    if (definition.isRepeatToleranceEnabled()) {
+      return definition.getRepeatTolerance();
+    }
+
+    int repeatTolerance = 1;
+    try {
+      Cluster cluster = m_clusters.get().getCluster(clusterName);
+      String value = cluster.getClusterProperty(ConfigHelper.CLUSTER_ENV_ALERT_REPEAT_TOLERANCE, "1");
+      repeatTolerance = NumberUtils.toInt(value, 1);
+    } catch (AmbariException ambariException) {
+      LOG.warn("Unable to read {}/{} from cluster {}, defaulting to 1", ConfigHelper.CLUSTER_ENV,
+          ConfigHelper.CLUSTER_ENV_ALERT_REPEAT_TOLERANCE, clusterName, ambariException);
+    }
+
+    return repeatTolerance;
   }
 }

@@ -2039,6 +2039,7 @@ class TestHDP22StackAdvisor(TestCase):
         }
       },
       "ams-grafana-env": {
+        "properties" : {},
         "property_attributes": {
           "metrics_grafana_password": {
             "visible": "false"
@@ -2069,6 +2070,7 @@ class TestHDP22StackAdvisor(TestCase):
           "timeline.metrics.host.aggregate.splitpoints": " ",
           "timeline.metrics.host.aggregator.ttl": "86400",
           "timeline.metrics.service.handler.thread.count": "20",
+          'timeline.metrics.service.webapp.address': 'host1:6188',
           'timeline.metrics.service.watcher.disabled': 'false'
         }
       }
@@ -2247,7 +2249,7 @@ class TestHDP22StackAdvisor(TestCase):
     expected['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '512'
     expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '102'
     expected['ams-hbase-env']['properties']['regionserver_xmn_size'] = '384'
-    expected['ams-site']['properties']['timeline.metrics.host.aggregator.ttl'] = '604800'
+    expected['ams-site']['properties']['timeline.metrics.host.aggregator.ttl'] = '259200'
     expected['ams-site']['properties']['timeline.metrics.service.watcher.disabled'] = 'true'
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
@@ -2305,7 +2307,7 @@ class TestHDP22StackAdvisor(TestCase):
       },
       "hbase-env": {
         "properties": {
-          "hbase_master_heapsize": "8192",
+          "hbase_master_heapsize": "1024",
           "hbase_regionserver_heapsize": "8192",
           }
       }
@@ -2542,7 +2544,7 @@ class TestHDP22StackAdvisor(TestCase):
       },
       "hbase-env": {
         "properties": {
-          "hbase_master_heapsize": "8192",
+          "hbase_master_heapsize": "1024",
           "hbase_regionserver_heapsize": "8192",
         },
         "property_attributes": {
@@ -2663,8 +2665,8 @@ class TestHDP22StackAdvisor(TestCase):
 
     # Test when Ranger plugin HBase is enabled in kerberos environment
     configurations['hbase-site']['properties'].pop('hbase.coprocessor.region.classes', None)
-    services['configurations']['hbase-site']['properties']['hbase.coprocessor.region.classes'] = ''
-    services['configurations']['hbase-site']['properties']['hbase.coprocessor.master.classes'] = ''
+    services['configurations']['hbase-site']['properties']['hbase.coprocessor.region.classes'] = 'org.apache.hadoop.hbase.security.access.AccessController'
+    services['configurations']['hbase-site']['properties']['hbase.coprocessor.master.classes'] = 'org.apache.hadoop.hbase.security.access.AccessController'
     services['configurations']['hbase-site']['properties']['hbase.security.authentication'] = 'kerberos'
     services['configurations']['hbase-site']['properties']['hbase.security.authorization'] = 'false'
     services['configurations']['ranger-hbase-plugin-properties']['properties']['ranger-hbase-plugin-enabled'] = 'Yes'
@@ -2812,6 +2814,8 @@ class TestHDP22StackAdvisor(TestCase):
         "properties": {
           "hadoop.proxyuser.hdfs.hosts": "*",
           "hadoop.proxyuser.hdfs.groups": "*",
+          "hadoop.proxyuser.ambari_user.hosts": "*",
+          "hadoop.proxyuser.ambari_user.groups": "*"
         }
       }
     }
@@ -2905,7 +2909,8 @@ class TestHDP22StackAdvisor(TestCase):
                         },
                       ],
                     }],
-                "configurations": configurations
+                "configurations": configurations,
+                "ambari-server-properties": {"ambari-server.user":"ambari_user"}
                 }
     hosts = {
       "items" : [
@@ -3116,26 +3121,31 @@ class TestHDP22StackAdvisor(TestCase):
     recommendedDefaults = {'tez.task.resource.memory.mb': '1024',
                            'tez.runtime.io.sort.mb' : '256',
                            'tez.runtime.unordered.output.buffer.size-mb' : '256',
-                           'tez.am.resource.memory.mb' : '1024'}
+                           'tez.am.resource.memory.mb' : '1024',
+                           'tez.tez-ui.history-url.base' : 'https://host:8443/#/main/views/TEZ/0.7.0.2.3.0.0-2155/TEZ_CLUSTER_INSTANCE'}
 
     properties = {'tez.task.resource.memory.mb': '2050',
                   'tez.runtime.io.sort.mb' : '256',
                   'tez.runtime.unordered.output.buffer.size-mb' : '256',
-                  'tez.am.resource.memory.mb' : '2050'}
+                  'tez.am.resource.memory.mb' : '2050',
+                  'tez.tez-ui.history-url.base' : 'http://host:8080/#/main/views/TEZ/0.7.0.2.3.0.0-2155/TEZ_CLUSTER_INSTANCE'}
 
 
-    res_expected = [{'config-name': 'tez.am.resource.memory.mb',
-                 'config-type': 'tez-site',
-                 'level': 'WARN',
-                 'message': "tez.am.resource.memory.mb should be less than YARN max allocation size (2048)",
-                 'type': 'configuration',
-                 'level': 'WARN'},
+    res_expected = [{'config-name': 'tez.tez-ui.history-url.base',
+                     'config-type': 'tez-site',
+                     'level': 'WARN',
+                     'message': "It is recommended to set value https://host:8443/#/main/views/TEZ/0.7.0.2.3.0.0-2155/TEZ_CLUSTER_INSTANCE for property tez.tez-ui.history-url.base",
+                     'type': 'configuration'},
+                    {'config-name': 'tez.am.resource.memory.mb',
+                     'config-type': 'tez-site',
+                     'level': 'WARN',
+                     'message': "tez.am.resource.memory.mb should be less than YARN max allocation size (2048)",
+                     'type': 'configuration'},
                     {'config-name': 'tez.task.resource.memory.mb',
-                 'config-type': 'tez-site',
-                 'level': 'WARN',
-                 'message': "tez.task.resource.memory.mb should be less than YARN max allocation size (2048)",
-                 'type': 'configuration',
-                 'level': 'WARN'}]
+                     'config-type': 'tez-site',
+                     'level': 'WARN',
+                     'message': "tez.task.resource.memory.mb should be less than YARN max allocation size (2048)",
+                     'type': 'configuration'}]
 
     res = self.stackAdvisor.validateTezConfigurations(properties, recommendedDefaults, configurations, '', '')
     self.assertEquals(res, res_expected)

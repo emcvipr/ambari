@@ -497,6 +497,11 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
          ServiceComponentHostEventType.HOST_SVCCOMP_OP_FAILED,
          new ServiceComponentHostOpCompletedTransition())
 
+     .addTransition(State.INSTALL_FAILED,
+         State.INSTALL_FAILED,
+         ServiceComponentHostEventType.HOST_SVCCOMP_OP_IN_PROGRESS,
+         new ServiceComponentHostOpInProgressTransition())
+
     .addTransition(State.INSTALLED,
          State.INSTALLED,
          ServiceComponentHostEventType.HOST_SVCCOMP_OP_SUCCEEDED,
@@ -1448,7 +1453,8 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
 
           ServiceComponentInstalledEvent event = new ServiceComponentInstalledEvent(
               getClusterId(), stackId.getStackName(),
-              stackId.getStackVersion(), getServiceName(), getServiceComponentName(), getHostName());
+              stackId.getStackVersion(), getServiceName(), getServiceComponentName(), getHostName(),
+                  isRecoveryEnabled());
 
           eventPublisher.publish(event);
         } else {
@@ -1593,10 +1599,11 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
       String serviceName = getServiceName();
       String componentName = getServiceComponentName();
       String hostName = getHostName();
+      boolean recoveryEnabled = isRecoveryEnabled();
 
       ServiceComponentUninstalledEvent event = new ServiceComponentUninstalledEvent(
           clusterId, stackName, stackVersion, serviceName, componentName,
-          hostName);
+          hostName, recoveryEnabled);
 
       eventPublisher.publish(event);
     }
@@ -1680,6 +1687,11 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
     } finally {
       readLock.unlock();
     }
+  }
+
+  @Override
+  public boolean isRecoveryEnabled() {
+    return serviceComponent.isRecoveryEnabled();
   }
 
   @Override

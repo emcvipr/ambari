@@ -24,13 +24,15 @@ import os
 import re
 
 from ambari_commons.os_check import OSCheck
-from ambari_commons.str_utils import cbool, cint
 
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import stack_select
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions.version import format_stack_version
 from resource_management.libraries.functions.default import default
+from resource_management.libraries.functions.expect import expect
 from resource_management.libraries.functions import get_klist_path
 from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
@@ -40,17 +42,22 @@ from resource_management.libraries.resources.hdfs_resource import HdfsResource
 from resource_management.libraries.functions.format_jvm_option import format_jvm_option
 from resource_management.libraries.functions.get_lzo_packages import get_lzo_packages
 from resource_management.libraries.functions.is_empty import is_empty
+from resource_management.libraries.functions.expect import expect
 
 
 config = Script.get_config()
 tmp_dir = Script.get_tmp_dir()
 
 stack_name = default("/hostLevelParams/stack_name", None)
+stack_root = Script.get_stack_root()
 upgrade_direction = default("/commandParams/upgrade_direction", None)
-stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
+stack_version_unformatted = config['hostLevelParams']['stack_version']
 stack_version_formatted = format_stack_version(stack_version_unformatted)
-agent_stack_retry_on_unavailability = cbool(config["hostLevelParams"]["agent_stack_retry_on_unavailability"])
-agent_stack_retry_count = cint(config["hostLevelParams"]["agent_stack_retry_count"])
+agent_stack_retry_on_unavailability = config['hostLevelParams']['agent_stack_retry_on_unavailability']
+agent_stack_retry_count = expect("/hostLevelParams/agent_stack_retry_count", int)
+
+# there is a stack upgrade which has not yet been finalized; it's currently suspended
+upgrade_suspended = default("roleParams/upgrade_suspended", False)
 
 # New Cluster Stack Version that is defined during the RESTART of a Stack Upgrade
 version = default("/commandParams/version", None)
@@ -89,9 +96,9 @@ hadoop_conf_dir = conf_select.get_hadoop_conf_dir()
 hadoop_conf_secure_dir = os.path.join(hadoop_conf_dir, "secure")
 hadoop_lib_home = stack_select.get_hadoop_dir("lib")
 
-# hadoop parameters for 2.2+
-if Script.is_stack_greater_or_equal("2.2"):
-  mapreduce_libs_path = "/usr/hdp/current/hadoop-mapreduce-client/*"
+# hadoop parameters for stacks that support rolling_upgrade
+if stack_version_formatted and check_stack_feature(StackFeature.ROLLING_UPGRADE, stack_version_formatted):
+  mapreduce_libs_path = format("{stack_root}/current/hadoop-mapreduce-client/*")
 
   if not security_enabled:
     hadoop_secure_dn_user = '""'
@@ -117,7 +124,7 @@ limits_conf_dir = "/etc/security/limits.d"
 hdfs_user_nofile_limit = default("/configurations/hadoop-env/hdfs_user_nofile_limit", "128000")
 hdfs_user_nproc_limit = default("/configurations/hadoop-env/hdfs_user_nproc_limit", "65536")
 
-create_lib_snappy_symlinks = not Script.is_stack_greater_or_equal("2.2")
+create_lib_snappy_symlinks = check_stack_feature(StackFeature.SNAPPY, stack_version_formatted)
 jsvc_path = "/usr/lib/bigtop-utils"
 
 execute_path = os.environ['PATH'] + os.pathsep + hadoop_bin_dir
@@ -216,7 +223,8 @@ jn_edits_dir = config['configurations']['hdfs-site']['dfs.journalnode.edits.dir'
 
 dfs_name_dir = config['configurations']['hdfs-site']['dfs.namenode.name.dir']
 
-namenode_dirs_created_stub_dir = format("{hdfs_log_dir_prefix}/{hdfs_user}")
+hdfs_log_dir = format("{hdfs_log_dir_prefix}/{hdfs_user}")
+namenode_dirs_created_stub_dir = hdfs_log_dir
 namenode_dirs_stub_filename = "namenode_dirs_created"
 
 smoke_hdfs_user_dir = format("/user/{smoke_user}")
@@ -313,12 +321,11 @@ if security_enabled:
   if jn_principal_name:
     jn_principal_name = jn_principal_name.replace('_HOST', hostname.lower())
   jn_keytab = default("/configurations/hdfs-site/dfs.journalnode.keytab.file", None)
-  jn_kinit_cmd = format("{kinit_path_local} -kt {jn_keytab} {jn_principal_name};")
+  hdfs_kinit_cmd = format("{kinit_path_local} -kt {hdfs_user_keytab} {hdfs_principal_name};")
 else:
   dn_kinit_cmd = ""
   nn_kinit_cmd = ""
-  jn_kinit_cmd = ""
-  
+  hdfs_kinit_cmd = ""
 
 hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
@@ -353,7 +360,7 @@ lzo_packages = get_lzo_packages(stack_version_unformatted)
 name_node_params = default("/commandParams/namenode", None)
 
 java_home = config['hostLevelParams']['java_home']
-java_version = int(config['hostLevelParams']['java_version'])
+java_version = expect("/hostLevelParams/java_version", int)
 
 hadoop_heapsize = config['configurations']['hadoop-env']['hadoop_heapsize']
 namenode_heapsize = config['configurations']['hadoop-env']['namenode_heapsize']
@@ -379,7 +386,6 @@ ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 
 #ranger hdfs properties
 policymgr_mgr_url = config['configurations']['admin-properties']['policymgr_external_url']
-sql_connector_jar = config['configurations']['admin-properties']['SQL_CONNECTOR_JAR']
 xa_audit_db_name = config['configurations']['admin-properties']['audit_db_name']
 xa_audit_db_user = config['configurations']['admin-properties']['audit_db_user']
 xa_db_host = config['configurations']['admin-properties']['db_host']
@@ -416,13 +422,11 @@ if has_ranger_admin:
   xa_audit_db_flavor = (config['configurations']['admin-properties']['DB_FLAVOR']).lower()
 
   if xa_audit_db_flavor == 'mysql':
-    jdbc_symlink_name = "mysql-jdbc-driver.jar"
-    jdbc_jar_name = "mysql-connector-java.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_mysql_jdbc_name", None)
     audit_jdbc_url = format('jdbc:mysql://{xa_db_host}/{xa_audit_db_name}')
     jdbc_driver = "com.mysql.jdbc.Driver"
   elif xa_audit_db_flavor == 'oracle':
-    jdbc_jar_name = "ojdbc6.jar"
-    jdbc_symlink_name = "oracle-jdbc-driver.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_oracle_jdbc_name", None)
     colon_count = xa_db_host.count(':')
     if colon_count == 2 or colon_count == 0:
       audit_jdbc_url = format('jdbc:oracle:thin:@{xa_db_host}')
@@ -430,24 +434,23 @@ if has_ranger_admin:
       audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
     jdbc_driver = "oracle.jdbc.OracleDriver"
   elif xa_audit_db_flavor == 'postgres':
-    jdbc_jar_name = "postgresql.jar"
-    jdbc_symlink_name = "postgres-jdbc-driver.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_postgres_jdbc_name", None)
     audit_jdbc_url = format('jdbc:postgresql://{xa_db_host}/{xa_audit_db_name}')
     jdbc_driver = "org.postgresql.Driver"
   elif xa_audit_db_flavor == 'mssql':
-    jdbc_jar_name = "sqljdbc4.jar"
-    jdbc_symlink_name = "mssql-jdbc-driver.jar"
+    jdbc_jar_name = default("/hostLevelParams/custom_mssql_jdbc_name", None)
     audit_jdbc_url = format('jdbc:sqlserver://{xa_db_host};databaseName={xa_audit_db_name}')
     jdbc_driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
   elif xa_audit_db_flavor == 'sqla':
-    jdbc_jar_name = "sajdbc4.jar"
-    jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
+    jdbc_jar_name = default("/hostLevelParams/custom_sqlanywhere_jdbc_name", None)
     audit_jdbc_url = format('jdbc:sqlanywhere:database={xa_audit_db_name};host={xa_db_host}')
     jdbc_driver = "sap.jdbc4.sqlanywhere.IDriver"
 
   downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
-  driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
+  driver_curl_source = format("{jdk_location}/{jdbc_jar_name}")
   driver_curl_target = format("{hadoop_lib_home}/{jdbc_jar_name}")
+
+  sql_connector_jar = ''
 
   hdfs_ranger_plugin_config = {
     'username': repo_config_username,

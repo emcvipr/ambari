@@ -81,40 +81,35 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
   // ----- Property ID constants ---------------------------------------------
 
   // Host Components
-  protected static final String HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID
+  public static final String HOST_COMPONENT_CLUSTER_NAME_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "cluster_name");
-  protected static final String HOST_COMPONENT_SERVICE_NAME_PROPERTY_ID
+  public static final String HOST_COMPONENT_SERVICE_NAME_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "service_name");
-  protected static final String HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID
+  public static final String HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "component_name");
-  protected static final String HOST_COMPONENT_DISPLAY_NAME_PROPERTY_ID
+  public static final String HOST_COMPONENT_DISPLAY_NAME_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "display_name");
-  protected static final String HOST_COMPONENT_HOST_NAME_PROPERTY_ID
+  public static final String HOST_COMPONENT_HOST_NAME_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "host_name");
-  protected static final String HOST_COMPONENT_STATE_PROPERTY_ID
+  public static final String HOST_COMPONENT_STATE_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "state");
-  protected static final String HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID
+  public static final String HOST_COMPONENT_DESIRED_STATE_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "desired_state");
-  protected static final String HOST_COMPONENT_STACK_ID_PROPERTY_ID
+  public static final String HOST_COMPONENT_STACK_ID_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "stack_id");
-  protected static final String HOST_COMPONENT_DESIRED_STACK_ID_PROPERTY_ID
+  public static final String HOST_COMPONENT_DESIRED_STACK_ID_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "desired_stack_id");
-  protected static final String HOST_COMPONENT_ACTUAL_CONFIGS_PROPERTY_ID
+  public static final String HOST_COMPONENT_ACTUAL_CONFIGS_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "actual_configs");
-  protected static final String HOST_COMPONENT_STALE_CONFIGS_PROPERTY_ID
+  public static final String HOST_COMPONENT_STALE_CONFIGS_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "stale_configs");
-  protected static final String HOST_COMPONENT_DESIRED_ADMIN_STATE_PROPERTY_ID
+  public static final String HOST_COMPONENT_DESIRED_ADMIN_STATE_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "desired_admin_state");
-  protected static final String HOST_COMPONENT_MAINTENANCE_STATE_PROPERTY_ID
+  public static final String HOST_COMPONENT_MAINTENANCE_STATE_PROPERTY_ID
       = "HostRoles/maintenance_state";
-  protected static final String HOST_COMPONENT_HDP_VERSION_PROPERTY_ID
+  public static final String HOST_COMPONENT_HDP_VERSION_PROPERTY_ID
       = PropertyHelper.getPropertyId("HostRoles", "hdp_version");
-  protected static final String HOST_COMPONENT_UPGRADE_STATE_PROPERTY_ID = "HostRoles/upgrade_state";
-
-  //Component name mappings
-  private final Map<String, PropertyProvider> HOST_COMPONENT_PROPERTIES_PROVIDER = new HashMap<String, PropertyProvider>();
-  private static final int HOST_COMPONENT_HTTP_PROPERTY_REQUEST_CONNECT_TIMEOUT = 1500;   //milliseconds
-  private static final int HOST_COMPONENT_HTTP_PROPERTY_REQUEST_READ_TIMEOUT = 10000;  //milliseconds
+  public static final String HOST_COMPONENT_UPGRADE_STATE_PROPERTY_ID = "HostRoles/upgrade_state";
 
   //Parameters from the predicate
   private static final String QUERY_PARAMETERS_RUN_SMOKE_TEST_ID = "params/run_smoke_test";
@@ -149,19 +144,6 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
                                        @Assisted AmbariManagementController managementController,
                                        Injector injector) {
     super(propertyIds, keyPropertyIds, managementController);
-    ComponentSSLConfiguration configuration = ComponentSSLConfiguration.instance();
-    URLStreamProvider streamProvider = new URLStreamProvider(
-            HOST_COMPONENT_HTTP_PROPERTY_REQUEST_CONNECT_TIMEOUT,
-            HOST_COMPONENT_HTTP_PROPERTY_REQUEST_READ_TIMEOUT,
-            configuration.getTruststorePath(), configuration.getTruststorePassword(), configuration.getTruststoreType());
-
-    HttpProxyPropertyProvider httpPropertyProvider = new HttpProxyPropertyProvider(streamProvider,
-            configuration, injector,
-            PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
-            PropertyHelper.getPropertyId("HostRoles", "host_name"),
-            PropertyHelper.getPropertyId("HostRoles", "component_name"));
-
-    HOST_COMPONENT_PROPERTIES_PROVIDER.put("RESOURCEMANAGER", httpPropertyProvider);
 
     setRequiredCreateAuthorizations(EnumSet.of(RoleAuthorization.SERVICE_ADD_DELETE_SERVICES,RoleAuthorization.HOST_ADD_DELETE_COMPONENTS));
     setRequiredDeleteAuthorizations(EnumSet.of(RoleAuthorization.SERVICE_ADD_DELETE_SERVICES,RoleAuthorization.HOST_ADD_DELETE_COMPONENTS));
@@ -279,14 +261,6 @@ public class HostComponentResourceProvider extends AbstractControllerResourcePro
       if (null != response.getMaintenanceState()) {
         setResourceProperty(resource, HOST_COMPONENT_MAINTENANCE_STATE_PROPERTY_ID,
                 response.getMaintenanceState(), requestedIds);
-      }
-
-      String componentName = (String) resource.getPropertyValue(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID);
-      PropertyProvider propertyProvider = HOST_COMPONENT_PROPERTIES_PROVIDER.get(componentName);
-      if (propertyProvider != null) {
-        Set<Resource> resourcesToPopulate = new HashSet<Resource>();
-        resourcesToPopulate.add(resource);
-        propertyProvider.populateResources(resourcesToPopulate, request, predicate);
       }
 
       resources.add(resource);

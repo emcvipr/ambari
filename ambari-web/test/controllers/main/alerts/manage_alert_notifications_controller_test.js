@@ -19,11 +19,81 @@
 var App = require('app');
 var controller;
 var helpers = require('test/helpers');
+require('templates/main/alerts/alert_instance/status');
 
 
 function getController() {
   return App.ManageAlertNotificationsController.create({});
 }
+
+function getInputFields() {
+  return Em.Object.create({
+    name: {
+      value: ''
+    },
+    groups: {
+      value: []
+    },
+    global: {
+      value: false
+    },
+    allGroups: {
+      value: false
+    },
+    method: {
+      value: ''
+    },
+    email: {
+      value: ''
+    },
+    severityFilter: {
+      value: []
+    },
+    description: {
+      value: ''
+    },
+    SMTPServer: {
+      value: ''
+    },
+    SMTPPort: {
+      value: ''
+    },
+    SMTPUseAuthentication: {
+      value: ''
+    },
+    SMTPUsername: {
+      value: ''
+    },
+    SMTPPassword: {
+      value: ''
+    },
+    retypeSMTPPassword: {
+      value: ''
+    },
+    SMTPSTARTTLS: {
+      value: ''
+    },
+    emailFrom: {
+      value: ''
+    },
+    version: {
+      value: ''
+    },
+    OIDs: {
+      value: ''
+    },
+    community: {
+      value: ''
+    },
+    host: {
+      value: ''
+    },
+    port: {
+      value: ''
+    }
+  });
+}
+
 var createEditPopupView = getController().showCreateEditPopup();
 
 describe('App.ManageAlertNotificationsController', function () {
@@ -517,6 +587,8 @@ describe('App.ManageAlertNotificationsController', function () {
               name: {},
               global: {},
               allGroups: {},
+              SMTPUseAuthentication: {},
+              SMTPUsername: {},
               SMTPPassword: {},
               retypeSMTPPassword: {},
               method: {}
@@ -538,7 +610,7 @@ describe('App.ManageAlertNotificationsController', function () {
         view = getBodyClass();
       });
 
-      App.TestAliases.testAsComputedOr(getBodyClass(), 'someErrorExists', ['nameError', 'emailToError', 'emailFromError', 'smtpPortError', 'hostError', 'portError', 'passwordError']);
+      App.TestAliases.testAsComputedOr(getBodyClass(), 'someErrorExists', ['nameError', 'emailToError', 'emailFromError', 'smtpPortError', 'hostError', 'portError', 'smtpUsernameError', 'smtpPasswordError', 'passwordError']);
 
       describe('#selectAllGroups', function () {
 
@@ -605,6 +677,104 @@ describe('App.ManageAlertNotificationsController', function () {
 
       });
 
+      describe('#smtpUsernameValidation', function () {
+
+        beforeEach(function () {
+          view.set('controller.inputFields', getInputFields());
+          view.set('controller.inputFields.emailFrom.value', '1@2.com');
+          view.set('controller.inputFields.method.value', 'EMAIL');
+        });
+
+        it('should check inputFields.SMTPUsername.value', function () {
+
+          view.set('parentView.hasErrors', false);
+          view.set('controller.inputFields.SMTPUsername.errorMsg', null);
+          view.set('controller.inputFields.SMTPUseAuthentication.value', true);
+          view.set('controller.inputFields.SMTPUsername.value', '');
+          view.set('controller.inputFields.SMTPPassword.value', 'pass');
+          view.set('controller.inputFields.retypeSMTPPassword.value', 'pass');
+          expect(view.get('controller.inputFields.SMTPUsername.errorMsg')).to.equal(Em.I18n.t('alerts.notifications.error.SMTPUsername'));
+          expect(view.get('smtpUsernameError')).to.be.true;
+
+        });
+
+        it('should check inputFields.SMTPUsername.value (2)', function () {
+
+          view.set('parentView.hasErrors', true);
+          view.set('controller.inputFields.SMTPUsername.errorMsg', 'error');
+          view.set('controller.inputFields.SMTPUseAuthentication.value', true);
+          view.set('controller.inputFields.SMTPUsername.value', 'test');
+          view.set('controller.inputFields.SMTPPassword.value', 'pass');
+          view.set('controller.inputFields.retypeSMTPPassword.value', 'pass');
+          expect(view.get('controller.inputFields.SMTPUsername.errorMsg')).to.equal(null);
+          expect(view.get('smtpUsernameError')).to.be.false;
+
+        });
+
+        it('should check inputFields.SMTPUsername.value (3)', function () {
+
+          view.set('parentView.hasErrors', true);
+          view.set('controller.inputFields.SMTPUsername.errorMsg', 'error');
+          view.set('controller.inputFields.SMTPUseAuthentication.value', false);
+          view.set('controller.inputFields.SMTPUsername.value', '');
+          view.set('controller.inputFields.SMTPPassword.value', '');
+          view.set('controller.inputFields.retypeSMTPPassword.value', '');
+          expect(view.get('controller.inputFields.SMTPUsername.errorMsg')).to.equal(null);
+          expect(view.get('smtpUsernameError')).to.be.false;
+
+        });
+
+      });
+
+      describe('#smtpPasswordValidation', function () {
+
+        beforeEach(function () {
+          view.set('controller.inputFields', getInputFields());
+          view.set('controller.inputFields.emailFrom.value', '1@2.com');
+          view.set('controller.inputFields.method.value', 'EMAIL');
+        });
+
+        it('should check inputFields.SMTPPassword.value', function () {
+
+          view.set('parentView.hasErrors', false);
+          view.set('controller.inputFields.SMTPPassword.errorMsg', null);
+          view.set('controller.inputFields.SMTPUseAuthentication.value', true);
+          view.set('controller.inputFields.SMTPUsername.value', 'user');
+          view.set('controller.inputFields.SMTPPassword.value', '');
+          view.set('controller.inputFields.retypeSMTPPassword.value', '');
+          expect(view.get('controller.inputFields.SMTPPassword.errorMsg')).to.equal(Em.I18n.t('alerts.notifications.error.SMTPPassword'));
+          expect(view.get('smtpPasswordError')).to.be.true;
+
+        });
+
+        it('should check inputFields.SMTPPassword.value (2)', function () {
+
+          view.set('parentView.hasErrors', true);
+          view.set('controller.inputFields.SMTPPassword.errorMsg', 'error');
+          view.set('controller.inputFields.SMTPUseAuthentication.value', true);
+          view.set('controller.inputFields.SMTPUsername.value', 'user');
+          view.set('controller.inputFields.SMTPPassword.value', 'test');
+          view.set('controller.inputFields.retypeSMTPPassword.value', 'test');
+          expect(view.get('controller.inputFields.SMTPPassword.errorMsg')).to.equal(null);
+          expect(view.get('smtpPasswordError')).to.be.false;
+
+        });
+
+        it('should check inputFields.SMTPPassword.value (3)', function () {
+
+          view.set('parentView.hasErrors', true);
+          view.set('controller.inputFields.SMTPPassword.errorMsg', 'error');
+          view.set('controller.inputFields.SMTPUseAuthentication.value', false);
+          view.set('controller.inputFields.SMTPUsername.value', '');
+          view.set('controller.inputFields.SMTPPassword.value', '');
+          view.set('controller.inputFields.retypeSMTPPassword.value', '');
+          expect(view.get('controller.inputFields.SMTPPassword.errorMsg')).to.equal(null);
+          expect(view.get('smtpPasswordError')).to.be.false;
+
+        });
+
+      });
+
       describe('#retypePasswordValidation', function () {
 
         it('should check inputFields.retypeSMTPPassword.value', function () {
@@ -638,11 +808,11 @@ describe('App.ManageAlertNotificationsController', function () {
             {
               method: 'EMAIL',
               errors: ['portError', 'hostError'],
-              validators: ['emailToValidation', 'emailFromValidation', 'smtpPortValidation', 'retypePasswordValidation']
+              validators: ['emailToValidation', 'emailFromValidation', 'smtpPortValidation', 'smtpUsernameValidation', 'smtpPasswordValidation', 'retypePasswordValidation']
             },
             {
               method: 'SNMP',
-              errors: ['emailToError', 'emailFromError', 'smtpPortError', 'passwordError'],
+              errors: ['emailToError', 'emailFromError', 'smtpPortError', 'smtpUsernameError', 'smtpPasswordError', 'passwordError'],
               validators: ['portValidation', 'hostsValidation']
             }
           ],
@@ -996,46 +1166,6 @@ describe('App.ManageAlertNotificationsController', function () {
       controller.set('newCustomProperty', {name: 'n1', value: 'v1'});
       controller.addCustomPropertyHandler().onPrimary();
       expect(controller.get('newCustomProperty')).to.eql({name: '', value: ''});
-
-    });
-
-    describe('#bodyClass', function () {
-
-      var view;
-
-      beforeEach(function () {
-        view = controller.addCustomPropertyHandler().get('bodyClass').create({
-          parentView: Em.View.create(),
-          controller: Em.Object.create({
-            inputFields: Em.Object.create({
-              customProperties: [
-                {name: 'n1', value: 'v1', defaultValue: 'v1'}
-              ]
-            }),
-            newCustomProperty: {name: '', value: ''}
-          })
-        });
-      });
-
-      describe('#errorHandler', function () {
-
-        it('should fire invalid name', function () {
-          view.set('controller.newCustomProperty.name', '!!');
-          view.errorsHandler();
-          expect(view.get('isError')).to.be.true;
-          expect(view.get('parentView.disablePrimary')).to.be.true;
-          expect(view.get('errorMessage.length')).to.be.above(0);
-        });
-
-        it('should fire existing property name', function () {
-          view.set('controller.newCustomProperty.name', 'n1');
-          view.errorsHandler();
-          expect(view.get('isError')).to.be.true;
-          expect(view.get('parentView.disablePrimary')).to.be.true;
-          expect(view.get('errorMessage.length')).to.be.above(0);
-        });
-
-      });
 
     });
 

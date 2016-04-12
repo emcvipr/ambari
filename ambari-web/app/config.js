@@ -80,7 +80,9 @@ App.supports = {
   serviceAutoStart: false,
   logSearch: false,
   redhatSatellite: false,
-  addingNewRepository: false
+  enableIpa: false,
+  addingNewRepository: false,
+  kerberosStackAdvisor: true
 };
 
 if (App.enableExperimental) {

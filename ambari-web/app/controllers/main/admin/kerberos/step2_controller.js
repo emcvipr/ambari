@@ -99,13 +99,15 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend(App.KDCCred
   },
 
   /**
-   * Make Active Directory specific configs visible if user has selected AD option
+   * Make Active Directory or IPA specific configs visible if user has selected AD or IPA option
    * @param configs
    */
   filterConfigs: function (configs) {
     var kdcType = this.get('content.kerberosOption');
     var adConfigNames = ['ldap_url', 'container_dn', 'ad_create_attributes_template'];
     var mitConfigNames = ['kdc_create_attributes'];
+    var ipaConfigNames = ['group', 'set_password_expiry', 'password_chat_timeout'];
+
     var kerberosWizardController = this.controllers.get('kerberosWizardController');
     var manageIdentitiesConfig = configs.findProperty('name', 'manage_identities');
 
@@ -132,6 +134,13 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend(App.KDCCred
       var config = configs.findProperty('name', _configName);
       if (config) {
         config.isVisible = kdcType === Em.I18n.t('admin.kerberos.wizard.step1.option.kdc');
+      }
+    }, this);
+
+    ipaConfigNames.forEach(function (_configName) {
+      var config = configs.findProperty('name', _configName);
+      if (config) {
+        config.isVisible = kdcType === Em.I18n.t('admin.kerberos.wizard.step1.option.ipa');
       }
     }, this);
   },
@@ -202,7 +211,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend(App.KDCCred
     var content = this.get('stepConfigs')[0].get('configs');
     var configs = content.filterProperty('filename', site + '.xml');
     // properties that should be formated as hosts
-    var hostProperties = ['kdc_host', 'realm'];
+    var hostProperties = ['kdc_hosts', 'realm'];
     configs.forEach(function (_configProperty) {
       // do not pass any globals whose name ends with _host or _hosts
       if (_configProperty.isRequiredByAgent !== false) {
@@ -215,6 +224,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend(App.KDCCred
     }, this);
     this.tweakKdcTypeValue(properties);
     this.tweakManualKdcProperties(properties);
+    this.tweakIpaKdcProperties(properties);
     return {"type": site, "tag": tag, "properties": properties};
   },
 
@@ -234,6 +244,20 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend(App.KDCCred
       if (properties.hasOwnProperty('manage_identities')) {
         properties['manage_identities'] = 'false';
       }
+      if (properties.hasOwnProperty('install_packages')) {
+        properties['install_packages'] = 'false';
+      }
+      if (properties.hasOwnProperty('manage_krb5_conf')) {
+        properties['manage_krb5_conf'] = 'false';
+      }
+    }
+  },
+
+  tweakIpaKdcProperties: function (properties) {
+    if (typeof properties['kdc_type'] === 'undefined') {
+      return;
+    }
+    if (this.get('content.kerberosOption') === App.router.get('mainAdminKerberosController.kdcTypesValues')['ipa']) {
       if (properties.hasOwnProperty('install_packages')) {
         properties['install_packages'] = 'false';
       }

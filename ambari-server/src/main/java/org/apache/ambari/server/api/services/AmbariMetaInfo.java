@@ -18,10 +18,28 @@
 
 package org.apache.ambari.server.api.services;
 
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
+import static org.apache.ambari.server.controller.spi.Resource.InternalType.Component;
+import static org.apache.ambari.server.controller.spi.Resource.InternalType.HostComponent;
+import static org.apache.ambari.server.controller.utilities.PropertyHelper.AGGREGATE_FUNCTION_IDENTIFIERS;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.FilenameFilter;
+import java.io.IOException;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.Set;
+
+import javax.xml.bind.JAXBException;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ParentObjectNotFoundException;
 import org.apache.ambari.server.StackAccessException;
@@ -58,33 +76,19 @@ import org.apache.ambari.server.state.kerberos.KerberosDescriptor;
 import org.apache.ambari.server.state.kerberos.KerberosDescriptorFactory;
 import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptor;
 import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptorFactory;
+import org.apache.ambari.server.state.repository.VersionDefinitionXml;
+import org.apache.ambari.server.state.stack.ConfigUpgradePack;
 import org.apache.ambari.server.state.stack.Metric;
 import org.apache.ambari.server.state.stack.MetricDefinition;
 import org.apache.ambari.server.state.stack.OsFamily;
-import org.apache.ambari.server.state.stack.ConfigUpgradePack;
 import org.apache.ambari.server.state.stack.UpgradePack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.xml.bind.JAXBException;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FilenameFilter;
-import java.io.IOException;
-import java.lang.reflect.Type;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Scanner;
-import java.util.Set;
-
-import static org.apache.ambari.server.controller.spi.Resource.InternalType.Component;
-import static org.apache.ambari.server.controller.utilities.PropertyHelper.AGGREGATE_FUNCTION_IDENTIFIERS;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
 
 
 /**
@@ -93,6 +97,7 @@ import static org.apache.ambari.server.controller.utilities.PropertyHelper.AGGRE
 @Singleton
 public class AmbariMetaInfo {
   public static final String SERVICE_CONFIG_FOLDER_NAME = "configuration";
+  public static final String SERVICE_PROPERTIES_FOLDER_NAME = "properties";
   public static final String SERVICE_THEMES_FOLDER_NAME = "themes";
   public static final String SERVICE_QUICKLINKS_CONFIGURATIONS_FOLDER_NAME = "quicklinks";
   public static final String SERVICE_CONFIG_FILE_NAME_POSTFIX = ".xml";
@@ -151,6 +156,8 @@ public class AmbariMetaInfo {
   private File commonServicesRoot;
   private File serverVersionFile;
   private File customActionRoot;
+  private Map<String, VersionDefinitionXml> versionDefinitions = null;
+
 
   @Inject
   private MetainfoDAO metaInfoDAO;
@@ -907,39 +914,33 @@ public class AmbariMetaInfo {
         for (Map.Entry<String, List<MetricDefinition>> metricDefEntry : componentMetricDefEntry.getValue().entrySet()) {
           //For every metric definition
           for (MetricDefinition metricDefinition : metricDefEntry.getValue()) {
-            // Metrics System metrics only
-            if (metricDefinition.getType().equals("ganglia")) {
-              for (Map.Entry<String, Map<String, Metric>> metricByCategory : metricDefinition.getMetricsByCategory().entrySet()) {
-                String category = metricByCategory.getKey();
-                Iterator<Map.Entry<String, Metric>> iterator = metricByCategory.getValue().entrySet().iterator();
-                Map<String, Metric> newMetricsToAdd = new HashMap<>();
+            for (Map.Entry<String, Map<String, Metric>> metricByCategory : metricDefinition.getMetricsByCategory().entrySet()) {
+              Iterator<Map.Entry<String, Metric>> iterator = metricByCategory.getValue().entrySet().iterator();
+              Map<String, Metric> newMetricsToAdd = new HashMap<>();
 
-                while (iterator.hasNext()) {
-                  Map.Entry<String, Metric> metricEntry = iterator.next();
-                  // Process Namenode rpc metrics
-                  Map<String, Metric> replacementMetrics = PropertyHelper.processRpcMetricDefinition(
-                    componentName, metricEntry.getKey(), metricEntry.getValue());
-                  if (replacementMetrics != null) {
-                    iterator.remove(); // Remove current metric entry
-                    newMetricsToAdd.putAll(replacementMetrics);
-                    // Add aggregate functions for replacement metrics
-                    if (metricDefEntry.getKey().equals(Component.name())) {
-                      for (Map.Entry<String, Metric> replacementMetric : replacementMetrics.entrySet()) {
-                        newMetricsToAdd.putAll(getAggregateFunctionMetrics(replacementMetric.getKey(),
-                          replacementMetric.getValue()));
-                      }
-                    }
-                  } else {
-                    // NOTE: Only Component aggregates supported for now.
-                    if (metricDefEntry.getKey().equals(Component.name())) {
-                      Map<String, Metric> aggregateFunctionMetrics =
-                        getAggregateFunctionMetrics(metricEntry.getKey(), metricEntry.getValue());
-                      newMetricsToAdd.putAll(aggregateFunctionMetrics);
-                    }
+              while (iterator.hasNext()) {
+                Map.Entry<String, Metric> metricEntry = iterator.next();
+                // Process Namenode rpc metrics
+                Map<String, Metric> processedMetrics = PropertyHelper.processRpcMetricDefinition(metricDefinition.getType(),
+                  componentName, metricEntry.getKey(), metricEntry.getValue());
+                if (processedMetrics != null) {
+                  iterator.remove(); // Remove current metric entry
+                  newMetricsToAdd.putAll(processedMetrics);
+                } else {
+                  processedMetrics = Collections.singletonMap(metricEntry.getKey(), metricEntry.getValue());
+                }
+
+                // NOTE: Only Component aggregates for AMS supported for now.
+                if (metricDefinition.getType().equals("ganglia") &&
+                  (metricDefEntry.getKey().equals(Component.name()) ||
+                    metricDefEntry.getKey().equals(HostComponent.name()))) {
+                  for (Map.Entry<String, Metric> processedMetric : processedMetrics.entrySet()) {
+                    newMetricsToAdd.putAll(getAggregateFunctionMetrics(processedMetric.getKey(),
+                      processedMetric.getValue()));
                   }
                 }
-                metricByCategory.getValue().putAll(newMetricsToAdd);
               }
+              metricByCategory.getValue().putAll(newMetricsToAdd);
             }
           }
         }
@@ -1347,4 +1348,39 @@ public class AmbariMetaInfo {
   public Map<String, String> getAmbariServerProperties() {
     return conf.getAmbariProperties();
   }
+
+  /**
+   * Ensures that the map of version definition files is populated
+   */
+  private void ensureVersionDefinitions() {
+    if (null == versionDefinitions) {
+      versionDefinitions = new HashMap<>();
+    }
+    for (StackInfo stack : getStacks()) {
+      for (VersionDefinitionXml definition : stack.getVersionDefinitions()) {
+        versionDefinitions.put(String.format("%s-%s-%s", stack.getName(),
+            stack.getVersion(), definition.release.version), definition);
+      }
+    }
+  }
+
+  /**
+   * @param versionDefinitionId the version definition id
+   * @return the definition, or {@code null} if not found
+   */
+  public VersionDefinitionXml getVersionDefinition(String versionDefinitionId) {
+    ensureVersionDefinitions();
+
+    return versionDefinitions.get(versionDefinitionId);
+  }
+
+  /**
+   * @return the version definitions found for stacks
+   */
+  public Map<String, VersionDefinitionXml> getVersionDefinitions() {
+    ensureVersionDefinitions();
+
+    return versionDefinitions;
+  }
+
 }

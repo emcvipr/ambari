@@ -26,6 +26,7 @@ class TestHawqStandby(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = 'HAWQ/2.0.0/package'
   STACK_VERSION = '2.3'
   GPADMIN = 'gpadmin'
+  POSTGRES = 'postgres'
 
   def __asserts_for_configure(self):
 
@@ -38,6 +39,16 @@ class TestHawqStandby(RMFTestCase):
         groups = [self.GPADMIN, u'hadoop'],
         ignore_failures = True,
         password = 'saNIJ3hOyqasU'
+        )
+
+    self.assertResourceCalled('Group', self.POSTGRES,
+        ignore_failures = True
+        )
+
+    self.assertResourceCalled('User', self.POSTGRES,
+        gid = self.POSTGRES,
+        groups = [self.POSTGRES, u'hadoop'],
+        ignore_failures = True
         )
 
     self.assertResourceCalled('Execute', 'chown -R gpadmin:gpadmin /usr/local/hawq/',
@@ -85,20 +96,7 @@ class TestHawqStandby(RMFTestCase):
         mode = 0644
         )
 
-    self.assertResourceCalled('File', '/usr/local/hawq/etc/hawq_hosts',
-        content = InlineTemplate('c6401.ambari.apache.org\nc6402.ambari.apache.org\nc6403.ambari.apache.org\n\n'),
-        group = self.GPADMIN,
-        owner = self.GPADMIN,
-        mode = 0644
-        )
-
     self.assertResourceCalled('Directory', '/data/hawq/master',
-        group = self.GPADMIN,
-        owner = self.GPADMIN,
-        create_parents = True
-        )
-
-    self.assertResourceCalled('Directory', '/tmp/hawq/master',
         group = self.GPADMIN,
         owner = self.GPADMIN,
         create_parents = True
@@ -107,6 +105,12 @@ class TestHawqStandby(RMFTestCase):
     self.assertResourceCalled('Execute', 'chmod 700 /data/hawq/master',
         user = 'root',
         timeout = 600
+        )
+
+    self.assertResourceCalled('Directory', '/tmp/hawq/master',
+        group = self.GPADMIN,
+        owner = self.GPADMIN,
+        create_parents = True
         )
 
 
@@ -142,11 +146,7 @@ class TestHawqStandby(RMFTestCase):
 
 
   @patch ('hawqstandby.common.__set_osparams')
-  @patch ('hawqstandby.master_helper.__is_active_master')
-  @patch ('hawqstandby.master_helper.__is_standby_host')
-  def test_start_default(self, standby_host_mock, active_master_mock, set_osparams_mock):
-    standby_host_mock.return_value = True
-    active_master_mock.return_value = False
+  def test_start_default(self, set_osparams_mock):
 
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + '/scripts/hawqstandby.py',
         classname = 'HawqStandby',
@@ -157,14 +157,6 @@ class TestHawqStandby(RMFTestCase):
         )
 
     self.__asserts_for_configure()
-
-    self.assertResourceCalled('Execute', 'source /usr/local/hawq/greenplum_path.sh && hawq ssh-exkeys -f /usr/local/hawq/etc/hawq_hosts -p gpadmin',
-        logoutput = True,
-        not_if = None,
-        only_if = None,
-        user = self.GPADMIN,
-        timeout = 900
-        )
 
     self.assertResourceCalled('Execute', 'source /usr/local/hawq/greenplum_path.sh && hawq init standby -a -v',
         logoutput = True, 
@@ -177,9 +169,7 @@ class TestHawqStandby(RMFTestCase):
 
 
   @patch ('hawqstandby.common.__set_osparams')
-  @patch ('hawqstandby.master_helper.__is_active_master')
-  def test_stop_default(self, active_master_mock, set_osparams_mock):
-    active_master_mock.return_value = False
+  def test_stop_default(self, set_osparams_mock):
 
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + '/scripts/hawqstandby.py',
         classname = 'HawqStandby',

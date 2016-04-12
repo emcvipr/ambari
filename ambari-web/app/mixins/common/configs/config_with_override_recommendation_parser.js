@@ -88,7 +88,6 @@ App.ConfigWithOverrideRecommendationParser = Em.Mixin.create(App.ConfigRecommend
 			"isEditable": true
 		};
 		var override = App.config.createOverride(config, coreObject, configGroup);
-		configGroup.get('properties').pushObject(override);
 
 		this.applyRecommendation(Em.get(config, 'name'), Em.get(config, 'filename'), configGroup.get('name'),
 			recommendedValue, this._getInitialValue(override), parentProperties);
@@ -100,10 +99,12 @@ App.ConfigWithOverrideRecommendationParser = Em.Mixin.create(App.ConfigRecommend
 	 * @param {Object} stackProperty
 	 * @param {string} attr
 	 * @param {Number|String|Boolean} value
+	 * @param {String} name
+	 * @param {String} fileName
 	 * @param {App.ServiceConfigGroup} configGroup
 	 * @protected
 	 */
-	_updateOverrideBoundaries: function(stackProperty, attr, value, configGroup) {
+	_updateOverrideBoundaries: function(stackProperty, attr, value, name, fileName, configGroup) {
 		if (!stackProperty.valueAttributes[configGroup.get('name')]) {
 			stackProperty.valueAttributes[configGroup.get('name')] = {};
 		}

@@ -21,11 +21,13 @@ import socket
 
 from resource_management.libraries.script.script import Script
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
-from resource_management.libraries.functions.version import compare_versions
 from resource_management.libraries.functions.copy_tarball import copy_to_hdfs
 from resource_management.libraries.functions import format
 from resource_management.core.resources.system import File, Execute
 from resource_management.libraries.functions.version import format_stack_version
+from resource_management.libraries.functions.stack_features import check_stack_feature
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.show_logs import show_logs
 
 def spark_service(name, upgrade_type=None, action=None):
   import params
@@ -36,7 +38,7 @@ def spark_service(name, upgrade_type=None, action=None):
     if effective_version:
       effective_version = format_stack_version(effective_version)
 
-    if effective_version and compare_versions(effective_version, '2.4.0.0') >= 0:
+    if effective_version and check_stack_feature(StackFeature.SPARK_16PLUS, effective_version):
       # copy spark-hdp-assembly.jar to hdfs
       copy_to_hdfs("spark", params.user_group, params.hdfs_user, host_sys_prepped=params.host_sys_prepped)
       # create spark history directory
@@ -56,7 +58,7 @@ def spark_service(name, upgrade_type=None, action=None):
 
     # Spark 1.3.1.2.3, and higher, which was included in HDP 2.3, does not have a dependency on Tez, so it does not
     # need to copy the tarball, otherwise, copy it.
-    if params.stack_version_formatted and compare_versions(params.stack_version_formatted, '2.3.0.0') < 0:
+    if params.stack_version_formatted and check_stack_feature(StackFeature.TEZ_FOR_SPARK, params.stack_version_formatted):
       resource_created = copy_to_hdfs("tez", params.user_group, params.hdfs_user, host_sys_prepped=params.host_sys_prepped)
       if resource_created:
         params.HdfsResource(None, action="execute")
@@ -64,10 +66,14 @@ def spark_service(name, upgrade_type=None, action=None):
     if name == 'jobhistoryserver':
       historyserver_no_op_test = format(
       'ls {spark_history_server_pid_file} >/dev/null 2>&1 && ps -p `cat {spark_history_server_pid_file}` >/dev/null 2>&1')
-      Execute(format('{spark_history_server_start}'),
-              user=params.spark_user,
-              environment={'JAVA_HOME': params.java_home},
-              not_if=historyserver_no_op_test)
+      try:
+        Execute(format('{spark_history_server_start}'),
+                user=params.spark_user,
+                environment={'JAVA_HOME': params.java_home},
+                not_if=historyserver_no_op_test)
+      except:
+        show_logs(params.spark_log_dir, user=params.spark_user)
+        raise
 
     elif name == 'sparkthriftserver':
       if params.security_enabled:
@@ -77,26 +83,38 @@ def spark_service(name, upgrade_type=None, action=None):
 
       thriftserver_no_op_test = format(
       'ls {spark_thrift_server_pid_file} >/dev/null 2>&1 && ps -p `cat {spark_thrift_server_pid_file}` >/dev/null 2>&1')
-      Execute(format('{spark_thrift_server_start} --properties-file {spark_thrift_server_conf_file} {spark_thrift_cmd_opts_properties}'),
-              user=params.hive_user,
-              environment={'JAVA_HOME': params.java_home},
-              not_if=thriftserver_no_op_test
-      )
+      try:
+        Execute(format('{spark_thrift_server_start} --properties-file {spark_thrift_server_conf_file} {spark_thrift_cmd_opts_properties}'),
+                user=params.hive_user,
+                environment={'JAVA_HOME': params.java_home},
+                not_if=thriftserver_no_op_test
+        )
+      except:
+        show_logs(params.spark_log_dir, user=params.hive_user)
+        raise
   elif action == 'stop':
     if name == 'jobhistoryserver':
-      Execute(format('{spark_history_server_stop}'),
-              user=params.spark_user,
-              environment={'JAVA_HOME': params.java_home}
-      )
+      try:
+        Execute(format('{spark_history_server_stop}'),
+                user=params.spark_user,
+                environment={'JAVA_HOME': params.java_home}
+        )
+      except:
+        show_logs(params.spark_log_dir, user=params.spark_user)
+        raise
       File(params.spark_history_server_pid_file,
         action="delete"
       )
 
     elif name == 'sparkthriftserver':
-      Execute(format('{spark_thrift_server_stop}'),
-              user=params.hive_user,
-              environment={'JAVA_HOME': params.java_home}
-      )
+      try:
+        Execute(format('{spark_thrift_server_stop}'),
+                user=params.hive_user,
+                environment={'JAVA_HOME': params.java_home}
+        )
+      except:
+        show_logs(params.spark_log_dir, user=params.hive_user)
+        raise
       File(params.spark_thrift_server_pid_file,
         action="delete"
       )

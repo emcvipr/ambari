@@ -31,6 +31,7 @@ from resource_management.core.resources.system import Link
 from resource_management.libraries.script import Script
 from resource_management.libraries.resources import PropertiesFile
 from resource_management.libraries.functions import format
+from resource_management.libraries.functions.show_logs import show_logs
 
 from ambari_commons import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
@@ -108,9 +109,11 @@ def falcon(type, action = None, upgrade_type=None):
         cd_access = "a")
 
     if params.has_atlas:
-      Link(params.falcon_conf_dir + "/application.properties",
-           to = params.atlas_conf_dir + "/application.properties"
-           )
+      atlas_falcon_hook_dir = os.path.join(params.atlas_home_dir, "hook", "falcon")
+      if os.path.exists(atlas_falcon_hook_dir):
+        Link(os.path.join(params.falcon_conf_dir, params.atlas_conf_file),
+          to = os.path.join(params.atlas_conf_dir, params.atlas_conf_file)
+          )
 
   if type == 'server':
     if action == 'config':
@@ -177,26 +180,35 @@ def falcon(type, action = None, upgrade_type=None):
     environment_dictionary = { "HADOOP_HOME" : params.hadoop_home_dir }
 
     if action == 'start':
-      Execute(format('{falcon_home}/bin/falcon-start -port {falcon_port}'),
-        user = params.falcon_user,
-        path = params.hadoop_bin_dir,
-        environment=environment_dictionary)
+      try:
+        Execute(format('{falcon_home}/bin/falcon-start -port {falcon_port}'),
+          user = params.falcon_user,
+          path = params.hadoop_bin_dir,
+          environment=environment_dictionary)
+      except:
+        show_logs(params.falcon_log_dir, params.falcon_user)
+        raise
 
       if params.has_atlas:
-        atlas_falcon_hook_dir = params.atlas_home_dir + "/hook/falcon"
-        src_files = os.listdir(atlas_falcon_hook_dir)
-        for file_name in src_files:
-          atlas_falcon_hook_file_name = os.path.join(atlas_falcon_hook_dir, file_name)
-          falcon_lib_file_name = os.path.join(params.falcon_webinf_lib, file_name)
-          if (os.path.isfile(atlas_falcon_hook_file_name)):
-            Link(falcon_lib_file_name, to = atlas_falcon_hook_file_name)
+        atlas_falcon_hook_dir = os.path.join(params.atlas_home_dir, "hook", "falcon")
+        if os.path.exists(atlas_falcon_hook_dir):
+          src_files = os.listdir(atlas_falcon_hook_dir)
+          for file_name in src_files:
+            atlas_falcon_hook_file_name = os.path.join(atlas_falcon_hook_dir, file_name)
+            falcon_lib_file_name = os.path.join(params.falcon_webinf_lib, file_name)
+            if (os.path.isfile(atlas_falcon_hook_file_name)):
+              Link(falcon_lib_file_name, to = atlas_falcon_hook_file_name)
 
     if action == 'stop':
-      Execute(format('{falcon_home}/bin/falcon-stop'),
-        user = params.falcon_user,
-        path = params.hadoop_bin_dir,
-        environment=environment_dictionary)
-
+      try:
+        Execute(format('{falcon_home}/bin/falcon-stop'),
+          user = params.falcon_user,
+          path = params.hadoop_bin_dir,
+          environment=environment_dictionary)
+      except:
+        show_logs(params.falcon_log_dir, params.falcon_user)
+        raise
+      
       File(params.server_pid_file, action = 'delete')
 
 

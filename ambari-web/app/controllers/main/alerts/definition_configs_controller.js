@@ -128,7 +128,7 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
    */
   getThresholdsProperty: function (type, property) {
     var warning = this.get('content.reporting').findProperty('type', type);
-    return warning && warning.get(property) ? warning.get(property) : null;
+    return warning && !Ember.isEmpty(warning.get(property)) ? warning.get(property) : null;
   },
 
   /**
@@ -136,6 +136,7 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
    * @method renderConfigs
    */
   renderConfigs: function () {
+    var self = this;
     var alertDefinitionType = this.get('alertDefinitionType');
     var configs = [];
     switch (alertDefinitionType) {
@@ -163,7 +164,9 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
       default:
     }
 
-    configs.setEach('isDisabled', !this.get('canEdit'));
+    configs.forEach(function (config) {
+      config.set('isDisabled', !self.get('canEdit') || config.get('readonly'));
+    });
 
     this.set('configs', configs);
   },
@@ -347,6 +350,8 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
         threshold: isWizard ? '' : parameter.get('threshold'),
         units: isWizard ? '' : parameter.get('units'),
         type: isWizard ? '' : parameter.get('type'),
+        hidden: parameter.get('visibility') === "HIDDEN",
+        readonly: parameter.get('visibility') === "READ_ONLY"
       }));
     });
 
@@ -361,6 +366,8 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
   renderAggregateConfigs: function () {
     var isWizard = this.get('isWizard');
     var alertDefinition = this.get('content');
+    var units = this.get('content.reporting').findProperty('type','units') ?
+        this.get('content.reporting').findProperty('type','units').get('text'): null;
     return [
       App.AlertConfigProperties.Description.create({
         value: isWizard ? '' : alertDefinition.get('description')
@@ -377,12 +384,12 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
       App.AlertConfigProperties.Thresholds.WarningThreshold.create(App.AlertConfigProperties.Thresholds.PercentageMixin, {
         text: isWizard ? '' : this.getThresholdsProperty('warning', 'text'),
         value: isWizard ? '' : this.getThresholdsProperty('warning', 'value'),
-        valueMetric: '%'
+        valueMetric: units
       }),
       App.AlertConfigProperties.Thresholds.CriticalThreshold.create(App.AlertConfigProperties.Thresholds.PercentageMixin, {
         text: isWizard ? '' : this.getThresholdsProperty('critical', 'text'),
         value: isWizard ? '' : this.getThresholdsProperty('critical', 'value'),
-        valueMetric: '%'
+        valueMetric: units
       })
     ];
   },
@@ -454,7 +461,9 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
       property.set('previousValue', property.get('value'));
       property.set('previousText', property.get('text'));
     });
-    this.get('configs').setEach('isDisabled', false);
+    this.get('configs').forEach(function (config) {
+      config.set('isDisabled', config.get('readonly'));
+    });
     this.set('canEdit', true);
   },
 

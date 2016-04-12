@@ -78,13 +78,13 @@ import org.apache.ambari.server.orm.entities.UpgradeEntity;
 import org.apache.ambari.server.orm.entities.UpgradeGroupEntity;
 import org.apache.ambari.server.orm.entities.UpgradeItemEntity;
 import org.apache.ambari.server.security.authorization.AuthorizationException;
+import org.apache.ambari.server.serveraction.upgrades.UpdateDesiredStackAction;
 import org.apache.ambari.server.stack.MasterHostResolver;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
 import org.apache.ambari.server.state.ConfigHelper;
 import org.apache.ambari.server.state.DesiredConfig;
-import org.apache.ambari.server.state.RepositoryType;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponent;
 import org.apache.ambari.server.state.ServiceInfo;
@@ -128,19 +128,32 @@ import com.google.inject.persist.Transactional;
 @StaticallyInject
 public class UpgradeResourceProvider extends AbstractControllerResourceProvider {
 
-  protected static final String UPGRADE_CLUSTER_NAME = "Upgrade/cluster_name";
-  protected static final String UPGRADE_VERSION = "Upgrade/repository_version";
-  protected static final String UPGRADE_TYPE = "Upgrade/upgrade_type";
-  protected static final String UPGRADE_PACK = "Upgrade/pack";
-  protected static final String UPGRADE_REQUEST_ID = "Upgrade/request_id";
-  protected static final String UPGRADE_FROM_VERSION = "Upgrade/from_version";
-  protected static final String UPGRADE_TO_VERSION = "Upgrade/to_version";
-  protected static final String UPGRADE_DIRECTION = "Upgrade/direction";
-  protected static final String UPGRADE_DOWNGRADE_ALLOWED = "Upgrade/downgrade_allowed";
-  protected static final String UPGRADE_REQUEST_STATUS = "Upgrade/request_status";
-  protected static final String UPGRADE_ABORT_REASON = "Upgrade/abort_reason";
-  protected static final String UPGRADE_SKIP_PREREQUISITE_CHECKS = "Upgrade/skip_prerequisite_checks";
-  protected static final String UPGRADE_FAIL_ON_CHECK_WARNINGS = "Upgrade/fail_on_check_warnings";
+  public static final String UPGRADE_CLUSTER_NAME = "Upgrade/cluster_name";
+  public static final String UPGRADE_VERSION = "Upgrade/repository_version";
+  public static final String UPGRADE_TYPE = "Upgrade/upgrade_type";
+  public static final String UPGRADE_PACK = "Upgrade/pack";
+  public static final String UPGRADE_REQUEST_ID = "Upgrade/request_id";
+  public static final String UPGRADE_FROM_VERSION = "Upgrade/from_version";
+  public static final String UPGRADE_TO_VERSION = "Upgrade/to_version";
+  public static final String UPGRADE_DIRECTION = "Upgrade/direction";
+  public static final String UPGRADE_DOWNGRADE_ALLOWED = "Upgrade/downgrade_allowed";
+  public static final String UPGRADE_REQUEST_STATUS = "Upgrade/request_status";
+  public static final String UPGRADE_SUSPENDED = "Upgrade/suspended";
+  public static final String UPGRADE_ABORT_REASON = "Upgrade/abort_reason";
+  public static final String UPGRADE_SKIP_PREREQUISITE_CHECKS = "Upgrade/skip_prerequisite_checks";
+  public static final String UPGRADE_FAIL_ON_CHECK_WARNINGS = "Upgrade/fail_on_check_warnings";
+
+
+  /**
+   * Names that appear in the Upgrade Packs that are used by
+   * {@link org.apache.ambari.server.state.cluster.ClusterImpl#isNonRollingUpgradePastUpgradingStack}
+   * to determine if an upgrade has already changed the version to use.
+   * For this reason, DO NOT CHANGE the name of these since they represent historic values.
+   */
+  public static final String CONST_UPGRADE_GROUP_NAME = "UPDATE_DESIRED_STACK_ID";
+  public static final String CONST_UPGRADE_ITEM_TEXT = "Update Target Stack";
+  public static final String CONST_CUSTOM_COMMAND_NAME = UpdateDesiredStackAction.class.getName();
+
 
   /**
    * Skip slave/client component failures if the tasks are skippable.
@@ -255,6 +268,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     PROPERTY_IDS.add(UPGRADE_TO_VERSION);
     PROPERTY_IDS.add(UPGRADE_DIRECTION);
     PROPERTY_IDS.add(UPGRADE_DOWNGRADE_ALLOWED);
+    PROPERTY_IDS.add(UPGRADE_SUSPENDED);
     PROPERTY_IDS.add(UPGRADE_SKIP_FAILURES);
     PROPERTY_IDS.add(UPGRADE_SKIP_SC_FAILURES);
     PROPERTY_IDS.add(UPGRADE_SKIP_MANUAL_VERIFICATION);
@@ -453,7 +467,23 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
     if (null != requestStatus) {
       HostRoleStatus status = HostRoleStatus.valueOf(requestStatus);
+
+      // When aborting an upgrade, the suspend flag must be present to indicate
+      // if the upgrade is merely being paused (suspended=true) or aborted to initiate a downgrade (suspended=false).
+      boolean suspended = false;
+      if (status == HostRoleStatus.ABORTED && !propertyMap.containsKey(UPGRADE_SUSPENDED)){
+        throw new IllegalArgumentException(String.format(
+            "When changing the state of an upgrade to %s, the %s property is required to be either true or false.",
+            status, UPGRADE_SUSPENDED ));
+      } else if (status == HostRoleStatus.ABORTED) {
+        suspended = Boolean.valueOf((String) propertyMap.get(UPGRADE_SUSPENDED));
+      }
+
       setUpgradeRequestStatus(requestIdProperty, status, propertyMap);
+
+      // When the status of the upgrade's request is changing, we also update the suspended flag.
+      upgradeEntity.setSuspended(suspended);
+      s_upgradeDAO.merge(upgradeEntity);
     }
 
     // if either of the skip failure settings are in the request, then we need
@@ -477,7 +507,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
       upgradeEntity.setAutoSkipComponentFailures(skipFailures);
       upgradeEntity.setAutoSkipServiceCheckFailures(skipServiceCheckFailures);
-      upgradeEntity = s_upgradeDAO.merge(upgradeEntity);
+      s_upgradeDAO.merge(upgradeEntity);
 
     }
 
@@ -505,6 +535,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     setResourceProperty(resource, UPGRADE_FROM_VERSION, entity.getFromVersion(), requestedIds);
     setResourceProperty(resource, UPGRADE_TO_VERSION, entity.getToVersion(), requestedIds);
     setResourceProperty(resource, UPGRADE_DIRECTION, entity.getDirection(), requestedIds);
+    setResourceProperty(resource, UPGRADE_SUSPENDED, entity.isSuspended(), requestedIds);
     setResourceProperty(resource, UPGRADE_DOWNGRADE_ALLOWED, entity.isDowngradeAllowed(), requestedIds);
     setResourceProperty(resource, UPGRADE_SKIP_FAILURES, entity.isComponentFailureAutoSkipped(), requestedIds);
     setResourceProperty(resource, UPGRADE_SKIP_SC_FAILURES, entity.isServiceCheckFailureAutoSkipped(), requestedIds);
@@ -777,6 +808,23 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
     if (groups.isEmpty()) {
       throw new AmbariException("There are no groupings available");
+    }
+
+    // Non Rolling Upgrades require a group with name "UPDATE_DESIRED_STACK_ID".
+    // This is needed as a marker to indicate which version to use when an upgrade is paused.
+    if (pack.getType() == UpgradeType.NON_ROLLING) {
+      boolean foundGroupWithNameUPDATE_DESIRED_STACK_ID = false;
+      for (UpgradeGroupHolder group : groups) {
+        if (group.name.equalsIgnoreCase(this.CONST_UPGRADE_GROUP_NAME)) {
+          foundGroupWithNameUPDATE_DESIRED_STACK_ID = true;
+          break;
+        }
+      }
+
+      if (foundGroupWithNameUPDATE_DESIRED_STACK_ID == false) {
+        throw new AmbariException(String.format("NonRolling Upgrade Pack %s requires a Group with name %s",
+            pack.getName(), this.CONST_UPGRADE_GROUP_NAME));
+      }
     }
 
     List<UpgradeGroupEntity> groupEntities = new ArrayList<>();
@@ -1598,7 +1646,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
    * @param requestId
    *          the request to change the status for.
    * @param status
-   *          the status to set
+   *          the status to set on the associated request.
    * @param propertyMap
    *          the map of request properties (needed for things like abort reason
    *          if present)
@@ -1624,7 +1672,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     HostRoleStatus internalStatus = CalculatedStatus.statusFromStages(
         internalRequest.getStages()).getStatus();
 
-    if (HostRoleStatus.PENDING == status && internalStatus != HostRoleStatus.ABORTED) {
+    if (HostRoleStatus.PENDING == status && !(internalStatus == HostRoleStatus.ABORTED || internalStatus == HostRoleStatus.IN_PROGRESS)) {
       throw new IllegalArgumentException(
           String.format("Can only set status to %s when the upgrade is %s (currently %s)", status,
               HostRoleStatus.ABORTED, internalStatus));
@@ -1637,14 +1685,18 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         // Remove relevant upgrade entity
         try {
           Cluster cluster = clusters.get().getClusterById(clusterId);
+          UpgradeEntity lastUpgradeItemForCluster = s_upgradeDAO.findLastUpgradeOrDowngradeForCluster(cluster.getClusterId());
+          lastUpgradeItemForCluster.setSuspended(true);
+          s_upgradeDAO.merge(lastUpgradeItemForCluster);
+
           cluster.setUpgradeEntity(null);
         } catch (AmbariException e) {
           LOG.warn("Could not clear upgrade entity for cluster with id {}", clusterId, e);
         }
       }
-    } else { // Processing PENDING
+    } else {
+      // Status must be PENDING.
       List<Long> taskIds = new ArrayList<Long>();
-
       for (HostRoleCommand hrc : internalRequest.getCommands()) {
         if (HostRoleStatus.ABORTED == hrc.getStatus()
             || HostRoleStatus.TIMEDOUT == hrc.getStatus()) {
@@ -1656,12 +1708,14 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
       try {
         Cluster cluster = clusters.get().getClusterById(clusterId);
-        UpgradeEntity lastUpgradeItemForCluster = s_upgradeDAO.findLastUpgradeForCluster(cluster.getClusterId());
+        UpgradeEntity lastUpgradeItemForCluster = s_upgradeDAO.findLastUpgradeOrDowngradeForCluster(cluster.getClusterId());
+        lastUpgradeItemForCluster.setSuspended(false);
+        s_upgradeDAO.merge(lastUpgradeItemForCluster);
+
         cluster.setUpgradeEntity(lastUpgradeItemForCluster);
       } catch (AmbariException e) {
         LOG.warn("Could not clear upgrade entity for cluster with id {}", clusterId, e);
       }
-
     }
   }
 }

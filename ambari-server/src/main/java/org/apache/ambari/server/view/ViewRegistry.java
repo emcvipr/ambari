@@ -91,6 +91,7 @@ import org.apache.ambari.view.ViewDefinition;
 import org.apache.ambari.view.ViewResourceHandler;
 import org.apache.ambari.view.events.Event;
 import org.apache.ambari.view.events.Listener;
+import org.apache.log4j.PropertyConfigurator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -100,6 +101,8 @@ import javax.inject.Singleton;
 
 import java.beans.IntrospectionException;
 import java.io.File;
+import java.net.URL;
+import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -128,6 +131,7 @@ public class ViewRegistry {
   protected static final int DEFAULT_REQUEST_CONNECT_TIMEOUT = 5000;
   protected static final int DEFAULT_REQUEST_READ_TIMEOUT    = 10000;
   private static final String VIEW_AMBARI_VERSION_REGEXP = "^((\\d+\\.)?)*(\\*|\\d+)$";
+  private static final String VIEW_LOG_FILE = "view.log4j.properties";
 
   /**
    * Thread pool
@@ -1421,12 +1425,43 @@ public class ViewRegistry {
     privilegeDAO.remove(privilegeEntity);
   }
 
+
+  /**
+   * Extract a view archive at the specified path
+   * @param path
+   */
+  public void readViewArchive(Path path) {
+
+    File viewDir = configuration.getViewsDir();
+    String extractedArchivesPath = viewDir.getAbsolutePath() +
+            File.separator + EXTRACTED_ARCHIVES_DIR;
+
+    File archiveFile = path.toAbsolutePath().toFile();
+    if (extractor.ensureExtractedArchiveDirectory(extractedArchivesPath)) {
+        try {
+          final ViewConfig viewConfig = archiveUtility.getViewConfigFromArchive(archiveFile);
+          String viewName = ViewEntity.getViewName(viewConfig.getName(), viewConfig.getVersion());
+          final String extractedArchiveDirPath = extractedArchivesPath + File.separator + viewName;
+          final File extractedArchiveDirFile = archiveUtility.getFile(extractedArchiveDirPath);
+          final ViewEntity viewDefinition = new ViewEntity(viewConfig, configuration, extractedArchiveDirPath);
+          addDefinition(viewDefinition);
+          readViewArchive(viewDefinition, archiveFile, extractedArchiveDirFile, ambariMetaInfoProvider.get().getServerVersion());
+        } catch (Exception e){
+          LOG.error("Could not process archive at path "+path, e);
+        }
+    }
+
+  }
+
+
+
+
   // read the view archives.
   private void readViewArchives(boolean systemOnly, boolean useExecutor,
                                 String viewNameRegExp) {
     try {
-      File viewDir = configuration.getViewsDir();
 
+      File viewDir = configuration.getViewsDir();
       String extractedArchivesPath = viewDir.getAbsolutePath() +
           File.separator + EXTRACTED_ARCHIVES_DIR;
 
@@ -1523,6 +1558,8 @@ public class ViewRegistry {
       // extract the archive and get the class loader
       ClassLoader cl = extractor.extractViewArchive(viewDefinition, archiveFile, extractedArchiveDirFile);
 
+      configureViewLogging(viewDefinition,cl);
+
       ViewConfig viewConfig = archiveUtility.getViewConfigFromExtractedArchive(extractedArchiveDirPath,
           configuration.isViewValidationEnabled());
 
@@ -1552,6 +1589,14 @@ public class ViewRegistry {
 
       setViewStatus(viewDefinition, ViewEntity.ViewStatus.ERROR, msg + " : " + e.getMessage());
       LOG.error(msg, e);
+    }
+  }
+
+  private void configureViewLogging(ViewEntity viewDefinition,ClassLoader cl) {
+    URL resourceURL = cl.getResource(VIEW_LOG_FILE);
+    if( null != resourceURL ){
+      LOG.info("setting up logging for view {} as per property file {}",viewDefinition.getName(), resourceURL);
+      PropertyConfigurator.configure(resourceURL);
     }
   }
 
@@ -1753,6 +1798,8 @@ public class ViewRegistry {
             sslConfiguration.getTruststoreType());
     return new ViewAmbariStreamProvider(streamProvider, ambariSessionManager, AmbariServer.getController());
   }
+
+
 
   /**
    * Module for stand alone view registry.

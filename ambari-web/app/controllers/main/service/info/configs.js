@@ -20,7 +20,7 @@ var App = require('app');
 var batchUtils = require('utils/batch_scheduled_requests');
 var databaseUtils = require('utils/configs/database');
 
-App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, App.ServerValidatorMixin, App.EnhancedConfigsMixin, App.ThemesMappingMixin, App.VersionsMappingMixin, App.ConfigsSaverMixin, App.ConfigsComparator, {
+App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, App.ServerValidatorMixin, App.EnhancedConfigsMixin, App.ThemesMappingMixin, App.VersionsMappingMixin, App.ConfigsSaverMixin, App.ConfigsComparator, App.ComponentActionsByConfigs, {
 
   name: 'mainServiceInfoConfigsController',
 
@@ -46,7 +46,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
    */
   configGroups: function() {
     return this.get('groupsStore').filterProperty('serviceName', this.get('content.serviceName'));
-  }.property('content.serviceName', 'groupsStore'),
+  }.property('content.serviceName', 'groupsStore.@each.serviceName'),
 
   dependentConfigGroups: function() {
     if (this.get('dependentServiceNames.length') === 0) return [];
@@ -113,7 +113,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
    */
   canEdit: function () {
     return (this.get('selectedVersion') == this.get('currentDefaultVersion') || !this.get('selectedConfigGroup.isDefault'))
-        && !this.get('isCompareMode') && App.isAuthorized('SERVICE.MODIFY_CONFIGS') && !this.get('isHostsConfigsPage');
+        && !this.get('isCompareMode') && App.isAuthorized('SERVICE.MODIFY_CONFIGS');
   }.property('selectedVersion', 'isCompareMode', 'currentDefaultVersion', 'selectedConfigGroup.isDefault'),
 
   serviceConfigs: Em.computed.alias('App.config.preDefinedServiceConfigs'),
@@ -294,17 +294,12 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
     var serviceName = this.get('content.serviceName');
     this.clearStep();
     this.set('dependentServiceNames', App.StackService.find(serviceName).get('dependentServiceNames'));
-    if (App.get('isClusterSupportsEnhancedConfigs')) {
-      this.loadConfigTheme(serviceName).always(function() {
-        App.themesMapper.generateAdvancedTabs([serviceName]);
-        // Theme mapper has UI only configs that needs to be merged with current service version configs
-        // This requires calling  `loadCurrentVersions` after theme has loaded
-        self.loadCurrentVersions();
-      });
-    }
-    else {
-      this.loadCurrentVersions();
-    }
+    this.loadConfigTheme(serviceName).always(function() {
+      if (!$.mocho) { App.themesMapper.generateAdvancedTabs([serviceName]); }
+      // Theme mapper has UI only configs that needs to be merged with current service version configs
+      // This requires calling  `loadCurrentVersions` after theme has loaded
+      self.loadCurrentVersions();
+    });
     this.loadServiceConfigVersions();
   },
 
@@ -367,12 +362,18 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
     if (this.get('content.serviceName') === 'KERBEROS') {
       var kdc_type = configs.findProperty('name', 'kdc_type');
       if (kdc_type.get('value') === 'none') {
-        configs.findProperty('name', 'kdc_host').set('isVisible', false);
+        configs.findProperty('name', 'kdc_hosts').set('isVisible', false);
         configs.findProperty('name', 'admin_server_host').set('isVisible', false);
         configs.findProperty('name', 'domains').set('isVisible', false);
       } else if (kdc_type.get('value') === 'active-directory') {
         configs.findProperty('name', 'container_dn').set('isVisible', true);
         configs.findProperty('name', 'ldap_url').set('isVisible', true);
+      } else if (kdc_type.get('value') === 'ipa') {
+        configs.findProperty('name', 'group').set('isVisible', true);
+        configs.findProperty('name', 'manage_krb5_conf').set('value', false);
+        configs.findProperty('name', 'install_packages').set('value', false);
+        configs.findProperty('name', 'admin_server_host').set('isVisible', false);
+        configs.findProperty('name', 'domains').set('isVisible', false);
       }
     }
 
@@ -439,7 +440,13 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
               }
             } else {
               var isEditable = self.get('canEdit') && configGroup.get('name') == self.get('selectedConfigGroup.name');
-              allConfigs.push(App.config.createCustomGroupConfig(prop, fileName, config.properties[prop], configGroup, isEditable));
+              allConfigs.push(App.config.createCustomGroupConfig({
+                propertyName: prop,
+                filename: fileName,
+                value: config.properties[prop],
+                savedValue: config.properties[prop],
+                isEditable: isEditable
+              }, configGroup));
             }
           }
         });
@@ -556,6 +563,21 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
         var component = stackComponent.get('isMaster') ? App.MasterComponent.find(c.name) : App.SlaveComponent.find(c.name);
         var hProperty = App.config.createHostNameProperty(serviceConfig.get('serviceName'), c.name, component.get('hostNames') || [], stackComponent);
         serviceConfig.get('configs').push(App.ServiceConfigProperty.create(hProperty));
+      }
+    }, this);
+
+    App.ConfigAction.find().forEach(function(item){
+      var hostComponentConfig = item.get('hostComponentConfig');
+      var config =  serviceConfig.get('configs').filterProperty('filename', hostComponentConfig.fileName).findProperty('name', hostComponentConfig.configName);
+      if (config){
+        var componentHostName = App.HostComponent.find().findProperty('componentName', item.get('componentName')) ;
+        if (componentHostName) {
+          var setConfigValue =  !config.get('value');
+          if (setConfigValue) {
+            config.set('value', componentHostName.get('hostName'));
+            config.set('recommendedValue', componentHostName.get('hostName'));
+          }
+        }
       }
     }, this);
   },

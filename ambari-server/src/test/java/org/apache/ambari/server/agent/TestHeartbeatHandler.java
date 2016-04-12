@@ -26,15 +26,11 @@ import static org.apache.ambari.server.agent.DummyHeartbeatConstants.DummyOSRele
 import static org.apache.ambari.server.agent.DummyHeartbeatConstants.DummyOs;
 import static org.apache.ambari.server.agent.DummyHeartbeatConstants.DummyOsType;
 import static org.apache.ambari.server.agent.DummyHeartbeatConstants.DummyStackId;
-import static org.apache.ambari.server.agent.DummyHeartbeatConstants.HBASE;
-import static org.apache.ambari.server.agent.DummyHeartbeatConstants.HBASE_MASTER;
 import static org.apache.ambari.server.agent.DummyHeartbeatConstants.HDFS;
 import static org.apache.ambari.server.agent.DummyHeartbeatConstants.HDFS_CLIENT;
 import static org.apache.ambari.server.agent.DummyHeartbeatConstants.NAMENODE;
 import static org.apache.ambari.server.agent.DummyHeartbeatConstants.SECONDARY_NAMENODE;
 import static org.easymock.EasyMock.anyObject;
-import static org.easymock.EasyMock.createMockBuilder;
-import static org.easymock.EasyMock.createNiceMock;
 import static org.easymock.EasyMock.expect;
 import static org.easymock.EasyMock.replay;
 import static org.easymock.EasyMock.reset;
@@ -72,6 +68,7 @@ import org.apache.ambari.server.actionmanager.Stage;
 import org.apache.ambari.server.actionmanager.StageFactory;
 import org.apache.ambari.server.agent.HostStatus.Status;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.audit.AuditLogger;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
@@ -96,6 +93,7 @@ import org.apache.ambari.server.utils.StageUtils;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.codehaus.jackson.JsonGenerationException;
+import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -111,6 +109,7 @@ import com.google.inject.persist.PersistService;
 import com.google.inject.persist.UnitOfWork;
 
 import junit.framework.Assert;
+import static org.junit.Assert.assertNull;
 
 public class TestHeartbeatHandler {
 
@@ -138,6 +137,9 @@ public class TestHeartbeatHandler {
   @Inject
   HeartbeatTestHelper heartbeatTestHelper;
 
+  @Inject
+  AuditLogger auditLogger;
+
   private UnitOfWork unitOfWork;
 
   @Rule
@@ -155,11 +157,13 @@ public class TestHeartbeatHandler {
     injector.injectMembers(this);
     log.debug("Using server os type=" + config.getServerOsType());
     unitOfWork = injector.getInstance(UnitOfWork.class);
+    EasyMock.replay(auditLogger);
   }
 
   @After
   public void teardown() throws AmbariException {
     injector.getInstance(PersistService.class).stop();
+    EasyMock.reset(auditLogger);
   }
 
   @Test
@@ -383,19 +387,21 @@ public class TestHeartbeatHandler {
     Cluster cluster = heartbeatTestHelper.getDummyCluster();
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
-    hdfs.addServiceComponent(DATANODE).persist();
+
+    hdfs.addServiceComponent(DATANODE).setRecoveryEnabled(true);
+    hdfs.getServiceComponent(DATANODE).persist();
     hdfs.getServiceComponent(DATANODE).addServiceComponentHost(DummyHostname1).persist();
-    hdfs.addServiceComponent(NAMENODE).persist();
+
+    hdfs.addServiceComponent(NAMENODE).setRecoveryEnabled(true);
+    hdfs.getServiceComponent(NAMENODE).persist();
     hdfs.getServiceComponent(NAMENODE).addServiceComponentHost(DummyHostname1).persist();
+
     hdfs.addServiceComponent(HDFS_CLIENT).persist();
     hdfs.getServiceComponent(HDFS_CLIENT).addServiceComponentHost(DummyHostname1).persist();
 
     Host hostObject = clusters.getHost(DummyHostname1);
     hostObject.setIPv4("ipv4");
     hostObject.setIPv6("ipv6");
-
-    // add recovery.enabled_components to ambari configuration
-    module.getProperties().put("recovery.enabled_components", "NAMENODE,DATANODE");
 
     Register reg = new Register();
     HostInfo hi = new HostInfo();
@@ -409,22 +415,25 @@ public class TestHeartbeatHandler {
     RegistrationResponse rr = handler.handleRegistration(reg);
     RecoveryConfig rc = rr.getRecoveryConfig();
     assertEquals(rc.getMaxCount(), "4");
-    assertEquals(rc.getType(), "FULL");
+    assertEquals(rc.getType(), "AUTO_START");
     assertEquals(rc.getMaxLifetimeCount(), "10");
     assertEquals(rc.getRetryGap(), "2");
     assertEquals(rc.getWindowInMinutes(), "23");
-    assertEquals(rc.getEnabledComponents(), "NAMENODE,DATANODE");
+    assertEquals(rc.getEnabledComponents(), "DATANODE,NAMENODE");
 
-    rc = RecoveryConfig.getRecoveryConfig(new Configuration());
-    assertEquals(rc.getMaxCount(), "6");
-    assertEquals(rc.getType(), "DEFAULT");
-    assertEquals(rc.getMaxLifetimeCount(), "12");
-    assertEquals(rc.getRetryGap(), "5");
-    assertEquals(rc.getWindowInMinutes(), "60");
-    assertEquals(rc.getEnabledComponents(), "");
+    // Send a heart beat with the recovery timestamp set to the
+    // recovery timestamp from registration. The heart beat
+    // response should not contain a recovery config since
+    // nothing changed between the registration and heart beat.
+    HeartBeat hb = new HeartBeat();
+    hb.setTimestamp(System.currentTimeMillis());
+    hb.setResponseId(0);
+    hb.setHostname(DummyHostname1);
+    hb.setNodeStatus(new HostStatus(Status.HEALTHY, DummyHostStatus));
+    hb.setRecoveryTimestamp(rc.getRecoveryTimestamp());
 
-    // clean up
-    module.getProperties().remove("recovery.enabled_components");
+    HeartBeatResponse hbr = handler.handleHeartBeat(hb);
+    assertNull(hbr.getRecoveryConfig());
   }
 
   //
@@ -442,23 +451,30 @@ public class TestHeartbeatHandler {
     Cluster cluster = heartbeatTestHelper.getDummyCluster();
     Service hdfs = cluster.addService(HDFS);
     hdfs.persist();
-    hdfs.addServiceComponent(DATANODE).persist();
+
+    /**
+     * Add three service components enabled for auto start.
+     */
+    hdfs.addServiceComponent(DATANODE).setRecoveryEnabled(true);
+    hdfs.getServiceComponent(DATANODE).persist();
     hdfs.getServiceComponent(DATANODE).addServiceComponentHost(DummyHostname1).persist();
-    hdfs.addServiceComponent(NAMENODE).persist();
+
+    hdfs.addServiceComponent(NAMENODE).setRecoveryEnabled(true);
+    hdfs.getServiceComponent(NAMENODE).persist();
     hdfs.getServiceComponent(NAMENODE).addServiceComponentHost(DummyHostname1).persist();
-    hdfs.addServiceComponent(HDFS_CLIENT).persist();
+
+    hdfs.addServiceComponent(HDFS_CLIENT).setRecoveryEnabled(true);
+    hdfs.getServiceComponent(HDFS_CLIENT).persist();
     hdfs.getServiceComponent(HDFS_CLIENT).addServiceComponentHost(DummyHostname1).persist();
 
     Host hostObject = clusters.getHost(DummyHostname1);
     hostObject.setIPv4("ipv4");
     hostObject.setIPv6("ipv6");
 
-    // add recovery.enabled_components to ambari configuration
-    module.getProperties().put("recovery.enabled_components", "NAMENODE,DATANODE,HDFS_CLIENT");
-
     // set maintenance mode on HDFS_CLIENT on host1 to true
     ServiceComponentHost schHdfsClient = hdfs.getServiceComponent(HDFS_CLIENT).getServiceComponentHost(DummyHostname1);
     schHdfsClient.setMaintenanceState(MaintenanceState.ON);
+
 
     Register reg = new Register();
     HostInfo hi = new HostInfo();
@@ -472,14 +488,11 @@ public class TestHeartbeatHandler {
     RegistrationResponse rr = handler.handleRegistration(reg);
     RecoveryConfig rc = rr.getRecoveryConfig();
     assertEquals(rc.getMaxCount(), "4");
-    assertEquals(rc.getType(), "FULL");
+    assertEquals(rc.getType(), "AUTO_START");
     assertEquals(rc.getMaxLifetimeCount(), "10");
     assertEquals(rc.getRetryGap(), "2");
     assertEquals(rc.getWindowInMinutes(), "23");
-    assertEquals(rc.getEnabledComponents(), "NAMENODE,DATANODE"); // HDFS_CLIENT is in maintenance mode
-
-    // clean up
-    module.getProperties().remove("recovery.enabled_components");
+    assertEquals(rc.getEnabledComponents(), "DATANODE,NAMENODE"); // HDFS_CLIENT is in maintenance mode
   }
 
   @Test
